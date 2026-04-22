@@ -35,8 +35,8 @@ class UserUnified(UnifiedMindtraceDocument):
 async def test_unified_multi_model_initialization():
     """Test Unified ODM initialization with multiple models."""
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance
@@ -64,8 +64,8 @@ async def test_unified_multi_model_initialization():
 async def test_unified_multi_model_attribute_access():
     """Test attribute-based access to models in multi-model mode."""
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance
@@ -93,8 +93,8 @@ async def test_unified_multi_model_attribute_access():
 async def test_unified_multi_model_invalid_attribute():
     """Test that accessing invalid attribute raises AttributeError."""
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance
@@ -240,8 +240,8 @@ async def test_unified_link_field_caching():
 async def test_unified_multi_model_backward_compatibility():
     """Test that single model mode still works (backward compatibility)."""
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance

@@ -78,7 +78,7 @@ def create_mock_redis_user(name="John", age=30, email="john@example.com", pk="01
 @pytest.fixture
 def mock_mongo_backend():
     """Create a mocked MongoDB backend."""
-    with patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_backend_cls:
+    with patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_backend_cls:
         backend = MagicMock()
         # Async methods (native)
         backend.insert = AsyncMock()
@@ -103,7 +103,7 @@ def mock_mongo_backend():
 @pytest.fixture
 def mock_redis_backend():
     """Create a mocked Redis backend."""
-    with patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_backend_cls:
+    with patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_backend_cls:
         backend = MagicMock()
         # Sync methods (native)
         backend.insert = MagicMock()

@@ -37,7 +37,7 @@ def cluster_manager():
     with (
         patch("mindtrace.cluster.core.cluster_manager.UnifiedMindtraceODM") as MockDatabase,
         patch("mindtrace.cluster.core.cluster_manager.RabbitMQClient") as MockRabbitMQClient,
-        patch("mindtrace.cluster.core.cluster_manager.MinioRegistryBackend") as MockMinioBackend,
+        patch("mindtrace.registry.backends.minio_registry_backend.MinioRegistryBackend") as MockMinioBackend,
     ):
         MockDatabase.side_effect = [
             create_mock_database(),

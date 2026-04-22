@@ -1,13 +1,16 @@
+from __future__ import annotations
+
 import asyncio
 from enum import Enum
-from typing import Dict, List, Optional, Type, TypeVar, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Type, TypeVar, Union
 
 from pydantic import BaseModel, Field
-from redis_om.model.model import model_registry
 
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
-from mindtrace.database.backends.mongo_odm import MindtraceDocument, MongoMindtraceODM
-from mindtrace.database.backends.redis_odm import MindtraceRedisDocument, RedisMindtraceODM
+
+if TYPE_CHECKING:
+    from mindtrace.database.backends.mongo_odm import MindtraceDocument, MongoMindtraceODM
+    from mindtrace.database.backends.redis_odm import MindtraceRedisDocument, RedisMindtraceODM
 
 # Module-level cache for generated MongoDB models to ensure class identity consistency
 _mongo_model_cache: dict[type, type] = {}
@@ -78,6 +81,8 @@ class UnifiedMindtraceDocument(BaseModel):
         from typing import Annotated
 
         from beanie import Indexed
+
+        from mindtrace.database.backends.mongo_odm import MindtraceDocument
 
         # Get field annotations from the original class, excluding inherited ones
         cls_annotations = getattr(cls, "__annotations__", {})
@@ -246,6 +251,9 @@ class UnifiedMindtraceDocument(BaseModel):
         from typing import Union, get_args, get_origin
 
         from redis_om import Field as RedisField
+        from redis_om.model.model import model_registry
+
+        from mindtrace.database.backends.redis_odm import MindtraceRedisDocument
 
         # Get field annotations from the original class, excluding inherited ones
         cls_annotations = getattr(cls, "__annotations__", {})
@@ -418,7 +426,10 @@ class UnifiedMindtraceDocument(BaseModel):
         return data
 
 
-ModelType = TypeVar("ModelType", bound=Union[MindtraceDocument, MindtraceRedisDocument, UnifiedMindtraceDocument])
+ModelType = TypeVar(
+    "ModelType",
+    bound="Union[MindtraceDocument, MindtraceRedisDocument, UnifiedMindtraceDocument]",
+)
 
 
 class DataWrapper:
@@ -524,6 +535,9 @@ class UnifiedMindtraceODM(MindtraceODM):
                 InitMode.ASYNC and Redis defaults to InitMode.SYNC. If provided, both backends
                 will use the same initialization mode.
         """
+        from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+        from mindtrace.database.backends.redis_odm import RedisMindtraceODM
+
         super().__init__()
         self.mongo_backend = None
         self.redis_backend = None

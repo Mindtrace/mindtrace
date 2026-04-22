@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
@@ -9,12 +11,13 @@ from inspect import signature
 from logging import Logger
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, Callable, Optional
-
-import structlog
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from mindtrace.core.config import Config
 from mindtrace.core.utils import ifnone
+
+if TYPE_CHECKING:
+    import structlog
 
 
 def default_formatter(fmt: Optional[str] = None) -> logging.Formatter:
@@ -120,6 +123,8 @@ def setup_logger(
             logger.addHandler(file_handler)
 
         return logger
+
+    import structlog
 
     pre_chain = (
         list(structlog_pre_chain)
@@ -252,6 +257,8 @@ def get_logger(
         existing = logging.getLogger(full_name)
         if existing.handlers:
             if use_structlog:
+                import structlog
+
                 return structlog.get_logger(full_name)
             return existing
 

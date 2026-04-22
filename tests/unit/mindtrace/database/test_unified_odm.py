@@ -12,7 +12,6 @@ from mindtrace.database import (
     UnifiedMindtraceDocument,
     UnifiedMindtraceODM,
 )
-from mindtrace.database.backends import unified_odm
 
 
 class AddressUnified(UnifiedMindtraceDocument):
@@ -41,8 +40,8 @@ class UserUnified(UnifiedMindtraceDocument):
 async def test_unified_multi_model_mongo_models_path():
     """Test unified ODM with mongo_models parameter."""
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance
@@ -70,7 +69,7 @@ async def test_unified_multi_model_mongo_models_path():
 
 def test_unified_create_redis_model_registry_registration_fails():
     """Test _auto_generate_redis_model when model_registry registration raises."""
-    with patch.object(unified_odm, "model_registry", MagicMock()) as mock_registry:
+    with patch("redis_om.model.model.model_registry", MagicMock()) as mock_registry:
         mock_registry.__setitem__ = MagicMock(side_effect=RuntimeError("registry full"))
         result = UserUnified._auto_generate_redis_model()
         assert result is not None
@@ -81,8 +80,8 @@ def test_unified_create_redis_model_registry_registration_fails():
 async def test_unified_multi_model_redis_models_path():
     """Test unified ODM with redis_models parameter."""
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance
@@ -113,8 +112,8 @@ async def test_unified_convert_objectids_to_strings():
     from beanie import PydanticObjectId
 
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance
@@ -160,8 +159,8 @@ async def test_unified_convert_objectids_to_strings():
 async def test_unified_multi_model_cannot_use_direct_get():
     """Test that direct get() raises ValueError in multi-model mode."""
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance
@@ -184,8 +183,8 @@ async def test_unified_multi_model_cannot_use_direct_get():
 async def test_unified_multi_model_cannot_use_direct_update():
     """Test that direct update() raises ValueError in multi-model mode."""
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance
@@ -209,8 +208,8 @@ async def test_unified_multi_model_cannot_use_direct_update():
 async def test_unified_multi_model_cannot_use_direct_delete():
     """Test that direct delete() raises ValueError in multi-model mode."""
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance
@@ -233,8 +232,8 @@ async def test_unified_multi_model_cannot_use_direct_delete():
 async def test_unified_multi_model_cannot_use_direct_all():
     """Test that direct all() raises ValueError in multi-model mode."""
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance
@@ -257,8 +256,8 @@ async def test_unified_multi_model_cannot_use_direct_all():
 async def test_unified_multi_model_cannot_use_direct_find():
     """Test that direct find() raises ValueError in multi-model mode."""
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance
@@ -281,8 +280,8 @@ async def test_unified_multi_model_cannot_use_direct_find():
 async def test_unified_multi_model_cannot_use_direct_insert_async():
     """Test that direct insert_async() raises ValueError in multi-model mode."""
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance
@@ -306,8 +305,8 @@ async def test_unified_multi_model_cannot_use_direct_insert_async():
 async def test_unified_multi_model_cannot_use_direct_get_async():
     """Test that direct get_async() raises ValueError in multi-model mode."""
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance
@@ -330,8 +329,8 @@ async def test_unified_multi_model_cannot_use_direct_get_async():
 async def test_unified_multi_model_cannot_use_direct_update_async():
     """Test that direct update_async() raises ValueError in multi-model mode."""
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance
@@ -355,8 +354,8 @@ async def test_unified_multi_model_cannot_use_direct_update_async():
 async def test_unified_multi_model_cannot_use_direct_all_async():
     """Test that direct all_async() raises ValueError in multi-model mode."""
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance
@@ -379,8 +378,8 @@ async def test_unified_multi_model_cannot_use_direct_all_async():
 async def test_unified_multi_model_cannot_use_direct_find_async():
     """Test that direct find_async() raises ValueError in multi-model mode."""
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance
@@ -403,8 +402,8 @@ async def test_unified_multi_model_cannot_use_direct_find_async():
 async def test_unified_convert_unified_to_backend_data_dict():
     """Test _convert_unified_to_backend_data with dict input."""
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance
@@ -465,8 +464,8 @@ async def test_unified_convert_objectids_to_strings_with_list_of_dicts():
     from beanie import PydanticObjectId
 
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance
@@ -497,8 +496,8 @@ async def test_unified_convert_objectids_to_strings_with_list_of_objectids():
     from beanie import PydanticObjectId
 
     with (
-        patch("mindtrace.database.backends.unified_odm.MongoMindtraceODM") as mock_mongo,
-        patch("mindtrace.database.backends.unified_odm.RedisMindtraceODM") as mock_redis,
+        patch("mindtrace.database.backends.mongo_odm.MongoMindtraceODM") as mock_mongo,
+        patch("mindtrace.database.backends.redis_odm.RedisMindtraceODM") as mock_redis,
     ):
         mock_mongo_instance = MagicMock()
         mock_mongo.return_value = mock_mongo_instance

@@ -10,7 +10,6 @@ from mindtrace.core import TaskSchema
 from mindtrace.database import BackendType, UnifiedMindtraceODM
 from mindtrace.jobs import Job, JobSchema, Orchestrator, RabbitMQClient
 from mindtrace.registry import Registry
-from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBackend
 from mindtrace.registry.core.types import OnConflict
 from mindtrace.services import Gateway, ServerStatus, endpoint
 
@@ -153,6 +152,8 @@ class ClusterManager(Gateway):
         self.worker_registry_secret_key = self.config.get_secret("MINDTRACE_CLUSTER", "MINIO_SECRET_KEY")
         self.worker_registry_bucket = self.config["MINDTRACE_CLUSTER"]["MINIO_BUCKET"]
         self.nodes = []
+        from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBackend
+
         minio_backend = MinioRegistryBackend(
             uri=self.worker_registry_uri,
             endpoint=self.worker_registry_endpoint,

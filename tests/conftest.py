@@ -54,63 +54,44 @@ def pytest_collection_modifyitems(items, config):
         items.sort(key=by_slow_marker)
 
 
-@pytest.fixture(autouse=True)
-def configure_logging_for_tests(caplog):
-    """Configure logging to work properly with caplog fixture.
+_NOISY_LOGGERS = (
+    "botocore",
+    "boto3",
+    "urllib3",
+    "s3transfer",
+    "httpcore",
+    "httpx",
+    "hpack",
+    "pika",
+    "asyncio",
+    "mcp",
+    "pymongo",
+    "pymongo.topology",
+    "pymongo.connection",
+    "pymongo.monitor",
+    "pymongo.periodic_executor",
+)
 
-    This fixture ensures that all Mindtrace loggers propagate their messages to the root logger so that caplog can
-    capture them properly.
+
+@pytest.fixture(scope="session", autouse=True)
+def _configure_test_logging():
+    """Configure logging once for the whole test session.
+
+    Root level and caplog handler level are set via ``log_level = DEBUG`` in
+    ``pytest.ini`` — pytest applies that per-test without the per-test
+    ``setLevel`` cascade we used to pay here.
+
+    This fixture handles the rest, which cannot be expressed in config: strip
+    non-pytest handlers from the root logger (to avoid duplicate stderr
+    emission), silence noisy third-party loggers, and enable propagation for
+    the mindtrace logger tree so caplog can capture its messages. None of this
+    is per-test state — no restore on teardown.
     """
-    # Set caplog to capture all levels
-    caplog.set_level(logging.DEBUG)
-
-    # Configure the root logger to ensure proper propagation
-    root_logger = logging.getLogger()
-    original_level = root_logger.level
-    root_logger.setLevel(logging.DEBUG)
-
-    # Remove third-party handlers from root logger that cause noise.
-    # caplog's handler is managed by pytest and re-added each test automatically.
-    original_root_handlers = root_logger.handlers[:]
-    root_logger.handlers = [h for h in root_logger.handlers if type(h).__module__.startswith("_pytest")]
-
-    # Suppress noisy third-party DEBUG logs
-    noisy_loggers = [
-        "botocore",
-        "boto3",
-        "urllib3",
-        "s3transfer",
-        "httpcore",
-        "httpx",
-        "hpack",
-        "pika",
-        "asyncio",
-        "mcp",
-        "pymongo",
-        "pymongo.topology",
-        "pymongo.connection",
-        "pymongo.monitor",
-        "pymongo.periodic_executor",
-    ]
-    original_noisy_levels = {}
-    for name in noisy_loggers:
-        lg = logging.getLogger(name)
-        original_noisy_levels[name] = lg.level
-        lg.setLevel(logging.WARNING)
-
-    # Ensure mindtrace loggers propagate to root
-    mindtrace_logger = logging.getLogger("mindtrace")
-    original_propagate = mindtrace_logger.propagate
-    mindtrace_logger.propagate = True
-
-    yield
-
-    # Restore original settings
-    root_logger.setLevel(original_level)
-    root_logger.handlers = original_root_handlers
-    mindtrace_logger.propagate = original_propagate
-    for name, lvl in original_noisy_levels.items():
-        logging.getLogger(name).setLevel(lvl)
+    root = logging.getLogger()
+    root.handlers = [h for h in root.handlers if type(h).__module__.startswith("_pytest")]
+    for name in _NOISY_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
+    logging.getLogger("mindtrace").propagate = True
 
 
 class MockAssets:

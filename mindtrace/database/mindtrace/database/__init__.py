@@ -1,9 +1,4 @@
-# Re-export commonly used Beanie types for convenience
-from beanie import Link
-
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
-from mindtrace.database.backends.mongo_odm import MindtraceDocument, MongoMindtraceODM
-from mindtrace.database.backends.redis_odm import MindtraceRedisDocument, RedisMindtraceODM
 from mindtrace.database.backends.unified_odm import (
     BackendType,
     UnifiedMindtraceDocument,
@@ -27,11 +22,23 @@ __all__ = [
     "UnifiedMindtraceODM",
 ]
 
+_LAZY_IMPORTS = {
+    "Link": ("beanie", "Link"),
+    "MindtraceDocument": ("mindtrace.database.backends.mongo_odm", "MindtraceDocument"),
+    "MongoMindtraceODM": ("mindtrace.database.backends.mongo_odm", "MongoMindtraceODM"),
+    "MindtraceRedisDocument": ("mindtrace.database.backends.redis_odm", "MindtraceRedisDocument"),
+    "RedisMindtraceODM": ("mindtrace.database.backends.redis_odm", "RedisMindtraceODM"),
+    "RegistryMindtraceODM": ("mindtrace.database.backends.registry_odm", "RegistryMindtraceODM"),
+}
+
 
 def __getattr__(name):
-    if name == "RegistryMindtraceODM":
-        from mindtrace.database.backends.registry_odm import RegistryMindtraceODM
+    if name in _LAZY_IMPORTS:
+        module_path, attr = _LAZY_IMPORTS[name]
+        import importlib
 
-        globals()["RegistryMindtraceODM"] = RegistryMindtraceODM
-        return RegistryMindtraceODM
+        mod = importlib.import_module(module_path)
+        val = getattr(mod, attr)
+        globals()[name] = val
+        return val
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
