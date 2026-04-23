@@ -2621,3 +2621,15 @@ async def test_unified_backend_update_async_redis_fallback(unified_backend_redis
 
     assert result == user
     mock_redis_backend.update.assert_called_once_with(user)
+
+
+def test_unified_close_releases_both_backends(unified_backend_both, mock_mongo_backend, mock_redis_backend):
+    """``close()`` releases every configured backend, idempotently."""
+    unified_backend_both.close()
+    mock_mongo_backend.close.assert_called_once()
+    mock_redis_backend.close.assert_called_once()
+
+    # Idempotent — a second call should not re-close
+    unified_backend_both.close()
+    mock_mongo_backend.close.assert_called_once()
+    mock_redis_backend.close.assert_called_once()

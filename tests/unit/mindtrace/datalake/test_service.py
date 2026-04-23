@@ -1240,7 +1240,8 @@ class TestDatalakeServiceInitialization:
         assert service._datalake is mock_datalake
         assert service._initialized is True
         assert service.app.router.on_startup[-1] == service._startup_initialize
-        assert service.app.router.on_shutdown[-1] == service._shutdown_cleanup
+        # Shutdown cleanup is invoked via the base Service's ``combined_lifespan`` override of
+        # ``shutdown_cleanup``; we no longer register it on the deprecated ``on_shutdown`` list.
         assert "objects.put" in service.endpoints
         assert "objects.upload_session.create" in service.endpoints
         assert "assets.create_from_uploaded_object" in service.endpoints
@@ -1276,7 +1277,7 @@ class TestDatalakeServiceInitialization:
         task.cancel = _cancel
         service._upload_reconciler_task = task
 
-        await service._shutdown_cleanup()
+        await service.shutdown_cleanup()
 
         cancel.assert_called_once_with()
         assert service._upload_reconciler_task is None
@@ -1285,9 +1286,35 @@ class TestDatalakeServiceInitialization:
     async def test_shutdown_cleanup_returns_when_no_reconciler_task(self, service):
         service._upload_reconciler_task = None
 
-        await service._shutdown_cleanup()
+        await service.shutdown_cleanup()
 
         assert service._upload_reconciler_task is None
+
+    @pytest.mark.asyncio
+    async def test_shutdown_cleanup_closes_owned_datalake(self, service, mock_datalake):
+        service._datalake = mock_datalake
+        service._owns_datalake = True  # service-created datalakes are owned, thus closed on shutdown
+        mock_datalake.close = AsyncMock()
+        service._upload_reconciler_task = None
+
+        await service.shutdown_cleanup()
+
+        mock_datalake.close.assert_awaited_once()
+        assert service._datalake is None
+        assert service._initialized is False
+
+    @pytest.mark.asyncio
+    async def test_shutdown_cleanup_does_not_close_externally_owned_datalake(self, service, mock_datalake):
+        """A datalake passed via ``async_datalake=`` belongs to the caller and must not be closed here."""
+        # ``service`` fixture already passes ``async_datalake=mock_datalake`` → ``_owns_datalake is False``.
+        assert service._owns_datalake is False
+        mock_datalake.close = AsyncMock()
+        service._upload_reconciler_task = None
+
+        await service.shutdown_cleanup()
+
+        mock_datalake.close.assert_not_called()
+        assert service._datalake is mock_datalake
 
     @pytest.mark.asyncio
     async def test_run_upload_reconciler_logs_warning_on_iteration_failure(self, service):
