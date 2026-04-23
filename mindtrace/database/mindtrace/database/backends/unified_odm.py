@@ -546,6 +546,7 @@ class UnifiedMindtraceODM(MindtraceODM):
         self.unified_model_cls = unified_model_cls
         self._unified_models = unified_models
         self._model_odms: Dict[str, "UnifiedMindtraceODM"] = {}
+        self._closed = False
 
         # Support multi-model mode with unified models
         if unified_models is not None:
@@ -647,6 +648,27 @@ class UnifiedMindtraceODM(MindtraceODM):
         if self._unified_models is not None and name in self._model_odms:
             return self._model_odms[name]
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+
+    def close(self) -> None:
+        """Release resources held by the underlying backends.
+
+        Closes any child UnifiedMindtraceODM instances (multi-model mode)
+        and each backend that exposes a ``close`` method. Idempotent.
+        """
+        if self._closed:
+            return
+        for odm in self._model_odms.values():
+            try:
+                odm.close()
+            except Exception:
+                pass
+        for backend in (self.mongo_backend, self.redis_backend):
+            if backend is not None and hasattr(backend, "close"):
+                try:
+                    backend.close()
+                except Exception:
+                    pass
+        self._closed = True
 
     def _get_active_backend(self):
         """

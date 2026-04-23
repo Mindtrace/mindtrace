@@ -83,15 +83,20 @@ def _configure_test_logging():
 
     This fixture handles the rest, which cannot be expressed in config: strip
     non-pytest handlers from the root logger (to avoid duplicate stderr
-    emission), silence noisy third-party loggers, and enable propagation for
-    the mindtrace logger tree so caplog can capture its messages. None of this
-    is per-test state — no restore on teardown.
+    emission), silence noisy third-party loggers, pre-initialize the mindtrace
+    logger (so ``get_logger``'s lazy ``setup_logger("mindtrace", ...)`` path
+    doesn't run later and clobber ``propagate``), and enable propagation so
+    caplog captures mindtrace messages. None of this is per-test state — no
+    restore on teardown.
     """
     root = logging.getLogger()
     root.handlers = [h for h in root.handlers if type(h).__module__.startswith("_pytest")]
     for name in _NOISY_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
-    logging.getLogger("mindtrace").propagate = True
+    mindtrace = logging.getLogger("mindtrace")
+    if not mindtrace.handlers:
+        mindtrace.addHandler(logging.NullHandler())
+    mindtrace.propagate = True
 
 
 class MockAssets:
