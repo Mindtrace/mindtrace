@@ -653,7 +653,7 @@ async def test_complete_object_upload_session_is_idempotent(async_datalake: Asyn
 
 @pytest.mark.asyncio
 async def test_datalake_service_upload_reconciler_starts_and_stops(async_datalake: AsyncDatalake):
-    """Exercise ``_startup_initialize`` / ``_shutdown_cleanup`` and the upload reconciler loop."""
+    """Exercise ``_startup_initialize`` / ``shutdown_cleanup`` and the upload reconciler loop."""
     service = DatalakeService(
         mongo_db_uri=MONGO_URL,
         mongo_db_name=async_datalake.mongo_db_name,
@@ -666,4 +666,4 @@ async def test_datalake_service_upload_reconciler_starts_and_stops(async_datalak
     try:
         await asyncio.sleep(0.12)
     finally:
-        await service._shutdown_cleanup()
+        await service.shutdown_cleanup()

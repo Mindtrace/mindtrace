@@ -98,6 +98,8 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         allow_index_dropping: bool = False,
         auto_init: bool = False,
         init_mode: InitMode | None = None,
+        *,
+        client: AsyncIOMotorClient | None = None,
     ):
         """
         Initialize the MongoDB ODM backend.
@@ -139,8 +141,14 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             raise ValueError("db_uri and db_name are required")
 
         self.db_uri = db_uri
-        self.client = AsyncIOMotorClient(db_uri)
+        if client is not None:
+            self.client = client
+            self._owns_client = False
+        else:
+            self.client = AsyncIOMotorClient(db_uri)
+            self._owns_client = True
         self._sync_client: MongoClient | None = None
+        self._closed = False
         self.db_name = db_name
         self._motor_routing = False
         self._allow_index_dropping = allow_index_dropping
@@ -166,9 +174,8 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                     allow_index_dropping=allow_index_dropping,
                     auto_init=False,  # We'll initialize all together
                     init_mode=init_mode,
+                    client=self.client,
                 )
-                # Share the same client instance
-                odm.client = self.client
                 # Store parent reference for initialization delegation
                 odm._parent_odm = self
                 self._model_odms[name] = odm
@@ -322,6 +329,31 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             self._allow_index_dropping = allow_index_dropping
         await self._do_initialize()
 
+    def close(self) -> None:
+        """Release resources held by this ODM.
+
+        Closes the lazily-created synchronous client if present, and closes
+        the owning motor client if this ODM created it. ODMs constructed with
+        an injected ``client=`` hold a non-owning reference and do not close
+        it on shutdown — responsibility stays with whoever created the client.
+
+        Idempotent: safe to call multiple times.
+        """
+        if self._closed:
+            return
+        if self._sync_client is not None:
+            try:
+                self._sync_client.close()
+            except Exception:
+                pass
+            self._sync_client = None
+        if self._owns_client and self.client is not None:
+            try:
+                self.client.close()
+            except Exception:
+                pass
+        self._closed = True
+
     def __getattr__(self, name: str):
         """Support attribute-based access to model-specific ODMs in multi-model mode.
 
@@ -425,8 +457,6 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             return await doc.insert()
         except DuplicateKeyError as e:
             raise DuplicateInsertError(f"Duplicate key error: {str(e)}")
-        except Exception as e:
-            raise DuplicateInsertError(str(e))
 
     async def get(self, id: str | PydanticObjectId, fetch_links: bool = False) -> T:
         """

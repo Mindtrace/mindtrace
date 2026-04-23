@@ -248,6 +248,9 @@ class DatalakeService(Service):
             async_datalake.slow_ops_policy if async_datalake is not None else SlowOpsPolicy(slow_ops_policy)
         )
         self._datalake: AsyncDatalake | None = async_datalake
+        # Only the datalake we construct internally is ours to close.
+        # One passed via ``async_datalake=`` is the caller's responsibility.
+        self._owns_datalake = async_datalake is None
         self._initialized = async_datalake is not None
         self.initialize_on_startup = initialize_on_startup
         self.upload_reconcile_interval_seconds = upload_reconcile_interval_seconds
@@ -256,7 +259,6 @@ class DatalakeService(Service):
 
         if live_service and initialize_on_startup:
             self.app.router.on_startup.append(self._startup_initialize)
-            self.app.router.on_shutdown.append(self._shutdown_cleanup)
 
         self.add_endpoint("health", self.health, schema=DatalakeHealthSchema, as_tool=True)
         self.add_endpoint("summary", self.summary, schema=DatalakeSummarySchema, as_tool=True)
@@ -461,7 +463,20 @@ class DatalakeService(Service):
         if self._upload_reconciler_task is None:
             self._upload_reconciler_task = asyncio.create_task(self._run_upload_reconciler())
 
-    async def _shutdown_cleanup(self) -> None:
+    async def shutdown_cleanup(self) -> None:
+        """Release resources: cancel sync/reconciler tasks and close the datalake.
+
+        Overrides :meth:`mindtrace.services.Service.shutdown_cleanup`, which the
+        base ``combined_lifespan`` invokes during FastAPI shutdown. The old
+        ``on_shutdown.append`` registration is obsolete because FastAPI's
+        ``lifespan=`` parameter takes precedence over Starlette's ``on_shutdown``
+        handlers; overriding here is the documented extension point.
+        """
+        try:
+            await super().shutdown_cleanup()
+        except Exception:
+            pass
+
         running_sync_tasks = [job.task for job in self._dataset_sync_jobs.values() if job.task is not None]
         for task in running_sync_tasks:
             task.cancel()
@@ -473,6 +488,13 @@ class DatalakeService(Service):
             with suppress(asyncio.CancelledError):
                 await self._upload_reconciler_task
             self._upload_reconciler_task = None
+        if self._datalake is not None and self._owns_datalake:
+            try:
+                await self._datalake.close()
+            except Exception:
+                pass
+            self._datalake = None
+            self._initialized = False
 
     async def _ensure_datalake(self) -> AsyncDatalake:
         if self._datalake is None:

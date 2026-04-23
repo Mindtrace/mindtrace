@@ -81,6 +81,13 @@ class TestAsyncDatalakeUnit:
         assert path.parent == Path("~/.cache/mindtrace/temp").expanduser()
         assert path.name.startswith("datalake-")
 
+    @pytest.fixture(autouse=True)
+    def _mock_motor_client(self):
+        """Stub ``AsyncIOMotorClient`` so AsyncDatalake's shared client never tries to talk to a real Mongo."""
+        with patch("mindtrace.datalake.async_datalake.AsyncIOMotorClient") as mock_cls:
+            mock_cls.return_value = MagicMock()
+            yield mock_cls
+
     @pytest.fixture
     def mock_odm(self):
         mock = AsyncMock()
@@ -92,6 +99,7 @@ class TestAsyncDatalakeUnit:
         mock.count_documents = AsyncMock(return_value=0)
         mock.update = AsyncMock(side_effect=lambda obj: obj)
         mock.delete = AsyncMock()
+        mock.close = MagicMock()
         return mock
 
     @pytest.fixture
@@ -2524,3 +2532,26 @@ class TestAsyncDatalakeUnit:
         )
         assert out[0].subject == explicit
         assert out[1].subject == explicit
+
+    @pytest.mark.asyncio
+    async def test_close_releases_shared_motor_client_exactly_once(self, async_datalake, mock_odm, _mock_motor_client):
+        """AsyncDatalake closes its owning motor client once, regardless of ODM count."""
+        shared_client = async_datalake._mongo_client
+        assert shared_client is _mock_motor_client.return_value
+
+        await async_datalake.close()
+        shared_client.close.assert_called_once()
+        # Every ODM got close() called (idempotent; they don't own the shared client)
+        assert mock_odm.close.call_count == 11
+
+        # Idempotent: a second close() is a no-op
+        await async_datalake.close()
+        shared_client.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_async_context_manager_closes_on_exit(self, mock_odm, mock_store, _mock_motor_client):
+        """`async with AsyncDatalake(...)` closes on exit."""
+        with patch("mindtrace.datalake.async_datalake.MongoMindtraceODM", return_value=mock_odm):
+            async with AsyncDatalake("mongodb://test:27017", "test_db", store=mock_store) as dl:
+                shared_client = dl._mongo_client
+        shared_client.close.assert_called_once()
