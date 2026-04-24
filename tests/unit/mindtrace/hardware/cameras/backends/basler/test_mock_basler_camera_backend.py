@@ -1053,6 +1053,18 @@ class TestMockBaslerDiscoveryAndStaticMethods:
         assert cam1_details["device_class"] == "BaslerUsb"
         assert cam1_details["user_defined_name"] == "mock_basler_1"
 
+    def test_get_available_cameras_respects_env_mock_names(self, monkeypatch):
+        """If mock camera names are provided via env, discovery should return those names."""
+        monkeypatch.setenv("MINDTRACE_HW_CAMERA_MOCK_NAMES", '["alpha","beta"]')
+
+        # The hardware config manager is a singleton; reset it so it re-reads env vars.
+        import mindtrace.hardware.core.config as cfgmod
+
+        cfgmod._hardware_config_instance = None
+
+        cameras = MockBaslerCameraBackend.get_available_cameras(include_details=False)
+        assert cameras == ["alpha", "beta"]
+
     @pytest.mark.asyncio
     async def test_initialization_with_non_standard_camera_name(self):
         """Test initialization with camera name not in standard discovery list."""

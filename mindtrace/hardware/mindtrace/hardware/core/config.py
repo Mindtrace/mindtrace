@@ -44,6 +44,7 @@ Environment Variables:
     - MINDTRACE_HW_CAMERA_BASLER_ENABLED: Enable Basler backend
     - MINDTRACE_HW_CAMERA_OPENCV_ENABLED: Enable OpenCV backend
     - MINDTRACE_HW_CAMERA_GENICAM_ENABLED: Enable GenICam backend
+    - MINDTRACE_HW_CAMERA_MOCK_NAMES: Comma-separated or JSON list of mock camera device names (e.g. ["mock_basler_a","mock_basler_b"])
     - MINDTRACE_HW_CAMERA_MOCK_BASLER_WIDTH: Mock Basler frame width (0 = backend default 1920)
     - MINDTRACE_HW_CAMERA_MOCK_BASLER_HEIGHT: Mock Basler frame height (0 = backend default 1080)
     - MINDTRACE_HW_STEREO_CAMERA_TIMEOUT_MS: Stereo camera capture timeout in milliseconds
@@ -175,6 +176,7 @@ class CameraSettings:
 
     # Mock/testing settings
     mock_camera_count: int = 5  # Number of mock cameras to simulate
+    mock_camera_names: List[str] = field(default_factory=list)  # Optional explicit mock camera device names
     mock_basler_image_dir: str = ""  # Optional directory containing per-device image fixtures
     mock_basler_image_map: dict[str, str] = field(default_factory=dict)  # device_name -> absolute image path
     # Mock Basler output size (fixture images are resized to this unless they already match). Zero = use
@@ -626,6 +628,18 @@ class HardwareConfigManager(Mindtrace):
                 self._config.cameras.mock_camera_count = int(env_val)
             except ValueError:
                 pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_MOCK_NAMES"):
+            # Accept either a JSON list (preferred for names containing commas) or a comma-separated string.
+            parsed_names: List[str] = []
+            try:
+                parsed = json.loads(env_val)
+                if isinstance(parsed, list) and all(isinstance(x, str) for x in parsed):
+                    parsed_names = [x.strip() for x in parsed if x.strip()]
+            except Exception:
+                parsed_names = [x.strip() for x in env_val.split(",") if x.strip()]
+            if parsed_names:
+                self._config.cameras.mock_camera_names = parsed_names
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_MOCK_BASLER_IMAGE_DIR"):
             self._config.cameras.mock_basler_image_dir = env_val

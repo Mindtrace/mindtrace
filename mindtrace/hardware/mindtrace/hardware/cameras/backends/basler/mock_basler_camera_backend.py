@@ -204,15 +204,21 @@ class MockBaslerCameraBackend(CameraBackend):
             List of mock camera names or dict with details
         """
         count = 5
+        explicit_names: List[str] = []
         try:
             from mindtrace.hardware.core.config import get_hardware_config
 
             cfg = get_hardware_config().get_config()
             count = int(getattr(cfg.cameras, "mock_camera_count", count))
+            explicit_names = list(getattr(cfg.cameras, "mock_camera_names", []) or [])
         except Exception:
             pass
-        count = max(0, count)
-        mock_cameras = [f"mock_basler_{i}" for i in range(1, count + 1)]
+        explicit_names = [n.strip() for n in explicit_names if isinstance(n, str) and n.strip()]
+        if explicit_names:
+            mock_cameras = explicit_names
+        else:
+            count = max(0, count)
+            mock_cameras = [f"mock_basler_{i}" for i in range(1, count + 1)]
 
         if include_details:
             camera_details = {}
