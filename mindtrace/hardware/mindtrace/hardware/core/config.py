@@ -25,7 +25,7 @@ Environment Variables:
     - MINDTRACE_HW_CAMERA_RETRY_COUNT: Number of camera capture retry attempts
     - MINDTRACE_HW_CAMERA_DEFAULT_EXPOSURE: Default camera exposure time
     - MINDTRACE_HW_CAMERA_WHITE_BALANCE: Default camera white balance mode
-    - MINDTRACE_HW_CAMERA_TIMEOUT: Camera capture timeout in seconds
+    - MINDTRACE_HW_CAMERA_TIMEOUT: Camera capture timeout in milliseconds
     - MINDTRACE_HW_CAMERA_MAX_CONCURRENT_CAPTURES: Maximum concurrent captures for network bandwidth management
     - MINDTRACE_HW_CAMERA_MAX_CONSECUTIVE_FAILURES: Consecutive capture failures before auto-reinit (default: 5)
     - MINDTRACE_HW_CAMERA_REINITIALIZATION_COOLDOWN: Seconds between reinit attempts (default: 30.0)
