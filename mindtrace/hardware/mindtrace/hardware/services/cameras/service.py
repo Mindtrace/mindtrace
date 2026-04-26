@@ -5,6 +5,7 @@ This service wraps AsyncCameraManager functionality in a Service-based
 architecture with comprehensive MCP tool integration and typed client access.
 """
 
+import asyncio
 import os
 import time
 from datetime import datetime, timezone
@@ -140,6 +141,12 @@ class CameraManagerService(Service):
         self._camera_manager: Optional[AsyncCameraManager] = None
         self._startup_time = time.time()
         self._active_streams: dict = {}  # Track active camera streams
+        # Capabilities are static for the lifetime of an open camera (ranges
+        # and supported modes don't change while connected) but the SDK
+        # serializes per-camera, so a single get_camera_capabilities call can
+        # take seconds when a stream is competing for the device. Cache the
+        # response per-camera; invalidated on close_camera / close_*_batch.
+        self._capabilities_cache: dict[str, "CameraCapabilitiesResponse"] = {}
 
         # Register all endpoints with their schemas
         self._register_endpoints()
@@ -509,6 +516,7 @@ class CameraManagerService(Service):
             await manager.close(request.camera)
             self.logger.debug(f"Close completed for camera '{request.camera}'")
 
+            self._capabilities_cache.pop(request.camera, None)
             return BoolResponse(success=True, message=f"Camera '{request.camera}' closed successfully", data=True)
         except Exception as e:
             self.logger.error(f"Failed to close camera '{request.camera}': {e}")
@@ -527,6 +535,7 @@ class CameraManagerService(Service):
             for camera in request.cameras:
                 try:
                     await manager.close(camera)
+                    self._capabilities_cache.pop(camera, None)
                     results[camera] = True
                     successful.append(camera)
                 except Exception as e:
@@ -560,6 +569,7 @@ class CameraManagerService(Service):
 
             await manager.close()
 
+            self._capabilities_cache.clear()
             return BoolResponse(success=True, message=f"Successfully closed {camera_count} cameras", data=True)
         except Exception as e:
             self.logger.error(f"Failed to close all cameras: {e}")
@@ -645,7 +655,19 @@ class CameraManagerService(Service):
             raise
 
     async def get_camera_capabilities(self, request: CameraQueryRequest) -> CameraCapabilitiesResponse:
-        """Get camera capabilities information."""
+        """Get camera capabilities information.
+
+        Capabilities don't change while a camera is open, so the result is
+        cached per-camera and reused until ``close_camera`` invalidates it.
+        The first call still pays the full round-trip cost — but the ~12
+        SDK probes are issued in parallel via ``asyncio.gather`` (the SDK
+        serializes per-camera, but parallel scheduling lets independent
+        sub-queries overlap and hides per-call asyncio overhead).
+        """
+        cached = self._capabilities_cache.get(request.camera)
+        if cached is not None:
+            return cached
+
         try:
             manager = await self._get_camera_manager()
 
@@ -655,74 +677,52 @@ class CameraManagerService(Service):
 
             camera_proxy = await manager.open(request.camera)
 
-            # Get capabilities from camera backend
-            try:
-                exposure_range = await camera_proxy.get_exposure_range()
-                # Verify exposure control is actually supported (some backends report range but don't support control)
-                if exposure_range is not None and not await camera_proxy.is_exposure_control_supported():
-                    exposure_range = None
-            except Exception:
-                exposure_range = None
+            async def _safe(coro):
+                try:
+                    return await coro
+                except Exception:
+                    return None
 
-            try:
-                gain_range = await camera_proxy.get_gain_range()
-            except Exception:
-                gain_range = None
+            async def _exposure_range_with_support_check():
+                rng = await _safe(camera_proxy.get_exposure_range())
+                if rng is None:
+                    return None
+                supported = await _safe(camera_proxy.is_exposure_control_supported())
+                return rng if supported else None
 
-            try:
-                pixel_formats = await camera_proxy.get_available_pixel_formats()
-            except Exception:
-                pixel_formats = None
+            async def _liquid_lens_status():
+                status = await _safe(camera_proxy.get_lens_status())
+                if status is None:
+                    return False
+                return bool(status.get("connected", False))
 
-            try:
-                white_balance_modes = await camera_proxy.get_available_white_balance_modes()
-            except Exception:
-                white_balance_modes = None
-
-            # Get trigger modes with graceful degradation
-            try:
-                trigger_modes = await camera_proxy.get_trigger_modes()
-            except Exception:
-                trigger_modes = None
-
-            try:
-                width_range = await camera_proxy.get_width_range()
-            except Exception:
-                width_range = None
-
-            try:
-                height_range = await camera_proxy.get_height_range()
-            except Exception:
-                height_range = None
-
-            # Network parameters (GigE cameras) with graceful degradation
-            try:
-                bandwidth_limit_range = await camera_proxy.get_bandwidth_limit_range()
-            except Exception:
-                bandwidth_limit_range = None
-
-            try:
-                packet_size_range = await camera_proxy.get_packet_size_range()
-            except Exception:
-                packet_size_range = None
-
-            try:
-                inter_packet_delay_range = await camera_proxy.get_inter_packet_delay_range()
-            except Exception:
-                inter_packet_delay_range = None
-
-            # Liquid lens capabilities (graceful degradation)
-            optical_power_range = None
-            supports_liquid_lens = False
-            try:
-                optical_power_range = await camera_proxy.get_optical_power_range()
-            except Exception:
-                pass
-            try:
-                lens_status = await camera_proxy.get_lens_status()
-                supports_liquid_lens = lens_status.get("connected", False)
-            except Exception:
-                pass
+            (
+                exposure_range,
+                gain_range,
+                pixel_formats,
+                white_balance_modes,
+                trigger_modes,
+                width_range,
+                height_range,
+                bandwidth_limit_range,
+                packet_size_range,
+                inter_packet_delay_range,
+                optical_power_range,
+                supports_liquid_lens,
+            ) = await asyncio.gather(
+                _exposure_range_with_support_check(),
+                _safe(camera_proxy.get_gain_range()),
+                _safe(camera_proxy.get_available_pixel_formats()),
+                _safe(camera_proxy.get_available_white_balance_modes()),
+                _safe(camera_proxy.get_trigger_modes()),
+                _safe(camera_proxy.get_width_range()),
+                _safe(camera_proxy.get_height_range()),
+                _safe(camera_proxy.get_bandwidth_limit_range()),
+                _safe(camera_proxy.get_packet_size_range()),
+                _safe(camera_proxy.get_inter_packet_delay_range()),
+                _safe(camera_proxy.get_optical_power_range()),
+                _liquid_lens_status(),
+            )
 
             capabilities = CameraCapabilities(
                 exposure_range=exposure_range,
@@ -742,9 +742,11 @@ class CameraManagerService(Service):
                 supports_liquid_lens=supports_liquid_lens,
             )
 
-            return CameraCapabilitiesResponse(
+            response = CameraCapabilitiesResponse(
                 success=True, message=f"Retrieved capabilities for camera '{request.camera}'", data=capabilities
             )
+            self._capabilities_cache[request.camera] = response
+            return response
         except Exception as e:
             self.logger.error(f"Failed to get camera capabilities for '{request.camera}': {e}")
             raise
@@ -1036,9 +1038,9 @@ class CameraManagerService(Service):
 
         When ``save_path`` is set, the image is written to disk and the response
         carries ``image_path``. When it is omitted, the image is encoded inline
-        as base64 in ``image_data`` (with ``image_size`` and ``file_size_bytes``
-        populated) so callers don't need a stream or a round-trip through
-        ``/cameras/images/...``.
+        as a base64 JPEG in ``image_data`` (with ``image_size`` and
+        ``file_size_bytes`` populated) so callers don't need a stream or a
+        round-trip through ``/cameras/images/...``.
         """
         import asyncio
 
