@@ -8,7 +8,7 @@ architecture with comprehensive MCP tool integration and typed client access.
 import os
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Tuple
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -969,9 +969,77 @@ class CameraManagerService(Service):
             self.logger.error(f"Failed to export config for camera '{request.camera}': {e}")
             raise
 
+    # Wire encoding map for output_format → (PIL save format, default save kwargs).
+    # ``numpy`` / ``pil`` are in-memory return types; on the HTTP wire we always
+    # need encoded bytes, so they fall back to PNG (lossless, neutral default).
+    # JPEG/WebP default to quality 95 (visually lossless industrial standard).
+    _WIRE_FORMAT_MAP = {
+        "jpeg": ("JPEG", {"quality": 95}),
+        "jpg": ("JPEG", {"quality": 95}),
+        "png": ("PNG", {}),
+        "tiff": ("TIFF", {}),
+        "tif": ("TIFF", {}),
+        "bmp": ("BMP", {}),
+        "webp": ("WEBP", {"quality": 95}),
+        "numpy": ("PNG", {}),
+        "pil": ("PNG", {}),
+    }
+
+    def _encode_inline_image(
+        self, image, output_format: str
+    ) -> Tuple[Optional[str], Optional[Tuple[int, int]], Optional[int]]:
+        """Encode an in-memory capture (PIL or numpy) for the wire.
+
+        ``output_format`` selects the on-the-wire encoding: file-format names
+        (``jpeg``, ``png``, ``tiff``, ``bmp``, ``webp``) round-trip as
+        themselves; ``numpy`` / ``pil`` resolve to PNG (lossless) since over
+        HTTP we always need bytes.
+
+        Returns ``(image_data_b64, image_size, file_size_bytes)``. All three are
+        ``None`` when ``image`` is missing or encoding fails — the capture
+        itself still succeeded; inline encoding is best-effort so a codec
+        hiccup never loses a frame the caller already owns.
+        """
+        if image is None:
+            return None, None, None
+        try:
+            import base64
+            import io
+
+            from PIL import Image as PILImage
+
+            pil = image if isinstance(image, PILImage.Image) else PILImage.fromarray(image)
+            pil_format, save_kwargs = self._WIRE_FORMAT_MAP.get(output_format.lower(), ("PNG", {}))
+            # JPEG / WebP can't carry RGBA / P / I — flatten to RGB first.
+            if pil_format in ("JPEG", "WEBP") and pil.mode not in ("RGB", "L"):
+                pil = pil.convert("RGB")
+            buf = io.BytesIO()
+            pil.save(buf, format=pil_format, **save_kwargs)
+            payload = buf.getvalue()
+            return base64.b64encode(payload).decode("ascii"), pil.size, len(payload)
+        except Exception as e:  # noqa: BLE001
+            self.logger.warning(f"Failed to encode capture as {output_format}: {e}")
+            return None, None, None
+
+    @staticmethod
+    def _backend_return_type(output_format: str) -> str:
+        """Translate a wire format to the in-memory type the backend should return.
+
+        Backends only know ``numpy`` and ``pil``; everything else means "give us
+        raw data, the service will encode it for the wire".
+        """
+        return "pil" if output_format.lower() == "pil" else "numpy"
+
     # Image Capture Operations
     async def capture_image(self, request: CaptureImageRequest) -> CaptureResponse:
-        """Capture a single image with timeout protection."""
+        """Capture a single image with timeout protection.
+
+        When ``save_path`` is set, the image is written to disk and the response
+        carries ``image_path``. When it is omitted, the image is encoded inline
+        as base64 in ``image_data`` (with ``image_size`` and ``file_size_bytes``
+        populated) so callers don't need a stream or a round-trip through
+        ``/cameras/images/...``.
+        """
         import asyncio
 
         try:
@@ -987,17 +1055,29 @@ class CameraManagerService(Service):
             capture_timeout = 15.0
 
             try:
-                await asyncio.wait_for(
+                captured = await asyncio.wait_for(
                     camera_proxy.capture(
                         save_path=request.save_path,
-                        output_format=request.output_format,
+                        output_format=self._backend_return_type(request.output_format),
                     ),
                     timeout=capture_timeout,
                 )
 
-                result = CaptureResult(
-                    success=True, image_path=request.save_path, capture_time=datetime.now(timezone.utc)
-                )
+                if request.save_path is not None:
+                    result = CaptureResult(
+                        success=True,
+                        image_path=request.save_path,
+                        capture_time=datetime.now(timezone.utc),
+                    )
+                else:
+                    image_data, image_size, file_size_bytes = self._encode_inline_image(captured, request.output_format)
+                    result = CaptureResult(
+                        success=True,
+                        capture_time=datetime.now(timezone.utc),
+                        image_data=image_data,
+                        image_size=image_size,
+                        file_size_bytes=file_size_bytes,
+                    )
                 return CaptureResponse(
                     success=True, message=f"Image captured from camera '{request.camera}'", data=result
                 )
@@ -1038,7 +1118,7 @@ class CameraManagerService(Service):
             results = await manager.batch_capture(
                 request.cameras,
                 save_path_pattern=request.save_path_pattern,
-                output_format=request.output_format,
+                output_format=self._backend_return_type(request.output_format),
                 stage=request.stage,
                 set_name=request.set_name,
             )
@@ -1048,16 +1128,23 @@ class CameraManagerService(Service):
 
             for camera, image in results.items():
                 if image is not None:
-                    # When save_path_pattern is provided, image is the file path
-                    # Otherwise it's the numpy/PIL image data
                     if request.save_path_pattern:
                         # Image is the file path string
                         capture_results[camera] = CaptureResult(
                             success=True, image_path=image, capture_time=datetime.now(timezone.utc)
                         )
                     else:
-                        # Image is numpy/PIL data (cannot be serialized in JSON, so we return success only)
-                        capture_results[camera] = CaptureResult(success=True, capture_time=datetime.now(timezone.utc))
+                        # Image is numpy/PIL data — encode inline in the requested wire format
+                        image_data, image_size, file_size_bytes = self._encode_inline_image(
+                            image, request.output_format
+                        )
+                        capture_results[camera] = CaptureResult(
+                            success=True,
+                            capture_time=datetime.now(timezone.utc),
+                            image_data=image_data,
+                            image_size=image_size,
+                            file_size_bytes=file_size_bytes,
+                        )
                     successful_count += 1
                 else:
                     capture_results[camera] = CaptureResult(success=False, capture_time=datetime.now(timezone.utc))
