@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-import math
 import mimetypes
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
@@ -319,52 +318,13 @@ class DatasetSyncManager:
         payload_by_asset_id = {payload.asset_id: payload for payload in bundle.payloads}
         plan_by_asset_id = {plan.asset_id: plan for plan in plan.payloads}
 
-        transferred_payloads = 0
-        skipped_payloads = 0
-        resolved_storage_refs: dict[str, StorageRef] = {}
-        total_payload_items = sum(1 for asset in bundle.assets if asset.asset_id in payload_by_asset_id)
-        total_transfer_batches = (
-            math.ceil(total_payload_items / request.planning_batch_size) if total_payload_items else 0
+        resolved_storage_refs, transferred_payloads, skipped_payloads = await self._resolve_payload_transfers(
+            bundle.assets,
+            payload_by_asset_id=payload_by_asset_id,
+            plan_by_asset_id=plan_by_asset_id,
+            request=request,
+            progress_callback=progress_callback,
         )
-        processed_payload_items = 0
-
-        for asset in bundle.assets:
-            payload = payload_by_asset_id.get(asset.asset_id)
-            asset_plan = plan_by_asset_id.get(asset.asset_id)
-            if payload is None or asset_plan is None:
-                resolved_storage_refs[asset.asset_id] = _apply_mount_map_to_storage_ref(asset.storage_ref, mount_map)
-                continue
-            if request.transfer_policy == "metadata_only":
-                resolved_storage_refs[asset.asset_id] = _apply_mount_map_to_storage_ref(asset.storage_ref, mount_map)
-                skipped_payloads += 1
-                continue
-            if asset_plan.transfer_required:
-                resolved_storage_refs[asset.asset_id] = await self._transfer_payload(payload, mount_map)
-                transferred_payloads += 1
-            else:
-                resolved_storage_refs[asset.asset_id] = _apply_mount_map_to_storage_ref(payload.storage_ref, mount_map)
-                skipped_payloads += 1
-            processed_payload_items += 1
-            if (
-                processed_payload_items == total_payload_items
-                or processed_payload_items % request.planning_batch_size == 0
-            ):
-                batch_index = math.ceil(processed_payload_items / request.planning_batch_size)
-                progress = DatasetSyncProgress(
-                    phase="transferring",
-                    batch_index=batch_index,
-                    total_batches=total_transfer_batches,
-                    completed_items=processed_payload_items,
-                    total_items=total_payload_items,
-                    message=f"Transferring import payload batch {batch_index}/{total_transfer_batches}",
-                )
-                _logger.info(
-                    "%s: processed %s/%s payloads",
-                    progress.message,
-                    progress.completed_items,
-                    progress.total_items,
-                )
-                await self._emit_progress(progress_callback, progress)
 
         await self._emit_progress(
             progress_callback,
@@ -534,6 +494,93 @@ class DatasetSyncManager:
             ),
         )
         return result
+
+    async def _resolve_payload_transfers(
+        self,
+        assets: Sequence[Asset],
+        *,
+        payload_by_asset_id: dict[str, ObjectPayloadDescriptor],
+        plan_by_asset_id: dict[str, DatasetSyncPayloadPlan],
+        request: DatasetSyncImportRequest,
+        progress_callback: ProgressCallback | None,
+    ) -> tuple[dict[str, StorageRef], int, int]:
+        mount_map = request.mount_map
+        resolved_storage_refs: dict[str, StorageRef] = {}
+        transfer_items: list[tuple[ObjectPayloadDescriptor, DatasetSyncPayloadPlan]] = []
+
+        for asset in assets:
+            payload = payload_by_asset_id.get(asset.asset_id)
+            asset_plan = plan_by_asset_id.get(asset.asset_id)
+            if payload is None or asset_plan is None:
+                resolved_storage_refs[asset.asset_id] = _apply_mount_map_to_storage_ref(asset.storage_ref, mount_map)
+                continue
+            transfer_items.append((payload, asset_plan))
+
+        total_payload_items = len(transfer_items)
+        if total_payload_items == 0:
+            return resolved_storage_refs, 0, 0
+
+        transferred_payloads = 0
+        skipped_payloads = 0
+        processed_payload_items = 0
+        batches = _chunked(transfer_items, request.transfer_batch_size)
+        total_transfer_batches = len(batches)
+        semaphore = asyncio.Semaphore(request.transfer_concurrency)
+
+        for batch_index, batch in enumerate(batches, start=1):
+            batch_results = await asyncio.gather(
+                *[
+                    self._resolve_payload_transfer_item(
+                        payload,
+                        asset_plan,
+                        transfer_policy=request.transfer_policy,
+                        mount_map=mount_map,
+                        semaphore=semaphore,
+                    )
+                    for payload, asset_plan in batch
+                ]
+            )
+            for asset_id, storage_ref, transferred in batch_results:
+                resolved_storage_refs[asset_id] = storage_ref
+                if transferred:
+                    transferred_payloads += 1
+                else:
+                    skipped_payloads += 1
+
+            processed_payload_items += len(batch)
+            progress = DatasetSyncProgress(
+                phase="transferring",
+                batch_index=batch_index,
+                total_batches=total_transfer_batches,
+                completed_items=processed_payload_items,
+                total_items=total_payload_items,
+                message=f"Transferring import payload batch {batch_index}/{total_transfer_batches}",
+            )
+            _logger.info(
+                "%s: processed %s/%s payloads",
+                progress.message,
+                progress.completed_items,
+                progress.total_items,
+            )
+            await self._emit_progress(progress_callback, progress)
+
+        return resolved_storage_refs, transferred_payloads, skipped_payloads
+
+    async def _resolve_payload_transfer_item(
+        self,
+        payload: ObjectPayloadDescriptor,
+        asset_plan: DatasetSyncPayloadPlan,
+        *,
+        transfer_policy: str,
+        mount_map: dict[str, str],
+        semaphore: asyncio.Semaphore,
+    ) -> tuple[str, StorageRef, bool]:
+        if transfer_policy == "metadata_only" or not asset_plan.transfer_required:
+            return payload.asset_id, _apply_mount_map_to_storage_ref(payload.storage_ref, mount_map), False
+
+        async with semaphore:
+            storage_ref = await self._transfer_payload(payload, mount_map)
+        return payload.asset_id, storage_ref, True
 
     async def _transfer_payload(self, payload: ObjectPayloadDescriptor, mount_map: dict[str, str]) -> StorageRef:
         data = await self.source.get_object(payload.storage_ref)
