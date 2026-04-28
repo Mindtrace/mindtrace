@@ -4,6 +4,7 @@ import asyncio
 import threading
 from collections.abc import Iterator
 from concurrent.futures import Future
+from pathlib import Path
 from typing import Any, Optional
 
 from mindtrace.core import Mindtrace
@@ -865,6 +866,31 @@ class Datalake(Mindtrace):
 
     def resolve_dataset_version(self, dataset_name: str, version: str):
         return self._submit_coro(self._backend.resolve_dataset_version(dataset_name, version))
+
+    def export_dataset_version_to_format(
+        self,
+        dataset_name: str,
+        version: str,
+        *,
+        format: str,
+        destination: str | Path,
+        include_media: bool = True,
+        overwrite: bool = False,
+        split_map: dict[str, str] | None = None,
+        exporter_options: dict[str, Any] | None = None,
+    ):
+        return self._submit_coro(
+            self._backend.export_dataset_version_to_format(
+                dataset_name,
+                version,
+                format=format,
+                destination=destination,
+                include_media=include_media,
+                overwrite=overwrite,
+                split_map=split_map,
+                exporter_options=exporter_options,
+            )
+        )
 
     def create_asset_from_object(self, **kwargs: Any):
         return self._submit_coro(self._backend.create_asset_from_object(**kwargs))

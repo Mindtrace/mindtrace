@@ -20,6 +20,14 @@ dependencies = [
     "tqdm>=4.66.0",
 ]
 
+[project.optional-dependencies]
+export-huggingface = [
+    "datasets>=2.19.0",
+]
+export-all = [
+    "datasets>=2.19.0",
+]
+
 [project.scripts]
 mindtrace-datalake-import-pascal-voc = "mindtrace.datalake.importers.pascal_voc:main"
 
