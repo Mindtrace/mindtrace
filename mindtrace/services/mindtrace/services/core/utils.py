@@ -139,10 +139,9 @@ def generate_connection_manager(
                 *args,
                 validate_input: bool = True,
                 validate_output: bool = True,
-                _request_timeout=None,
+                timeout=60,
                 **kwargs,
             ):
-                request_timeout = self.request_timeout if _request_timeout is None else _request_timeout
                 if validate_input:
                     if args:
                         if len(args) != 1:
@@ -162,7 +161,7 @@ def generate_connection_manager(
                         payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
                 else:
                     payload = kwargs
-                res = httpx.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=request_timeout)
+                res = httpx.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=timeout)
                 if res.status_code != 200:
                     raise HTTPException(res.status_code, res.text)
 
@@ -181,10 +180,9 @@ def generate_connection_manager(
                 *args,
                 validate_input: bool = True,
                 validate_output: bool = True,
-                _request_timeout=None,
+                timeout=60,
                 **kwargs,
             ):
-                request_timeout = self.request_timeout if _request_timeout is None else _request_timeout
                 if validate_input:
                     if args:
                         if len(args) != 1:
@@ -204,11 +202,11 @@ def generate_connection_manager(
                         payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
                 else:
                     payload = kwargs
-                async with httpx.AsyncClient(timeout=request_timeout) as client:
+                async with httpx.AsyncClient(timeout=timeout) as client:
                     res = await client.post(
                         str(self.url).rstrip("/") + endpoint_path,
                         json=payload,
-                        timeout=request_timeout,
+                        timeout=timeout,
                     )
                 if res.status_code != 200:
                     raise HTTPException(res.status_code, res.text)
