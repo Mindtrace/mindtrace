@@ -1820,6 +1820,33 @@ async def test_service_import_start_runs_background_job(service, datalake_object
 
 
 @pytest.mark.asyncio
+async def test_service_import_prepare_failure_surfaces_error_detail(service, datalake_objects):
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    request = DatasetSyncImportRequest(bundle=bundle)
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.plan_import = AsyncMock(side_effect=KeyError("minio"))
+
+        started = await service.import_dataset_version_prepare_start(request)
+        await service._dataset_sync_jobs[started.job_id].task
+        status = await service.import_dataset_version_job_status(DatasetSyncJobStatusInput(job_id=started.job_id))
+        result = await service.import_dataset_version_job_result(DatasetSyncJobStatusInput(job_id=started.job_id))
+
+    assert result.status == "failed"
+    assert status.status == "failed"
+    assert status.error_detail is not None
+    assert status.error_detail.traceback == result.error_detail.traceback
+    assert result.error is not None
+    assert "KeyError" in result.error
+    assert "minio" in result.error
+    assert result.error_detail is not None
+    assert result.error_detail.exception_type.endswith("KeyError")
+    assert "minio" in result.error_detail.exception_repr
+    assert result.error_detail.traceback is not None
+    assert "_run_dataset_sync_job" in result.error_detail.traceback
+
+
+@pytest.mark.asyncio
 async def test_service_import_job_status_raises_for_unknown_job(service):
     with pytest.raises(HTTPException) as exc_info:
         await service.import_dataset_version_job_status(DatasetSyncJobStatusInput(job_id="missing"))
