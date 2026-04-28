@@ -323,7 +323,9 @@ class DatasetSyncManager:
         skipped_payloads = 0
         resolved_storage_refs: dict[str, StorageRef] = {}
         total_payload_items = sum(1 for asset in bundle.assets if asset.asset_id in payload_by_asset_id)
-        total_transfer_batches = math.ceil(total_payload_items / request.planning_batch_size) if total_payload_items else 0
+        total_transfer_batches = (
+            math.ceil(total_payload_items / request.planning_batch_size) if total_payload_items else 0
+        )
         processed_payload_items = 0
 
         for asset in bundle.assets:
