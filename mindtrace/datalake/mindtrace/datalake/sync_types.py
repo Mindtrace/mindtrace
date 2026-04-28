@@ -77,6 +77,14 @@ class DatasetSyncImportRequest(BaseModel):
         ge=1,
         description="Maximum concurrent payload transfers during import commit.",
     )
+    staged_payload_storage_refs: dict[str, StorageRef] | None = Field(
+        default=None,
+        description=(
+            "When set, payload bytes for each asset_id are already stored on the target at the given "
+            "StorageRef; the importer skips source get_object transfers. Used by import sessions and "
+            "caller-orchestrated cross-lake sync when the target cannot read bundle source mounts."
+        ),
+    )
 
     @field_validator("mount_map")
     @classmethod

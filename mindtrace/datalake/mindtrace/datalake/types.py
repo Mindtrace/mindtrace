@@ -117,6 +117,32 @@ class DirectUploadSession(DatalakeDocument):
         ]
 
 
+class DatasetImportSession(DatalakeDocument):
+    """Tracks caller-orchestrated dataset import: metadata in Mongo, bytes staged per asset on the target."""
+
+    import_session_id: Annotated[str, Indexed(unique=True)] = Field(
+        default_factory=lambda: new_id("dataset_import_session"),
+    )
+    status: Literal["open", "committed", "failed"] = "open"
+    bundle_data: dict[str, Any] = Field(default_factory=dict)
+    transfer_policy: str = "copy_if_missing"
+    preserve_ids: bool = True
+    mount_map: dict[str, str] = Field(default_factory=dict)
+    origin_lake_id: str | None = None
+    planning_batch_size: int = 500
+    planning_concurrency: int = 32
+    transfer_batch_size: int = 100
+    transfer_concurrency: int = 8
+    required_asset_ids: list[str] = Field(default_factory=list)
+    staged_refs: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+    expires_at: datetime
+
+    class Settings:
+        name = "datalake_dataset_import_sessions"
+        indexes = ["status", "expires_at"]
+
+
 class AnnotationSource(BaseModel):
     """Provenance for an annotation record."""
 

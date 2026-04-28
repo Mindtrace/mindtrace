@@ -7,6 +7,7 @@ import traceback
 from collections.abc import Awaitable
 from contextlib import suppress
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -73,6 +74,13 @@ from mindtrace.datalake.service_types import (
     DatalakeHealthSchema,
     DatalakeSummaryOutput,
     DatalakeSummarySchema,
+    DatasetImportSessionCommitInput,
+    DatasetImportSessionCommitSchema,
+    DatasetImportSessionStartOutput,
+    DatasetImportSessionStartSchema,
+    DatasetImportSessionUploadInput,
+    DatasetImportSessionUploadOutput,
+    DatasetImportSessionUploadSchema,
     DatasetSyncBundleOutput,
     DatasetSyncCommitResultOutput,
     DatasetSyncImportCommitSchema,
@@ -197,14 +205,23 @@ from mindtrace.datalake.service_types import (
 )
 from mindtrace.datalake.sync import DatasetSyncManager
 from mindtrace.datalake.sync_types import (
+    DatasetSyncBundle,
     DatasetSyncCommitResult,
     DatasetSyncImportPlan,
     DatasetSyncProgress,
 )
+from mindtrace.datalake.types import DatasetImportSession, StorageRef, utc_now
 from mindtrace.registry import Mount
 from mindtrace.services import Service
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _import_session_expired(expires_at: datetime, *, now: datetime | None = None) -> bool:
+    """Compare session expiry to current UTC time, treating naive datetimes as UTC (Mongo round-trip)."""
+    current = now if now is not None else datetime.now(timezone.utc)
+    deadline = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=timezone.utc)
+    return current > deadline
 
 
 @dataclass
@@ -429,6 +446,21 @@ class DatalakeService(Service):
             "dataset_versions.import_job_result",
             self.import_dataset_version_job_result,
             schema=DatasetSyncImportJobResultSchema,
+        )
+        self.add_endpoint(
+            "dataset_versions.import_session_start",
+            self.import_session_start,
+            schema=DatasetImportSessionStartSchema,
+        )
+        self.add_endpoint(
+            "dataset_versions.import_session_upload_payload",
+            self.import_session_upload_payload,
+            schema=DatasetImportSessionUploadSchema,
+        )
+        self.add_endpoint(
+            "dataset_versions.import_session_commit",
+            self.import_session_commit,
+            schema=DatasetImportSessionCommitSchema,
         )
         self.add_endpoint(
             "replication.upsert_batch", self.replication_upsert_batch, schema=ReplicationBatchUpsertSchema
@@ -1074,6 +1106,120 @@ class DatalakeService(Service):
             error=job.error,
             error_detail=job.error_detail,
         )
+
+    async def _require_open_import_session(self, datalake: AsyncDatalake, session_id: str) -> DatasetImportSession:
+        rows = await datalake.dataset_import_session_database.find({"import_session_id": session_id})
+        if not rows:
+            raise HTTPException(status_code=404, detail=f"import session not found: {session_id}")
+        session = rows[0]
+        if session.status != "open":
+            raise HTTPException(
+                status_code=400,
+                detail=f"import session is not open (status={session.status!r})",
+            )
+        return session
+
+    async def import_session_start(self, payload: DatasetSyncImportRequest) -> DatasetImportSessionStartOutput:
+        datalake = await self._ensure_datalake()
+        manager = DatasetSyncManager(datalake, datalake)
+        try:
+            plan = await manager.plan_import(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        if payload.transfer_policy == "fail_if_missing_payload" and not plan.ready_to_commit:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Import plan is not ready under fail_if_missing_payload for {plan.dataset_name}@{plan.version}"
+                ),
+            )
+
+        required = [row.asset_id for row in plan.payloads if row.transfer_required]
+        now = utc_now()
+        session = DatasetImportSession(
+            bundle_data=payload.bundle.model_dump(mode="json"),
+            transfer_policy=payload.transfer_policy,
+            preserve_ids=payload.preserve_ids,
+            mount_map=dict(payload.mount_map),
+            origin_lake_id=payload.origin_lake_id,
+            planning_batch_size=payload.planning_batch_size,
+            planning_concurrency=payload.planning_concurrency,
+            transfer_batch_size=payload.transfer_batch_size,
+            transfer_concurrency=payload.transfer_concurrency,
+            required_asset_ids=required,
+            expires_at=now + timedelta(hours=24),
+        )
+        await datalake.dataset_import_session_database.insert(session)
+        return DatasetImportSessionStartOutput(
+            session_id=session.import_session_id,
+            required_asset_ids=required,
+            expires_at=session.expires_at,
+        )
+
+    async def import_session_upload_payload(
+        self, payload: DatasetImportSessionUploadInput
+    ) -> DatasetImportSessionUploadOutput:
+        datalake = await self._ensure_datalake()
+        session = await self._require_open_import_session(datalake, payload.session_id)
+        if _import_session_expired(session.expires_at):
+            raise HTTPException(status_code=400, detail="import session expired")
+        if payload.asset_id not in session.required_asset_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=f"asset_id {payload.asset_id!r} is not required for this import session",
+            )
+        bundle = DatasetSyncBundle.model_validate(session.bundle_data)
+        desc = next((p for p in bundle.payloads if p.asset_id == payload.asset_id), None)
+        if desc is None:
+            raise HTTPException(status_code=400, detail="asset_id not found in session bundle")
+        data = self._decode_base64(payload.data_base64)
+        manager = DatasetSyncManager(datalake, datalake)
+        try:
+            ref = await manager.ingest_import_payload_bytes(desc, session.mount_map, data)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        session.staged_refs[payload.asset_id] = ref.model_dump(mode="json")
+        await datalake.dataset_import_session_database.update(session)
+        return DatasetImportSessionUploadOutput(storage_ref=ref)
+
+    async def import_session_commit(self, payload: DatasetImportSessionCommitInput) -> DatasetSyncCommitResultOutput:
+        datalake = await self._ensure_datalake()
+        session = await self._require_open_import_session(datalake, payload.session_id)
+        if _import_session_expired(session.expires_at):
+            raise HTTPException(status_code=400, detail="import session expired")
+
+        bundle = DatasetSyncBundle.model_validate(session.bundle_data)
+        staged: dict[str, StorageRef] | None = None
+        if session.required_asset_ids:
+            missing = [aid for aid in session.required_asset_ids if aid not in session.staged_refs]
+            if missing:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Missing staged payloads for asset ids: {missing}",
+                )
+            staged = {aid: StorageRef.model_validate(session.staged_refs[aid]) for aid in session.required_asset_ids}
+
+        req = DatasetSyncImportRequest(
+            bundle=bundle,
+            transfer_policy=session.transfer_policy,
+            origin_lake_id=session.origin_lake_id,
+            preserve_ids=session.preserve_ids,
+            mount_map=session.mount_map,
+            planning_batch_size=session.planning_batch_size,
+            planning_concurrency=session.planning_concurrency,
+            transfer_batch_size=session.transfer_batch_size,
+            transfer_concurrency=session.transfer_concurrency,
+            staged_payload_storage_refs=staged,
+        )
+        manager = DatasetSyncManager(datalake, datalake)
+        try:
+            result = await manager.commit_import(req)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        session.status = "committed"
+        await datalake.dataset_import_session_database.update(session)
+        return DatasetSyncCommitResultOutput(result=result)
 
     def _start_dataset_sync_job(self, request: DatasetSyncImportRequest, *, mode: str) -> DatasetSyncJobStartOutput:
         job = _DatasetSyncJobState(job_id=uuid4().hex, mode=mode)
