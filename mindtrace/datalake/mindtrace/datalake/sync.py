@@ -194,8 +194,7 @@ class DatasetSyncManager:
 
         bundle = request.bundle
         mount_map = request.mount_map
-        if self.source is not self.target:
-            validate_cross_lake_target_mount_resolution(self.target, bundle, mount_map)
+        validate_cross_lake_target_mount_resolution(self.target, bundle, mount_map)
         payload_plans: list[DatasetSyncPayloadPlan] = []
 
         payloads = bundle.payloads
@@ -245,12 +244,20 @@ class DatasetSyncManager:
 
         missing_payload_count = sum(1 for plan in payload_plans if not plan.target_exists)
         transfer_required_count = sum(1 for plan in payload_plans if plan.transfer_required)
+        embedded_blocked = False
+        if self.source is self.target:
+            for payload, row in zip(payloads, payload_plans, strict=True):
+                if row.transfer_required and not self.target.store.has_mount(payload.storage_ref.mount):
+                    embedded_blocked = True
+                    break
         if request.transfer_policy == "metadata_only":
             ready_to_commit = True
         elif request.transfer_policy == "fail_if_missing_payload":
             ready_to_commit = missing_payload_count == 0
         else:
             ready_to_commit = True
+        if embedded_blocked:
+            ready_to_commit = False
 
         return DatasetSyncImportPlan(
             dataset_name=bundle.dataset_version.dataset_name,
@@ -261,6 +268,16 @@ class DatasetSyncManager:
             transfer_required_count=transfer_required_count,
             ready_to_commit=ready_to_commit,
         )
+
+    @staticmethod
+    def _staged_covers_required_transfers(
+        plan: DatasetSyncImportPlan,
+        staged: dict[str, StorageRef],
+    ) -> bool:
+        for row in plan.payloads:
+            if row.transfer_required and row.asset_id not in staged:
+                return False
+        return True
 
     async def _plan_payload(
         self,
@@ -344,10 +361,25 @@ class DatasetSyncManager:
         progress_callback: ProgressCallback | None = None,
     ) -> DatasetSyncCommitResult:
         plan = await self.plan_import(request, progress_callback=progress_callback)
-        if not plan.ready_to_commit:
+        staged = request.staged_payload_storage_refs
+        if staged is not None and not self._staged_covers_required_transfers(plan, staged):
             raise ValueError(
-                f"Import plan for {plan.dataset_name}@{plan.version} is not ready to commit under policy {plan.transfer_policy}"
+                "staged_payload_storage_refs must include a StorageRef for every import-plan payload with "
+                "transfer_required=True."
             )
+
+        if not plan.ready_to_commit:
+            if request.transfer_policy == "fail_if_missing_payload":
+                raise ValueError(
+                    f"Import plan for {plan.dataset_name}@{plan.version} is not ready to commit under policy "
+                    f"{plan.transfer_policy}"
+                )
+            if staged is None:
+                raise ValueError(
+                    "Import plan is not ready to commit without caller-staged payload bytes. Use "
+                    "dataset_versions.import_session_start, import_session_upload_payload, and "
+                    "import_session_commit when this datalake cannot read the bundle's original StorageRef mounts."
+                )
 
         bundle = request.bundle
         origin_lake_id = request.origin_lake_id or self.source.mongo_db_name
@@ -573,6 +605,7 @@ class DatasetSyncManager:
                         transfer_policy=request.transfer_policy,
                         mount_map=mount_map,
                         semaphore=semaphore,
+                        request=request,
                     )
                     for payload, asset_plan in batch
                 ]
@@ -611,13 +644,44 @@ class DatasetSyncManager:
         transfer_policy: str,
         mount_map: dict[str, str],
         semaphore: asyncio.Semaphore,
+        request: DatasetSyncImportRequest,
     ) -> tuple[str, StorageRef, bool]:
+        staged = request.staged_payload_storage_refs
+        if staged is not None and payload.asset_id in staged:
+            return payload.asset_id, staged[payload.asset_id], True
+
         if transfer_policy == "metadata_only" or not asset_plan.transfer_required:
             return payload.asset_id, _apply_mount_map_to_storage_ref(payload.storage_ref, mount_map), False
 
         async with semaphore:
+            if self.source is self.target and not self.source.store.has_mount(payload.storage_ref.mount):
+                raise ValueError(
+                    "Cannot read payload bytes on this datalake: bundle StorageRef mount "
+                    f"{payload.storage_ref.mount!r} is not configured. "
+                    "Use caller-orchestrated import (dataset_versions.import_session_start, "
+                    "import_session_upload_payload, import_session_commit) when importing bundles whose "
+                    "original object mounts are not available in this process."
+                )
             storage_ref = await self._transfer_payload(payload, mount_map)
         return payload.asset_id, storage_ref, True
+
+    async def ingest_import_payload_bytes(
+        self,
+        payload: ObjectPayloadDescriptor,
+        mount_map: dict[str, str],
+        data: bytes,
+    ) -> StorageRef:
+        """Write pre-read payload bytes to the target store (same logic as :meth:`_transfer_payload`).
+
+        Used by import-session upload APIs so callers read from the origin lake and the target only ever
+        opens its own mounts.
+        """
+        if payload.size_bytes is not None and len(data) != payload.size_bytes:
+            raise ValueError(
+                f"Payload byte size mismatch for asset {payload.asset_id}: "
+                f"descriptor declares {payload.size_bytes} bytes, received {len(data)}"
+            )
+        return await self._finalize_payload_write(payload, mount_map, data)
 
     async def _transfer_payload(self, payload: ObjectPayloadDescriptor, mount_map: dict[str, str]) -> StorageRef:
         data = await self.source.get_object(payload.storage_ref)
@@ -626,6 +690,14 @@ class DatasetSyncManager:
                 f"Source read size mismatch for asset {payload.asset_id}: "
                 f"descriptor declares {payload.size_bytes} bytes, read {len(data)}"
             )
+        return await self._finalize_payload_write(payload, mount_map, data)
+
+    async def _finalize_payload_write(
+        self,
+        payload: ObjectPayloadDescriptor,
+        mount_map: dict[str, str],
+        data: bytes,
+    ) -> StorageRef:
         target_write_ref = _apply_mount_map_to_storage_ref(payload.storage_ref, mount_map)
         session = await self.target.create_object_upload_session(
             name=target_write_ref.name,

@@ -732,6 +732,29 @@ class DatasetSyncCommitResultOutput(BaseModel):
     result: DatasetSyncCommitResult
 
 
+class DatasetImportSessionStartOutput(BaseModel):
+    session_id: str
+    required_asset_ids: list[str] = Field(
+        default_factory=list,
+        description="Asset ids whose payload bytes must be uploaded before import_session_commit.",
+    )
+    expires_at: datetime
+
+
+class DatasetImportSessionUploadInput(BaseModel):
+    session_id: str
+    asset_id: str
+    data_base64: str
+
+
+class DatasetImportSessionUploadOutput(BaseModel):
+    storage_ref: StorageRef
+
+
+class DatasetImportSessionCommitInput(BaseModel):
+    session_id: str
+
+
 DatasetSyncJobMode = Literal["prepare", "import"]
 DatasetSyncJobStatus = Literal["queued", "running", "completed", "failed"]
 
@@ -838,6 +861,21 @@ DatasetSyncImportJobResultSchema = TaskSchema(
     name="dataset_versions.import_job_result",
     input_schema=DatasetSyncJobStatusInput,
     output_schema=DatasetSyncJobResultOutput,
+)
+DatasetImportSessionStartSchema = TaskSchema(
+    name="dataset_versions.import_session_start",
+    input_schema=DatasetSyncImportRequest,
+    output_schema=DatasetImportSessionStartOutput,
+)
+DatasetImportSessionUploadSchema = TaskSchema(
+    name="dataset_versions.import_session_upload_payload",
+    input_schema=DatasetImportSessionUploadInput,
+    output_schema=DatasetImportSessionUploadOutput,
+)
+DatasetImportSessionCommitSchema = TaskSchema(
+    name="dataset_versions.import_session_commit",
+    input_schema=DatasetImportSessionCommitInput,
+    output_schema=DatasetSyncCommitResultOutput,
 )
 ReplicationBatchUpsertSchema = TaskSchema(
     name="replication.upsert_batch",

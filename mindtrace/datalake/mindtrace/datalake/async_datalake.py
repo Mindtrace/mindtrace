@@ -34,6 +34,7 @@ from mindtrace.datalake.types import (
     AssetRetention,
     Collection,
     CollectionItem,
+    DatasetImportSession,
     DatasetVersion,
     Datum,
     DirectUploadSession,
@@ -171,6 +172,11 @@ class AsyncDatalake(Mindtrace):
             db_name=mongo_db_name,
             db_uri=mongo_db_uri,
         )
+        self.dataset_import_session_database = MongoMindtraceODM(
+            model_cls=DatasetImportSession,
+            db_name=mongo_db_name,
+            db_uri=mongo_db_uri,
+        )
         self.asset_alias_database = MongoMindtraceODM(
             model_cls=AssetAlias,
             db_name=mongo_db_name,
@@ -188,6 +194,7 @@ class AsyncDatalake(Mindtrace):
         await self.datum_database.initialize()
         await self.dataset_version_database.initialize()
         await self.direct_upload_session_database.initialize()
+        await self.dataset_import_session_database.initialize()
         await self.asset_alias_database.initialize()
 
     @classmethod
