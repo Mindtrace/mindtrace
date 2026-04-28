@@ -65,6 +65,16 @@ class DatasetSyncImportRequest(BaseModel):
         ge=1,
         description="Maximum concurrent target object-existence probes during import planning.",
     )
+    transfer_batch_size: int = Field(
+        default=100,
+        ge=1,
+        description="Number of payloads to group into each import-transfer progress batch.",
+    )
+    transfer_concurrency: int = Field(
+        default=8,
+        ge=1,
+        description="Maximum concurrent payload transfers during import commit.",
+    )
 
     @field_validator("mount_map")
     @classmethod
