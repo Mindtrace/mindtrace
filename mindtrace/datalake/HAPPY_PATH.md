@@ -60,6 +60,14 @@ Service surface:
 
 **Mental model:** this is “ship a dataset version snapshot,” not continuous byte replication.
 
+**Cross-lake / different object stores:** A **target** `DatalakeService` process only knows about **its** registry mounts. If the export bundle still names a **source** mount (for example `minio`) but the target is configured with `gcs` only, the target cannot call `get_object` on the bundle’s original `StorageRef` mounts—a `StoreLocationNotFound`-style failure is expected if you try. The portable pattern is **caller-orchestrated staging**:
+
+1. **`dataset_versions.import_session_start`** — same body as a normal import (`bundle`, `transfer_policy`, `mount_map`, …). The service persists session state and returns **`required_asset_ids`** (payloads that still need bytes on the target).
+2. For each required asset, the **caller** reads bytes from the **source** lake (source API / client with source credentials), then calls **`dataset_versions.import_session_upload_payload`** with **`data_base64`** so objects land only on **target** mounts (via `mount_map`).
+3. **`dataset_versions.import_session_commit`** with **`session_id`** — writes metadata and finalizes the dataset graph using the staged objects only.
+
+Same **`mount_map`** semantics apply as for `import_prepare` / `import_commit`: bundle mount names are rewritten for existence checks, uploads, and persisted `StorageRef` values on the target.
+
 **Important limitation:** **`transfer_policy="metadata_only"`** is only supported when source and target refer to the **same** datalake instance. Cross-lake `metadata_only` imports are **rejected** on purpose today, because target `StorageRef` values must remain resolvable unless the system gains explicit placeholder/unresolved semantics. See GitHub issue discussion in the repo for future design.
 
 ---
