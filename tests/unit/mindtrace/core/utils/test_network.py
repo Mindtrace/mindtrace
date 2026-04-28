@@ -13,6 +13,7 @@ from mindtrace.core.utils.network import (
     ServiceTimeoutError,
     check_port_available,
     get_free_port,
+    get_free_ports,
     get_local_ip,
     get_local_ip_safe,
     is_port_available,
@@ -87,6 +88,27 @@ class TestGetFreePort:
             s.listen(1)
             with pytest.raises(NoFreePortError):
                 get_free_port(host="127.0.0.1", start_port=occupied, end_port=occupied)
+
+
+class TestGetFreePorts:
+    def test_finds_requested_count(self):
+        ports = get_free_ports(host="127.0.0.1", start_port=49152, end_port=49250, ports_to_find=4)
+        assert len(ports) == 4
+        assert len(set(ports)) == 4
+        assert all(49152 <= p <= 49250 for p in ports)
+
+    def test_not_enough_free_ports_raises(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            _, single = s.getsockname()
+            s.listen(1)
+            with pytest.raises(NoFreePortError, match="Not enough free ports"):
+                get_free_ports(
+                    host="127.0.0.1",
+                    start_port=single,
+                    end_port=single,
+                    ports_to_find=2,
+                )
 
 
 class TestWaitForService:
