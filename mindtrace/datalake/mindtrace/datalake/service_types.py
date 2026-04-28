@@ -747,12 +747,24 @@ class DatasetSyncJobStatusInput(BaseModel):
     job_id: str
 
 
+class DatasetSyncJobErrorDetail(BaseModel):
+    """Structured failure diagnostics for dataset sync/async import jobs."""
+
+    exception_type: str = Field(description="Fully qualified exception class name when helpful, else simple name.")
+    exception_repr: str = Field(description="repr(exc)", max_length=32_768)
+    traceback: str | None = Field(default=None, description="traceback.format_exc() from the failing task.")
+
+
 class DatasetSyncJobStatusOutput(BaseModel):
     job_id: str
     mode: DatasetSyncJobMode
     status: DatasetSyncJobStatus
     progress: DatasetSyncProgress
-    error: str | None = None
+    error: str | None = Field(
+        default=None,
+        description="Short failure summary (exception type plus repr(exc), not bare str(exc) alone).",
+    )
+    error_detail: DatasetSyncJobErrorDetail | None = None
 
 
 class DatasetSyncJobResultOutput(BaseModel):
@@ -763,6 +775,7 @@ class DatasetSyncJobResultOutput(BaseModel):
     plan: DatasetSyncImportPlan | None = None
     result: DatasetSyncCommitResult | None = None
     error: str | None = None
+    error_detail: DatasetSyncJobErrorDetail | None = None
 
 
 class ReplicationHydrateAssetPayloadInput(BaseModel):
