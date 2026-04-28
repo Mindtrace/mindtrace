@@ -37,8 +37,8 @@ def _validate_payload(args, kwargs, input_schema, endpoint_name: str, validate_i
                 f"Endpoint '{endpoint_name}' must be called with either kwargs or a single "
                 f"argument of type {input_schema}"
             )
-        return args[0].model_dump()
-    return input_schema(**kwargs).model_dump() if input_schema is not None else {}
+        return args[0].model_dump(mode="json")
+    return input_schema(**kwargs).model_dump(mode="json") if input_schema is not None else {}
 
 
 def _parse_response(response: httpx.Response, output_schema, validate_output: bool):

@@ -5,13 +5,18 @@ This service wraps AsyncCameraManager functionality in a Service-based
 architecture with comprehensive MCP tool integration and typed client access.
 """
 
+import asyncio
+import base64
+import io
 import os
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Tuple
 
 from fastapi.middleware.cors import CORSMiddleware
+from PIL import Image as PILImage
 
+from mindtrace.core.utils.conversions import ndarray_to_pil
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
 from mindtrace.hardware.core.exceptions import (
     CameraConfigurationError,
@@ -140,6 +145,12 @@ class CameraManagerService(Service):
         self._camera_manager: Optional[AsyncCameraManager] = None
         self._startup_time = time.time()
         self._active_streams: dict = {}  # Track active camera streams
+        # Capabilities are static for the lifetime of an open camera (ranges
+        # and supported modes don't change while connected) but the SDK
+        # serializes per-camera, so a single get_camera_capabilities call can
+        # take seconds when a stream is competing for the device. Cache the
+        # response per-camera; invalidated on close_camera / close_*_batch.
+        self._capabilities_cache: dict[str, "CameraCapabilitiesResponse"] = {}
 
     async def _get_camera_manager(self) -> AsyncCameraManager:
         """Get or create camera manager instance."""
@@ -303,6 +314,7 @@ class CameraManagerService(Service):
             await manager.close(request.camera)
             self.logger.debug(f"Close completed for camera '{request.camera}'")
 
+            self._capabilities_cache.pop(request.camera, None)
             return BoolResponse(success=True, message=f"Camera '{request.camera}' closed successfully", data=True)
         except Exception as e:
             self.logger.error(f"Failed to close camera '{request.camera}': {e}")
@@ -322,6 +334,7 @@ class CameraManagerService(Service):
             for camera in request.cameras:
                 try:
                     await manager.close(camera)
+                    self._capabilities_cache.pop(camera, None)
                     results[camera] = True
                     successful.append(camera)
                 except Exception as e:
@@ -356,6 +369,7 @@ class CameraManagerService(Service):
 
             await manager.close()
 
+            self._capabilities_cache.clear()
             return BoolResponse(success=True, message=f"Successfully closed {camera_count} cameras", data=True)
         except Exception as e:
             self.logger.error(f"Failed to close all cameras: {e}")
@@ -445,7 +459,19 @@ class CameraManagerService(Service):
 
     @endpoint("cameras/capabilities", schema=ALL_SCHEMAS["get_camera_capabilities"], as_tool=True)
     async def get_camera_capabilities(self, request: CameraQueryRequest) -> CameraCapabilitiesResponse:
-        """Get camera capabilities information."""
+        """Get camera capabilities information.
+
+        Capabilities don't change while a camera is open, so the result is
+        cached per-camera and reused until ``close_camera`` invalidates it.
+        The first call still pays the full round-trip cost — but the ~12
+        SDK probes are issued in parallel via ``asyncio.gather`` (the SDK
+        serializes per-camera, but parallel scheduling lets independent
+        sub-queries overlap and hides per-call asyncio overhead).
+        """
+        cached = self._capabilities_cache.get(request.camera)
+        if cached is not None:
+            return cached
+
         try:
             manager = await self._get_camera_manager()
 
@@ -455,74 +481,52 @@ class CameraManagerService(Service):
 
             camera_proxy = await manager.open(request.camera)
 
-            # Get capabilities from camera backend
-            try:
-                exposure_range = await camera_proxy.get_exposure_range()
-                # Verify exposure control is actually supported (some backends report range but don't support control)
-                if exposure_range is not None and not await camera_proxy.is_exposure_control_supported():
-                    exposure_range = None
-            except Exception:
-                exposure_range = None
+            async def _safe(coro):
+                try:
+                    return await coro
+                except Exception:
+                    return None
 
-            try:
-                gain_range = await camera_proxy.get_gain_range()
-            except Exception:
-                gain_range = None
+            async def _exposure_range_with_support_check():
+                rng = await _safe(camera_proxy.get_exposure_range())
+                if rng is None:
+                    return None
+                supported = await _safe(camera_proxy.is_exposure_control_supported())
+                return rng if supported else None
 
-            try:
-                pixel_formats = await camera_proxy.get_available_pixel_formats()
-            except Exception:
-                pixel_formats = None
+            async def _liquid_lens_status():
+                status = await _safe(camera_proxy.get_lens_status())
+                if status is None:
+                    return False
+                return bool(status.get("connected", False))
 
-            try:
-                white_balance_modes = await camera_proxy.get_available_white_balance_modes()
-            except Exception:
-                white_balance_modes = None
-
-            # Get trigger modes with graceful degradation
-            try:
-                trigger_modes = await camera_proxy.get_trigger_modes()
-            except Exception:
-                trigger_modes = None
-
-            try:
-                width_range = await camera_proxy.get_width_range()
-            except Exception:
-                width_range = None
-
-            try:
-                height_range = await camera_proxy.get_height_range()
-            except Exception:
-                height_range = None
-
-            # Network parameters (GigE cameras) with graceful degradation
-            try:
-                bandwidth_limit_range = await camera_proxy.get_bandwidth_limit_range()
-            except Exception:
-                bandwidth_limit_range = None
-
-            try:
-                packet_size_range = await camera_proxy.get_packet_size_range()
-            except Exception:
-                packet_size_range = None
-
-            try:
-                inter_packet_delay_range = await camera_proxy.get_inter_packet_delay_range()
-            except Exception:
-                inter_packet_delay_range = None
-
-            # Liquid lens capabilities (graceful degradation)
-            optical_power_range = None
-            supports_liquid_lens = False
-            try:
-                optical_power_range = await camera_proxy.get_optical_power_range()
-            except Exception:
-                pass
-            try:
-                lens_status = await camera_proxy.get_lens_status()
-                supports_liquid_lens = lens_status.get("connected", False)
-            except Exception:
-                pass
+            (
+                exposure_range,
+                gain_range,
+                pixel_formats,
+                white_balance_modes,
+                trigger_modes,
+                width_range,
+                height_range,
+                bandwidth_limit_range,
+                packet_size_range,
+                inter_packet_delay_range,
+                optical_power_range,
+                supports_liquid_lens,
+            ) = await asyncio.gather(
+                _exposure_range_with_support_check(),
+                _safe(camera_proxy.get_gain_range()),
+                _safe(camera_proxy.get_available_pixel_formats()),
+                _safe(camera_proxy.get_available_white_balance_modes()),
+                _safe(camera_proxy.get_trigger_modes()),
+                _safe(camera_proxy.get_width_range()),
+                _safe(camera_proxy.get_height_range()),
+                _safe(camera_proxy.get_bandwidth_limit_range()),
+                _safe(camera_proxy.get_packet_size_range()),
+                _safe(camera_proxy.get_inter_packet_delay_range()),
+                _safe(camera_proxy.get_optical_power_range()),
+                _liquid_lens_status(),
+            )
 
             capabilities = CameraCapabilities(
                 exposure_range=exposure_range,
@@ -542,9 +546,11 @@ class CameraManagerService(Service):
                 supports_liquid_lens=supports_liquid_lens,
             )
 
-            return CameraCapabilitiesResponse(
+            response = CameraCapabilitiesResponse(
                 success=True, message=f"Retrieved capabilities for camera '{request.camera}'", data=capabilities
             )
+            self._capabilities_cache[request.camera] = response
+            return response
         except Exception as e:
             self.logger.error(f"Failed to get camera capabilities for '{request.camera}': {e}")
             raise
@@ -774,12 +780,79 @@ class CameraManagerService(Service):
             self.logger.error(f"Failed to export config for camera '{request.camera}': {e}")
             raise
 
+    # Wire encoding map for output_format → (PIL save format, default save kwargs).
+    # ``numpy`` / ``pil`` are in-memory return types; on the HTTP wire we always
+    # need encoded bytes, so they fall back to PNG (lossless, neutral default).
+    # JPEG/WebP default to quality 95 (visually lossless industrial standard).
+    _WIRE_FORMAT_MAP = {
+        "jpeg": ("JPEG", {"quality": 95}),
+        "jpg": ("JPEG", {"quality": 95}),
+        "png": ("PNG", {}),
+        "tiff": ("TIFF", {}),
+        "tif": ("TIFF", {}),
+        "bmp": ("BMP", {}),
+        "webp": ("WEBP", {"quality": 95}),
+        "numpy": ("PNG", {}),
+        "pil": ("PNG", {}),
+    }
+
+    def _encode_inline_image(
+        self, image, output_format: str
+    ) -> Tuple[Optional[str], Optional[Tuple[int, int]], Optional[int]]:
+        """Encode an in-memory capture (PIL or numpy) for the wire.
+
+        ``output_format`` selects the on-the-wire encoding: file-format names
+        (``jpeg``, ``png``, ``tiff``, ``bmp``, ``webp``) round-trip as
+        themselves; ``numpy`` / ``pil`` resolve to PNG (lossless) since over
+        HTTP we always need bytes.
+
+        Numpy inputs are BGR per the ``CameraBackend.capture`` contract;
+        ``ndarray_to_pil`` performs the BGR→RGB conversion at this wire
+        boundary so the encoded JPEG/PNG/etc. lands in the RGB convention
+        every consumer of those formats expects.
+
+        Returns ``(image_data_b64, image_size, file_size_bytes)``. All three
+        are ``None`` when ``image`` is missing or encoding fails.
+        """
+        if image is None:
+            return None, None, None
+        try:
+            if isinstance(image, PILImage.Image):
+                pil = image
+            else:
+                pil = ndarray_to_pil(image, image_format="BGR")
+            pil_format, save_kwargs = self._WIRE_FORMAT_MAP.get(output_format.lower(), ("PNG", {}))
+            # JPEG / WebP can't carry RGBA / P / I — flatten to RGB first.
+            if pil_format in ("JPEG", "WEBP") and pil.mode not in ("RGB", "L"):
+                pil = pil.convert("RGB")
+            buf = io.BytesIO()
+            pil.save(buf, format=pil_format, **save_kwargs)
+            payload = buf.getvalue()
+            return base64.b64encode(payload).decode("ascii"), pil.size, len(payload)
+        except Exception as e:  # noqa: BLE001
+            self.logger.warning(f"Failed to encode capture as {output_format}: {e}", exc_info=True)
+            return None, None, None
+
+    @staticmethod
+    def _backend_return_type(output_format: str) -> str:
+        """Translate a wire format to the in-memory type the backend should return.
+
+        Backends only know ``numpy`` and ``pil``; everything else means "give us
+        raw data, the service will encode it for the wire".
+        """
+        return "pil" if output_format.lower() == "pil" else "numpy"
+
     # Image Capture Operations
     @endpoint("cameras/capture", schema=ALL_SCHEMAS["capture_image"], as_tool=True)
     async def capture_image(self, request: CaptureImageRequest) -> CaptureResponse:
-        """Capture a single image with timeout protection."""
-        import asyncio
+        """Capture a single image with timeout protection.
 
+        When ``save_path`` is set, the image is written to disk and the response
+        carries ``image_path``. When it is omitted, the image is encoded inline
+        as a base64 JPEG in ``image_data`` (with ``image_size`` and
+        ``file_size_bytes`` populated) so callers don't need a stream or a
+        round-trip through ``/cameras/images/...``.
+        """
         try:
             manager = await self._get_camera_manager()
 
@@ -793,17 +866,29 @@ class CameraManagerService(Service):
             capture_timeout = 15.0
 
             try:
-                await asyncio.wait_for(
+                captured = await asyncio.wait_for(
                     camera_proxy.capture(
                         save_path=request.save_path,
-                        output_format=request.output_format,
+                        output_format=self._backend_return_type(request.output_format),
                     ),
                     timeout=capture_timeout,
                 )
 
-                result = CaptureResult(
-                    success=True, image_path=request.save_path, capture_time=datetime.now(timezone.utc)
-                )
+                if request.save_path is not None:
+                    result = CaptureResult(
+                        success=True,
+                        image_path=request.save_path,
+                        capture_time=datetime.now(timezone.utc),
+                    )
+                else:
+                    image_data, image_size, file_size_bytes = self._encode_inline_image(captured, request.output_format)
+                    result = CaptureResult(
+                        success=True,
+                        capture_time=datetime.now(timezone.utc),
+                        image_data=image_data,
+                        image_size=image_size,
+                        file_size_bytes=file_size_bytes,
+                    )
                 return CaptureResponse(
                     success=True, message=f"Image captured from camera '{request.camera}'", data=result
                 )
@@ -845,7 +930,7 @@ class CameraManagerService(Service):
             results = await manager.batch_capture(
                 request.cameras,
                 save_path_pattern=request.save_path_pattern,
-                output_format=request.output_format,
+                output_format=self._backend_return_type(request.output_format),
                 stage=request.stage,
                 set_name=request.set_name,
             )
@@ -855,16 +940,23 @@ class CameraManagerService(Service):
 
             for camera, image in results.items():
                 if image is not None:
-                    # When save_path_pattern is provided, image is the file path
-                    # Otherwise it's the numpy/PIL image data
                     if request.save_path_pattern:
                         # Image is the file path string
                         capture_results[camera] = CaptureResult(
                             success=True, image_path=image, capture_time=datetime.now(timezone.utc)
                         )
                     else:
-                        # Image is numpy/PIL data (cannot be serialized in JSON, so we return success only)
-                        capture_results[camera] = CaptureResult(success=True, capture_time=datetime.now(timezone.utc))
+                        # Image is numpy/PIL data — encode inline in the requested wire format
+                        image_data, image_size, file_size_bytes = self._encode_inline_image(
+                            image, request.output_format
+                        )
+                        capture_results[camera] = CaptureResult(
+                            success=True,
+                            capture_time=datetime.now(timezone.utc),
+                            image_data=image_data,
+                            image_size=image_size,
+                            file_size_bytes=file_size_bytes,
+                        )
                     successful_count += 1
                 else:
                     capture_results[camera] = CaptureResult(success=False, capture_time=datetime.now(timezone.utc))
@@ -1396,8 +1488,6 @@ class CameraManagerService(Service):
                 raise HTTPException(status_code=503, detail=f"Camera '{actual_camera_name}' is not connected")
 
             # Create MJPEG streaming response
-            import asyncio
-
             from fastapi.responses import StreamingResponse
 
             async def generate_mjpeg_stream():
@@ -1429,22 +1519,14 @@ class CameraManagerService(Service):
                         consecutive_timeouts = 0
 
                         if frame_np is not None:
-                            # Convert numpy array to JPEG bytes
-                            # Ensure it's uint8 and RGB/BGR
+                            # Captures are BGR per the CameraBackend.capture
+                            # contract — the channel order cv2.imencode expects.
                             if frame_np.dtype != np.uint8:
                                 frame_np = (frame_np * 255).astype(np.uint8)
 
-                            # Convert RGB to BGR if needed (OpenCV expects BGR)
-                            # Run in threadpool to avoid blocking event loop
-                            if len(frame_np.shape) == 3 and frame_np.shape[2] == 3:
-                                # Assuming RGB input, convert to BGR for cv2
-                                frame_bgr = await asyncio.to_thread(cv2.cvtColor, frame_np, cv2.COLOR_RGB2BGR)
-                            else:
-                                frame_bgr = frame_np
-
                             # Encode as JPEG with dynamic quality (run in threadpool)
                             success, jpeg_data = await asyncio.to_thread(
-                                cv2.imencode, ".jpg", frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, quality]
+                                cv2.imencode, ".jpg", frame_np, [cv2.IMWRITE_JPEG_QUALITY, quality]
                             )
 
                             if success:
