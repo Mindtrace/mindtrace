@@ -22,7 +22,7 @@ from .async_datalake import (
     SlowOperationWarning,
     SlowOpsPolicy,
 )
-from .data_vault import AsyncDataVault, DataVault
+from .data_vault import AsyncDataVault, DataVault, VaultDataset
 from .data_vault_backends import (
     AsyncDataVaultBackend,
     DatalakeServiceAsyncDataVaultBackend,
@@ -32,6 +32,7 @@ from .data_vault_backends import (
     LocalDataVaultBackend,
 )
 from .datalake import Datalake
+from .exporters import ExportableDataset, ExportableItem, ExportResult, export_dataset_to_format, get_dataset_exporter
 from .pagination_types import (
     CursorEnvelope,
     CursorPage,
@@ -113,6 +114,12 @@ __all__ = [
     "AssetAlias",
     "AsyncDataVault",
     "AsyncDataVaultBackend",
+    "VaultDataset",
+    "ExportResult",
+    "ExportableDataset",
+    "ExportableItem",
+    "export_dataset_to_format",
+    "get_dataset_exporter",
     "SlowOperationDisabledError",
     "SlowOperationWarning",
     "SlowOpsPolicy",
