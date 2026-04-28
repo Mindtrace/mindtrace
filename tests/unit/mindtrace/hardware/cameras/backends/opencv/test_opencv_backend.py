@@ -1993,3 +1993,29 @@ class TestOpenCVCameraBackendMiscMethods:
         cam = OpenCVCameraBackend("0")
         format_str = await cam.get_current_pixel_format()
         assert format_str == "RGB8"
+
+
+@pytest.mark.asyncio
+async def test_capture_returns_sdk_frame_unchanged(monkeypatch):
+    """``capture()`` returns the array from ``cv2.VideoCapture.read`` as-is (BGR contract)."""
+    import cv2
+
+    sentinel = np.zeros((4, 4, 3), dtype=np.uint8)
+    sentinel[0, 0] = (255, 0, 0)  # B max
+    sentinel[0, 1] = (0, 255, 0)  # G max
+    sentinel[0, 2] = (0, 0, 255)  # R max
+
+    class SentinelCap(FakeCap):
+        def read(self):
+            return True, sentinel.copy()
+
+    monkeypatch.setattr(cv2, "VideoCapture", lambda *a, **k: SentinelCap(*a, **k))
+
+    cam = OpenCVCameraBackend("0", img_quality_enhancement=False, timeout_ms=500)
+    await cam.initialize()
+    try:
+        out = await cam.capture()
+        assert isinstance(out, np.ndarray)
+        np.testing.assert_array_equal(out, sentinel)
+    finally:
+        await cam.close()

@@ -187,11 +187,18 @@ class AsyncCamera(Mindtrace):
         """Capture an image from the camera with retry logic.
 
         Args:
-            save_path: Optional path to save the captured image (written as-is, typically RGB uint8).
+            save_path: Optional path to save the captured image. Saved via
+                ``cv2.imwrite``, which expects BGR — matches the
+                ``CameraBackend.capture`` contract so the array is written
+                as-is.
             output_format: Output format for the returned image ("numpy" or "pil").
 
         Returns:
-            The captured image as numpy array or PIL.Image depending on output_format.
+            The captured image. ``"numpy"`` returns the backend's BGR uint8
+            array unchanged (per the ``CameraBackend.capture`` contract);
+            ``"pil"`` returns an RGB ``PIL.Image`` produced by
+            ``convert_image_format``, which performs the BGR→RGB conversion
+            at the boundary.
 
         Raises:
             CameraCaptureError: If image capture ultimately fails after retries.

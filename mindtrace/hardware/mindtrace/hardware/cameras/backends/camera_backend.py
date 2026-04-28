@@ -275,6 +275,15 @@ class CameraBackend(MindtraceABC):
 
     @abstractmethod
     async def capture(self) -> np.ndarray:
+        """Capture a single frame from the camera.
+
+        Contract for all backends in this repo: returns a BGR uint8 numpy
+        array for color sensors (channel order matches OpenCV / industrial
+        SDK conventions), or a 1-channel uint8 array for mono / Bayer
+        sensors. Consumers downstream of ``AsyncCamera.capture`` rely on
+        this — colorspace conversions for PIL / wire encoding happen at
+        boundary layers, not in backends.
+        """
         raise NotImplementedError
 
     @abstractmethod
