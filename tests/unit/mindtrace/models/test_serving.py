@@ -224,3 +224,34 @@ class TestModelService:
             with patch("torch.cuda.is_available", return_value=False):
                 svc = _DeviceService(model_name="m", model_version="v1", device="auto", registry=None)
         assert svc.device == "cpu"
+
+
+class TestModelServiceServe:
+    def test_serve_delegates_to_launch(self, monkeypatch):
+        monkeypatch.setenv("MINDTRACE_DEFAULT_HOST_URLS__SERVICE", "http://localhost:8000")
+        monkeypatch.setenv("MINDTRACE_DIR_PATHS__LOGGER_DIR", "/tmp/logs")
+        monkeypatch.setenv("MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR", "/tmp/pids")
+
+        from mindtrace.core import CoreConfig
+        from mindtrace.models.serving.service import ModelService
+        from mindtrace.services import Service
+
+        Service.config = CoreConfig()
+
+        class _Svc(ModelService):
+            _task = "test"
+
+            def load_model(self) -> None:
+                self.model = object()
+
+            def predict(self, req: PredictRequest) -> PredictResponse:
+                return PredictResponse(results=[], timing_s=0.0)
+
+        with patch.object(_Svc, "launch", return_value="launched") as mock_launch:
+            out = _Svc.serve(host="10.0.0.1", port=9090, model_name="n", model_version="v", live_service=False)
+
+        assert out == "launched"
+        mock_launch.assert_called_once()
+        kwargs = mock_launch.call_args.kwargs
+        assert kwargs["host"] == "10.0.0.1"
+        assert kwargs["port"] == 9090
