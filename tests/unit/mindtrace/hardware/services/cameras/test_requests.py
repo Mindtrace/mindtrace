@@ -24,6 +24,7 @@ from mindtrace.hardware.services.cameras.models.requests import (
     ExposureRequest,
     GainRequest,
     HomographyCalibrateCorrespondencesRequest,
+    HomographyCalibrateMultiViewRequest,
     HomographyMeasureBatchRequest,
     ImageEnhancementRequest,
     InterPacketDelayRequest,
@@ -511,6 +512,20 @@ class TestCameraConfigureBatchRequestValidators:
         with pytest.raises(ValidationError):
             CameraConfigureBatchRequest(configurations="nope")  # type: ignore[arg-type]
 
+    def test_validate_configurations_rejects_non_dict_list_items(self):
+        with pytest.raises(ValueError, match="must be a dict"):
+            CameraConfigureBatchRequest.validate_configurations([1])  # type: ignore[arg-type]
+
+    def test_validate_configurations_rejects_non_dict_non_list(self):
+        with pytest.raises(ValueError, match="dict or list"):
+            CameraConfigureBatchRequest.validate_configurations(None)  # type: ignore[arg-type]
+
+    def test_configurations_dict_pass_through(self):
+        """Dict form is accepted and matches the provided mapping."""
+        cfg = {"Basler:a": {"gain": 1.0}}
+        req = CameraConfigureBatchRequest(configurations=cfg)
+        assert req.configurations == cfg
+
 
 class TestCaptureHDRValidators:
     def test_output_format_file_maps_to_numpy(self):
@@ -526,6 +541,23 @@ class TestCaptureHDRValidators:
         with pytest.raises(ValidationError):
             CaptureHDRRequest(camera="Basler:1", exposure_levels=1)
 
+    def test_exposure_int_above_max(self):
+        with pytest.raises(ValidationError):
+            CaptureHDRRequest(camera="Basler:1", exposure_levels=11)
+
+    def test_exposure_list_non_positive(self):
+        with pytest.raises(ValidationError, match="positive"):
+            CaptureHDRRequest(camera="Basler:1", exposure_levels=[1.0, 0.0])
+
+    def test_exposure_levels_explicit_list_accepted(self):
+        req = CaptureHDRRequest(camera="Basler:1", exposure_levels=[1.0, 2.0])
+        assert req.exposure_levels == [1.0, 2.0]
+
+    def test_validate_exposure_levels_rejects_non_int_non_list(self):
+        """Covers validator else-branch (not reached via normal model init for most bad types)."""
+        with pytest.raises(ValueError, match="int or List"):
+            CaptureHDRRequest.validate_exposure_levels(None)  # type: ignore[arg-type]
+
 
 class TestCaptureHDRBatchValidators:
     def test_output_format_png_maps_to_numpy(self):
@@ -535,6 +567,22 @@ class TestCaptureHDRBatchValidators:
     def test_exposure_list_too_short(self):
         with pytest.raises(ValidationError):
             CaptureHDRBatchRequest(cameras=["Basler:1"], exposure_levels=[0.5])
+
+    def test_exposure_int_above_max(self):
+        with pytest.raises(ValidationError):
+            CaptureHDRBatchRequest(cameras=["Basler:1"], exposure_levels=11)
+
+    def test_exposure_list_non_positive(self):
+        with pytest.raises(ValidationError, match="positive"):
+            CaptureHDRBatchRequest(cameras=["Basler:1"], exposure_levels=[1.0, 0.0])
+
+    def test_exposure_levels_explicit_list_accepted(self):
+        req = CaptureHDRBatchRequest(cameras=["Basler:1"], exposure_levels=[1.0, 2.0, 3.0])
+        assert req.exposure_levels == [1.0, 2.0, 3.0]
+
+    def test_validate_exposure_levels_rejects_non_int_non_list(self):
+        with pytest.raises(ValueError, match="int or List"):
+            CaptureHDRBatchRequest.validate_exposure_levels(object())  # type: ignore[arg-type]
 
 
 class TestHomographyCalibrateCorrespondencesRequest:
@@ -546,6 +594,15 @@ class TestHomographyCalibrateCorrespondencesRequest:
                 camera="Basler:1",
                 world_points=bad_pts,
                 image_points=pts,
+            )
+
+    def test_too_few_correspondences(self):
+        three = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]
+        with pytest.raises(ValidationError, match="Minimum 4"):
+            HomographyCalibrateCorrespondencesRequest(
+                camera="Basler:1",
+                world_points=three,
+                image_points=three,
             )
 
 
@@ -568,11 +625,80 @@ class TestHomographyMeasureBatchRequest:
                 point_pairs=[[[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]]],
             )
 
+    def test_only_point_pairs_bounding_boxes_none_ok(self):
+        req = HomographyMeasureBatchRequest(
+            calibration_path="/tmp/calib.json",
+            bounding_boxes=None,
+            point_pairs=[[[0.0, 0.0], [1.0, 0.0]]],
+        )
+        assert req.bounding_boxes is None
+
+    def test_only_bounding_boxes_point_pairs_none_ok(self):
+        req = HomographyMeasureBatchRequest(
+            calibration_path="/tmp/calib.json",
+            bounding_boxes=[{"x": 0, "y": 0, "width": 1, "height": 1}],
+            point_pairs=None,
+        )
+        assert req.point_pairs is None
+
+    def test_bounding_box_non_positive_size(self):
+        with pytest.raises(ValidationError, match="positive"):
+            HomographyMeasureBatchRequest(
+                calibration_path="/tmp/calib.json",
+                bounding_boxes=[{"x": 0, "y": 0, "width": 0, "height": 10}],
+            )
+
+    def test_point_in_pair_wrong_length(self):
+        with pytest.raises(ValidationError, match="Each point"):
+            HomographyMeasureBatchRequest(
+                calibration_path="/tmp/calib.json",
+                point_pairs=[[[0.0, 0.0], [1.0, 0.0, 0.0]]],
+            )
+
+
+class TestHomographyCalibrateMultiViewRequestValidation:
+    def test_positions_nonempty(self):
+        with pytest.raises(ValidationError, match="At least one position"):
+            HomographyCalibrateMultiViewRequest(
+                image_paths=["a.jpg"],
+                positions=[],
+                output_path="/tmp/out.json",
+            )
+
+    def test_position_requires_x_and_y(self):
+        with pytest.raises(ValidationError, match="must have 'x' and 'y'"):
+            HomographyCalibrateMultiViewRequest(
+                image_paths=["a.jpg"],
+                positions=[{"x": 0.0}],
+                output_path="/tmp/out.json",
+            )
+
+    def test_image_and_position_counts_match(self):
+        with pytest.raises(ValidationError, match="must match"):
+            HomographyCalibrateMultiViewRequest(
+                image_paths=["a.jpg", "b.jpg"],
+                positions=[{"x": 0.0, "y": 0.0}],
+                output_path="/tmp/out.json",
+            )
+
+    def test_valid_multi_view_request(self):
+        req = HomographyCalibrateMultiViewRequest(
+            image_paths=["a.jpg"],
+            positions=[{"x": 0.0, "y": 0.0}],
+            output_path="/tmp/out.json",
+        )
+        assert len(req.image_paths) == 1
+
 
 class TestTriggerAutofocusRequestValidation:
     def test_invalid_accuracy(self):
         with pytest.raises(ValidationError, match="accuracy"):
             TriggerAutofocusRequest(camera="Basler:1", accuracy="FastButWrong")
+
+    @pytest.mark.parametrize("accuracy", ["Fast", "Normal", "Accurate"])
+    def test_valid_accuracy_values(self, accuracy: str):
+        req = TriggerAutofocusRequest(camera="Basler:1", accuracy=accuracy)
+        assert req.accuracy == accuracy
 
 
 class TestConfigureCaptureGroupsRequestMinimal:
