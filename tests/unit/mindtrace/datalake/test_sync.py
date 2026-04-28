@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
@@ -174,6 +175,75 @@ class TestDatasetSyncManager:
         probed_ref = target_datalake.object_exists.await_args.args[0]
         assert probed_ref.mount == "remote"
         assert probed_ref.name == plan.payloads[0].source_storage_ref.name
+
+    @pytest.mark.asyncio
+    async def test_plan_import_checks_payloads_with_bounded_concurrency(self, source_datalake, target_datalake):
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        payloads = [
+            ObjectPayloadDescriptor(
+                asset_id=f"asset_{idx}",
+                storage_ref=StorageRef(mount="source", name=f"images/{idx}.jpg", version="v1"),
+                media_type="image/jpeg",
+            )
+            for idx in range(10)
+        ]
+        bundle = bundle.model_copy(update={"payloads": payloads})
+        active = 0
+        max_active = 0
+
+        async def object_exists(_storage_ref):
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            return False
+
+        target_datalake.object_exists = AsyncMock(side_effect=object_exists)
+
+        plan = await manager.plan_import(
+            DatasetSyncImportRequest(
+                bundle=bundle,
+                transfer_policy="copy_if_missing",
+                planning_batch_size=10,
+                planning_concurrency=3,
+            )
+        )
+
+        assert len(plan.payloads) == 10
+        assert target_datalake.object_exists.await_count == 10
+        assert 1 < max_active <= 3
+
+    @pytest.mark.asyncio
+    async def test_plan_import_emits_progress_per_batch(self, source_datalake, target_datalake):
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        payloads = [
+            ObjectPayloadDescriptor(
+                asset_id=f"asset_{idx}",
+                storage_ref=StorageRef(mount="source", name=f"images/{idx}.jpg", version="v1"),
+                media_type="image/jpeg",
+            )
+            for idx in range(5)
+        ]
+        bundle = bundle.model_copy(update={"payloads": payloads})
+        progress_events = []
+
+        await manager.plan_import(
+            DatasetSyncImportRequest(
+                bundle=bundle,
+                transfer_policy="copy_if_missing",
+                planning_batch_size=2,
+                planning_concurrency=2,
+            ),
+            progress_callback=progress_events.append,
+        )
+
+        assert [event.batch_index for event in progress_events] == [1, 2, 3]
+        assert all(event.phase == "planning" for event in progress_events)
+        assert progress_events[-1].completed_items == 5
+        assert progress_events[-1].total_items == 5
 
     @pytest.mark.asyncio
     async def test_plan_import_handles_fail_if_missing_payload(self, source_datalake, target_datalake):
@@ -515,6 +585,7 @@ class TestDatasetSyncManager:
 
         assert plan.payloads[0].transfer_required is True
         assert plan.payloads[0].reason == "policy_copy"
+        target_datalake.object_exists.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_plan_import_fail_if_missing_when_payload_present(self, source_datalake, target_datalake):

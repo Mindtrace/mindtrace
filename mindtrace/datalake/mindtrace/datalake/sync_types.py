@@ -55,6 +55,16 @@ class DatasetSyncImportRequest(BaseModel):
             "persisted StorageRef values. Unlisted mounts pass through unchanged."
         ),
     )
+    planning_batch_size: int = Field(
+        default=500,
+        ge=1,
+        description="Number of payloads to group into each import-planning progress batch.",
+    )
+    planning_concurrency: int = Field(
+        default=32,
+        ge=1,
+        description="Maximum concurrent target object-existence probes during import planning.",
+    )
 
     @field_validator("mount_map")
     @classmethod
@@ -91,6 +101,15 @@ class DatasetSyncImportPlan(BaseModel):
     missing_payload_count: int = 0
     transfer_required_count: int = 0
     ready_to_commit: bool = False
+
+
+class DatasetSyncProgress(BaseModel):
+    phase: Literal["planning", "transferring", "committing", "complete", "failed"]
+    batch_index: int = 0
+    total_batches: int = 0
+    completed_items: int = 0
+    total_items: int = 0
+    message: str = ""
 
 
 class DatasetSyncCommitResult(BaseModel):
