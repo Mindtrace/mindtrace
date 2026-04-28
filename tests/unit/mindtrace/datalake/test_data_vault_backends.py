@@ -22,19 +22,51 @@ from mindtrace.datalake.service_types import (
     AddAnnotationRecordsInput,
     AddedAnnotationRecordsOutput,
     AnnotationRecordListOutput,
+    AnnotationRecordOutput,
+    AnnotationSetListOutput,
+    AnnotationSetOutput,
+    AnnotationSetPageOutput,
     AssetAliasOutput,
     AssetListOutput,
     AssetOutput,
     AssetPageOutput,
+    CollectionItemListOutput,
+    CollectionItemOutput,
+    CollectionListOutput,
+    CollectionOutput,
+    CreateAnnotationSetInput,
     CreateAssetFromObjectInput,
+    CreateCollectionInput,
+    CreateCollectionItemInput,
+    CreateDatasetVersionInput,
+    CreateDatumInput,
+    DatasetVersionOutput,
+    DatumOutput,
+    DeleteByIdInput,
     GetAssetByAliasInput,
     GetByIdInput,
+    GetDatasetVersionInput,
     ListAnnotationRecordsForAssetInput,
     ListInput,
     ObjectDataOutput,
     PageInput,
+    ResolvedDatasetVersionOutput,
+    UpdateCollectionInput,
+    UpdateCollectionItemInput,
 )
-from mindtrace.datalake.types import AnnotationRecord, Asset, AssetAlias, StorageRef, SubjectRef
+from mindtrace.datalake.types import (
+    AnnotationRecord,
+    AnnotationSet,
+    Asset,
+    AssetAlias,
+    Collection,
+    CollectionItem,
+    DatasetVersion,
+    Datum,
+    ResolvedDatasetVersion,
+    StorageRef,
+    SubjectRef,
+)
 from mindtrace.services.core.connection_manager import ConnectionManager
 
 
@@ -704,3 +736,415 @@ def test_datalake_service_sync_backend_add_and_list_annotation_records():
     linp = cm.annotation_records_list_for_asset.call_args.args[0]
     assert isinstance(linp, ListAnnotationRecordsForAssetInput)
     assert linp.asset_id == "a1"
+
+
+@pytest.mark.asyncio
+async def test_local_async_backend_delegates_dataset_methods():
+    collection = Collection(name="training", collection_id="collection_1")
+    item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+    )
+    record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="x",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "t"},
+        geometry={},
+    )
+    dl = AsyncMock()
+    dl.list_collections = AsyncMock(return_value=[collection])
+    dl.create_collection = AsyncMock(return_value=collection)
+    dl.list_collection_items = AsyncMock(return_value=[item])
+    dl.create_collection_item = AsyncMock(return_value=item)
+    dl.update_collection_item = AsyncMock(return_value=item)
+    dl.list_annotation_sets = AsyncMock(return_value=[annotation_set])
+    dl.create_annotation_set = AsyncMock(return_value=annotation_set)
+    dl.get_annotation_record = AsyncMock(return_value=record)
+    dl.list_annotation_records = AsyncMock(return_value=[record])
+    dl.delete_annotation_record = AsyncMock(return_value=None)
+
+    backend = LocalAsyncDataVaultBackend(dl)
+    assert await backend.list_collections() == [collection]
+    assert await backend.create_collection(name="training") == collection
+    assert await backend.list_collection_items() == [item]
+    assert await backend.create_collection_item(collection_id="collection_1", asset_id="asset_1") == item
+    assert await backend.update_collection_item("ci_1", status="active") == item
+    await backend.delete_collection_item("ci_1")
+    assert await backend.list_annotation_sets() == [annotation_set]
+    assert (
+        await backend.create_annotation_set(name="training:asset_1", purpose="other", source_type="human")
+        == annotation_set
+    )
+    assert await backend.get_annotation_record("annotation_1") == record
+    assert await backend.list_annotation_records() == [record]
+    await backend.delete_annotation_record("annotation_1")
+    dl.delete_annotation_record.assert_awaited_once_with("annotation_1")
+
+    page = CursorPage(items=[collection], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    item_page = CursorPage(items=[item], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    dl.list_collections_page = AsyncMock(return_value=page)
+    dl.list_collection_items_page = AsyncMock(return_value=item_page)
+
+    async def iter_collections(**kwargs):
+        assert kwargs == {"filters": {"status": "active"}, "sort": "created_desc", "batch_size": 2}
+        yield collection
+
+    dl.iter_collections = iter_collections
+    assert await backend.list_collections_page(filters={"status": "active"}, limit=1) == page
+    assert await backend.list_collection_items_page(filters={"collection_id": "collection_1"}, limit=1) == item_page
+    assert [c async for c in backend.iter_collections(filters={"status": "active"}, batch_size=2)] == [collection]
+
+
+def test_local_sync_backend_delegates_dataset_methods():
+    collection = Collection(name="training", collection_id="collection_1")
+    item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+    )
+    record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="x",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "t"},
+        geometry={},
+    )
+    dl = Mock()
+    dl.list_collections = Mock(return_value=[collection])
+    dl.create_collection = Mock(return_value=collection)
+    dl.list_collection_items = Mock(return_value=[item])
+    dl.create_collection_item = Mock(return_value=item)
+    dl.update_collection_item = Mock(return_value=item)
+    dl.list_annotation_sets = Mock(return_value=[annotation_set])
+    dl.create_annotation_set = Mock(return_value=annotation_set)
+    dl.get_annotation_record = Mock(return_value=record)
+    dl.list_annotation_records = Mock(return_value=[record])
+    dl.delete_annotation_record = Mock(return_value=None)
+
+    backend = LocalDataVaultBackend(dl)
+    assert backend.list_collections() == [collection]
+    assert backend.create_collection(name="training") == collection
+    assert backend.list_collection_items() == [item]
+    assert backend.create_collection_item(collection_id="collection_1", asset_id="asset_1") == item
+    assert backend.update_collection_item("ci_1", status="active") == item
+    assert backend.list_annotation_sets() == [annotation_set]
+    assert (
+        backend.create_annotation_set(name="training:asset_1", purpose="other", source_type="human") == annotation_set
+    )
+    assert backend.get_annotation_record("annotation_1") == record
+    assert backend.list_annotation_records() == [record]
+    backend.delete_annotation_record("annotation_1")
+    dl.delete_annotation_record.assert_called_once_with("annotation_1")
+
+    page = CursorPage(items=[collection], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    item_page = CursorPage(items=[item], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    annotation_set_page = CursorPage(items=[annotation_set], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    dl.list_collections_page = Mock(return_value=page)
+    dl.list_collection_items_page = Mock(return_value=item_page)
+    dl.list_annotation_sets_page = Mock(return_value=annotation_set_page)
+    dl.iter_collections = Mock(return_value=iter([collection]))
+
+    assert backend.list_collections_page(filters={"status": "active"}, limit=1) == page
+    assert backend.list_collection_items_page(filters={"collection_id": "collection_1"}, limit=1) == item_page
+    assert backend.list_annotation_sets_page(filters={"status": "active"}, limit=1) == annotation_set_page
+    assert list(backend.iter_collections(filters={"status": "active"}, batch_size=2)) == [collection]
+
+
+@pytest.mark.asyncio
+async def test_local_async_backend_delegates_snapshot_methods():
+    collection = Collection(name="training", collection_id="collection_1")
+    datum = Datum(datum_id="datum_1", asset_refs={"image": "asset_1"})
+    dataset_version = DatasetVersion(dataset_name="training", version="1.0.0")
+    resolved = ResolvedDatasetVersion(dataset_version=dataset_version, datums=[])
+    dl = AsyncMock()
+    dl.update_collection = AsyncMock(return_value=collection)
+    dl.create_datum = AsyncMock(return_value=datum)
+    dl.create_dataset_version = AsyncMock(return_value=dataset_version)
+    dl.resolve_dataset_version = AsyncMock(return_value=resolved)
+
+    backend = LocalAsyncDataVaultBackend(dl)
+
+    assert await backend.update_collection("collection_1", status="archived") == collection
+    assert await backend.create_datum(asset_refs={"image": "asset_1"}) == datum
+    assert (
+        await backend.create_dataset_version(dataset_name="training", version="1.0.0", manifest=["datum_1"])
+        == dataset_version
+    )
+    assert await backend.resolve_dataset_version("training", "1.0.0") == resolved
+
+
+def test_local_sync_backend_delegates_snapshot_methods():
+    collection = Collection(name="training", collection_id="collection_1")
+    datum = Datum(datum_id="datum_1", asset_refs={"image": "asset_1"})
+    dataset_version = DatasetVersion(dataset_name="training", version="1.0.0")
+    resolved = ResolvedDatasetVersion(dataset_version=dataset_version, datums=[])
+    dl = Mock()
+    dl.update_collection = Mock(return_value=collection)
+    dl.create_datum = Mock(return_value=datum)
+    dl.create_dataset_version = Mock(return_value=dataset_version)
+    dl.resolve_dataset_version = Mock(return_value=resolved)
+
+    backend = LocalDataVaultBackend(dl)
+
+    assert backend.update_collection("collection_1", status="archived") == collection
+    assert backend.create_datum(asset_refs={"image": "asset_1"}) == datum
+    assert (
+        backend.create_dataset_version(dataset_name="training", version="1.0.0", manifest=["datum_1"])
+        == dataset_version
+    )
+    assert backend.resolve_dataset_version("training", "1.0.0") == resolved
+
+
+@pytest.mark.asyncio
+async def test_datalake_service_async_backend_dataset_methods():
+    collection = Collection(name="training", collection_id="collection_1")
+    item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+    )
+    record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="x",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "t"},
+        geometry={},
+    )
+    cm = Mock()
+    cm.acollections_list = AsyncMock(return_value=CollectionListOutput(collections=[collection]))
+    cm.acollections_create = AsyncMock(return_value=CollectionOutput(collection=collection))
+    cm.acollection_items_list = AsyncMock(return_value=CollectionItemListOutput(collection_items=[item]))
+    cm.acollection_items_create = AsyncMock(return_value=CollectionItemOutput(collection_item=item))
+    cm.acollection_items_update = AsyncMock(return_value=CollectionItemOutput(collection_item=item))
+    cm.aannotation_sets_list = AsyncMock(return_value=AnnotationSetListOutput(annotation_sets=[annotation_set]))
+    cm.aannotation_sets_create = AsyncMock(return_value=AnnotationSetOutput(annotation_set=annotation_set))
+    cm.aannotation_records_get = AsyncMock(return_value=AnnotationRecordOutput(annotation_record=record))
+    cm.aannotation_records_list = AsyncMock(return_value=AnnotationRecordListOutput(annotation_records=[record]))
+    cm.aannotation_records_delete = AsyncMock(return_value=None)
+
+    backend = DatalakeServiceAsyncDataVaultBackend(cm)
+    assert await backend.list_collections() == [collection]
+    assert await backend.create_collection(name="training") == collection
+    assert await backend.list_collection_items() == [item]
+    assert await backend.create_collection_item(collection_id="collection_1", asset_id="asset_1") == item
+    assert await backend.update_collection_item("ci_1", status="active") == item
+    assert await backend.list_annotation_sets() == [annotation_set]
+    assert (
+        await backend.create_annotation_set(name="training:asset_1", purpose="other", source_type="human")
+        == annotation_set
+    )
+    assert await backend.get_annotation_record("annotation_1") == record
+    assert await backend.list_annotation_records() == [record]
+    await backend.delete_annotation_record("annotation_1")
+
+    assert isinstance(cm.acollections_create.await_args.args[0], CreateCollectionInput)
+    assert isinstance(cm.acollection_items_create.await_args.args[0], CreateCollectionItemInput)
+    assert isinstance(cm.acollection_items_update.await_args.args[0], UpdateCollectionItemInput)
+    assert isinstance(cm.aannotation_sets_create.await_args.args[0], CreateAnnotationSetInput)
+    assert isinstance(cm.aannotation_records_delete.await_args.args[0], DeleteByIdInput)
+
+
+@pytest.mark.asyncio
+async def test_datalake_service_async_backend_snapshot_methods():
+    collection = Collection(name="training", collection_id="collection_1")
+    datum = Datum(datum_id="datum_1", asset_refs={"image": "asset_1"})
+    dataset_version = DatasetVersion(dataset_name="training", version="1.0.0")
+    resolved = ResolvedDatasetVersion(dataset_version=dataset_version, datums=[])
+    cm = Mock()
+    cm.acollections_update = AsyncMock(return_value=CollectionOutput(collection=collection))
+    cm.adatums_create = AsyncMock(return_value=DatumOutput(datum=datum))
+    cm.adataset_versions_create = AsyncMock(return_value=DatasetVersionOutput(dataset_version=dataset_version))
+    cm.adataset_versions_resolve = AsyncMock(
+        return_value=ResolvedDatasetVersionOutput(resolved_dataset_version=resolved)
+    )
+
+    backend = DatalakeServiceAsyncDataVaultBackend(cm)
+
+    assert await backend.update_collection("collection_1", status="archived") == collection
+    assert await backend.create_datum(asset_refs={"image": "asset_1"}, split="train") == datum
+    assert (
+        await backend.create_dataset_version(
+            dataset_name="training",
+            version="1.0.0",
+            manifest=["datum_1"],
+            description="snapshot",
+        )
+        == dataset_version
+    )
+    assert await backend.resolve_dataset_version("training", "1.0.0") == resolved
+
+    assert isinstance(cm.acollections_update.await_args.args[0], UpdateCollectionInput)
+    assert isinstance(cm.adatums_create.await_args.args[0], CreateDatumInput)
+    assert isinstance(cm.adataset_versions_create.await_args.args[0], CreateDatasetVersionInput)
+    assert isinstance(cm.adataset_versions_resolve.await_args.args[0], GetDatasetVersionInput)
+
+
+@pytest.mark.asyncio
+async def test_datalake_service_async_backend_collection_paging_and_deletes():
+    collection = Collection(name="training", collection_id="collection_1")
+    item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    collection_page_1 = CursorPage(items=[collection], page=PageInfo(limit=1, next_cursor="cursor-1", has_more=True))
+    collection_page_2 = CursorPage(items=[], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    item_page = CursorPage(items=[item], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    cm = Mock()
+    cm.acollections_list_page = AsyncMock(side_effect=[collection_page_1, collection_page_1, collection_page_2])
+    cm.acollection_items_list_page = AsyncMock(return_value=item_page)
+    cm.acollection_items_delete = AsyncMock(return_value=None)
+
+    backend = DatalakeServiceAsyncDataVaultBackend(cm)
+    assert await backend.list_collections_page(limit=1) == collection_page_1
+    assert [c async for c in backend.iter_collections(batch_size=1)] == [collection]
+    assert await backend.list_collection_items_page(filters={"collection_id": "collection_1"}, limit=1) == item_page
+    await backend.delete_collection_item("ci_1")
+    assert isinstance(cm.acollections_list_page.await_args_list[0].args[0], PageInput)
+    assert isinstance(cm.acollection_items_delete.await_args.args[0], DeleteByIdInput)
+
+
+def test_datalake_service_sync_backend_dataset_methods():
+    collection = Collection(name="training", collection_id="collection_1")
+    item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+    )
+    record = AnnotationRecord(
+        annotation_id="annotation_1",
+        kind="bbox",
+        label="x",
+        subject=SubjectRef(kind="asset", id="asset_1"),
+        source={"type": "human", "name": "t"},
+        geometry={},
+    )
+    cm = Mock()
+    cm.collections_list = Mock(return_value=CollectionListOutput(collections=[collection]))
+    cm.collections_create = Mock(return_value=CollectionOutput(collection=collection))
+    cm.collection_items_list = Mock(return_value=CollectionItemListOutput(collection_items=[item]))
+    cm.collection_items_create = Mock(return_value=CollectionItemOutput(collection_item=item))
+    cm.collection_items_update = Mock(return_value=CollectionItemOutput(collection_item=item))
+    cm.annotation_sets_list = Mock(return_value=AnnotationSetListOutput(annotation_sets=[annotation_set]))
+    cm.annotation_sets_create = Mock(return_value=AnnotationSetOutput(annotation_set=annotation_set))
+    cm.annotation_records_get = Mock(return_value=AnnotationRecordOutput(annotation_record=record))
+    cm.annotation_records_list = Mock(return_value=AnnotationRecordListOutput(annotation_records=[record]))
+    cm.annotation_records_delete = Mock(return_value=None)
+
+    backend = DatalakeServiceDataVaultBackend(cm)
+    assert backend.list_collections() == [collection]
+    assert backend.create_collection(name="training") == collection
+    assert backend.list_collection_items() == [item]
+    assert backend.create_collection_item(collection_id="collection_1", asset_id="asset_1") == item
+    assert backend.update_collection_item("ci_1", status="active") == item
+    assert backend.list_annotation_sets() == [annotation_set]
+    assert (
+        backend.create_annotation_set(name="training:asset_1", purpose="other", source_type="human") == annotation_set
+    )
+    assert backend.get_annotation_record("annotation_1") == record
+    assert backend.list_annotation_records() == [record]
+    backend.delete_annotation_record("annotation_1")
+
+    assert isinstance(cm.collections_create.call_args.args[0], CreateCollectionInput)
+    assert isinstance(cm.collection_items_create.call_args.args[0], CreateCollectionItemInput)
+    assert isinstance(cm.collection_items_update.call_args.args[0], UpdateCollectionItemInput)
+    assert isinstance(cm.annotation_sets_create.call_args.args[0], CreateAnnotationSetInput)
+    assert isinstance(cm.annotation_records_delete.call_args.args[0], DeleteByIdInput)
+
+
+@pytest.mark.asyncio
+async def test_datalake_service_async_backend_annotation_set_paging():
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+    )
+    page = AnnotationSetPageOutput(items=[annotation_set], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    cm = Mock()
+    cm.aannotation_sets_list_page = AsyncMock(return_value=page)
+
+    backend = DatalakeServiceAsyncDataVaultBackend(cm)
+    out = await backend.list_annotation_sets_page(filters={"status": "active"}, limit=1)
+
+    assert out == page
+    assert isinstance(cm.aannotation_sets_list_page.await_args.args[0], PageInput)
+
+
+def test_datalake_service_sync_backend_annotation_set_paging():
+    annotation_set = AnnotationSet(
+        annotation_set_id="annotation_set_1",
+        name="training:asset_1",
+        purpose="other",
+        source_type="human",
+    )
+    page = AnnotationSetPageOutput(items=[annotation_set], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    cm = Mock()
+    cm.annotation_sets_list_page = Mock(return_value=page)
+
+    backend = DatalakeServiceDataVaultBackend(cm)
+    out = backend.list_annotation_sets_page(filters={"status": "active"}, limit=1)
+
+    assert out == page
+    assert isinstance(cm.annotation_sets_list_page.call_args.args[0], PageInput)
+
+
+def test_datalake_service_sync_backend_snapshot_methods():
+    collection = Collection(name="training", collection_id="collection_1")
+    datum = Datum(datum_id="datum_1", asset_refs={"image": "asset_1"})
+    dataset_version = DatasetVersion(dataset_name="training", version="1.0.0")
+    resolved = ResolvedDatasetVersion(dataset_version=dataset_version, datums=[])
+    cm = Mock()
+    cm.collections_update = Mock(return_value=CollectionOutput(collection=collection))
+    cm.datums_create = Mock(return_value=DatumOutput(datum=datum))
+    cm.dataset_versions_create = Mock(return_value=DatasetVersionOutput(dataset_version=dataset_version))
+    cm.dataset_versions_resolve = Mock(return_value=ResolvedDatasetVersionOutput(resolved_dataset_version=resolved))
+
+    backend = DatalakeServiceDataVaultBackend(cm)
+
+    assert backend.update_collection("collection_1", status="archived") == collection
+    assert backend.create_datum(asset_refs={"image": "asset_1"}, split="train") == datum
+    assert (
+        backend.create_dataset_version(
+            dataset_name="training",
+            version="1.0.0",
+            manifest=["datum_1"],
+            description="snapshot",
+        )
+        == dataset_version
+    )
+    assert backend.resolve_dataset_version("training", "1.0.0") == resolved
+
+    assert isinstance(cm.collections_update.call_args.args[0], UpdateCollectionInput)
+    assert isinstance(cm.datums_create.call_args.args[0], CreateDatumInput)
+    assert isinstance(cm.dataset_versions_create.call_args.args[0], CreateDatasetVersionInput)
+    assert isinstance(cm.dataset_versions_resolve.call_args.args[0], GetDatasetVersionInput)
+
+
+def test_datalake_service_sync_backend_collection_paging_and_deletes():
+    collection = Collection(name="training", collection_id="collection_1")
+    item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1")
+    collection_page_1 = CursorPage(items=[collection], page=PageInfo(limit=1, next_cursor="cursor-1", has_more=True))
+    collection_page_2 = CursorPage(items=[], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    item_page = CursorPage(items=[item], page=PageInfo(limit=1, next_cursor=None, has_more=False))
+    cm = Mock()
+    cm.collections_list_page = Mock(side_effect=[collection_page_1, collection_page_1, collection_page_2])
+    cm.collection_items_list_page = Mock(return_value=item_page)
+    cm.collection_items_delete = Mock(return_value=None)
+
+    backend = DatalakeServiceDataVaultBackend(cm)
+    assert backend.list_collections_page(limit=1) == collection_page_1
+    assert list(backend.iter_collections(batch_size=1)) == [collection]
+    assert backend.list_collection_items_page(filters={"collection_id": "collection_1"}, limit=1) == item_page
+    backend.delete_collection_item("ci_1")
+    assert isinstance(cm.collections_list_page.call_args_list[0].args[0], PageInput)
+    assert isinstance(cm.collection_items_delete.call_args.args[0], DeleteByIdInput)

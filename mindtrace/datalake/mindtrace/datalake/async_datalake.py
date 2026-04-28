@@ -2168,6 +2168,37 @@ class AsyncDatalake(Mindtrace):
         datums = [await self.resolve_datum(datum_id) for datum_id in dataset_version.manifest]
         return ResolvedDatasetVersion(dataset_version=dataset_version, datums=datums)
 
+    async def export_dataset_version_to_format(
+        self,
+        dataset_name: str,
+        version: str,
+        *,
+        format: str,
+        destination: str | Path,
+        include_media: bool = True,
+        overwrite: bool = False,
+        split_map: dict[str, str] | None = None,
+        exporter_options: dict[str, Any] | None = None,
+    ):
+        """Export an immutable dataset version to a named external format."""
+        from mindtrace.datalake.exporters import export_dataset_to_format
+        from mindtrace.datalake.exporters.base import build_exportable_dataset_from_resolved_version_async
+
+        resolved_dataset_version = await self.resolve_dataset_version(dataset_name, version)
+        exportable_dataset = await build_exportable_dataset_from_resolved_version_async(
+            self,
+            resolved_dataset_version,
+            split_map=split_map,
+        )
+        return export_dataset_to_format(
+            exportable_dataset,
+            format=format,
+            destination=destination,
+            include_media=include_media,
+            overwrite=overwrite,
+            exporter_options=exporter_options,
+        )
+
     async def create_asset_from_object(
         self,
         *,
