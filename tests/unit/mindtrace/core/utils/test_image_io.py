@@ -6,7 +6,24 @@ import cv2
 import numpy as np
 import pytest
 
+from mindtrace.core.utils import image_io as image_io_mod
 from mindtrace.core.utils.image_io import ImageLoader
+
+
+def test_init_requires_numpy(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(image_io_mod, "_HAS_NUMPY", False)
+    with pytest.raises(ImportError, match="numpy"):
+        ImageLoader(num_workers=1)
+
+
+def test_init_requires_cv2(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(image_io_mod, "_HAS_CV2", False)
+    with pytest.raises(ImportError, match="cv2"):
+        ImageLoader(num_workers=1)
+
+
+def test_load_batch_empty_returns_empty_list() -> None:
+    assert ImageLoader(num_workers=1).load_batch([]) == []
 
 
 def test_read_single_bgr_roundtrip(tmp_path) -> None:
