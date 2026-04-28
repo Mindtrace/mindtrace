@@ -3,7 +3,20 @@
 import numpy as np
 import pytest
 
+from mindtrace.core.utils import letterbox as letterbox_mod
 from mindtrace.core.utils.letterbox import LetterBox
+
+
+def test_init_requires_numpy(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(letterbox_mod, "_HAS_NUMPY", False)
+    with pytest.raises(ImportError, match="numpy"):
+        LetterBox()
+
+
+def test_init_requires_cv2(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(letterbox_mod, "_HAS_CV2", False)
+    with pytest.raises(ImportError, match="cv2"):
+        LetterBox()
 
 
 def test_call_rejects_non_positive_dimensions() -> None:

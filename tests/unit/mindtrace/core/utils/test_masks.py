@@ -9,6 +9,45 @@ from mindtrace.core.utils import masks as masks_mod
 from mindtrace.core.utils.masks import MaskProcessor
 
 
+def test_logits_to_mask_requires_torch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(masks_mod, "_HAS_TORCH", False)
+    with pytest.raises(ImportError, match="torch"):
+        MaskProcessor.logits_to_mask(torch.zeros(1, 2, 2, 2))
+
+
+def test_logits_to_mask_requires_numpy(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(masks_mod, "_HAS_NUMPY", False)
+    with pytest.raises(ImportError, match="numpy"):
+        MaskProcessor.logits_to_mask(torch.zeros(1, 2, 2, 2))
+
+
+def test_overlay_requires_numpy(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(masks_mod, "_HAS_NUMPY", False)
+    with pytest.raises(ImportError, match="numpy"):
+        MaskProcessor.overlay(
+            np.zeros((2, 2, 3), dtype=np.uint8),
+            np.zeros((2, 2), dtype=np.int64),
+        )
+
+
+def test_combine_requires_numpy(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(masks_mod, "_HAS_NUMPY", False)
+    with pytest.raises(ImportError, match="numpy"):
+        MaskProcessor.combine([np.zeros((2, 2), dtype=np.int64)])
+
+
+def test_extract_contours_requires_numpy(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(masks_mod, "_HAS_NUMPY", False)
+    with pytest.raises(ImportError, match="numpy"):
+        MaskProcessor.extract_contours(np.zeros((3, 3), dtype=np.uint8))
+
+
+def test_extract_contours_requires_cv2(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(masks_mod, "_HAS_CV2", False)
+    with pytest.raises(ImportError, match="cv2"):
+        MaskProcessor.extract_contours(np.zeros((3, 3), dtype=np.uint8))
+
+
 def test_logits_to_mask_three_d_no_batch() -> None:
     logits = torch.zeros(3, 8, 8)
     logits[1, 2:5, 2:5] = 5.0
