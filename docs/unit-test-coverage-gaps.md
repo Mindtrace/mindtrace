@@ -6,8 +6,8 @@ Every `mindtrace/*` path below appears in `.coveragerc` `source` and had at leas
 
 ## Summary
 
-- **Files with gaps:** 124
-- **Total missing statements:** 5314
+- **Files with gaps:** 121
+- **Total missing statements:** 5302
 
 ## Regenerate
 
@@ -49,9 +49,6 @@ uv run python scripts/generate_unit_coverage_gaps.py coverage-unit.json
 | `mindtrace/automation/mindtrace/automation/workers/pipeline_worker.py` | 1 | 102 | **B** | HTTP workers; narrow client mocks. |
 | `mindtrace/cluster/mindtrace/cluster/core/cluster.py` | 82 | 94-97, 100-102, 372-374, 411-412, 575-576, 783-786, 809-810, 870, 936-941, 955-956, 958, 960, 964, 972-975, 978-979, 981-984, 987-993, 996-998, 1046-1047, 1051, 1060, 1075-1076, 1080-1081, 1084, 1114-1120, 1130-1131, 1134, 1144-1145, 1148, 1158-1159, 1162, 1168-1169, 1175-1176, 1351 | **B** | Subprocess/docker/git; mock tooling. |
 | `mindtrace/cluster/mindtrace/cluster/workers/environments/git_env.py` | 14 | 34, 146, 160, 176-177, 196, 233, 235, 239-241, 243, 245-246 | **B** | Subprocess/docker/git; mock tooling. |
-| `mindtrace/core/mindtrace/core/config/config.py` | 1 | 539 | **A** | mindtrace-core: types, utils, config branches—fast, high ROI. |
-| `mindtrace/core/mindtrace/core/types/bounding_box.py` | 2 | 136, 151 | **A** | mindtrace-core: types, utils, config branches—fast, high ROI. |
-| `mindtrace/core/mindtrace/core/utils/cropping.py` | 1 | 155 | **A** | mindtrace-core: types, utils, config branches—fast, high ROI. |
 | `mindtrace/database/mindtrace/database/backends/mongo_odm.py` | 35 | 218-220, 700-701, 703-704, 706-712, 714-718, 720, 735-736, 738-739, 741-745, 757, 792-793, 797-798, 800 | **B** | ODM; use test doubles for error paths. |
 | `mindtrace/datalake/mindtrace/datalake/service.py` | 4 | 467, 469, 1093, 1103 | **B** | Case-by-case: prefer pure-function extraction where possible. |
 | `mindtrace/datalake/mindtrace/datalake/sync.py` | 2 | 317, 558 | **B** | Prefer unit tests on pure merge/diff helpers; rest is I/O. |
@@ -105,7 +102,7 @@ uv run python scripts/generate_unit_coverage_gaps.py coverage-unit.json
 | `mindtrace/hardware/mindtrace/hardware/services/cameras/service.py` | 288 | 426-428, 442-444, 456, 458-460, 462-463, 468-469, 474, 476, 508-510, 525-527, 531-532, 535-537, 539-548, 550, 558, 563-565, 569-572, 574, 576-580, 591-593, 603, 621-623, 673, 680, 693, 701, 754-756, 782, 805, 829-831, 840, 853-854, 859-860, 869-870, 879-880, 889-890, 894-895, 904-905, 924-926, 1022, 1164-1166, 1190, 1196, 1258, 1264, 1292-1294, 1324-1326, 1360, 1367-1368, 1373, 1417, 1442-1443, 1447-1449, 1454-1458, 1463-1468, 1472-1476, 1481-1483, 1487-1490, 1495-1497, 1545-1546, 1548, 1568-1569, 1572, 1588, 1614-1616, 1626-1628, 1637-1639, 1643-1644, 1647, 1650-1651, 1653, 1658, 1660, 1663-1665, 1667, 1670, 1672, 1674-1675, 1678-1681, 1683, 1686-1688, 1690-1691, 1693, 1698, 1700, 1703-1704, 1707, 1711, 1713-1714, 1717, 1719-1721, 1727-1728, 1734, 1738-1739, 1742-1743, 1745-1746, 1748-1750, 1752-1753, 1755, 1765-1767, 1769, 1774-1775, 1778-1779, 1781-1782, 1784, 1790, 1795-1797, 1801-1802, 1804-1805, 1807-1808, 1810, 1815-1817, 1821-1822, 1824-1825, 1827-1828, 1830, 1835-1837, 1841-1842, 1844-1845, 1847-1848, 1850, 1855-1859, 1863-1864, 1866-1867, 1869-1870, 1872, 1877-1879, 1883-1884, 1886-1887, 1889, 1892-1893, 1904-1906, 1908-1909, 1915, 1917, 1922-1924, 1947, 2166-2169 | **B** | FastAPI: TestClient + dependency overrides. |
 | `mindtrace/hardware/mindtrace/hardware/services/plcs/connection_manager.py` | 59 | 40-44, 48-52, 61-62, 70-71, 82-84, 115, 126-127, 138-140, 151-153, 164-166, 174-175, 183-184, 197-199, 211-213, 224-226, 239-241, 252-254, 266-268, 280-282, 293-295, 303-304 | **B** | HTTP polling/client code; mock transport. |
 | `mindtrace/hardware/mindtrace/hardware/services/plcs/launcher.py` | 13 | 3-4, 6, 9, 11-13, 15, 18, 21, 28, 31-32 | **B** | Services: FastAPI/Discord/etc.; TestClient + mocks. |
-| `mindtrace/hardware/mindtrace/hardware/services/plcs/models/requests.py` | 14 | 74, 94-96, 99, 101, 118-121, 139-142 | **A** | Pydantic models; validation and defaults. |
+| `mindtrace/hardware/mindtrace/hardware/services/plcs/models/requests.py` | 6 | 74, 96, 99, 101, 120, 141 | **A** | Pydantic models; validation and defaults. |
 | `mindtrace/hardware/mindtrace/hardware/services/plcs/service.py` | 225 | 70, 77, 85-86, 89-90, 93, 97-103, 107-111, 113-114, 119, 122, 125, 128-129, 132-133, 136, 139, 144-149, 152-154, 163, 168-171, 173-176, 180-182, 185-187, 197, 200-202, 206-208, 211-214, 216, 222-224, 229-230, 233, 246, 248, 251-253, 257-261, 263-264, 266, 279-282, 284-289, 291, 299, 304-306, 310-312, 314-317, 321-323, 326-328, 330, 338, 343-345, 349-352, 354-357, 361-363, 365-368, 373-375, 377, 379-383, 387-389, 391, 393-394, 397-399, 403-405, 407-408, 410, 417-419, 423-425, 427-428, 430, 437-439, 443-445, 447-450, 454-455, 458-459, 462-463, 465, 473, 476-478, 483-485, 487, 498-501, 505-507, 509, 524-527, 532-534, 536-537, 540-541, 543, 545, 554, 557-559, 564-568, 570, 577-579 | **B** | FastAPI: TestClient + dependency overrides. |
 | `mindtrace/hardware/mindtrace/hardware/services/scanners_3d/connection_manager.py` | 63 | 40-44, 48-52, 57-58, 62-63, 67-69, 74-76, 80-82, 86-88, 92-94, 98-99, 103-104, 109-111, 115-117, 122-124, 128-130, 134-136, 153, 165-166, 170-172, 185, 193-194, 200-202, 207-208, 212 | **B** | HTTP polling/client code; mock transport. |
 | `mindtrace/hardware/mindtrace/hardware/services/scanners_3d/launcher.py` | 13 | 3-4, 6, 9, 11-13, 15, 18, 21, 28, 31-32 | **B** | Services: FastAPI/Discord/etc.; TestClient + mocks. |
@@ -155,14 +152,11 @@ uv run python scripts/generate_unit_coverage_gaps.py coverage-unit.json
 - **Tier B** — Worth it with mocks / `TestClient` / fakes; err on the side of a narrow regression test when behavior is easy to pin.
 - **Tier C** — Usually skip in unit suite unless you split out a testable function.
 
-### Tier A (6 files, sorted by missing count)
+### Tier A (3 files, sorted by missing count)
 
 - `mindtrace/hardware/mindtrace/hardware/services/cameras/models/requests.py` — **18** missing statements
-- `mindtrace/hardware/mindtrace/hardware/services/plcs/models/requests.py` — **14** missing statements
-- `mindtrace/core/mindtrace/core/types/bounding_box.py` — **2** missing statements
+- `mindtrace/hardware/mindtrace/hardware/services/plcs/models/requests.py` — **6** missing statements
 - `mindtrace/models/mindtrace/models/__init__.py` — **2** missing statements
-- `mindtrace/core/mindtrace/core/config/config.py` — **1** missing statements
-- `mindtrace/core/mindtrace/core/utils/cropping.py` — **1** missing statements
 
 ### Tier B (111 files, sorted by missing count)
 
