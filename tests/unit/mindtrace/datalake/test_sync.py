@@ -96,6 +96,17 @@ def source_datalake(sync_objects):
 def target_datalake(sync_objects):
     datalake = Mock()
     datalake.mongo_db_name = "target_db"
+    target_store = MagicMock()
+    target_store.list_mount_info.return_value = {
+        "source": {},
+        "target": {},
+        "remote": {},
+        "target-vol": {},
+        "s3-target": {},
+    }
+    target_store.has_mount.side_effect = lambda m: m in target_store.list_mount_info.return_value
+    target_store.list_mounts.side_effect = lambda: sorted(target_store.list_mount_info.return_value.keys())
+    datalake.store = target_store
     datalake.object_exists = AsyncMock(return_value=False)
     datalake.create_object_upload_session = AsyncMock(
         return_value=SimpleNamespace(
@@ -175,6 +186,25 @@ class TestDatasetSyncManager:
         probed_ref = target_datalake.object_exists.await_args.args[0]
         assert probed_ref.mount == "remote"
         assert probed_ref.name == plan.payloads[0].source_storage_ref.name
+
+    @pytest.mark.asyncio
+    async def test_plan_import_cross_lake_raises_when_effective_mount_not_on_target(
+        self,
+        source_datalake,
+        target_datalake,
+    ):
+        target_datalake.store.list_mount_info.return_value = {"other_mount": {}}
+
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+
+        with pytest.raises(ValueError, match="After applying mount_map"):
+            await manager.plan_import(
+                DatasetSyncImportRequest(
+                    bundle=bundle,
+                    transfer_policy="copy_if_missing",
+                )
+            )
 
     @pytest.mark.asyncio
     async def test_plan_import_checks_payloads_with_bounded_concurrency(self, source_datalake, target_datalake):
