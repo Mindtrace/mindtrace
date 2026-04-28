@@ -190,7 +190,7 @@ class TestAsyncDatalakeUnit:
     @pytest.mark.asyncio
     async def test_initialize_initializes_all_odms(self, async_datalake, mock_odm):
         await async_datalake.initialize()
-        assert mock_odm.initialize.await_count == 11
+        assert mock_odm.initialize.await_count == 12
 
     @pytest.mark.asyncio
     async def test_create_classmethod_initializes_instance(self, mock_odm, mock_store):
@@ -198,7 +198,7 @@ class TestAsyncDatalakeUnit:
             created = await AsyncDatalake.create("mongodb://test:27017", "test_db", store=mock_store)
         assert isinstance(created, AsyncDatalake)
         assert created.store == mock_store
-        assert mock_odm.initialize.await_count == 11
+        assert mock_odm.initialize.await_count == 12
 
     def test_init_defaults_slow_ops_policy_to_warn(self, mock_odm, mock_store):
         with patch("mindtrace.datalake.async_datalake.MongoMindtraceODM", return_value=mock_odm):

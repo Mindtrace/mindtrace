@@ -86,6 +86,11 @@ def sync_objects():
 def source_datalake(sync_objects):
     datalake = Mock()
     datalake.mongo_db_name = "source_db"
+    source_store = MagicMock()
+    source_store.list_mount_info.return_value = {"source": {}}
+    source_store.has_mount.side_effect = lambda m: m in source_store.list_mount_info.return_value
+    datalake.store = source_store
+    datalake.object_exists = AsyncMock(return_value=True)
     datalake.get_dataset_version = AsyncMock(return_value=sync_objects.dataset_version)
     datalake.get_datum = AsyncMock(return_value=sync_objects.datum)
     datalake.get_asset = AsyncMock(return_value=sync_objects.asset)
@@ -557,6 +562,73 @@ class TestDatasetSyncManager:
         with pytest.raises(ValueError, match="not ready to commit"):
             await manager.commit_import(
                 DatasetSyncImportRequest(bundle=bundle, transfer_policy="fail_if_missing_payload")
+            )
+
+    @pytest.mark.asyncio
+    async def test_plan_import_embedded_marks_not_ready_without_bundle_read_mount(self, target_datalake, sync_objects):
+        solo = target_datalake
+        solo.mongo_db_name = "solo"
+        solo.store.list_mount_info.return_value = {"remote": {}}
+        solo.store.has_mount.side_effect = lambda m: m in solo.store.list_mount_info.return_value
+        solo.object_exists = AsyncMock(return_value=False)
+        solo.get_dataset_version = AsyncMock(return_value=sync_objects.dataset_version)
+        solo.get_datum = AsyncMock(return_value=sync_objects.datum)
+        solo.get_asset = AsyncMock(return_value=sync_objects.asset)
+        solo.get_annotation_set = AsyncMock(return_value=sync_objects.annotation_set)
+        solo.get_annotation_record = AsyncMock(return_value=sync_objects.annotation_record)
+        solo.get_annotation_schema = AsyncMock(return_value=sync_objects.schema)
+        manager = DatasetSyncManager(solo, solo)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        plan = await manager.plan_import(
+            DatasetSyncImportRequest(
+                bundle=bundle,
+                transfer_policy="copy_if_missing",
+                mount_map={"source": "remote"},
+            )
+        )
+        assert plan.transfer_required_count == 1
+        assert plan.ready_to_commit is False
+
+    @pytest.mark.asyncio
+    async def test_commit_import_embedded_with_staged_payloads_skips_get_object(
+        self, source_datalake, target_datalake, sync_objects
+    ):
+        bundle = await DatasetSyncManager(source_datalake, source_datalake).export_dataset_version("demo", "1.0.0")
+        solo = target_datalake
+        solo.mongo_db_name = "solo"
+        solo.store.list_mount_info.return_value = {"remote": {}}
+        solo.store.has_mount.side_effect = lambda m: m in solo.store.list_mount_info.return_value
+        solo.object_exists = AsyncMock(return_value=False)
+        solo.get_object = AsyncMock()
+        manager = DatasetSyncManager(solo, solo)
+        staged_ref = StorageRef(mount="remote", name="images/cat.jpg", version="v2")
+        await manager.commit_import(
+            DatasetSyncImportRequest(
+                bundle=bundle,
+                transfer_policy="copy_if_missing",
+                mount_map={"source": "remote"},
+                staged_payload_storage_refs={sync_objects.asset.asset_id: staged_ref},
+            )
+        )
+        solo.get_object.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_commit_import_rejects_incomplete_staged_map(self, source_datalake, target_datalake, sync_objects):
+        bundle = await DatasetSyncManager(source_datalake, source_datalake).export_dataset_version("demo", "1.0.0")
+        solo = target_datalake
+        solo.mongo_db_name = "solo"
+        solo.store.list_mount_info.return_value = {"remote": {}}
+        solo.store.has_mount.side_effect = lambda m: m in solo.store.list_mount_info.return_value
+        solo.object_exists = AsyncMock(return_value=False)
+        manager = DatasetSyncManager(solo, solo)
+        with pytest.raises(ValueError, match="staged_payload_storage_refs"):
+            await manager.commit_import(
+                DatasetSyncImportRequest(
+                    bundle=bundle,
+                    transfer_policy="copy_if_missing",
+                    mount_map={"source": "remote"},
+                    staged_payload_storage_refs={},
+                )
             )
 
     @pytest.mark.asyncio
