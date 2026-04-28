@@ -6,13 +6,17 @@ architecture with comprehensive MCP tool integration and typed client access.
 """
 
 import asyncio
+import base64
+import io
 import os
 import time
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 
 from fastapi.middleware.cors import CORSMiddleware
+from PIL import Image as PILImage
 
+from mindtrace.core.utils.conversions import ndarray_to_pil
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
 from mindtrace.hardware.core.exceptions import (
     CameraConfigurationError,
@@ -997,20 +1001,21 @@ class CameraManagerService(Service):
         themselves; ``numpy`` / ``pil`` resolve to PNG (lossless) since over
         HTTP we always need bytes.
 
-        Returns ``(image_data_b64, image_size, file_size_bytes)``. All three are
-        ``None`` when ``image`` is missing or encoding fails — the capture
-        itself still succeeded; inline encoding is best-effort so a codec
-        hiccup never loses a frame the caller already owns.
+        Numpy inputs are BGR per the ``CameraBackend.capture`` contract;
+        ``ndarray_to_pil`` performs the BGR→RGB conversion at this wire
+        boundary so the encoded JPEG/PNG/etc. lands in the RGB convention
+        every consumer of those formats expects.
+
+        Returns ``(image_data_b64, image_size, file_size_bytes)``. All three
+        are ``None`` when ``image`` is missing or encoding fails.
         """
         if image is None:
             return None, None, None
         try:
-            import base64
-            import io
-
-            from PIL import Image as PILImage
-
-            pil = image if isinstance(image, PILImage.Image) else PILImage.fromarray(image)
+            if isinstance(image, PILImage.Image):
+                pil = image
+            else:
+                pil = ndarray_to_pil(image, image_format="BGR")
             pil_format, save_kwargs = self._WIRE_FORMAT_MAP.get(output_format.lower(), ("PNG", {}))
             # JPEG / WebP can't carry RGBA / P / I — flatten to RGB first.
             if pil_format in ("JPEG", "WEBP") and pil.mode not in ("RGB", "L"):
@@ -1020,7 +1025,7 @@ class CameraManagerService(Service):
             payload = buf.getvalue()
             return base64.b64encode(payload).decode("ascii"), pil.size, len(payload)
         except Exception as e:  # noqa: BLE001
-            self.logger.warning(f"Failed to encode capture as {output_format}: {e}")
+            self.logger.warning(f"Failed to encode capture as {output_format}: {e}", exc_info=True)
             return None, None, None
 
     @staticmethod
@@ -1042,8 +1047,6 @@ class CameraManagerService(Service):
         ``file_size_bytes`` populated) so callers don't need a stream or a
         round-trip through ``/cameras/images/...``.
         """
-        import asyncio
-
         try:
             manager = await self._get_camera_manager()
 
@@ -1664,8 +1667,6 @@ class CameraManagerService(Service):
                 raise HTTPException(status_code=503, detail=f"Camera '{actual_camera_name}' is not connected")
 
             # Create MJPEG streaming response
-            import asyncio
-
             from fastapi.responses import StreamingResponse
 
             async def generate_mjpeg_stream():
@@ -1697,22 +1698,14 @@ class CameraManagerService(Service):
                         consecutive_timeouts = 0
 
                         if frame_np is not None:
-                            # Convert numpy array to JPEG bytes
-                            # Ensure it's uint8 and RGB/BGR
+                            # Captures are BGR per the CameraBackend.capture
+                            # contract — the channel order cv2.imencode expects.
                             if frame_np.dtype != np.uint8:
                                 frame_np = (frame_np * 255).astype(np.uint8)
 
-                            # Convert RGB to BGR if needed (OpenCV expects BGR)
-                            # Run in threadpool to avoid blocking event loop
-                            if len(frame_np.shape) == 3 and frame_np.shape[2] == 3:
-                                # Assuming RGB input, convert to BGR for cv2
-                                frame_bgr = await asyncio.to_thread(cv2.cvtColor, frame_np, cv2.COLOR_RGB2BGR)
-                            else:
-                                frame_bgr = frame_np
-
                             # Encode as JPEG with dynamic quality (run in threadpool)
                             success, jpeg_data = await asyncio.to_thread(
-                                cv2.imencode, ".jpg", frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, quality]
+                                cv2.imencode, ".jpg", frame_np, [cv2.IMWRITE_JPEG_QUALITY, quality]
                             )
 
                             if success:
