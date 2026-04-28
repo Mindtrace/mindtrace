@@ -233,7 +233,7 @@ class TestServiceStatusAndConnection:
 
             assert result == mock_manager_instance
             mock_generate.assert_called_once_with(Service)
-            mock_manager_class.assert_called_once_with(url=mock_default_url.return_value, request_timeout=60)
+            mock_manager_class.assert_called_once_with(url=mock_default_url.return_value)
 
     @patch.object(Service, "status_at_host")
     def test_connect_success_with_custom_manager(self, mock_status_at_host):
@@ -250,7 +250,7 @@ class TestServiceStatusAndConnection:
             result = Service.connect(url="http://localhost:8000")
 
             assert result == mock_manager_instance
-            mock_client_interface.assert_called_once_with(url=parse_url("http://localhost:8000"), request_timeout=60)
+            mock_client_interface.assert_called_once_with(url=parse_url("http://localhost:8000"))
         finally:
             # Clean up
             Service._client_interface = None
@@ -1054,7 +1054,7 @@ class TestServiceInterruption:
             result = Service._connect_with_interrupt_handling("http://localhost:8000", mock_process, 30)
 
             assert result == mock_connection_manager
-            mock_connect.assert_called_once_with(url="http://localhost:8000", timeout=5, request_timeout=30)
+            mock_connect.assert_called_once_with(url="http://localhost:8000", timeout=5)
 
     @patch.object(Service, "status_at_host")
     @patch("mindtrace.services.core.service.subprocess.Popen")

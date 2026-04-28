@@ -246,17 +246,16 @@ class Service(Mindtrace):
                 raise KeyboardInterrupt("Service terminated by SIGINT.")
             else:
                 raise RuntimeError(f"Server exited with code {process.returncode}")
-        # Use a short per-request timeout so the Timeout handler can retry
-        # instead of a single request consuming the entire launch timeout
-        per_request_timeout = min(5, timeout)
-        return cls.connect(url=url, timeout=per_request_timeout, request_timeout=timeout)
+        # Use a short status-check timeout so the Timeout handler can retry
+        # instead of a single probe consuming the entire launch timeout.
+        status_check_timeout = min(5, timeout)
+        return cls.connect(url=url, timeout=status_check_timeout)
 
     @classmethod
     def connect(
         cls: Type[T],
         url: str | Url | None = None,
         timeout: int = 60,
-        request_timeout: float | None = None,
     ) -> Any:
         """Connect to an existing service.
 
@@ -266,7 +265,6 @@ class Service(Mindtrace):
         Args:
             url: The host URL of the service.
             timeout: Timeout used while checking whether the service is available.
-            request_timeout: Timeout used by generated endpoint calls. Defaults to ``timeout`` for direct connects.
 
         Returns:
             A connection manager for the service.
@@ -277,17 +275,9 @@ class Service(Mindtrace):
         url = ifnone_url(url, default=cls.default_url())
         host_status = cls.status_at_host(url, timeout=timeout)
         if host_status == ServerStatus.AVAILABLE:
-            endpoint_timeout = timeout if request_timeout is None else request_timeout
             if cls._client_interface is None:
-                return generate_connection_manager(cls)(url=url, request_timeout=endpoint_timeout)
-            try:
-                return cls._client_interface(url=url, request_timeout=endpoint_timeout)
-            except TypeError as exc:
-                if "request_timeout" not in str(exc):
-                    raise
-                manager = cls._client_interface(url=url)
-                manager.request_timeout = endpoint_timeout
-                return manager
+                return generate_connection_manager(cls)(url=url)
+            return cls._client_interface(url=url)
         raise HTTPException(status_code=503, detail=f"Server failed to connect: {host_status}")
 
     @overload

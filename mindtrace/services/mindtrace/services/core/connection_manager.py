@@ -17,16 +17,9 @@ from mindtrace.services.core.types import ServerStatus, ShutdownOutput, StatusOu
 class ConnectionManager(Mindtrace):
     """Client-side helper class for communicating with Mindtrace servers."""
 
-    def __init__(
-        self,
-        url: Url | None = None,
-        server_id: UUID | None = None,
-        server_pid_file: str | None = None,
-        request_timeout: float | httpx.Timeout | None = 60,
-    ):
+    def __init__(self, url: Url | None = None, server_id: UUID | None = None, server_pid_file: str | None = None):
         super().__init__()
         self.url = ifnone(url, default=parse_url(self.config["MINDTRACE_DEFAULT_HOST_URLS"]["SERVICE"]))
-        self.request_timeout = request_timeout
         self._server_id = server_id
         self._server_pid_file = server_pid_file
         self._mcp_client: Client | None = None

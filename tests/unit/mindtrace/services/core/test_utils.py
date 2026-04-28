@@ -301,8 +301,8 @@ class TestGenerateConnectionManager:
         mock_output_schema.assert_called_once_with(result="success")
 
     @patch("mindtrace.services.core.utils.httpx")
-    def test_generated_method_uses_configured_request_timeout(self, mock_httpx, mock_service_class):
-        """Test generated sync methods honor the connection manager timeout."""
+    def test_generated_method_uses_default_timeout(self, mock_httpx, mock_service_class):
+        """Test generated sync methods use the default endpoint timeout."""
         mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
         mock_response = Mock()
         mock_response.status_code = 200
@@ -312,14 +312,14 @@ class TestGenerateConnectionManager:
         mock_endpoint1.output_schema = Mock()
 
         ConnectionManagerClass = generate_connection_manager(mock_service_class)
-        manager = ConnectionManagerClass(url=parse_url("http://test.com"), request_timeout=300)
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
         manager.test_endpoint()
 
-        mock_httpx.post.assert_called_once_with("http://test.com/test_endpoint", json={}, timeout=300)
+        mock_httpx.post.assert_called_once_with("http://test.com/test_endpoint", json={}, timeout=60)
 
     @patch("mindtrace.services.core.utils.httpx")
-    def test_generated_method_allows_per_call_request_timeout(self, mock_httpx, mock_service_class):
-        """Test generated sync methods allow a per-call timeout override."""
+    def test_generated_method_allows_timeout_override(self, mock_httpx, mock_service_class):
+        """Test generated sync methods allow a method-local timeout override."""
         mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
         mock_response = Mock()
         mock_response.status_code = 200
@@ -329,8 +329,8 @@ class TestGenerateConnectionManager:
         mock_endpoint1.output_schema = Mock()
 
         ConnectionManagerClass = generate_connection_manager(mock_service_class)
-        manager = ConnectionManagerClass(url=parse_url("http://test.com"), request_timeout=300)
-        manager.test_endpoint(_request_timeout=5)
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
+        manager.test_endpoint(timeout=5)
 
         mock_httpx.post.assert_called_once_with("http://test.com/test_endpoint", json={}, timeout=5)
 
@@ -368,8 +368,8 @@ class TestGenerateConnectionManager:
 
     @patch("mindtrace.services.core.utils.httpx")
     @pytest.mark.asyncio
-    async def test_generated_async_method_uses_configured_request_timeout(self, mock_httpx, mock_service_class):
-        """Test generated async methods honor the connection manager timeout."""
+    async def test_generated_async_method_allows_timeout_override(self, mock_httpx, mock_service_class):
+        """Test generated async methods allow a method-local timeout override."""
         mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
         mock_client = AsyncMock()
         mock_response = Mock()
@@ -381,8 +381,8 @@ class TestGenerateConnectionManager:
         mock_endpoint1.output_schema = Mock()
 
         ConnectionManagerClass = generate_connection_manager(mock_service_class)
-        manager = ConnectionManagerClass(url=parse_url("http://test.com"), request_timeout=300)
-        await manager.atest_endpoint()
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
+        await manager.atest_endpoint(timeout=300)
 
         mock_httpx.AsyncClient.assert_called_once_with(timeout=300)
         mock_client.post.assert_called_once_with("http://test.com/test_endpoint", json={}, timeout=300)
