@@ -110,25 +110,28 @@ class CaptureImageRequest(BaseModel):
 
     camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
     save_path: Optional[str] = Field(None, description="Optional path to save the captured image")
-    output_format: str = Field("pil", description="Output format for returned image ('numpy' or 'pil')")
+    output_format: str = Field(
+        "pil",
+        description="Output format: 'numpy' / 'pil' (return type) or 'jpeg' / 'jpg' / 'png' / 'tiff' / 'tif' / 'bmp' / 'webp' (wire encoding)",
+    )
     stage: Optional[str] = Field(None, description="Stage name for capture group routing")
     set_name: Optional[str] = Field(None, description="Set name for capture group routing")
 
     @field_validator("output_format")
     @classmethod
     def validate_output_format(cls, v: str) -> str:
-        """Validate output format is supported."""
+        """Normalize and validate the requested output format.
+
+        ``numpy`` / ``pil`` describe the in-memory return type; the file-format
+        names (``jpeg``, ``png``, ``tiff``, ``bmp``, ``webp``, ``jpg``, ``tif``)
+        select the wire encoding used when the response carries inline bytes.
+        """
         v_lower = v.lower()
-        # Accept common image formats and map them to appropriate return type
-        if v_lower in ("numpy", "pil"):
+        if v_lower in ("numpy", "pil", "jpg", "jpeg", "png", "tiff", "tif", "bmp", "webp"):
             return v_lower
-        elif v_lower in ("jpg", "jpeg", "png", "tiff", "tif", "bmp", "webp"):
-            # File formats map to numpy for simplicity
-            return "numpy"
-        else:
-            raise ValueError(
-                f"Unsupported output_format: '{v}'. Supported formats: 'numpy', 'pil', 'jpeg', 'jpg', 'png', 'tiff', 'bmp', 'webp'"
-            )
+        raise ValueError(
+            f"Unsupported output_format: '{v}'. Supported: numpy, pil, jpeg, jpg, png, tiff, tif, bmp, webp"
+        )
 
 
 class CaptureBatchRequest(BaseModel):
@@ -138,25 +141,22 @@ class CaptureBatchRequest(BaseModel):
     save_path_pattern: Optional[str] = Field(
         None, description="Optional path pattern for saving images. Use {camera} placeholder for camera name"
     )
-    output_format: str = Field("pil", description="Output format for returned images ('numpy' or 'pil')")
+    output_format: str = Field(
+        "pil",
+        description="Output format: 'numpy' / 'pil' (return type) or 'jpeg' / 'jpg' / 'png' / 'tiff' / 'tif' / 'bmp' / 'webp' (wire encoding)",
+    )
     stage: Optional[str] = Field(None, description="Stage name for capture group routing")
     set_name: Optional[str] = Field(None, description="Set name for capture group routing")
 
     @field_validator("output_format")
     @classmethod
     def validate_output_format(cls, v: str) -> str:
-        """Validate output format is supported."""
         v_lower = v.lower()
-        # Accept common image formats and map them to appropriate return type
-        if v_lower in ("numpy", "pil"):
+        if v_lower in ("numpy", "pil", "jpg", "jpeg", "png", "tiff", "tif", "bmp", "webp"):
             return v_lower
-        elif v_lower in ("jpg", "jpeg", "png", "tiff", "tif", "bmp", "webp"):
-            # File formats map to numpy for simplicity
-            return "numpy"
-        else:
-            raise ValueError(
-                f"Unsupported output_format: '{v}'. Supported formats: 'numpy', 'pil', 'jpeg', 'jpg', 'png', 'tiff', 'bmp', 'webp'"
-            )
+        raise ValueError(
+            f"Unsupported output_format: '{v}'. Supported: numpy, pil, jpeg, jpg, png, tiff, tif, bmp, webp"
+        )
 
 
 class CaptureHDRRequest(BaseModel):
