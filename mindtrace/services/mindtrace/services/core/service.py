@@ -249,10 +249,15 @@ class Service(Mindtrace):
         # Use a short per-request timeout so the Timeout handler can retry
         # instead of a single request consuming the entire launch timeout
         per_request_timeout = min(5, timeout)
-        return cls.connect(url=url, timeout=per_request_timeout)
+        return cls.connect(url=url, timeout=per_request_timeout, request_timeout=timeout)
 
     @classmethod
-    def connect(cls: Type[T], url: str | Url | None = None, timeout: int = 60) -> Any:
+    def connect(
+        cls: Type[T],
+        url: str | Url | None = None,
+        timeout: int = 60,
+        request_timeout: float | None = None,
+    ) -> Any:
         """Connect to an existing service.
 
         The returned connection manager is determined by the registered connection manager for the service. If one has
@@ -260,6 +265,8 @@ class Service(Mindtrace):
 
         Args:
             url: The host URL of the service.
+            timeout: Timeout used while checking whether the service is available.
+            request_timeout: Timeout used by generated endpoint calls. Defaults to ``timeout`` for direct connects.
 
         Returns:
             A connection manager for the service.
@@ -270,10 +277,11 @@ class Service(Mindtrace):
         url = ifnone_url(url, default=cls.default_url())
         host_status = cls.status_at_host(url, timeout=timeout)
         if host_status == ServerStatus.AVAILABLE:
+            endpoint_timeout = timeout if request_timeout is None else request_timeout
             if cls._client_interface is None:
-                return generate_connection_manager(cls)(url=url)
+                return generate_connection_manager(cls)(url=url, request_timeout=endpoint_timeout)
             else:
-                return cls._client_interface(url=url)
+                return cls._client_interface(url=url, request_timeout=endpoint_timeout)
         raise HTTPException(status_code=503, detail=f"Server failed to connect: {host_status}")
 
     @overload
