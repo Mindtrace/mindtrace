@@ -70,6 +70,41 @@ def _chunked[T](items: Sequence[T], size: int) -> list[Sequence[T]]:
     return [items[index : index + size] for index in range(0, len(items), size)]
 
 
+def collect_bundle_mount_names(bundle: DatasetSyncBundle) -> set[str]:
+    """Unique ``storage_ref.mount`` values from bundled assets and payload descriptors."""
+    mounts: set[str] = set()
+    for asset in bundle.assets:
+        mounts.add(asset.storage_ref.mount)
+    for payload in bundle.payloads:
+        mounts.add(payload.storage_ref.mount)
+    return mounts
+
+
+def validate_cross_lake_target_mount_resolution(
+    target: AsyncDatalake,
+    bundle: DatasetSyncBundle,
+    mount_map: dict[str, str],
+) -> None:
+    """Raise ``ValueError`` when a bundle mount resolves to an unknown mount on ``target``.
+
+    After ``mount_map`` is applied via :func:`_apply_mount_map_to_storage_ref`, the effective
+    target-side mount must exist on ``target``. Surfaces misconfiguration earlier than opaque
+    ``StoreLocationNotFound(<mount>)`` /
+    ``KeyError`` during probing.
+    """
+
+    configured = frozenset(target.store.list_mount_info().keys())
+    for src_mount in sorted(collect_bundle_mount_names(bundle)):
+        resolved = mount_map.get(src_mount, src_mount)
+        if resolved not in configured:
+            raise ValueError(
+                "After applying mount_map, target datalake has no store mount "
+                f"{resolved!r} (configured: {sorted(configured)}) for bundle mount {src_mount!r}. "
+                "Map bundle mounts to mounts that exist on the target datalake; unmapped mounts pass through "
+                "when source and mount names match on both sides."
+            )
+
+
 class DatasetSyncManager:
     """Orchestrates export/import of a single immutable :class:`DatasetVersion` graph.
 
@@ -158,9 +193,11 @@ class DatasetSyncManager:
             raise ValueError(_METADATA_ONLY_CROSS_LAKE)
 
         bundle = request.bundle
+        mount_map = request.mount_map
+        if self.source is not self.target:
+            validate_cross_lake_target_mount_resolution(self.target, bundle, mount_map)
         payload_plans: list[DatasetSyncPayloadPlan] = []
 
-        mount_map = request.mount_map
         payloads = bundle.payloads
         total_payloads = len(payloads)
         batches = _chunked(payloads, request.planning_batch_size)

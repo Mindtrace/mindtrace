@@ -52,7 +52,9 @@ class DatasetSyncImportRequest(BaseModel):
         default_factory=dict,
         description=(
             "Maps source registry mount names to target mount names for payload probes, uploads, and "
-            "persisted StorageRef values. Unlisted mounts pass through unchanged."
+            "persisted StorageRef values. On cross-lake imports, each distinct mount in bundled assets and "
+            "payloads must resolve (after mapping) to a mount that exists on the target datalake. "
+            "Unlisted mounts pass through unchanged when the same mount name exists on both lakes."
         ),
     )
     planning_batch_size: int = Field(
