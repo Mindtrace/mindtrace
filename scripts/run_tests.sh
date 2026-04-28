@@ -155,11 +155,12 @@ OVERALL_EXIT_CODE=0
 
 # Run unit tests if requested
 if [ "$RUN_UNIT" = true ]; then
+    UNIT_PYTEST_ARGS=(-n auto)
     echo "Running unit tests..."
     for module in "${MODULES[@]}"; do
         echo "Running unit tests for $module..."
         if [ -d "tests/unit/mindtrace/$module" ]; then
-            run_pytest_with_coverage -rs -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/unit/mindtrace/$module
+            run_pytest_with_coverage "${UNIT_PYTEST_ARGS[@]}" -rs -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/unit/mindtrace/$module
             if [ $? -ne 0 ]; then
                 echo "Unit tests for $module failed. Stopping test execution."
                 OVERALL_EXIT_CODE=1
@@ -169,7 +170,7 @@ if [ "$RUN_UNIT" = true ]; then
         fi
     done
     if [ ${#MODULES[@]} -eq 0 ]; then
-        run_pytest_with_coverage -rs -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/unit/mindtrace
+        run_pytest_with_coverage "${UNIT_PYTEST_ARGS[@]}" -rs -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/unit/mindtrace
         if [ $? -ne 0 ]; then
             echo "Unit tests failed. Stopping test execution."
             OVERALL_EXIT_CODE=1
