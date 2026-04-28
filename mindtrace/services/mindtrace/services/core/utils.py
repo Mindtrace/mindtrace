@@ -149,9 +149,9 @@ def generate_connection_manager(
                             raise ValueError(
                                 f"Service method {endpoint_name} must be called with either kwargs or a single argument of type {input_schema}"
                             )
-                        payload = args[0].model_dump()
+                        payload = args[0].model_dump(mode="json")
                     else:
-                        payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
+                        payload = input_schema(**kwargs).model_dump(mode="json") if input_schema is not None else {}
                 else:
                     payload = kwargs
                 res = httpx.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=60)
@@ -183,9 +183,9 @@ def generate_connection_manager(
                             raise ValueError(
                                 f"Service method a{endpoint_name} must be called with either kwargs or a single argument of type {input_schema}"
                             )
-                        payload = args[0].model_dump()
+                        payload = args[0].model_dump(mode="json")
                     else:
-                        payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
+                        payload = input_schema(**kwargs).model_dump(mode="json") if input_schema is not None else {}
                 else:
                     payload = kwargs
                 async with httpx.AsyncClient(timeout=60) as client:
