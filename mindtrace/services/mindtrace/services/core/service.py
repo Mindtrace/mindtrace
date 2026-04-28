@@ -280,8 +280,14 @@ class Service(Mindtrace):
             endpoint_timeout = timeout if request_timeout is None else request_timeout
             if cls._client_interface is None:
                 return generate_connection_manager(cls)(url=url, request_timeout=endpoint_timeout)
-            else:
+            try:
                 return cls._client_interface(url=url, request_timeout=endpoint_timeout)
+            except TypeError as exc:
+                if "request_timeout" not in str(exc):
+                    raise
+                manager = cls._client_interface(url=url)
+                manager.request_timeout = endpoint_timeout
+                return manager
         raise HTTPException(status_code=503, detail=f"Server failed to connect: {host_status}")
 
     @overload
