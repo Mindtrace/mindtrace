@@ -86,7 +86,9 @@ class Gateway(Service):
             base_cm_constructor = generate_connection_manager(cls)
 
             # Create the base connection manager instance
-            base_cm = base_cm_constructor(url=url, request_timeout=timeout if request_timeout is None else request_timeout)
+            base_cm = base_cm_constructor(
+                url=url, request_timeout=timeout if request_timeout is None else request_timeout
+            )
 
             # Add enhanced functionality to the instance
             base_cm._registered_apps = {}

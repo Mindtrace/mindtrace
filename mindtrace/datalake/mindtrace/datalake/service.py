@@ -1044,21 +1044,19 @@ class DatalakeService(Service):
         result = await manager.commit_import(payload)
         return DatasetSyncCommitResultOutput(result=result)
 
-    async def import_dataset_version_prepare_start(self, payload: DatasetSyncImportRequest) -> DatasetSyncJobStartOutput:
+    async def import_dataset_version_prepare_start(
+        self, payload: DatasetSyncImportRequest
+    ) -> DatasetSyncJobStartOutput:
         return self._start_dataset_sync_job(payload, mode="prepare")
 
     async def import_dataset_version_start(self, payload: DatasetSyncImportRequest) -> DatasetSyncJobStartOutput:
         return self._start_dataset_sync_job(payload, mode="import")
 
-    async def import_dataset_version_job_status(
-        self, payload: DatasetSyncJobStatusInput
-    ) -> DatasetSyncJobStatusOutput:
+    async def import_dataset_version_job_status(self, payload: DatasetSyncJobStatusInput) -> DatasetSyncJobStatusOutput:
         job = self._get_dataset_sync_job(payload.job_id)
         return self._dataset_sync_job_status_output(job)
 
-    async def import_dataset_version_job_result(
-        self, payload: DatasetSyncJobStatusInput
-    ) -> DatasetSyncJobResultOutput:
+    async def import_dataset_version_job_result(self, payload: DatasetSyncJobStatusInput) -> DatasetSyncJobResultOutput:
         job = self._get_dataset_sync_job(payload.job_id)
         return DatasetSyncJobResultOutput(
             job_id=job.job_id,
