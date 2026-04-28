@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
+import traceback
 from collections.abc import Awaitable
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -81,6 +83,7 @@ from mindtrace.datalake.service_types import (
     DatasetSyncImportPrepareStartSchema,
     DatasetSyncImportRequest,
     DatasetSyncImportStartSchema,
+    DatasetSyncJobErrorDetail,
     DatasetSyncJobResultOutput,
     DatasetSyncJobStartOutput,
     DatasetSyncJobStatusInput,
@@ -201,6 +204,8 @@ from mindtrace.datalake.sync_types import (
 from mindtrace.registry import Mount
 from mindtrace.services import Service
 
+_LOGGER = logging.getLogger(__name__)
+
 
 @dataclass
 class _DatasetSyncJobState:
@@ -213,6 +218,7 @@ class _DatasetSyncJobState:
     plan: DatasetSyncImportPlan | None = None
     result: DatasetSyncCommitResult | None = None
     error: str | None = None
+    error_detail: DatasetSyncJobErrorDetail | None = None
     task: asyncio.Task[None] | None = None
 
 
@@ -1066,6 +1072,7 @@ class DatalakeService(Service):
             plan=job.plan,
             result=job.result,
             error=job.error,
+            error_detail=job.error_detail,
         )
 
     def _start_dataset_sync_job(self, request: DatasetSyncImportRequest, *, mode: str) -> DatasetSyncJobStartOutput:
@@ -1104,8 +1111,19 @@ class DatalakeService(Service):
                 )
         except Exception as exc:
             job.status = "failed"
-            job.error = str(exc)
-            job.progress = DatasetSyncProgress(phase="failed", message=str(exc))
+            summary = f"{type(exc).__name__}: {exc!r}"
+            job.error = summary
+            job.error_detail = DatasetSyncJobErrorDetail(
+                exception_type=f"{exc.__class__.__module__}.{exc.__class__.__qualname__}",
+                exception_repr=repr(exc),
+                traceback=traceback.format_exc(),
+            )
+            job.progress = DatasetSyncProgress(phase="failed", message=summary)
+            _LOGGER.exception(
+                "Dataset sync job failed (job_id=%s, mode=%s)",
+                job.job_id,
+                job.mode,
+            )
 
     def _get_dataset_sync_job(self, job_id: str) -> _DatasetSyncJobState:
         try:
@@ -1121,6 +1139,7 @@ class DatalakeService(Service):
             status=job.status,
             progress=job.progress,
             error=job.error,
+            error_detail=job.error_detail,
         )
 
     async def replication_upsert_batch(self, payload: ReplicationBatchRequest) -> ReplicationBatchResultOutput:
