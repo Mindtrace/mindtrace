@@ -1005,3 +1005,41 @@ class TestHuggingFaceTrackerBridge:
         logged = tracker.log.call_args[0][0]
         assert logged["epoch"] == 5.0
         assert isinstance(logged["epoch"], float)
+
+
+class TestBridgesTransformersImportFallback:
+    def test_hf_bridge_base_is_object_when_transformers_missing(self):
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[4]
+        script = r"""
+import builtins
+import sys
+
+sys.path.insert(0, sys.argv[1])
+_real = builtins.__import__
+
+def _fake(name, globals=None, locals=None, fromlist=(), level=0):
+    if name == "transformers" or name.startswith("transformers."):
+        raise ImportError("simulated missing transformers")
+    return _real(name, globals, locals, fromlist, level)
+
+builtins.__import__ = _fake
+for key in list(sys.modules.keys()):
+    if key.startswith("mindtrace.models.tracking"):
+        del sys.modules[key]
+
+import mindtrace.models.tracking.bridges as bridges
+
+assert bridges._HFBase is object
+"""
+        proc = subprocess.run(
+            [sys.executable, "-c", script, str(root)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        assert proc.returncode == 0, proc.stderr
