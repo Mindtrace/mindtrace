@@ -106,3 +106,30 @@ def test_dataset_sync_import_request_rejects_both_metadata_flags():
 
     with pytest.raises(ValueError, match="preserve_ids=False"):
         DatasetSyncImportRequest(bundle=bundle, preserve_ids=False)
+
+
+def test_dataset_sync_import_request_new_optimization_defaults():
+    storage_ref = StorageRef(mount="source", name="images/cat.jpg", version="v1")
+    asset = Asset(kind="image", media_type="image/jpeg", storage_ref=storage_ref)
+    datum = Datum(asset_refs={"image": asset.asset_id}, annotation_set_ids=[])
+    dataset_version = DatasetVersion(dataset_name="demo", version="1.0.0", manifest=[datum.datum_id])
+    bundle = DatasetSyncBundle(dataset_version=dataset_version, datums=[datum], assets=[asset], payloads=[])
+
+    req = DatasetSyncImportRequest(bundle=bundle)
+    assert req.greenfield_skip_target_metadata_probes is True
+    assert req.target_object_match_policy == "exists"
+    assert req.commit_progress_every_items == 100
+    assert req.commit_progress_every_seconds == 0.25
+
+
+def test_dataset_sync_import_plan_accepts_byte_totals():
+    plan = DatasetSyncImportPlan(
+        dataset_name="demo",
+        version="1.0.0",
+        transfer_policy="copy_if_missing",
+        total_payload_bytes=1024,
+        transfer_required_bytes=512,
+        ready_to_commit=True,
+    )
+    assert plan.total_payload_bytes == 1024
+    assert plan.transfer_required_bytes == 512

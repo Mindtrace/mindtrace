@@ -1319,3 +1319,52 @@ class TestDatasetSyncProgressHelpers:
         )
         assert (transferred, skipped) == (0, 0)
         assert refs == {sync_objects.asset.asset_id: expected_ref}
+
+    @pytest.mark.asyncio
+    async def test_plan_import_reports_byte_totals_and_uses_match_policy(self, source_datalake, target_datalake):
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        target_datalake.object_exists = AsyncMock(return_value=True)
+        target_datalake.head_object = AsyncMock(return_value={"size_bytes": bundle.payloads[0].size_bytes})
+
+        plan = await manager.plan_import(
+            DatasetSyncImportRequest(
+                bundle=bundle,
+                transfer_policy="copy_if_missing",
+                target_object_match_policy="size",
+                greenfield_skip_target_object_probes=False,
+            )
+        )
+
+        assert plan.total_payload_bytes == bundle.payloads[0].size_bytes
+        assert plan.transfer_required_bytes == 0
+        assert plan.payloads[0].reason == "already_present_size_match"
+        target_datalake.head_object.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_commit_import_greenfield_metadata_fast_path_avoids_metadata_prefetches(
+        self, source_datalake, target_datalake
+    ):
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        target_datalake.object_exists = AsyncMock(return_value=False)
+        target_datalake.get_dataset_version = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+        target_datalake.annotation_schema_database.find = AsyncMock(return_value=[])
+        target_datalake.asset_database.find = AsyncMock(return_value=[])
+        target_datalake.annotation_record_database.find = AsyncMock(return_value=[])
+        target_datalake.annotation_set_database.find = AsyncMock(return_value=[])
+        target_datalake.datum_database.find = AsyncMock(return_value=[])
+
+        await manager.commit_import(
+            DatasetSyncImportRequest(
+                bundle=bundle,
+                transfer_policy="copy_if_missing",
+                greenfield_skip_target_metadata_probes=True,
+            )
+        )
+
+        target_datalake.annotation_schema_database.find.assert_not_awaited()
+        target_datalake.asset_database.find.assert_not_awaited()
+        target_datalake.annotation_record_database.find.assert_not_awaited()
+        target_datalake.annotation_set_database.find.assert_not_awaited()
+        target_datalake.datum_database.find.assert_not_awaited()
