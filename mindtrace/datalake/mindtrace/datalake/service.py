@@ -258,6 +258,14 @@ class _ImportSessionProgressWriter:
         sess.import_progress_completed_items = progress.completed_items
         sess.import_progress_total_items = progress.total_items
         sess.import_progress_message = progress.message
+        sess.import_progress_entity_kind = progress.entity_kind
+        sess.import_progress_phase_detail = progress.phase_detail
+        sess.import_progress_entity_completed_items = progress.entity_completed_items
+        sess.import_progress_entity_total_items = progress.entity_total_items
+        sess.import_progress_bytes_completed = progress.bytes_completed
+        sess.import_progress_bytes_total = progress.bytes_total
+        sess.import_progress_skipped_items = progress.skipped_items
+        sess.import_progress_failed_items = progress.failed_items
         sess.import_progress_updated_at = utc_now()
         if progress.phase == "failed":
             sess.import_progress_error = error or progress.message
@@ -301,6 +309,14 @@ def _dataset_import_session_status_output(session: DatasetImportSession) -> Data
                 "completed_items": session.import_progress_completed_items or 0,
                 "total_items": session.import_progress_total_items or 0,
                 "message": session.import_progress_message or "",
+                "entity_kind": session.import_progress_entity_kind,
+                "phase_detail": session.import_progress_phase_detail,
+                "entity_completed_items": session.import_progress_entity_completed_items,
+                "entity_total_items": session.import_progress_entity_total_items,
+                "bytes_completed": session.import_progress_bytes_completed,
+                "bytes_total": session.import_progress_bytes_total,
+                "skipped_items": session.import_progress_skipped_items,
+                "failed_items": session.import_progress_failed_items,
             }
         )
 
@@ -1270,6 +1286,7 @@ class DatalakeService(Service):
         session = DatasetImportSession(
             bundle_data={},
             transfer_policy=payload.transfer_policy,
+            target_object_match_policy=payload.target_object_match_policy,
             preserve_ids=payload.preserve_ids,
             mount_map=dict(payload.mount_map),
             origin_lake_id=payload.origin_lake_id,
@@ -1277,6 +1294,10 @@ class DatalakeService(Service):
             planning_concurrency=payload.planning_concurrency,
             transfer_batch_size=payload.transfer_batch_size,
             transfer_concurrency=payload.transfer_concurrency,
+            greenfield_skip_target_object_probes=payload.greenfield_skip_target_object_probes,
+            greenfield_skip_target_metadata_probes=payload.greenfield_skip_target_metadata_probes,
+            commit_progress_every_items=payload.commit_progress_every_items,
+            commit_progress_every_seconds=payload.commit_progress_every_seconds,
             required_asset_ids=required,
             expires_at=now + timedelta(hours=24),
         )
@@ -1336,6 +1357,7 @@ class DatalakeService(Service):
         req = DatasetSyncImportRequest(
             bundle=bundle,
             transfer_policy=session.transfer_policy,
+            target_object_match_policy=session.target_object_match_policy,
             origin_lake_id=session.origin_lake_id,
             preserve_ids=session.preserve_ids,
             mount_map=session.mount_map,
@@ -1343,6 +1365,10 @@ class DatalakeService(Service):
             planning_concurrency=session.planning_concurrency,
             transfer_batch_size=session.transfer_batch_size,
             transfer_concurrency=session.transfer_concurrency,
+            greenfield_skip_target_object_probes=session.greenfield_skip_target_object_probes,
+            greenfield_skip_target_metadata_probes=session.greenfield_skip_target_metadata_probes,
+            commit_progress_every_items=session.commit_progress_every_items,
+            commit_progress_every_seconds=session.commit_progress_every_seconds,
             staged_payload_storage_refs=None,
             target_metadata_commit=True,
         )
@@ -1467,6 +1493,7 @@ class DatalakeService(Service):
         req = DatasetSyncImportRequest(
             bundle=bundle,
             transfer_policy=session.transfer_policy,
+            target_object_match_policy=session.target_object_match_policy,
             origin_lake_id=session.origin_lake_id,
             preserve_ids=session.preserve_ids,
             mount_map=session.mount_map,
@@ -1474,6 +1501,10 @@ class DatalakeService(Service):
             planning_concurrency=session.planning_concurrency,
             transfer_batch_size=session.transfer_batch_size,
             transfer_concurrency=session.transfer_concurrency,
+            greenfield_skip_target_object_probes=session.greenfield_skip_target_object_probes,
+            greenfield_skip_target_metadata_probes=session.greenfield_skip_target_metadata_probes,
+            commit_progress_every_items=session.commit_progress_every_items,
+            commit_progress_every_seconds=session.commit_progress_every_seconds,
             staged_payload_storage_refs=staged,
         )
         manager = DatasetSyncManager(datalake, datalake)

@@ -1036,6 +1036,40 @@ class AsyncDatalake(Mindtrace):
         )
         return await self.asset_alias_database.insert(doc)
 
+    async def ensure_primary_asset_aliases(self, assets: list[Asset]) -> list[AssetAlias]:
+        """Bulk/idempotent primary alias ensure for many assets.
+
+        Performs one ``$in`` lookup for existing aliases, then inserts only the missing rows.
+        Returns both pre-existing and newly inserted alias rows.
+        """
+        if not assets:
+            return []
+        asset_by_id = {asset.asset_id: asset for asset in assets}
+        aliases = list(asset_by_id.keys())
+        existing = await self.asset_alias_database.find({"alias": {"$in": aliases}})
+        alias_rows: list[AssetAlias] = []
+        existing_by_alias = {}
+        for row in existing:
+            existing_by_alias[row.alias] = row
+            if row.alias in asset_by_id and row.asset_id != row.alias:
+                raise DuplicateAliasError(
+                    f"Alias {row.alias!r} is already mapped to asset_id {row.asset_id!r}"
+                )
+            alias_rows.append(row)
+
+        for asset_id in aliases:
+            if asset_id in existing_by_alias:
+                continue
+            doc = self._build_document(
+                AssetAlias,
+                alias=asset_id,
+                asset_id=asset_id,
+                is_primary=True,
+                created_at=self._utc_now(),
+            )
+            alias_rows.append(await self.asset_alias_database.insert(doc))
+        return alias_rows
+
     async def resolve_alias(self, alias: str) -> str:
         """Return ``asset_id`` for a string alias, or raise :class:`~mindtrace.database.core.exceptions.DocumentNotFoundError`."""
         rows = await self.asset_alias_database.find({"alias": alias})
