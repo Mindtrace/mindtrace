@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build ``docs/unit-test-coverage-gaps.md`` from a coverage.py JSON report.
+"""Print a unit-test coverage-gap report (Markdown) to stdout from a coverage.py JSON report.
 
 Typical usage after a full unit run::
 
@@ -8,7 +8,7 @@ Typical usage after a full unit run::
         --rootdir=\"$PWD\" -W ignore::DeprecationWarning tests/unit/mindtrace
     uv run coverage combine
     uv run coverage json -o coverage-unit.json
-    uv run python scripts/generate_unit_coverage_gaps.py coverage-unit.json
+    uv run python scripts/generate_unit_coverage_gaps.py coverage-unit.json > gaps.md
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ from datetime import date
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DOC_PATH = REPO_ROOT / "docs" / "unit-test-coverage-gaps.md"
 
 
 def compress_lines(lines: list[int]) -> str:
@@ -141,7 +140,7 @@ def main() -> int:
     lines_out.append('  --rootdir="$PWD" -W ignore::DeprecationWarning tests/unit/mindtrace')
     lines_out.append("uv run coverage combine")
     lines_out.append("uv run coverage json -o coverage-unit.json")
-    lines_out.append("uv run python scripts/generate_unit_coverage_gaps.py coverage-unit.json")
+    lines_out.append("uv run python scripts/generate_unit_coverage_gaps.py coverage-unit.json > gaps.md")
     lines_out.append("```")
     lines_out.append("")
     lines_out.append("## Exhaustive per-file gap list")
@@ -185,9 +184,8 @@ def main() -> int:
     )
     lines_out.append("")
 
-    DOC_PATH.parent.mkdir(parents=True, exist_ok=True)
-    DOC_PATH.write_text("\n".join(lines_out), encoding="utf-8")
-    print(f"Wrote {DOC_PATH} ({len(rows)} files)")
+    sys.stdout.write("\n".join(lines_out) + "\n")
+    print(f"Generated report for {len(rows)} files", file=sys.stderr)
     return 0
 
 
