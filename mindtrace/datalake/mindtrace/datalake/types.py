@@ -125,6 +125,8 @@ class DatasetImportSession(DatalakeDocument):
     )
     status: Literal["open", "committed", "failed"] = "open"
     bundle_data: dict[str, Any] = Field(default_factory=dict)
+    bundle_storage_ref: StorageRef | None = None
+    bundle_sha256: str | None = None
     transfer_policy: str = "copy_if_missing"
     preserve_ids: bool = True
     mount_map: dict[str, str] = Field(default_factory=dict)

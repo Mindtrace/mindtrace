@@ -852,6 +852,13 @@ class AsyncDatalake(Mindtrace):
         )
         return StorageRef(mount=target_mount, name=target_name, version=saved_version)
 
+    async def delete_object(self, storage_ref: StorageRef) -> None:
+        """Best-effort delete of a stored object by :class:`StorageRef` (matches ``put_object`` coordinates)."""
+
+        storage_ref = self._normalize_storage_ref(storage_ref)
+        key = self.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
+        self.store.delete(key, None)
+
     async def create_object_upload_session(
         self,
         *,

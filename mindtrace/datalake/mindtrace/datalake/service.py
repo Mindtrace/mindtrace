@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
+import json
 import logging
 import traceback
 from collections.abc import Awaitable
@@ -13,6 +15,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
+from mindtrace.database.core.exceptions import DocumentTooLargeError
 from mindtrace.datalake.async_datalake import AsyncDatalake, SlowOperationDisabledError, SlowOpsPolicy
 from mindtrace.datalake.replication import ReplicationManager
 from mindtrace.datalake.replication_types import ReplicationReclaimRequest, ReplicationReconcileRequest
@@ -212,6 +215,7 @@ from mindtrace.datalake.sync_types import (
 )
 from mindtrace.datalake.types import DatasetImportSession, StorageRef, utc_now
 from mindtrace.registry import Mount
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.services import Service
 
 _LOGGER = logging.getLogger(__name__)
@@ -222,6 +226,23 @@ def _import_session_expired(expires_at: datetime, *, now: datetime | None = None
     current = now if now is not None else datetime.now(timezone.utc)
     deadline = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=timezone.utc)
     return current > deadline
+
+
+async def _delete_import_session_bundle_blob(datalake: AsyncDatalake, session: DatasetImportSession) -> None:
+    if session.bundle_storage_ref is None:
+        return
+    with suppress(Exception):
+        await datalake.delete_object(session.bundle_storage_ref)
+
+
+async def _load_import_session_bundle(datalake: AsyncDatalake, session: DatasetImportSession) -> DatasetSyncBundle:
+    if session.bundle_storage_ref is not None:
+        data = await datalake.get_object(session.bundle_storage_ref)
+        raw = data if isinstance(data, (bytes, bytearray)) else bytes(data)
+        return DatasetSyncBundle.model_validate(json.loads(raw.decode("utf-8")))
+    if not session.bundle_data:
+        raise ValueError("import session has neither bundle_storage_ref nor bundle_data")
+    return DatasetSyncBundle.model_validate(session.bundle_data)
 
 
 @dataclass
@@ -584,7 +605,17 @@ class DatalakeService(Service):
 
     async def get_object(self, payload: GetObjectInput) -> ObjectDataOutput:
         datalake = await self._ensure_datalake()
-        obj = await datalake.get_object(payload.storage_ref)
+        try:
+            obj = await datalake.get_object(payload.storage_ref)
+        except (RegistryObjectNotFound, FileNotFoundError, KeyError, OSError) as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "OBJECT_NOT_READABLE",
+                    "message": str(exc),
+                    "storage_ref": payload.storage_ref.model_dump(mode="json"),
+                },
+            ) from exc
         return ObjectDataOutput(storage_ref=payload.storage_ref, data_base64=self._encode_base64(obj))
 
     async def head_object(self, payload: HeadObjectInput) -> ObjectHeadOutput:
@@ -1138,7 +1169,7 @@ class DatalakeService(Service):
         required = [row.asset_id for row in plan.payloads if row.transfer_required]
         now = utc_now()
         session = DatasetImportSession(
-            bundle_data=payload.bundle.model_dump(mode="json"),
+            bundle_data={},
             transfer_policy=payload.transfer_policy,
             preserve_ids=payload.preserve_ids,
             mount_map=dict(payload.mount_map),
@@ -1150,7 +1181,33 @@ class DatalakeService(Service):
             required_asset_ids=required,
             expires_at=now + timedelta(hours=24),
         )
-        await datalake.dataset_import_session_database.insert(session)
+        bundle_bytes = json.dumps(payload.bundle.model_dump(mode="json")).encode("utf-8")
+        session.bundle_sha256 = hashlib.sha256(bundle_bytes).hexdigest()
+        try:
+            bundle_ref = await datalake.put_object(
+                name=f"datalake_import_bundles/{session.import_session_id}/bundle.json",
+                obj=bundle_bytes,
+                metadata={"content_type": "application/json", "kind": "dataset_import_bundle"},
+                on_conflict="overwrite",
+            )
+            session.bundle_storage_ref = bundle_ref
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to persist import bundle to object storage: {exc!s}",
+            ) from exc
+
+        try:
+            await datalake.dataset_import_session_database.insert(session)
+        except DocumentTooLargeError as exc:
+            await _delete_import_session_bundle_blob(datalake, session)
+            raise HTTPException(
+                status_code=413,
+                detail={"message": str(exc), "code": "DOCUMENT_TOO_LARGE"},
+            ) from exc
+        except Exception:
+            await _delete_import_session_bundle_blob(datalake, session)
+            raise
         return DatasetImportSessionStartOutput(
             session_id=session.import_session_id,
             required_asset_ids=required,
@@ -1169,7 +1226,7 @@ class DatalakeService(Service):
                 status_code=400,
                 detail=f"asset_id {payload.asset_id!r} is not required for this import session",
             )
-        bundle = DatasetSyncBundle.model_validate(session.bundle_data)
+        bundle = await _load_import_session_bundle(datalake, session)
         desc = next((p for p in bundle.payloads if p.asset_id == payload.asset_id), None)
         if desc is None:
             raise HTTPException(status_code=400, detail="asset_id not found in session bundle")
@@ -1189,7 +1246,7 @@ class DatalakeService(Service):
         if _import_session_expired(session.expires_at):
             raise HTTPException(status_code=400, detail="import session expired")
 
-        bundle = DatasetSyncBundle.model_validate(session.bundle_data)
+        bundle = await _load_import_session_bundle(datalake, session)
         staged: dict[str, StorageRef] | None = None
         if session.required_asset_ids:
             missing = [aid for aid in session.required_asset_ids if aid not in session.staged_refs]
@@ -1217,6 +1274,9 @@ class DatalakeService(Service):
             result = await manager.commit_import(req)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        await _delete_import_session_bundle_blob(datalake, session)
+        session.bundle_storage_ref = None
+        session.bundle_data = {}
         session.status = "committed"
         await datalake.dataset_import_session_database.update(session)
         return DatasetSyncCommitResultOutput(result=result)

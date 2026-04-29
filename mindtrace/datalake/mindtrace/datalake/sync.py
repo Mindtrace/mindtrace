@@ -11,6 +11,7 @@ from urllib import request as urllib_request
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake.async_datalake import AsyncDatalake
+from mindtrace.datalake.replication import ReplicationManager
 from mindtrace.datalake.sync_types import (
     DatasetSyncBundle,
     DatasetSyncCommitResult,
@@ -195,6 +196,14 @@ class DatasetSyncManager:
         bundle = request.bundle
         mount_map = request.mount_map
         validate_cross_lake_target_mount_resolution(self.target, bundle, mount_map)
+        greenfield_skip = (
+            request.transfer_policy == "copy_if_missing"
+            and request.greenfield_skip_target_object_probes
+            and await self._get_existing_dataset_version(
+                bundle.dataset_version.dataset_name, bundle.dataset_version.version
+            )
+            is None
+        )
         payload_plans: list[DatasetSyncPayloadPlan] = []
 
         payloads = bundle.payloads
@@ -219,6 +228,7 @@ class DatasetSyncManager:
                         transfer_policy=request.transfer_policy,
                         mount_map=mount_map,
                         semaphore=semaphore,
+                        skip_target_probe=greenfield_skip,
                     )
                     for payload in batch
                 ]
@@ -286,6 +296,7 @@ class DatasetSyncManager:
         transfer_policy: str,
         mount_map: dict[str, str],
         semaphore: asyncio.Semaphore,
+        skip_target_probe: bool = False,
     ) -> DatasetSyncPayloadPlan:
         target_storage_ref = _apply_mount_map_to_storage_ref(payload.storage_ref, mount_map)
         if transfer_policy == "copy":
@@ -296,6 +307,16 @@ class DatasetSyncManager:
                 target_exists=False,
                 transfer_required=True,
                 reason="policy_copy",
+            )
+
+        if skip_target_probe and transfer_policy == "copy_if_missing":
+            return DatasetSyncPayloadPlan(
+                asset_id=payload.asset_id,
+                source_storage_ref=payload.storage_ref,
+                target_storage_ref=target_storage_ref,
+                target_exists=False,
+                transfer_required=True,
+                reason="greenfield_skip_probe",
             )
 
         async with semaphore:
@@ -361,8 +382,19 @@ class DatasetSyncManager:
         progress_callback: ProgressCallback | None = None,
     ) -> DatasetSyncCommitResult:
         plan = await self.plan_import(request, progress_callback=progress_callback)
+        if request.metadata_first:
+            if self.source is self.target:
+                raise ValueError("metadata_first=True requires distinct source and target AsyncDatalake instances.")
+            if request.staged_payload_storage_refs is not None:
+                raise ValueError(
+                    "metadata_first cannot be combined with staged_payload_storage_refs on the same request."
+                )
         staged = request.staged_payload_storage_refs
-        if staged is not None and not self._staged_covers_required_transfers(plan, staged):
+        if (
+            staged is not None
+            and not request.metadata_first
+            and not self._staged_covers_required_transfers(plan, staged)
+        ):
             raise ValueError(
                 "staged_payload_storage_refs must include a StorageRef for every import-plan payload with "
                 "transfer_required=True."
@@ -387,12 +419,17 @@ class DatasetSyncManager:
         payload_by_asset_id = {payload.asset_id: payload for payload in bundle.payloads}
         plan_by_asset_id = {plan.asset_id: plan for plan in plan.payloads}
 
+        replication_manager: ReplicationManager | None = None
+        if request.metadata_first:
+            replication_manager = ReplicationManager(self.source, self.target)
+
         resolved_storage_refs, transferred_payloads, skipped_payloads = await self._resolve_payload_transfers(
             bundle.assets,
             payload_by_asset_id=payload_by_asset_id,
             plan_by_asset_id=plan_by_asset_id,
             request=request,
             progress_callback=progress_callback,
+            metadata_first=request.metadata_first,
         )
 
         await self._emit_progress(
@@ -430,17 +467,26 @@ class DatasetSyncManager:
                 resolved_storage_refs.get(asset.asset_id, asset.storage_ref),
                 mount_map,
             )
+            merged_origin = self._merge_origin_metadata(
+                asset.metadata,
+                lake_id=origin_lake_id,
+                bundle=bundle,
+                entity_id=asset.asset_id,
+                asset_id=asset.asset_id,
+            )
+            if replication_manager is not None:
+                merged_origin = replication_manager.build_asset_replication_metadata(
+                    merged_origin,
+                    origin_lake_id=origin_lake_id,
+                    origin_asset_id=asset.asset_id,
+                    replication_mode="metadata_first",
+                    payload_status="pending",
+                )
             created = Asset.model_validate(
                 {
                     **asset.model_dump(),
                     "storage_ref": storage_ref.model_dump(),
-                    "metadata": self._merge_origin_metadata(
-                        asset.metadata,
-                        lake_id=origin_lake_id,
-                        bundle=bundle,
-                        entity_id=asset.asset_id,
-                        asset_id=asset.asset_id,
-                    ),
+                    "metadata": merged_origin,
                 }
             )
             if self.source is self.target:
@@ -572,9 +618,25 @@ class DatasetSyncManager:
         plan_by_asset_id: dict[str, DatasetSyncPayloadPlan],
         request: DatasetSyncImportRequest,
         progress_callback: ProgressCallback | None,
+        metadata_first: bool = False,
     ) -> tuple[dict[str, StorageRef], int, int]:
         mount_map = request.mount_map
         resolved_storage_refs: dict[str, StorageRef] = {}
+
+        if metadata_first:
+            for asset in assets:
+                payload = payload_by_asset_id.get(asset.asset_id)
+                if payload is not None:
+                    resolved_storage_refs[asset.asset_id] = self.map_storage_ref_for_target(
+                        payload.storage_ref, mount_map
+                    )
+                else:
+                    resolved_storage_refs[asset.asset_id] = self.map_storage_ref_for_target(
+                        asset.storage_ref, mount_map
+                    )
+            pending = sum(1 for a in assets if payload_by_asset_id.get(a.asset_id) is not None)
+            return resolved_storage_refs, 0, pending
+
         transfer_items: list[tuple[ObjectPayloadDescriptor, DatasetSyncPayloadPlan]] = []
 
         for asset in assets:

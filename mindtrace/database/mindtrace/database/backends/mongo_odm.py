@@ -12,7 +12,7 @@ from pymongo import MongoClient
 from pymongo.errors import DocumentTooLarge, DuplicateKeyError
 
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
-from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError, DocumentTooLargeError
+from mindtrace.database.core.exceptions import DocumentNotFoundError, DocumentTooLargeError, DuplicateInsertError
 
 
 class MindtraceDocument(Document):

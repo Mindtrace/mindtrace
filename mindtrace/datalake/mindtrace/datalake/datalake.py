@@ -331,6 +331,9 @@ class Datalake(Mindtrace):
     def copy_object(self, source, **kwargs: Any):
         return self._submit_coro(self._backend.copy_object(source, **kwargs))
 
+    def delete_object(self, storage_ref):
+        return self._submit_coro(self._backend.delete_object(storage_ref))
+
     def create_object_upload_session(self, **kwargs: Any):
         return self._submit_coro(self._backend.create_object_upload_session(**kwargs))
 
