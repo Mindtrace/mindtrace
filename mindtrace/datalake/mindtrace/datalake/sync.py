@@ -72,6 +72,19 @@ def _chunked[T](items: Sequence[T], size: int) -> list[Sequence[T]]:
     return [items[index : index + size] for index in range(0, len(items), size)]
 
 
+def _commit_import_phase_item_count(bundle: DatasetSyncBundle) -> int:
+    """Units for granular ``committing`` progress: each bundle row examined plus dataset version."""
+
+    return (
+        len(bundle.annotation_schemas)
+        + len(bundle.assets)
+        + len(bundle.annotation_records)
+        + len(bundle.annotation_sets)
+        + len(bundle.datums)
+        + 1
+    )
+
+
 def collect_bundle_mount_names(bundle: DatasetSyncBundle) -> set[str]:
     """Unique ``storage_ref.mount`` values from bundled assets and payload descriptors."""
     mounts: set[str] = set()
@@ -259,9 +272,7 @@ class DatasetSyncManager:
         if self.source is self.target:
             for payload, row in zip(payloads, payload_plans, strict=True):
                 if row.transfer_required:
-                    target_mount = _apply_mount_map_to_storage_ref(
-                        payload.storage_ref, mount_map
-                    ).mount
+                    target_mount = _apply_mount_map_to_storage_ref(payload.storage_ref, mount_map).mount
                     if not self.target.store.has_mount(target_mount):
                         embedded_blocked = True
                         break
@@ -451,143 +462,205 @@ class DatasetSyncManager:
             defer_inline_transfers=defer_inline_transfers,
         )
 
+        commit_phase_total = _commit_import_phase_item_count(bundle)
+        commit_done = 0
         await self._emit_progress(
             progress_callback,
             DatasetSyncProgress(
                 phase="committing",
-                completed_items=0,
-                total_items=1,
-                message="Committing dataset import metadata",
+                completed_items=commit_done,
+                total_items=commit_phase_total,
+                message="Persisting import metadata",
             ),
         )
 
         created_annotation_schemas = 0
         for schema in bundle.annotation_schemas:
-            if await self._annotation_schema_exists(schema.annotation_schema_id):
-                continue
-            created = AnnotationSchema.model_validate(
-                {
-                    **schema.model_dump(),
-                    "metadata": self._merge_origin_metadata(
-                        schema.metadata,
-                        lake_id=origin_lake_id,
-                        bundle=bundle,
-                        entity_id=schema.annotation_schema_id,
-                        annotation_schema_id=schema.annotation_schema_id,
+            try:
+                if await self._annotation_schema_exists(schema.annotation_schema_id):
+                    continue
+                created = AnnotationSchema.model_validate(
+                    {
+                        **schema.model_dump(),
+                        "metadata": self._merge_origin_metadata(
+                            schema.metadata,
+                            lake_id=origin_lake_id,
+                            bundle=bundle,
+                            entity_id=schema.annotation_schema_id,
+                            annotation_schema_id=schema.annotation_schema_id,
+                        ),
+                    }
+                )
+                await self.target.annotation_schema_database.insert(created)
+                created_annotation_schemas += 1
+            finally:
+                commit_done += 1
+                await self._emit_progress(
+                    progress_callback,
+                    DatasetSyncProgress(
+                        phase="committing",
+                        completed_items=commit_done,
+                        total_items=commit_phase_total,
+                        message="Persisting annotation schemas",
                     ),
-                }
-            )
-            await self.target.annotation_schema_database.insert(created)
-            created_annotation_schemas += 1
+                )
 
         created_assets = 0
         for asset in bundle.assets:
-            storage_ref = _apply_mount_map_to_storage_ref(
-                resolved_storage_refs.get(asset.asset_id, asset.storage_ref),
-                mount_map,
-            )
-            merged_origin = self._merge_origin_metadata(
-                asset.metadata,
-                lake_id=origin_lake_id,
-                bundle=bundle,
-                entity_id=asset.asset_id,
-                asset_id=asset.asset_id,
-            )
-            if replication_manager is not None:
-                merged_origin = replication_manager.build_asset_replication_metadata(
-                    merged_origin,
-                    origin_lake_id=origin_lake_id,
-                    origin_asset_id=asset.asset_id,
-                    replication_mode="metadata_first",
-                    payload_status="pending",
-                )
-            created = Asset.model_validate(
-                {
-                    **asset.model_dump(),
-                    "storage_ref": storage_ref.model_dump(),
-                    "metadata": merged_origin,
-                }
-            )
-            if self.source is self.target:
-                if await self._asset_exists(asset.asset_id):
-                    continue
-                await self.target.asset_database.insert(created)
-                await self.target.ensure_primary_asset_alias(created)
-                created_assets += 1
-                continue
-
-            if await self._asset_exists(asset.asset_id):
-                existing = await self.target.get_asset(asset.asset_id)
-                if _storage_refs_equivalent(existing.storage_ref, created.storage_ref):
-                    continue
-                await self._refresh_target_asset_for_cross_lake_import(created)
-                continue
-
             try:
-                await self.target.asset_database.insert(created)
-                await self.target.ensure_primary_asset_alias(created)
-                created_assets += 1
-            except DuplicateInsertError:
-                await self._refresh_target_asset_for_cross_lake_import(created)
+                storage_ref = _apply_mount_map_to_storage_ref(
+                    resolved_storage_refs.get(asset.asset_id, asset.storage_ref),
+                    mount_map,
+                )
+                merged_origin = self._merge_origin_metadata(
+                    asset.metadata,
+                    lake_id=origin_lake_id,
+                    bundle=bundle,
+                    entity_id=asset.asset_id,
+                    asset_id=asset.asset_id,
+                )
+                if replication_manager is not None:
+                    merged_origin = replication_manager.build_asset_replication_metadata(
+                        merged_origin,
+                        origin_lake_id=origin_lake_id,
+                        origin_asset_id=asset.asset_id,
+                        replication_mode="metadata_first",
+                        payload_status="pending",
+                    )
+                created = Asset.model_validate(
+                    {
+                        **asset.model_dump(),
+                        "storage_ref": storage_ref.model_dump(),
+                        "metadata": merged_origin,
+                    }
+                )
+                if self.source is self.target:
+                    if await self._asset_exists(asset.asset_id):
+                        continue
+                    await self.target.asset_database.insert(created)
+                    await self.target.ensure_primary_asset_alias(created)
+                    created_assets += 1
+                    continue
+
+                if await self._asset_exists(asset.asset_id):
+                    existing = await self.target.get_asset(asset.asset_id)
+                    if _storage_refs_equivalent(existing.storage_ref, created.storage_ref):
+                        continue
+                    await self._refresh_target_asset_for_cross_lake_import(created)
+                    continue
+
+                try:
+                    await self.target.asset_database.insert(created)
+                    await self.target.ensure_primary_asset_alias(created)
+                    created_assets += 1
+                except DuplicateInsertError:
+                    await self._refresh_target_asset_for_cross_lake_import(created)
+            finally:
+                commit_done += 1
+                await self._emit_progress(
+                    progress_callback,
+                    DatasetSyncProgress(
+                        phase="committing",
+                        completed_items=commit_done,
+                        total_items=commit_phase_total,
+                        message="Persisting assets",
+                    ),
+                )
 
         created_annotation_records = 0
         for record in bundle.annotation_records:
-            if await self._annotation_record_exists(record.annotation_id):
-                continue
-            created = AnnotationRecord.model_validate(
-                {
-                    **record.model_dump(),
-                    "metadata": self._merge_origin_metadata(
-                        record.metadata,
-                        lake_id=origin_lake_id,
-                        bundle=bundle,
-                        entity_id=record.annotation_id,
-                        annotation_id=record.annotation_id,
+            try:
+                if await self._annotation_record_exists(record.annotation_id):
+                    continue
+                created = AnnotationRecord.model_validate(
+                    {
+                        **record.model_dump(),
+                        "metadata": self._merge_origin_metadata(
+                            record.metadata,
+                            lake_id=origin_lake_id,
+                            bundle=bundle,
+                            entity_id=record.annotation_id,
+                            annotation_id=record.annotation_id,
+                        ),
+                    }
+                )
+                await self.target.annotation_record_database.insert(created)
+                created_annotation_records += 1
+            finally:
+                commit_done += 1
+                await self._emit_progress(
+                    progress_callback,
+                    DatasetSyncProgress(
+                        phase="committing",
+                        completed_items=commit_done,
+                        total_items=commit_phase_total,
+                        message="Persisting annotation records",
                     ),
-                }
-            )
-            await self.target.annotation_record_database.insert(created)
-            created_annotation_records += 1
+                )
 
         created_annotation_sets = 0
         for annotation_set in bundle.annotation_sets:
-            if await self._annotation_set_exists(annotation_set.annotation_set_id):
-                continue
-            created = AnnotationSet.model_validate(
-                {
-                    **annotation_set.model_dump(),
-                    "metadata": self._merge_origin_metadata(
-                        annotation_set.metadata,
-                        lake_id=origin_lake_id,
-                        bundle=bundle,
-                        entity_id=annotation_set.annotation_set_id,
-                        annotation_set_id=annotation_set.annotation_set_id,
+            try:
+                if await self._annotation_set_exists(annotation_set.annotation_set_id):
+                    continue
+                created = AnnotationSet.model_validate(
+                    {
+                        **annotation_set.model_dump(),
+                        "metadata": self._merge_origin_metadata(
+                            annotation_set.metadata,
+                            lake_id=origin_lake_id,
+                            bundle=bundle,
+                            entity_id=annotation_set.annotation_set_id,
+                            annotation_set_id=annotation_set.annotation_set_id,
+                        ),
+                    }
+                )
+                await self.target.annotation_set_database.insert(created)
+                created_annotation_sets += 1
+            finally:
+                commit_done += 1
+                await self._emit_progress(
+                    progress_callback,
+                    DatasetSyncProgress(
+                        phase="committing",
+                        completed_items=commit_done,
+                        total_items=commit_phase_total,
+                        message="Persisting annotation sets",
                     ),
-                }
-            )
-            await self.target.annotation_set_database.insert(created)
-            created_annotation_sets += 1
+                )
 
         created_datums = 0
         for datum in bundle.datums:
-            if await self._datum_exists(datum.datum_id):
-                continue
-            mapped_asset_refs = {role: asset_id for role, asset_id in datum.asset_refs.items()}
-            created = Datum.model_validate(
-                {
-                    **datum.model_dump(),
-                    "asset_refs": mapped_asset_refs,
-                    "metadata": self._merge_origin_metadata(
-                        datum.metadata,
-                        lake_id=origin_lake_id,
-                        bundle=bundle,
-                        entity_id=datum.datum_id,
-                        datum_id=datum.datum_id,
+            try:
+                if await self._datum_exists(datum.datum_id):
+                    continue
+                mapped_asset_refs = {role: asset_id for role, asset_id in datum.asset_refs.items()}
+                created = Datum.model_validate(
+                    {
+                        **datum.model_dump(),
+                        "asset_refs": mapped_asset_refs,
+                        "metadata": self._merge_origin_metadata(
+                            datum.metadata,
+                            lake_id=origin_lake_id,
+                            bundle=bundle,
+                            entity_id=datum.datum_id,
+                            datum_id=datum.datum_id,
+                        ),
+                    }
+                )
+                await self.target.datum_database.insert(created)
+                created_datums += 1
+            finally:
+                commit_done += 1
+                await self._emit_progress(
+                    progress_callback,
+                    DatasetSyncProgress(
+                        phase="committing",
+                        completed_items=commit_done,
+                        total_items=commit_phase_total,
+                        message="Persisting datums",
                     ),
-                }
-            )
-            await self.target.datum_database.insert(created)
-            created_datums += 1
+                )
 
         existing_dataset_version = await self._get_existing_dataset_version(
             bundle.dataset_version.dataset_name, bundle.dataset_version.version
@@ -607,6 +680,16 @@ class DatasetSyncManager:
             dataset_version = await self.target.dataset_version_database.insert(dataset_version)
         else:
             dataset_version = existing_dataset_version
+        commit_done += 1
+        await self._emit_progress(
+            progress_callback,
+            DatasetSyncProgress(
+                phase="committing",
+                completed_items=commit_done,
+                total_items=commit_phase_total,
+                message="Persisting dataset version",
+            ),
+        )
 
         result = DatasetSyncCommitResult(
             dataset_version=dataset_version,
@@ -622,8 +705,8 @@ class DatasetSyncManager:
             progress_callback,
             DatasetSyncProgress(
                 phase="complete",
-                completed_items=1,
-                total_items=1,
+                completed_items=commit_phase_total,
+                total_items=commit_phase_total,
                 message=f"Completed dataset import {result.dataset_version.dataset_name}@{result.dataset_version.version}",
             ),
         )

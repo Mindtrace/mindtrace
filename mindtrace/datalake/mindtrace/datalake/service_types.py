@@ -755,6 +755,26 @@ class DatasetImportSessionCommitInput(BaseModel):
     session_id: str
 
 
+class DatasetImportSessionStatusInput(BaseModel):
+    """Poll import session lifecycle and persisted progress."""
+
+    session_id: str
+
+
+class DatasetImportSessionStatusOutput(BaseModel):
+    """Thin projection for callers (bundles omit large payloads)."""
+
+    session_id: str
+    status: Literal["open", "committed", "failed"]
+    expires_at: datetime
+    metadata_graph_committed: bool = False
+    required_asset_ids: list[str] = Field(default_factory=list)
+    verified_asset_ids: list[str] = Field(default_factory=list)
+    progress: DatasetSyncProgress | None = None
+    import_progress_updated_at: datetime | None = None
+    import_progress_error: str | None = None
+
+
 DatasetSyncJobMode = Literal["prepare", "import"]
 DatasetSyncJobStatus = Literal["queued", "running", "completed", "failed"]
 
@@ -881,6 +901,11 @@ DatasetImportSessionCommitMetadataSchema = TaskSchema(
     name="dataset_versions.import_session_commit_metadata",
     input_schema=DatasetImportSessionCommitInput,
     output_schema=DatasetSyncCommitResultOutput,
+)
+DatasetImportSessionStatusSchema = TaskSchema(
+    name="dataset_versions.import_session_status",
+    input_schema=DatasetImportSessionStatusInput,
+    output_schema=DatasetImportSessionStatusOutput,
 )
 ReplicationBatchUpsertSchema = TaskSchema(
     name="replication.upsert_batch",

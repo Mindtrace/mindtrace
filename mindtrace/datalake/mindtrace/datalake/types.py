@@ -139,6 +139,15 @@ class DatasetImportSession(DatalakeDocument):
     staged_refs: dict[str, dict[str, Any]] = Field(default_factory=dict)
     metadata_graph_committed: bool = False
     verified_asset_ids: list[str] = Field(default_factory=list)
+    #: Last persisted progress snapshot during ``import_session_commit_metadata`` (poll via ``dataset_versions.import_session_status``).
+    import_progress_phase: str | None = None
+    import_progress_batch_index: int = 0
+    import_progress_total_batches: int = 0
+    import_progress_completed_items: int | None = None
+    import_progress_total_items: int | None = None
+    import_progress_message: str | None = None
+    import_progress_updated_at: datetime | None = None
+    import_progress_error: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     expires_at: datetime
 

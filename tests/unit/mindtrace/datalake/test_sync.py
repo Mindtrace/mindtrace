@@ -500,6 +500,32 @@ class TestDatasetSyncManager:
         assert all(event.total_items == 5 for event in transfer_events)
 
     @pytest.mark.asyncio
+    async def test_commit_import_emit_committing_totals_cover_bundle_rows(
+        self, source_datalake, target_datalake, sync_objects
+    ):
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        target_datalake.object_exists = AsyncMock(return_value=False)
+        progress_events: list[DatasetSyncProgress] = []
+        expected_total = (
+            len(bundle.annotation_schemas)
+            + len(bundle.assets)
+            + len(bundle.annotation_records)
+            + len(bundle.annotation_sets)
+            + len(bundle.datums)
+            + 1
+        )
+        await manager.commit_import(DatasetSyncImportRequest(bundle=bundle), progress_callback=progress_events.append)
+        committing = [event for event in progress_events if event.phase == "committing"]
+        assert committing[0].completed_items == 0
+        assert committing[0].total_items == expected_total
+        assert committing[-1].completed_items == committing[-1].total_items == expected_total
+
+        completes = [event for event in progress_events if event.phase == "complete"]
+        assert len(completes) == 1
+        assert completes[0].completed_items == completes[0].total_items == expected_total
+
+    @pytest.mark.asyncio
     async def test_commit_import_fails_before_metadata_when_transfer_fails(
         self, source_datalake, target_datalake, sync_objects
     ):
@@ -574,8 +600,9 @@ class TestDatasetSyncManager:
     async def test_plan_import_embedded_marks_not_ready_without_bundle_read_mount(self, target_datalake, sync_objects):
         solo = target_datalake
         solo.mongo_db_name = "solo"
-        solo.store.list_mount_info.return_value = {"remote": {}}
-        solo.store.has_mount.side_effect = lambda m: m in solo.store.list_mount_info.return_value
+        # Bundle payloads reference ``source`` mount. List it so validation passes but ``has_mount`` denies reads there.
+        solo.store.list_mount_info.return_value = {"source": {}, "remote": {}}
+        solo.store.has_mount.side_effect = lambda m: m != "source"
         solo.object_exists = AsyncMock(return_value=False)
         solo.get_dataset_version = AsyncMock(return_value=sync_objects.dataset_version)
         solo.get_datum = AsyncMock(return_value=sync_objects.datum)
@@ -589,7 +616,6 @@ class TestDatasetSyncManager:
             DatasetSyncImportRequest(
                 bundle=bundle,
                 transfer_policy="copy_if_missing",
-                mount_map={"source": "remote"},
             )
         )
         assert plan.transfer_required_count == 1

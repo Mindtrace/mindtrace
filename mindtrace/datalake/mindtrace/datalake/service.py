@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 import logging
+import time
 import traceback
 from collections.abc import Awaitable
 from contextlib import suppress
@@ -82,6 +83,9 @@ from mindtrace.datalake.service_types import (
     DatasetImportSessionCommitSchema,
     DatasetImportSessionStartOutput,
     DatasetImportSessionStartSchema,
+    DatasetImportSessionStatusInput,
+    DatasetImportSessionStatusOutput,
+    DatasetImportSessionStatusSchema,
     DatasetImportSessionUploadInput,
     DatasetImportSessionUploadOutput,
     DatasetImportSessionUploadSchema,
@@ -227,6 +231,90 @@ def _import_session_expired(expires_at: datetime, *, now: datetime | None = None
     current = now if now is not None else datetime.now(timezone.utc)
     deadline = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=timezone.utc)
     return current > deadline
+
+
+class _ImportSessionProgressWriter:
+    """Persists incremental ``DatasetSyncProgress`` onto ``DatasetImportSession`` (Mongo writes may be skipped)."""
+
+    def __init__(
+        self,
+        datalake: AsyncDatalake,
+        session: DatasetImportSession,
+        *,
+        min_interval_s: float = 0.25,
+    ) -> None:
+        self._datalake = datalake
+        self._session = session
+        self._min_interval_s = min_interval_s
+        self._lock = asyncio.Lock()
+        self._last_flush_mono = 0.0
+        self._last_flushed_phase: str | None = None
+
+    def _snapshot_to_session(self, progress: DatasetSyncProgress, *, error: str | None) -> None:
+        sess = self._session
+        sess.import_progress_phase = progress.phase
+        sess.import_progress_batch_index = progress.batch_index
+        sess.import_progress_total_batches = progress.total_batches
+        sess.import_progress_completed_items = progress.completed_items
+        sess.import_progress_total_items = progress.total_items
+        sess.import_progress_message = progress.message
+        sess.import_progress_updated_at = utc_now()
+        if progress.phase == "failed":
+            sess.import_progress_error = error or progress.message
+        else:
+            sess.import_progress_error = None
+
+    async def persist(self, progress: DatasetSyncProgress, *, error: str | None = None, force: bool = False) -> None:
+        async with self._lock:
+            terminal = progress.phase in ("complete", "failed")
+            phase_changed = progress.phase != self._last_flushed_phase
+            now_mono = time.monotonic()
+            elapsed = now_mono - self._last_flush_mono
+            stale = elapsed >= self._min_interval_s
+            if not force and not terminal and not phase_changed and not stale:
+                return
+            self._snapshot_to_session(progress, error=error)
+            await self._datalake.dataset_import_session_database.update(self._session)
+            self._last_flush_mono = now_mono
+            self._last_flushed_phase = progress.phase
+
+    async def persist_failed(self, detail: str) -> None:
+        truncated = detail[:8192]
+        await self.persist(
+            DatasetSyncProgress(phase="failed", message=truncated),
+            error=truncated,
+            force=True,
+        )
+
+    async def __call__(self, progress: DatasetSyncProgress) -> None:
+        await self.persist(progress)
+
+
+def _dataset_import_session_status_output(session: DatasetImportSession) -> DatasetImportSessionStatusOutput:
+    progress_model: DatasetSyncProgress | None = None
+    if session.import_progress_phase is not None:
+        progress_model = DatasetSyncProgress.model_validate(
+            {
+                "phase": session.import_progress_phase,
+                "batch_index": session.import_progress_batch_index,
+                "total_batches": session.import_progress_total_batches,
+                "completed_items": session.import_progress_completed_items or 0,
+                "total_items": session.import_progress_total_items or 0,
+                "message": session.import_progress_message or "",
+            }
+        )
+
+    return DatasetImportSessionStatusOutput(
+        session_id=session.import_session_id,
+        status=session.status,
+        expires_at=session.expires_at,
+        metadata_graph_committed=session.metadata_graph_committed,
+        required_asset_ids=list(session.required_asset_ids),
+        verified_asset_ids=list(session.verified_asset_ids),
+        progress=progress_model,
+        import_progress_updated_at=session.import_progress_updated_at,
+        import_progress_error=session.import_progress_error,
+    )
 
 
 async def _delete_import_session_bundle_blob(datalake: AsyncDatalake, session: DatasetImportSession) -> None:
@@ -478,6 +566,11 @@ class DatalakeService(Service):
             "dataset_versions.import_session_commit_metadata",
             self.import_session_commit_metadata,
             schema=DatasetImportSessionCommitMetadataSchema,
+        )
+        self.add_endpoint(
+            "dataset_versions.import_session_status",
+            self.import_session_status,
+            schema=DatasetImportSessionStatusSchema,
         )
         self.add_endpoint(
             "dataset_versions.import_session_upload_payload",
@@ -1227,6 +1320,8 @@ class DatalakeService(Service):
 
         Subsequent ``import_session_upload_payload`` verifies each staged asset and transitions ``pending→verified``.
         Closing the session requires ``import_session_commit`` once all ``required_asset_ids`` are verified.
+
+        Import progress snapshots are mirrored onto Mongo (throttled) and polled via ``dataset_versions.import_session_status``.
         """
         datalake = await self._ensure_datalake()
         session = await self._require_open_import_session(datalake, payload.session_id)
@@ -1252,14 +1347,26 @@ class DatalakeService(Service):
             target_metadata_commit=True,
         )
         manager = DatasetSyncManager(datalake, datalake)
+        progress_writer = _ImportSessionProgressWriter(datalake, session)
         try:
-            result = await manager.commit_import(req)
+            result = await manager.commit_import(req, progress_callback=progress_writer)
         except ValueError as exc:
+            await progress_writer.persist_failed(str(exc))
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            await progress_writer.persist_failed(f"{type(exc).__name__}: {exc!s}")
+            raise
         session.metadata_graph_committed = True
         session.verified_asset_ids = []
         await datalake.dataset_import_session_database.update(session)
         return DatasetSyncCommitResultOutput(result=result)
+
+    async def import_session_status(self, payload: DatasetImportSessionStatusInput) -> DatasetImportSessionStatusOutput:
+        datalake = await self._ensure_datalake()
+        rows = await datalake.dataset_import_session_database.find({"import_session_id": payload.session_id})
+        if not rows:
+            raise HTTPException(status_code=404, detail=f"import session not found: {payload.session_id}")
+        return _dataset_import_session_status_output(rows[0])
 
     async def import_session_upload_payload(
         self, payload: DatasetImportSessionUploadInput
