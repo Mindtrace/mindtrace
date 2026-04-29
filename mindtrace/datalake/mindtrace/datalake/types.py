@@ -137,6 +137,8 @@ class DatasetImportSession(DatalakeDocument):
     transfer_concurrency: int = 8
     required_asset_ids: list[str] = Field(default_factory=list)
     staged_refs: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    metadata_graph_committed: bool = False
+    verified_asset_ids: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utc_now)
     expires_at: datetime
 

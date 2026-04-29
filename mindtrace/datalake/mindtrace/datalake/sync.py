@@ -29,6 +29,7 @@ from mindtrace.datalake.types import (
     DatasetVersion,
     Datum,
     StorageRef,
+    utc_now,
 )
 
 _METADATA_ONLY_CROSS_LAKE = (
@@ -389,16 +390,23 @@ class DatasetSyncManager:
                 raise ValueError(
                     "metadata_first cannot be combined with staged_payload_storage_refs on the same request."
                 )
+        if request.target_metadata_commit:
+            if self.source is not self.target:
+                raise ValueError(
+                    "target_metadata_commit=True commits pending payloads on one lake only "
+                    "(source and target AsyncDatalake instances must be the same)."
+                )
+            if request.staged_payload_storage_refs is not None:
+                raise ValueError(
+                    "target_metadata_commit cannot be combined with staged_payload_storage_refs on the same request."
+                )
         staged = request.staged_payload_storage_refs
-        if (
-            staged is not None
-            and not request.metadata_first
-            and not self._staged_covers_required_transfers(plan, staged)
-        ):
-            raise ValueError(
-                "staged_payload_storage_refs must include a StorageRef for every import-plan payload with "
-                "transfer_required=True."
-            )
+        if staged is not None and not request.metadata_first and not request.target_metadata_commit:
+            if not self._staged_covers_required_transfers(plan, staged):
+                raise ValueError(
+                    "staged_payload_storage_refs must include a StorageRef for every import-plan payload with "
+                    "transfer_required=True."
+                )
 
         if not plan.ready_to_commit:
             if request.transfer_policy == "fail_if_missing_payload":
@@ -422,6 +430,10 @@ class DatasetSyncManager:
         replication_manager: ReplicationManager | None = None
         if request.metadata_first:
             replication_manager = ReplicationManager(self.source, self.target)
+        elif request.target_metadata_commit:
+            replication_manager = ReplicationManager(self.target)
+
+        defer_inline_transfers = request.metadata_first or request.target_metadata_commit
 
         resolved_storage_refs, transferred_payloads, skipped_payloads = await self._resolve_payload_transfers(
             bundle.assets,
@@ -429,7 +441,7 @@ class DatasetSyncManager:
             plan_by_asset_id=plan_by_asset_id,
             request=request,
             progress_callback=progress_callback,
-            metadata_first=request.metadata_first,
+            defer_inline_transfers=defer_inline_transfers,
         )
 
         await self._emit_progress(
@@ -610,6 +622,37 @@ class DatasetSyncManager:
         )
         return result
 
+    async def finalize_pending_import_asset_payload(
+        self,
+        *,
+        asset_id: str,
+        payload_descriptor: ObjectPayloadDescriptor,
+        staged_storage_ref: StorageRef,
+        payload_bytes: bytes,
+    ) -> Asset:
+        """After caller-staged bytes land on the target store, verify and mark the asset payload verified.
+
+        Used with :data:`DatasetSyncImportRequest.target_metadata_commit` imports (e.g. ``import_session_*`` flow)
+        where Phase A committed graph rows with pending replication state.
+        """
+
+        await self._verify_transferred_payload(payload_descriptor, payload_bytes, staged_storage_ref)
+        asset = await self.target.get_asset(asset_id)
+        asset.storage_ref = staged_storage_ref
+        asset.size_bytes = len(payload_bytes)
+        if payload_descriptor.checksum:
+            asset.checksum = payload_descriptor.checksum
+        asset.media_type = payload_descriptor.media_type or asset.media_type
+        asset.updated_at = utc_now()
+        rm = ReplicationManager(self.target)
+        await rm._set_asset_replication_state(
+            asset,
+            payload_status="verified",
+            payload_verified_at=utc_now(),
+            payload_last_error=None,
+        )
+        return await self.target.get_asset(asset_id)
+
     async def _resolve_payload_transfers(
         self,
         assets: Sequence[Asset],
@@ -618,12 +661,12 @@ class DatasetSyncManager:
         plan_by_asset_id: dict[str, DatasetSyncPayloadPlan],
         request: DatasetSyncImportRequest,
         progress_callback: ProgressCallback | None,
-        metadata_first: bool = False,
+        defer_inline_transfers: bool = False,
     ) -> tuple[dict[str, StorageRef], int, int]:
         mount_map = request.mount_map
         resolved_storage_refs: dict[str, StorageRef] = {}
 
-        if metadata_first:
+        if defer_inline_transfers:
             for asset in assets:
                 payload = payload_by_asset_id.get(asset.asset_id)
                 if payload is not None:

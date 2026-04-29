@@ -88,7 +88,16 @@ def test_dataset_sync_import_request_rejects_empty_mount_map_value():
         DatasetSyncImportRequest(bundle=bundle, mount_map={"src": ""})
 
 
-def test_dataset_sync_import_request_rejects_preserve_ids_false():
+def test_dataset_sync_import_request_rejects_both_metadata_flags():
+    storage_ref = StorageRef(mount="source", name="images/cat.jpg", version="v1")
+    asset = Asset(kind="image", media_type="image/jpeg", storage_ref=storage_ref)
+    datum = Datum(asset_refs={"image": asset.asset_id}, annotation_set_ids=[])
+    dataset_version = DatasetVersion(dataset_name="demo", version="1.0.0", manifest=[datum.datum_id])
+    bundle = DatasetSyncBundle(dataset_version=dataset_version, datums=[datum], assets=[asset], payloads=[])
+
+    with pytest.raises(ValueError, match="metadata_first and target_metadata_commit"):
+        DatasetSyncImportRequest(bundle=bundle, metadata_first=True, target_metadata_commit=True)
+
     storage_ref = StorageRef(mount="source", name="images/cat.jpg", version="v1")
     asset = Asset(kind="image", media_type="image/jpeg", storage_ref=storage_ref)
     datum = Datum(asset_refs={"image": asset.asset_id}, annotation_set_ids=[])

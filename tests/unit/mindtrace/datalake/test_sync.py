@@ -1232,6 +1232,36 @@ class TestDatasetSyncManager:
         assert inserted_asset.metadata["replication"]["payload_status"] == "pending"
         assert inserted_asset.metadata["replication"]["payload_available"] is False
 
+    @pytest.mark.asyncio
+    async def test_target_metadata_commit_rejects_when_source_differs_from_target(
+        self, source_datalake, target_datalake, sync_objects
+    ):
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        with pytest.raises(ValueError, match="target_metadata_commit"):
+            await manager.commit_import(
+                DatasetSyncImportRequest(bundle=bundle, target_metadata_commit=True, transfer_policy="copy_if_missing"),
+            )
+
+    @pytest.mark.asyncio
+    async def test_commit_import_target_metadata_commit_single_lake_skips_transfer(
+        self, source_datalake, target_datalake, sync_objects
+    ):
+        bundle = await DatasetSyncManager(source_datalake).export_dataset_version("demo", "1.0.0")
+        target_datalake.object_exists = AsyncMock(return_value=False)
+        target_datalake.get_annotation_schema = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+        target_datalake.get_annotation_record = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+        target_datalake.get_annotation_set = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+        target_datalake.get_datum = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+        target_datalake.get_dataset_version = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+        target_datalake.get_asset = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+        manager = DatasetSyncManager(target_datalake, target_datalake)
+        await manager.commit_import(
+            DatasetSyncImportRequest(bundle=bundle, target_metadata_commit=True, transfer_policy="copy_if_missing"),
+        )
+        inserted = target_datalake.asset_database.insert.await_args.args[0]
+        assert inserted.metadata["replication"]["payload_status"] == "pending"
+
 
 class TestDatasetSyncProgressHelpers:
     @pytest.mark.asyncio
