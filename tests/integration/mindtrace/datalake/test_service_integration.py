@@ -133,7 +133,7 @@ class TestDatalakeServiceIntegration:
 
     @pytest.mark.asyncio
     async def test_datalake_service_requires_mongo_config_to_initialize(self):
-        service = DatalakeService(live_service=False, initialize_on_startup=False)
+        service = DatalakeService(initialize_on_startup=False)
 
         with pytest.raises(HTTPException, match="missing mongo_db_uri and/or mongo_db_name"):
             await service._ensure_datalake()

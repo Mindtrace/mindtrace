@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
+import traceback
 from collections.abc import Awaitable
 from contextlib import suppress
+from dataclasses import dataclass, field
 from typing import Any
+from uuid import uuid4
 
 from fastapi import HTTPException
 
@@ -72,9 +76,18 @@ from mindtrace.datalake.service_types import (
     DatasetSyncBundleOutput,
     DatasetSyncCommitResultOutput,
     DatasetSyncImportCommitSchema,
+    DatasetSyncImportJobResultSchema,
+    DatasetSyncImportJobStatusSchema,
     DatasetSyncImportPlanOutput,
     DatasetSyncImportPrepareSchema,
+    DatasetSyncImportPrepareStartSchema,
     DatasetSyncImportRequest,
+    DatasetSyncImportStartSchema,
+    DatasetSyncJobErrorDetail,
+    DatasetSyncJobResultOutput,
+    DatasetSyncJobStartOutput,
+    DatasetSyncJobStatusInput,
+    DatasetSyncJobStatusOutput,
     DatasetVersionListOutput,
     DatasetVersionOutput,
     DatasetVersionPageOutput,
@@ -183,8 +196,30 @@ from mindtrace.datalake.service_types import (
     ViewDatasetVersionPageSchema,
 )
 from mindtrace.datalake.sync import DatasetSyncManager
+from mindtrace.datalake.sync_types import (
+    DatasetSyncCommitResult,
+    DatasetSyncImportPlan,
+    DatasetSyncProgress,
+)
 from mindtrace.registry import Mount
 from mindtrace.services import Service, endpoint
+
+_LOGGER = logging.getLogger(__name__)
+
+
+@dataclass
+class _DatasetSyncJobState:
+    job_id: str
+    mode: str
+    status: str = "queued"
+    progress: DatasetSyncProgress = field(
+        default_factory=lambda: DatasetSyncProgress(phase="planning", message="Queued dataset sync job")
+    )
+    plan: DatasetSyncImportPlan | None = None
+    result: DatasetSyncCommitResult | None = None
+    error: str | None = None
+    error_detail: DatasetSyncJobErrorDetail | None = None
+    task: asyncio.Task[None] | None = None
 
 
 class DatalakeService(Service):
@@ -200,7 +235,6 @@ class DatalakeService(Service):
         slow_ops_policy: SlowOpsPolicy = SlowOpsPolicy.WARN,
         async_datalake: AsyncDatalake | None = None,
         initialize_on_startup: bool = True,
-        live_service: bool = True,
         upload_reconcile_interval_seconds: float = 30.0,
         **kwargs: Any,
     ) -> None:
@@ -220,8 +254,9 @@ class DatalakeService(Service):
         self.initialize_on_startup = initialize_on_startup
         self.upload_reconcile_interval_seconds = upload_reconcile_interval_seconds
         self._upload_reconciler_task: asyncio.Task[None] | None = None
+        self._dataset_sync_jobs: dict[str, _DatasetSyncJobState] = {}
 
-        if live_service and initialize_on_startup:
+        if initialize_on_startup:
             self.app.router.on_startup.append(self._startup_initialize)
 
     async def _startup_initialize(self) -> None:
@@ -230,7 +265,7 @@ class DatalakeService(Service):
             self._upload_reconciler_task = asyncio.create_task(self._run_upload_reconciler())
 
     async def shutdown_cleanup(self) -> None:
-        """Release resources: cancel the reconciler task and close the datalake.
+        """Release resources: cancel sync/reconciler tasks and close the datalake.
 
         Overrides :meth:`mindtrace.services.Service.shutdown_cleanup`, which the
         base ``combined_lifespan`` invokes during FastAPI shutdown. The old
@@ -242,6 +277,13 @@ class DatalakeService(Service):
             await super().shutdown_cleanup()
         except Exception:
             pass
+
+        running_sync_tasks = [job.task for job in self._dataset_sync_jobs.values() if job.task is not None]
+        for task in running_sync_tasks:
+            task.cancel()
+        if running_sync_tasks:
+            await asyncio.gather(*running_sync_tasks, return_exceptions=True)
+
         if self._upload_reconciler_task is not None:
             self._upload_reconciler_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -903,6 +945,102 @@ class DatalakeService(Service):
         manager = DatasetSyncManager(datalake)
         result = await manager.commit_import(payload)
         return DatasetSyncCommitResultOutput(result=result)
+
+    @endpoint("dataset_versions.import_prepare_start", schema=DatasetSyncImportPrepareStartSchema)
+    async def import_dataset_version_prepare_start(
+        self, payload: DatasetSyncImportRequest
+    ) -> DatasetSyncJobStartOutput:
+        return self._start_dataset_sync_job(payload, mode="prepare")
+
+    @endpoint("dataset_versions.import_start", schema=DatasetSyncImportStartSchema)
+    async def import_dataset_version_start(self, payload: DatasetSyncImportRequest) -> DatasetSyncJobStartOutput:
+        return self._start_dataset_sync_job(payload, mode="import")
+
+    @endpoint("dataset_versions.import_job_status", schema=DatasetSyncImportJobStatusSchema)
+    async def import_dataset_version_job_status(self, payload: DatasetSyncJobStatusInput) -> DatasetSyncJobStatusOutput:
+        job = self._get_dataset_sync_job(payload.job_id)
+        return self._dataset_sync_job_status_output(job)
+
+    @endpoint("dataset_versions.import_job_result", schema=DatasetSyncImportJobResultSchema)
+    async def import_dataset_version_job_result(self, payload: DatasetSyncJobStatusInput) -> DatasetSyncJobResultOutput:
+        job = self._get_dataset_sync_job(payload.job_id)
+        return DatasetSyncJobResultOutput(
+            job_id=job.job_id,
+            mode=job.mode,
+            status=job.status,
+            progress=job.progress,
+            plan=job.plan,
+            result=job.result,
+            error=job.error,
+            error_detail=job.error_detail,
+        )
+
+    def _start_dataset_sync_job(self, request: DatasetSyncImportRequest, *, mode: str) -> DatasetSyncJobStartOutput:
+        job = _DatasetSyncJobState(job_id=uuid4().hex, mode=mode)
+        self._dataset_sync_jobs[job.job_id] = job
+        job.task = asyncio.create_task(self._run_dataset_sync_job(job, request))
+        return DatasetSyncJobStartOutput(
+            job_id=job.job_id,
+            mode=job.mode,
+            status=job.status,
+            progress=job.progress,
+        )
+
+    async def _run_dataset_sync_job(self, job: _DatasetSyncJobState, request: DatasetSyncImportRequest) -> None:
+        job.status = "running"
+
+        async def update_progress(progress: DatasetSyncProgress) -> None:
+            job.progress = progress
+
+        try:
+            datalake = await self._ensure_datalake()
+            manager = DatasetSyncManager(datalake)
+            if job.mode == "prepare":
+                job.plan = await manager.plan_import(request, progress_callback=update_progress)
+            elif job.mode == "import":
+                job.result = await manager.commit_import(request, progress_callback=update_progress)
+            else:
+                raise ValueError(f"Unsupported dataset sync job mode: {job.mode}")
+            job.status = "completed"
+            if job.progress.phase != "complete":
+                job.progress = DatasetSyncProgress(
+                    phase="complete",
+                    completed_items=job.progress.total_items,
+                    total_items=job.progress.total_items,
+                    message="Completed dataset sync job",
+                )
+        except Exception as exc:
+            job.status = "failed"
+            summary = f"{type(exc).__name__}: {exc!r}"
+            job.error = summary
+            job.error_detail = DatasetSyncJobErrorDetail(
+                exception_type=f"{exc.__class__.__module__}.{exc.__class__.__qualname__}",
+                exception_repr=repr(exc),
+                traceback=traceback.format_exc(),
+            )
+            job.progress = DatasetSyncProgress(phase="failed", message=summary)
+            _LOGGER.exception(
+                "Dataset sync job failed (job_id=%s, mode=%s)",
+                job.job_id,
+                job.mode,
+            )
+
+    def _get_dataset_sync_job(self, job_id: str) -> _DatasetSyncJobState:
+        try:
+            return self._dataset_sync_jobs[job_id]
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"Dataset sync job not found: {job_id}") from exc
+
+    @staticmethod
+    def _dataset_sync_job_status_output(job: _DatasetSyncJobState) -> DatasetSyncJobStatusOutput:
+        return DatasetSyncJobStatusOutput(
+            job_id=job.job_id,
+            mode=job.mode,
+            status=job.status,
+            progress=job.progress,
+            error=job.error,
+            error_detail=job.error_detail,
+        )
 
     @endpoint("replication.upsert_batch", schema=ReplicationBatchUpsertSchema)
     async def replication_upsert_batch(self, payload: ReplicationBatchRequest) -> ReplicationBatchResultOutput:

@@ -123,6 +123,36 @@ def test_validate_input_without_pipeline_raises() -> None:
         worker._validate_input("echo", {"text": "x"})
 
 
+def test_validate_input_returns_none_when_no_task_schema_or_no_input_model():
+    """Endpoint registered only on FastAPI side still exists as a method; no TaskSchema -> no validation."""
+
+    class DemoWithLooseMethod(DemoPipeline):
+        def loose(self):
+            return {"loose": True}
+
+    worker = PipelineWorker.__new__(PipelineWorker)
+    worker.pipeline_cls = DemoWithLooseMethod
+    worker.pipeline_kwargs = {}
+    worker.default_endpoint = "/loose"
+    worker.auto_load = True
+    worker.pipeline = None
+
+    PipelineWorker.start(worker)
+    assert worker._validate_input("loose", {"any": "payload"}) is None
+    out = worker._run({"input": {"any": "payload"}})
+    assert out["status"] == JobStatusEnum.COMPLETED
+    assert out["output"] == {"loose": True}
+
+
+def test_validate_input_returns_none_for_schema_without_input_model():
+    worker = _worker_stub(default_endpoint="/loaded")
+    PipelineWorker.start(worker)
+    assert worker._validate_input("loaded", {"ignored": True}) is None
+    out = worker._run({"input": {"ignored": True}})
+    assert out["status"] == JobStatusEnum.COMPLETED
+    assert out["output"]["loaded"] is True
+
+
 @pytest.mark.anyio
 async def test_shutdown_cleanup_unloads_pipeline_and_swallows_errors(monkeypatch):
     worker = _worker_stub(default_endpoint="/echo")

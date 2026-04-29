@@ -42,7 +42,7 @@ from mindtrace.datalake.types import (
     StorageRef,
     SubjectRef,
 )
-from mindtrace.registry.core.exceptions import RegistryObjectNotFound
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound, StoreLocationNotFound
 
 
 class TestAsyncDatalakeUnit:
@@ -113,8 +113,24 @@ class TestAsyncDatalakeUnit:
                 "version_objects": False,
                 "mutable": True,
                 "version_digits": 6,
-            }
+            },
+            "nas": {
+                "read_only": False,
+                "backend": "file:///tmp/mindtrace-nas",
+                "version_objects": False,
+                "mutable": True,
+                "version_digits": 6,
+            },
+            "archive": {
+                "read_only": False,
+                "backend": "file:///tmp/mindtrace-archive",
+                "version_objects": False,
+                "mutable": True,
+                "version_digits": 6,
+            },
         }
+        store.has_mount.side_effect = lambda mount: mount in store.list_mount_info.return_value
+        store.list_mounts.side_effect = lambda: sorted(store.list_mount_info.return_value.keys())
         store.build_key.side_effect = lambda mount, name, version=None: (
             f"{mount}/{name}" if version is None else f"{mount}/{name}@{version}"
         )
@@ -922,6 +938,13 @@ class TestAsyncDatalakeUnit:
         assert payload == b"payload"
         assert info == {"size": 123}
         assert copied.version == "v2"
+
+    @pytest.mark.asyncio
+    async def test_object_exists_raises_when_mount_unknown(self, async_datalake):
+        async_datalake.store.has_mount = MagicMock(return_value=False)
+
+        with pytest.raises(StoreLocationNotFound, match="Unknown store mount"):
+            await async_datalake.object_exists(StorageRef(mount="missing_mount", name="any", version="v1"))
 
     @pytest.mark.asyncio
     async def test_object_exists_returns_false_when_store_has_object_false(self, async_datalake):

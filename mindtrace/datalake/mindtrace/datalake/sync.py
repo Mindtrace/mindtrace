@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import logging
 import mimetypes
+from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any
 from urllib import request as urllib_request
@@ -14,6 +17,7 @@ from mindtrace.datalake.sync_types import (
     DatasetSyncImportPlan,
     DatasetSyncImportRequest,
     DatasetSyncPayloadPlan,
+    DatasetSyncProgress,
     ObjectPayloadDescriptor,
 )
 from mindtrace.datalake.types import (
@@ -31,6 +35,8 @@ _METADATA_ONLY_CROSS_LAKE = (
     "For cross-lake imports, materialize payloads first (for example copy_if_missing) so asset StorageRefs "
     "resolve on the target store."
 )
+_logger = logging.getLogger(__name__)
+ProgressCallback = Callable[[DatasetSyncProgress], Awaitable[None] | None]
 
 
 def _storage_refs_equivalent(a: StorageRef, b: StorageRef) -> bool:
@@ -58,6 +64,45 @@ def _head_object_size_bytes(meta: dict[str, Any]) -> int | None:
         if isinstance(val, str) and val.isdigit():
             return int(val)
     return None
+
+
+def _chunked[T](items: Sequence[T], size: int) -> list[Sequence[T]]:
+    return [items[index : index + size] for index in range(0, len(items), size)]
+
+
+def collect_bundle_mount_names(bundle: DatasetSyncBundle) -> set[str]:
+    """Unique ``storage_ref.mount`` values from bundled assets and payload descriptors."""
+    mounts: set[str] = set()
+    for asset in bundle.assets:
+        mounts.add(asset.storage_ref.mount)
+    for payload in bundle.payloads:
+        mounts.add(payload.storage_ref.mount)
+    return mounts
+
+
+def validate_cross_lake_target_mount_resolution(
+    target: AsyncDatalake,
+    bundle: DatasetSyncBundle,
+    mount_map: dict[str, str],
+) -> None:
+    """Raise ``ValueError`` when a bundle mount resolves to an unknown mount on ``target``.
+
+    After ``mount_map`` is applied via :func:`_apply_mount_map_to_storage_ref`, the effective
+    target-side mount must exist on ``target``. Surfaces misconfiguration earlier than opaque
+    ``StoreLocationNotFound(<mount>)`` /
+    ``KeyError`` during probing.
+    """
+
+    configured = frozenset(target.store.list_mount_info().keys())
+    for src_mount in sorted(collect_bundle_mount_names(bundle)):
+        resolved = mount_map.get(src_mount, src_mount)
+        if resolved not in configured:
+            raise ValueError(
+                "After applying mount_map, target datalake has no store mount "
+                f"{resolved!r} (configured: {sorted(configured)}) for bundle mount {src_mount!r}. "
+                "Map bundle mounts to mounts that exist on the target datalake; unmapped mounts pass through "
+                "when source and mount names match on both sides."
+            )
 
 
 class DatasetSyncManager:
@@ -138,41 +183,65 @@ class DatasetSyncManager:
             },
         )
 
-    async def plan_import(self, request: DatasetSyncImportRequest) -> DatasetSyncImportPlan:
+    async def plan_import(
+        self,
+        request: DatasetSyncImportRequest,
+        *,
+        progress_callback: ProgressCallback | None = None,
+    ) -> DatasetSyncImportPlan:
         if request.transfer_policy == "metadata_only" and self.source is not self.target:
             raise ValueError(_METADATA_ONLY_CROSS_LAKE)
 
         bundle = request.bundle
+        mount_map = request.mount_map
+        if self.source is not self.target:
+            validate_cross_lake_target_mount_resolution(self.target, bundle, mount_map)
         payload_plans: list[DatasetSyncPayloadPlan] = []
 
-        mount_map = request.mount_map
-        for payload in bundle.payloads:
-            target_storage_ref = _apply_mount_map_to_storage_ref(payload.storage_ref, mount_map)
-            target_exists = await self.target.object_exists(target_storage_ref)
-            if request.transfer_policy == "copy":
-                transfer_required = True
-                reason = "policy_copy"
-            elif request.transfer_policy == "copy_if_missing":
-                transfer_required = not target_exists
-                reason = "missing_on_target" if transfer_required else "already_present"
-            elif request.transfer_policy == "metadata_only":
-                transfer_required = False
-                reason = "metadata_only"
-            elif request.transfer_policy == "fail_if_missing_payload":
-                transfer_required = False
-                reason = "already_present" if target_exists else "missing_payload"
-            else:
-                raise ValueError(f"Unsupported transfer policy: {request.transfer_policy}")
-            payload_plans.append(
-                DatasetSyncPayloadPlan(
-                    asset_id=payload.asset_id,
-                    source_storage_ref=payload.storage_ref,
-                    target_storage_ref=target_storage_ref,
-                    target_exists=target_exists,
-                    transfer_required=transfer_required,
-                    reason=reason,
-                )
+        payloads = bundle.payloads
+        total_payloads = len(payloads)
+        batches = _chunked(payloads, request.planning_batch_size)
+        total_batches = len(batches)
+        semaphore = asyncio.Semaphore(request.planning_concurrency)
+
+        for batch_index, batch in enumerate(batches, start=1):
+            batch_start = (batch_index - 1) * request.planning_batch_size
+            _logger.info(
+                "Planning dataset import batch %s/%s (%s/%s payloads checked)",
+                batch_index,
+                total_batches,
+                batch_start,
+                total_payloads,
             )
+            batch_plans = await asyncio.gather(
+                *[
+                    self._plan_payload(
+                        payload,
+                        transfer_policy=request.transfer_policy,
+                        mount_map=mount_map,
+                        semaphore=semaphore,
+                    )
+                    for payload in batch
+                ]
+            )
+            payload_plans.extend(batch_plans)
+
+            completed_items = min(batch_index * request.planning_batch_size, total_payloads)
+            progress = DatasetSyncProgress(
+                phase="planning",
+                batch_index=batch_index,
+                total_batches=total_batches,
+                completed_items=completed_items,
+                total_items=total_payloads,
+                message=f"Planning import batch {batch_index}/{total_batches}",
+            )
+            _logger.info(
+                "%s: checked %s/%s payloads",
+                progress.message,
+                progress.completed_items,
+                progress.total_items,
+            )
+            await self._emit_progress(progress_callback, progress)
 
         missing_payload_count = sum(1 for plan in payload_plans if not plan.target_exists)
         transfer_required_count = sum(1 for plan in payload_plans if plan.transfer_required)
@@ -192,6 +261,60 @@ class DatasetSyncManager:
             transfer_required_count=transfer_required_count,
             ready_to_commit=ready_to_commit,
         )
+
+    async def _plan_payload(
+        self,
+        payload: ObjectPayloadDescriptor,
+        *,
+        transfer_policy: str,
+        mount_map: dict[str, str],
+        semaphore: asyncio.Semaphore,
+    ) -> DatasetSyncPayloadPlan:
+        target_storage_ref = _apply_mount_map_to_storage_ref(payload.storage_ref, mount_map)
+        if transfer_policy == "copy":
+            return DatasetSyncPayloadPlan(
+                asset_id=payload.asset_id,
+                source_storage_ref=payload.storage_ref,
+                target_storage_ref=target_storage_ref,
+                target_exists=False,
+                transfer_required=True,
+                reason="policy_copy",
+            )
+
+        async with semaphore:
+            target_exists = await self.target.object_exists(target_storage_ref)
+
+        if transfer_policy == "copy_if_missing":
+            transfer_required = not target_exists
+            reason = "missing_on_target" if transfer_required else "already_present"
+        elif transfer_policy == "metadata_only":
+            transfer_required = False
+            reason = "metadata_only"
+        elif transfer_policy == "fail_if_missing_payload":
+            transfer_required = False
+            reason = "already_present" if target_exists else "missing_payload"
+        else:
+            raise ValueError(f"Unsupported transfer policy: {transfer_policy}")
+
+        return DatasetSyncPayloadPlan(
+            asset_id=payload.asset_id,
+            source_storage_ref=payload.storage_ref,
+            target_storage_ref=target_storage_ref,
+            target_exists=target_exists,
+            transfer_required=transfer_required,
+            reason=reason,
+        )
+
+    @staticmethod
+    async def _emit_progress(
+        progress_callback: ProgressCallback | None,
+        progress: DatasetSyncProgress,
+    ) -> None:
+        if progress_callback is None:
+            return
+        result = progress_callback(progress)
+        if result is not None:
+            await result
 
     async def sync_dataset_version(
         self,
@@ -214,8 +337,13 @@ class DatasetSyncManager:
             )
         )
 
-    async def commit_import(self, request: DatasetSyncImportRequest) -> DatasetSyncCommitResult:
-        plan = await self.plan_import(request)
+    async def commit_import(
+        self,
+        request: DatasetSyncImportRequest,
+        *,
+        progress_callback: ProgressCallback | None = None,
+    ) -> DatasetSyncCommitResult:
+        plan = await self.plan_import(request, progress_callback=progress_callback)
         if not plan.ready_to_commit:
             raise ValueError(
                 f"Import plan for {plan.dataset_name}@{plan.version} is not ready to commit under policy {plan.transfer_policy}"
@@ -227,26 +355,23 @@ class DatasetSyncManager:
         payload_by_asset_id = {payload.asset_id: payload for payload in bundle.payloads}
         plan_by_asset_id = {plan.asset_id: plan for plan in plan.payloads}
 
-        transferred_payloads = 0
-        skipped_payloads = 0
-        resolved_storage_refs: dict[str, StorageRef] = {}
+        resolved_storage_refs, transferred_payloads, skipped_payloads = await self._resolve_payload_transfers(
+            bundle.assets,
+            payload_by_asset_id=payload_by_asset_id,
+            plan_by_asset_id=plan_by_asset_id,
+            request=request,
+            progress_callback=progress_callback,
+        )
 
-        for asset in bundle.assets:
-            payload = payload_by_asset_id.get(asset.asset_id)
-            asset_plan = plan_by_asset_id.get(asset.asset_id)
-            if payload is None or asset_plan is None:
-                resolved_storage_refs[asset.asset_id] = _apply_mount_map_to_storage_ref(asset.storage_ref, mount_map)
-                continue
-            if request.transfer_policy == "metadata_only":
-                resolved_storage_refs[asset.asset_id] = _apply_mount_map_to_storage_ref(asset.storage_ref, mount_map)
-                skipped_payloads += 1
-                continue
-            if asset_plan.transfer_required:
-                resolved_storage_refs[asset.asset_id] = await self._transfer_payload(payload, mount_map)
-                transferred_payloads += 1
-            else:
-                resolved_storage_refs[asset.asset_id] = _apply_mount_map_to_storage_ref(payload.storage_ref, mount_map)
-                skipped_payloads += 1
+        await self._emit_progress(
+            progress_callback,
+            DatasetSyncProgress(
+                phase="committing",
+                completed_items=0,
+                total_items=1,
+                message="Committing dataset import metadata",
+            ),
+        )
 
         created_annotation_schemas = 0
         for schema in bundle.annotation_schemas:
@@ -386,7 +511,7 @@ class DatasetSyncManager:
         else:
             dataset_version = existing_dataset_version
 
-        return DatasetSyncCommitResult(
+        result = DatasetSyncCommitResult(
             dataset_version=dataset_version,
             created_assets=created_assets,
             created_annotation_schemas=created_annotation_schemas,
@@ -396,6 +521,103 @@ class DatasetSyncManager:
             transferred_payloads=transferred_payloads,
             skipped_payloads=skipped_payloads,
         )
+        await self._emit_progress(
+            progress_callback,
+            DatasetSyncProgress(
+                phase="complete",
+                completed_items=1,
+                total_items=1,
+                message=f"Completed dataset import {result.dataset_version.dataset_name}@{result.dataset_version.version}",
+            ),
+        )
+        return result
+
+    async def _resolve_payload_transfers(
+        self,
+        assets: Sequence[Asset],
+        *,
+        payload_by_asset_id: dict[str, ObjectPayloadDescriptor],
+        plan_by_asset_id: dict[str, DatasetSyncPayloadPlan],
+        request: DatasetSyncImportRequest,
+        progress_callback: ProgressCallback | None,
+    ) -> tuple[dict[str, StorageRef], int, int]:
+        mount_map = request.mount_map
+        resolved_storage_refs: dict[str, StorageRef] = {}
+        transfer_items: list[tuple[ObjectPayloadDescriptor, DatasetSyncPayloadPlan]] = []
+
+        for asset in assets:
+            payload = payload_by_asset_id.get(asset.asset_id)
+            asset_plan = plan_by_asset_id.get(asset.asset_id)
+            if payload is None or asset_plan is None:
+                resolved_storage_refs[asset.asset_id] = _apply_mount_map_to_storage_ref(asset.storage_ref, mount_map)
+                continue
+            transfer_items.append((payload, asset_plan))
+
+        total_payload_items = len(transfer_items)
+        if total_payload_items == 0:
+            return resolved_storage_refs, 0, 0
+
+        transferred_payloads = 0
+        skipped_payloads = 0
+        processed_payload_items = 0
+        batches = _chunked(transfer_items, request.transfer_batch_size)
+        total_transfer_batches = len(batches)
+        semaphore = asyncio.Semaphore(request.transfer_concurrency)
+
+        for batch_index, batch in enumerate(batches, start=1):
+            batch_results = await asyncio.gather(
+                *[
+                    self._resolve_payload_transfer_item(
+                        payload,
+                        asset_plan,
+                        transfer_policy=request.transfer_policy,
+                        mount_map=mount_map,
+                        semaphore=semaphore,
+                    )
+                    for payload, asset_plan in batch
+                ]
+            )
+            for asset_id, storage_ref, transferred in batch_results:
+                resolved_storage_refs[asset_id] = storage_ref
+                if transferred:
+                    transferred_payloads += 1
+                else:
+                    skipped_payloads += 1
+
+            processed_payload_items += len(batch)
+            progress = DatasetSyncProgress(
+                phase="transferring",
+                batch_index=batch_index,
+                total_batches=total_transfer_batches,
+                completed_items=processed_payload_items,
+                total_items=total_payload_items,
+                message=f"Transferring import payload batch {batch_index}/{total_transfer_batches}",
+            )
+            _logger.info(
+                "%s: processed %s/%s payloads",
+                progress.message,
+                progress.completed_items,
+                progress.total_items,
+            )
+            await self._emit_progress(progress_callback, progress)
+
+        return resolved_storage_refs, transferred_payloads, skipped_payloads
+
+    async def _resolve_payload_transfer_item(
+        self,
+        payload: ObjectPayloadDescriptor,
+        asset_plan: DatasetSyncPayloadPlan,
+        *,
+        transfer_policy: str,
+        mount_map: dict[str, str],
+        semaphore: asyncio.Semaphore,
+    ) -> tuple[str, StorageRef, bool]:
+        if transfer_policy == "metadata_only" or not asset_plan.transfer_required:
+            return payload.asset_id, _apply_mount_map_to_storage_ref(payload.storage_ref, mount_map), False
+
+        async with semaphore:
+            storage_ref = await self._transfer_payload(payload, mount_map)
+        return payload.asset_id, storage_ref, True
 
     async def _transfer_payload(self, payload: ObjectPayloadDescriptor, mount_map: dict[str, str]) -> StorageRef:
         data = await self.source.get_object(payload.storage_ref)

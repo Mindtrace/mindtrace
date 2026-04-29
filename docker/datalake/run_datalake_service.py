@@ -55,7 +55,6 @@ def build_service() -> DatalakeService:
         mounts=[mount],
         default_mount=mount_name,
         initialize_on_startup=True,
-        live_service=True,
     )
     return service
 

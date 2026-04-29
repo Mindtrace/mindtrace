@@ -814,13 +814,25 @@ class AsyncDatalake(Mindtrace):
         Uses :meth:`Store.has_object` so existence matches registry metadata (including nested
         object names). :meth:`Registry.info` can return an empty dict for missing objects without
         raising, so ``head_object`` alone would falsely report existence.
+
+        If ``storage_ref.mount`` is not configured on this datalake,
+        :exc:`~mindtrace.registry.core.exceptions.StoreLocationNotFound` is raised rather than
+        returning False, because a missing mount indicates misconfiguration, not a missing object.
         """
+
         storage_ref = self._normalize_storage_ref(storage_ref)
-        key = self.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
+        mount = storage_ref.mount
+        if not self.store.has_mount(mount):
+            configured = sorted(self.store.list_mounts())
+            raise StoreLocationNotFound(
+                f"Unknown store mount {mount!r} on datalake {self.mongo_db_name!r}; configured mounts: {configured}"
+            )
+
+        key = self.store.build_key(mount, storage_ref.name, storage_ref.version)
         version = storage_ref.version if storage_ref.version is not None else "latest"
         try:
             return self.store.has_object(key, version=version)
-        except (RegistryObjectNotFound, StoreLocationNotFound, FileNotFoundError, KeyError, OSError):
+        except (RegistryObjectNotFound, FileNotFoundError, KeyError, OSError):
             return False
 
     def dataset_sync(self, target: "AsyncDatalake" | None = None):

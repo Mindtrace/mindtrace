@@ -18,6 +18,14 @@ class DummyPipeline(Pipeline):
         self.unload_calls += 1
 
 
+def test_pipeline_unload_when_already_unloaded_skips_hook() -> None:
+    pipeline = DummyPipeline()
+    out = pipeline.unload(PipelineUnloadInput(force=False))
+    assert out.loaded is False
+    assert "already unloaded" in out.message.lower()
+    assert pipeline.unload_calls == 0
+
+
 class IncompletePipeline(Pipeline):
     pass
 

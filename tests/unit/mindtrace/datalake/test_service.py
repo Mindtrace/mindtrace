@@ -70,6 +70,10 @@ from mindtrace.datalake.service_types import (
     DatasetSyncBundleOutput,
     DatasetSyncCommitResultOutput,
     DatasetSyncImportPlanOutput,
+    DatasetSyncJobResultOutput,
+    DatasetSyncJobStartOutput,
+    DatasetSyncJobStatusInput,
+    DatasetSyncJobStatusOutput,
     DatasetVersionListOutput,
     DatasetVersionOutput,
     DatasetVersionPageOutput,
@@ -277,7 +281,7 @@ def mock_datalake():
 
 @pytest.fixture
 def service(mock_datalake):
-    return DatalakeService(async_datalake=mock_datalake, live_service=False, initialize_on_startup=False)
+    return DatalakeService(async_datalake=mock_datalake, initialize_on_startup=False)
 
 
 SERVICE_CASES = [
@@ -1231,7 +1235,7 @@ SERVICE_CASES = [
 
 class TestDatalakeServiceInitialization:
     def test_initialization_registers_endpoints_and_startup_hook(self, mock_datalake):
-        service = DatalakeService(async_datalake=mock_datalake, live_service=True, initialize_on_startup=True)
+        service = DatalakeService(async_datalake=mock_datalake, initialize_on_startup=True)
 
         assert service._datalake is mock_datalake
         assert service._initialized is True
@@ -1245,8 +1249,8 @@ class TestDatalakeServiceInitialization:
         assert "annotation_records.list_for_asset" in service.endpoints
         assert "dataset_versions.resolve" in service.endpoints
 
-    def test_initialization_skips_startup_hook_when_not_live(self, mock_datalake):
-        service = DatalakeService(async_datalake=mock_datalake, live_service=False, initialize_on_startup=True)
+    def test_initialization_skips_startup_hook_when_disabled(self, mock_datalake):
+        service = DatalakeService(async_datalake=mock_datalake, initialize_on_startup=False)
 
         assert service.app.router.on_startup == []
 
@@ -1344,7 +1348,7 @@ class TestDatalakeServiceInitialization:
 
     @pytest.mark.asyncio
     async def test_ensure_datalake_raises_without_mongo_config(self):
-        service = DatalakeService(live_service=False, initialize_on_startup=False)
+        service = DatalakeService(initialize_on_startup=False)
 
         with pytest.raises(HTTPException, match="missing mongo_db_uri and/or mongo_db_name") as exc_info:
             await service._ensure_datalake()
@@ -1363,7 +1367,6 @@ class TestDatalakeServiceInitialization:
             mounts=["mount-a"],
             default_mount="nas",
             slow_ops_policy=SlowOpsPolicy.FORBID,
-            live_service=False,
             initialize_on_startup=False,
         )
 
@@ -1386,7 +1389,6 @@ class TestDatalakeServiceInitialization:
     async def test_ensure_datalake_initializes_existing_instance_once(self, mock_datalake):
         service = DatalakeService(
             async_datalake=mock_datalake,
-            live_service=False,
             initialize_on_startup=False,
         )
         service._initialized = False
@@ -1401,7 +1403,6 @@ class TestDatalakeServiceInitialization:
     async def test_ensure_datalake_returns_initialized_instance_without_reinitializing(self, mock_datalake):
         service = DatalakeService(
             async_datalake=mock_datalake,
-            live_service=False,
             initialize_on_startup=False,
         )
 
@@ -1787,6 +1788,94 @@ async def test_service_import_dataset_version_commit_uses_sync_manager(service, 
     assert isinstance(result, DatasetSyncCommitResultOutput)
     assert result.result == commit_result
     manager.commit_import.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_service_import_prepare_start_runs_background_job(service, datalake_objects):
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    request = DatasetSyncImportRequest(bundle=bundle)
+    plan = DatasetSyncImportPlan(
+        dataset_name="demo",
+        version="1.0",
+        transfer_policy="copy_if_missing",
+        ready_to_commit=True,
+    )
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.plan_import = AsyncMock(return_value=plan)
+
+        started = await service.import_dataset_version_prepare_start(request)
+        await service._dataset_sync_jobs[started.job_id].task
+        status = await service.import_dataset_version_job_status(DatasetSyncJobStatusInput(job_id=started.job_id))
+        result = await service.import_dataset_version_job_result(DatasetSyncJobStatusInput(job_id=started.job_id))
+
+    assert isinstance(started, DatasetSyncJobStartOutput)
+    assert isinstance(status, DatasetSyncJobStatusOutput)
+    assert isinstance(result, DatasetSyncJobResultOutput)
+    assert status.status == "completed"
+    assert status.progress.phase == "complete"
+    assert result.plan == plan
+    assert result.result is None
+    manager.plan_import.assert_awaited_once()
+    assert manager.plan_import.await_args.args == (request,)
+    assert "progress_callback" in manager.plan_import.await_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_service_import_start_runs_background_job(service, datalake_objects):
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    request = DatasetSyncImportRequest(bundle=bundle)
+    commit_result = DatasetSyncCommitResult(dataset_version=datalake_objects.dataset_version, created_assets=1)
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.commit_import = AsyncMock(return_value=commit_result)
+
+        started = await service.import_dataset_version_start(request)
+        await service._dataset_sync_jobs[started.job_id].task
+        result = await service.import_dataset_version_job_result(DatasetSyncJobStatusInput(job_id=started.job_id))
+
+    assert started.mode == "import"
+    assert result.status == "completed"
+    assert result.result == commit_result
+    assert result.plan is None
+    manager.commit_import.assert_awaited_once()
+    assert manager.commit_import.await_args.args == (request,)
+    assert "progress_callback" in manager.commit_import.await_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_service_import_prepare_failure_surfaces_error_detail(service, datalake_objects):
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    request = DatasetSyncImportRequest(bundle=bundle)
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.plan_import = AsyncMock(side_effect=KeyError("minio"))
+
+        started = await service.import_dataset_version_prepare_start(request)
+        await service._dataset_sync_jobs[started.job_id].task
+        status = await service.import_dataset_version_job_status(DatasetSyncJobStatusInput(job_id=started.job_id))
+        result = await service.import_dataset_version_job_result(DatasetSyncJobStatusInput(job_id=started.job_id))
+
+    assert result.status == "failed"
+    assert status.status == "failed"
+    assert status.error_detail is not None
+    assert status.error_detail.traceback == result.error_detail.traceback
+    assert result.error is not None
+    assert "KeyError" in result.error
+    assert "minio" in result.error
+    assert result.error_detail is not None
+    assert result.error_detail.exception_type.endswith("KeyError")
+    assert "minio" in result.error_detail.exception_repr
+    assert result.error_detail.traceback is not None
+    assert "_run_dataset_sync_job" in result.error_detail.traceback
+
+
+@pytest.mark.asyncio
+async def test_service_import_job_status_raises_for_unknown_job(service):
+    with pytest.raises(HTTPException) as exc_info:
+        await service.import_dataset_version_job_status(DatasetSyncJobStatusInput(job_id="missing"))
+
+    assert exc_info.value.status_code == 404
 
 
 @pytest.mark.asyncio

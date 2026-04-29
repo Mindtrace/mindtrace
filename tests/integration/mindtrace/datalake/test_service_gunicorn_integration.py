@@ -36,7 +36,7 @@ class TestDatalakeServiceGunicornIntegration:
         class_name = datalake_service_manager.class_name()
         pid_file = datalake_service_manager.pid_file()
 
-        reference_service = DatalakeService(live_service=False, initialize_on_startup=False)
+        reference_service = DatalakeService(initialize_on_startup=False)
         expected_endpoints = set(reference_service.endpoints)
 
         assert isinstance(health, DatalakeHealthOutput)

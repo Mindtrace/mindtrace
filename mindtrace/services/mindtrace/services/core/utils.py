@@ -62,15 +62,29 @@ def make_endpoint_methods(endpoint_name: str, endpoint_path: str, input_schema, 
     model instance) and kwargs with ``validate_input``/``validate_output`` flags.
     """
 
-    def method(self, *args, validate_input: bool = True, validate_output: bool = True, **kwargs):
+    def method(
+        self,
+        *args,
+        validate_input: bool = True,
+        validate_output: bool = True,
+        timeout: int = 60,
+        **kwargs,
+    ):
         payload = _validate_payload(args, kwargs, input_schema, endpoint_name, validate_input)
-        res = httpx.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=60)
+        res = httpx.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=timeout)
         return _parse_response(res, output_schema, validate_output)
 
-    async def amethod(self, *args, validate_input: bool = True, validate_output: bool = True, **kwargs):
+    async def amethod(
+        self,
+        *args,
+        validate_input: bool = True,
+        validate_output: bool = True,
+        timeout: int = 60,
+        **kwargs,
+    ):
         payload = _validate_payload(args, kwargs, input_schema, endpoint_name, validate_input)
-        async with httpx.AsyncClient(timeout=60) as client:
-            res = await client.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=60)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            res = await client.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=timeout)
         return _parse_response(res, output_schema, validate_output)
 
     return method, amethod
