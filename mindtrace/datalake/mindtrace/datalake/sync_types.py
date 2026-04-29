@@ -85,6 +85,22 @@ class DatasetSyncImportRequest(BaseModel):
             "caller-orchestrated cross-lake sync when the target cannot read bundle source mounts."
         ),
     )
+    greenfield_skip_target_object_probes: bool = Field(
+        default=True,
+        description=(
+            "When True and importing a dataset version graph that does not yet exist on the target, "
+            "skip per-payload ``object_exists`` probes for ``copy_if_missing`` (greenfield optimization). "
+            "When False, preserve the legacy probe-all behavior."
+        ),
+    )
+    metadata_first: bool = Field(
+        default=False,
+        description=(
+            "When True with distinct source/target datalakes, commit dataset graph rows with replication-style "
+            "payload_state pending instead of transferring all bytes in-process. Requires Phase B hydration "
+            "(e.g. library ``ReplicationManager(source, target).hydrate_asset_payload`` or staging flows)."
+        ),
+    )
 
     @field_validator("mount_map")
     @classmethod

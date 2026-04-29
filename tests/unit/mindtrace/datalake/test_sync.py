@@ -174,7 +174,7 @@ class TestDatasetSyncManager:
         assert plan.dataset_name == "demo"
         assert plan.transfer_required_count == 1
         assert plan.missing_payload_count == 1
-        assert plan.payloads[0].reason == "missing_on_target"
+        assert plan.payloads[0].reason == "greenfield_skip_probe"
         assert plan.ready_to_commit is True
         assert plan.payloads[0].target_storage_ref == plan.payloads[0].source_storage_ref
 
@@ -188,6 +188,7 @@ class TestDatasetSyncManager:
                 bundle=bundle,
                 transfer_policy="copy_if_missing",
                 mount_map={"source": "remote"},
+                greenfield_skip_target_object_probes=False,
             )
         )
 
@@ -248,6 +249,7 @@ class TestDatasetSyncManager:
                 transfer_policy="copy_if_missing",
                 planning_batch_size=10,
                 planning_concurrency=3,
+                greenfield_skip_target_object_probes=False,
             )
         )
 
@@ -545,7 +547,11 @@ class TestDatasetSyncManager:
         bundle = await manager.export_dataset_version("demo", "1.0.0")
 
         result = await manager.commit_import(
-            DatasetSyncImportRequest(bundle=bundle, mount_map={"source": "target-vol"})
+            DatasetSyncImportRequest(
+                bundle=bundle,
+                mount_map={"source": "target-vol"},
+                greenfield_skip_target_object_probes=False,
+            )
         )
 
         assert result.transferred_payloads == 0
@@ -1196,6 +1202,35 @@ class TestDatasetSyncManager:
         assert row.metadata == new_asset.metadata
         target_datalake.asset_database.update.assert_awaited_once_with(row)
         target_datalake.asset_database.insert.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_plan_import_greenfield_skips_object_exists_probes(self, source_datalake, target_datalake):
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        await manager.plan_import(DatasetSyncImportRequest(bundle=bundle, transfer_policy="copy_if_missing"))
+        assert target_datalake.object_exists.await_count == 0
+
+    @pytest.mark.asyncio
+    async def test_commit_import_metadata_first_skips_transfer_and_marks_payload_pending(
+        self, source_datalake, target_datalake, sync_objects
+    ):
+        target_datalake.object_exists = AsyncMock(return_value=False)
+        target_datalake.get_asset = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+        target_datalake.get_annotation_schema = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+        target_datalake.get_annotation_record = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+        target_datalake.get_annotation_set = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+        target_datalake.get_datum = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+        target_datalake.get_dataset_version = AsyncMock(side_effect=DocumentNotFoundError("missing"))
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        result = await manager.commit_import(
+            DatasetSyncImportRequest(bundle=bundle, metadata_first=True, transfer_policy="copy_if_missing"),
+        )
+        assert result.transferred_payloads == 0
+        source_datalake.get_object.assert_not_awaited()
+        inserted_asset = target_datalake.asset_database.insert.await_args.args[0]
+        assert inserted_asset.metadata["replication"]["payload_status"] == "pending"
+        assert inserted_asset.metadata["replication"]["payload_available"] is False
 
 
 class TestDatasetSyncProgressHelpers:
