@@ -1,6 +1,6 @@
 """Unit tests for RequestLoggingMiddleware."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -90,3 +90,50 @@ class TestRequestLoggingMiddleware:
         assert err_kwargs.get("error_type") == "ValueError"
         assert "planned failure" in (err_kwargs.get("error") or "")
         assert err_kwargs.get("stack_trace")
+
+    def test_log_metrics_adds_snapshot_on_success(self, mock_logger: MagicMock) -> None:
+        snapshot = {"cpu_percent": 1.0}
+        mock_collector = MagicMock(return_value=snapshot)
+        with patch(
+            "mindtrace.services.core.middleware.SystemMetricsCollector",
+            return_value=mock_collector,
+        ):
+            client = _client(mock_logger, log_metrics=True)
+            client.get("/api/ping")
+        completed = mock_logger.info.call_args_list[1].kwargs
+        assert completed.get("metrics") == snapshot
+        mock_collector.assert_called()
+
+    def test_log_metrics_failure_ignored_on_success(self, mock_logger: MagicMock) -> None:
+        mock_collector = MagicMock(side_effect=RuntimeError("metrics down"))
+        with patch(
+            "mindtrace.services.core.middleware.SystemMetricsCollector",
+            return_value=mock_collector,
+        ):
+            client = _client(mock_logger, log_metrics=True)
+            client.get("/api/ping")
+        completed = mock_logger.info.call_args_list[1].kwargs
+        assert "metrics" not in completed
+
+    def test_log_metrics_adds_snapshot_on_handler_error(self, mock_logger: MagicMock) -> None:
+        snapshot = {"memory_percent": 42.0}
+        mock_collector = MagicMock(return_value=snapshot)
+        with patch(
+            "mindtrace.services.core.middleware.SystemMetricsCollector",
+            return_value=mock_collector,
+        ):
+            client = _client(mock_logger, log_metrics=True)
+            client.get("/api/fail")
+        err_kwargs = mock_logger.error.call_args.kwargs
+        assert err_kwargs.get("metrics") == snapshot
+
+    def test_log_metrics_failure_ignored_on_handler_error(self, mock_logger: MagicMock) -> None:
+        mock_collector = MagicMock(side_effect=RuntimeError("metrics down"))
+        with patch(
+            "mindtrace.services.core.middleware.SystemMetricsCollector",
+            return_value=mock_collector,
+        ):
+            client = _client(mock_logger, log_metrics=True)
+            client.get("/api/fail")
+        err_kwargs = mock_logger.error.call_args.kwargs
+        assert "metrics" not in err_kwargs

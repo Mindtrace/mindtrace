@@ -256,6 +256,14 @@ def test_count_queue_messages_delegates():
     assert result == 42
 
 
+def test_count_queue_messages_channel_closed_raises_connection_error():
+    client = make_client()
+    channel = client.create_connection.return_value
+    channel.queue_declare = MagicMock(side_effect=ChannelClosedByBroker(406, "no queue"))
+    with pytest.raises(ConnectionError, match="Could not count messages"):
+        client.count_queue_messages("missing-q")
+
+
 def test_channel_property_exchange_declare_raises_channel_closed():
     """Test channel property when exchange_declare raises ChannelClosedByBroker."""
     dc = DummyChannel()

@@ -52,8 +52,30 @@ class DatasetSyncImportRequest(BaseModel):
         default_factory=dict,
         description=(
             "Maps source registry mount names to target mount names for payload probes, uploads, and "
-            "persisted StorageRef values. Unlisted mounts pass through unchanged."
+            "persisted StorageRef values. On cross-lake imports, each distinct mount in bundled assets and "
+            "payloads must resolve (after mapping) to a mount that exists on the target datalake. "
+            "Unlisted mounts pass through unchanged when the same mount name exists on both lakes."
         ),
+    )
+    planning_batch_size: int = Field(
+        default=500,
+        ge=1,
+        description="Number of payloads to group into each import-planning progress batch.",
+    )
+    planning_concurrency: int = Field(
+        default=32,
+        ge=1,
+        description="Maximum concurrent target object-existence probes during import planning.",
+    )
+    transfer_batch_size: int = Field(
+        default=100,
+        ge=1,
+        description="Number of payloads to group into each import-transfer progress batch.",
+    )
+    transfer_concurrency: int = Field(
+        default=8,
+        ge=1,
+        description="Maximum concurrent payload transfers during import commit.",
     )
 
     @field_validator("mount_map")
@@ -91,6 +113,15 @@ class DatasetSyncImportPlan(BaseModel):
     missing_payload_count: int = 0
     transfer_required_count: int = 0
     ready_to_commit: bool = False
+
+
+class DatasetSyncProgress(BaseModel):
+    phase: Literal["planning", "transferring", "committing", "complete", "failed"]
+    batch_index: int = 0
+    total_batches: int = 0
+    completed_items: int = 0
+    total_items: int = 0
+    message: str = ""
 
 
 class DatasetSyncCommitResult(BaseModel):
