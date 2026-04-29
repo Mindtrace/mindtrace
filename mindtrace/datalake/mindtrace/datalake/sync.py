@@ -258,9 +258,16 @@ class DatasetSyncManager:
         embedded_blocked = False
         if self.source is self.target:
             for payload, row in zip(payloads, payload_plans, strict=True):
-                if row.transfer_required and not self.target.store.has_mount(payload.storage_ref.mount):
-                    embedded_blocked = True
-                    break
+                if row.transfer_required:
+                    target_mount = _apply_mount_map_to_storage_ref(
+                        payload.storage_ref, mount_map
+                    ).mount
+                    if not self.target.store.has_mount(target_mount):
+                        embedded_blocked = True
+                        break
+        if request.target_metadata_commit:
+            # Phase A: caller will stage bytes; target must not be gated on reading bundle source mount names.
+            embedded_blocked = False
         if request.transfer_policy == "metadata_only":
             ready_to_commit = True
         elif request.transfer_policy == "fail_if_missing_payload":
