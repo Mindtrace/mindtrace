@@ -101,6 +101,14 @@ class DatasetSyncImportRequest(BaseModel):
             "(e.g. library ``ReplicationManager(source, target).hydrate_asset_payload`` or staging flows)."
         ),
     )
+    target_metadata_commit: bool = Field(
+        default=False,
+        description=(
+            "When True, source and target must be the same AsyncDatalake (single-process target-side import): "
+            "commit the dataset graph with replication-style payload_pending without transferring payloads. Used by "
+            "``dataset_versions.import_session_commit_metadata`` plus caller uploads (``import_session_upload_payload``)."
+        ),
+    )
 
     @field_validator("mount_map")
     @classmethod
@@ -117,6 +125,8 @@ class DatasetSyncImportRequest(BaseModel):
                 "preserve_ids=False is not supported yet; imports always preserve source identifiers. "
                 "Omit preserve_ids or set it to True."
             )
+        if self.metadata_first and self.target_metadata_commit:
+            raise ValueError("Cannot set both metadata_first and target_metadata_commit on the same request.")
         return self
 
 

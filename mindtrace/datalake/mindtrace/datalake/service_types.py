@@ -877,6 +877,11 @@ DatasetImportSessionCommitSchema = TaskSchema(
     input_schema=DatasetImportSessionCommitInput,
     output_schema=DatasetSyncCommitResultOutput,
 )
+DatasetImportSessionCommitMetadataSchema = TaskSchema(
+    name="dataset_versions.import_session_commit_metadata",
+    input_schema=DatasetImportSessionCommitInput,
+    output_schema=DatasetSyncCommitResultOutput,
+)
 ReplicationBatchUpsertSchema = TaskSchema(
     name="replication.upsert_batch",
     input_schema=ReplicationBatchRequest,

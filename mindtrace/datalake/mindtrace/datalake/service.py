@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
-from mindtrace.database.core.exceptions import DocumentTooLargeError
+from mindtrace.database.core.exceptions import DocumentNotFoundError, DocumentTooLargeError
 from mindtrace.datalake.async_datalake import AsyncDatalake, SlowOperationDisabledError, SlowOpsPolicy
 from mindtrace.datalake.replication import ReplicationManager
 from mindtrace.datalake.replication_types import ReplicationReclaimRequest, ReplicationReconcileRequest
@@ -78,6 +78,7 @@ from mindtrace.datalake.service_types import (
     DatalakeSummaryOutput,
     DatalakeSummarySchema,
     DatasetImportSessionCommitInput,
+    DatasetImportSessionCommitMetadataSchema,
     DatasetImportSessionCommitSchema,
     DatasetImportSessionStartOutput,
     DatasetImportSessionStartSchema,
@@ -472,6 +473,11 @@ class DatalakeService(Service):
             "dataset_versions.import_session_start",
             self.import_session_start,
             schema=DatasetImportSessionStartSchema,
+        )
+        self.add_endpoint(
+            "dataset_versions.import_session_commit_metadata",
+            self.import_session_commit_metadata,
+            schema=DatasetImportSessionCommitMetadataSchema,
         )
         self.add_endpoint(
             "dataset_versions.import_session_upload_payload",
@@ -1214,6 +1220,47 @@ class DatalakeService(Service):
             expires_at=session.expires_at,
         )
 
+    async def import_session_commit_metadata(
+        self, payload: DatasetImportSessionCommitInput
+    ) -> DatasetSyncCommitResultOutput:
+        """Phase A on the target lake: persist dataset graph with pending payload replication state (caller push Phase B).
+
+        Subsequent ``import_session_upload_payload`` verifies each staged asset and transitions ``pending→verified``.
+        Closing the session requires ``import_session_commit`` once all ``required_asset_ids`` are verified.
+        """
+        datalake = await self._ensure_datalake()
+        session = await self._require_open_import_session(datalake, payload.session_id)
+        if _import_session_expired(session.expires_at):
+            raise HTTPException(status_code=400, detail="import session expired")
+        if session.metadata_graph_committed:
+            raise HTTPException(
+                status_code=400,
+                detail="Metadata graph was already committed for this import session",
+            )
+        bundle = await _load_import_session_bundle(datalake, session)
+        req = DatasetSyncImportRequest(
+            bundle=bundle,
+            transfer_policy=session.transfer_policy,
+            origin_lake_id=session.origin_lake_id,
+            preserve_ids=session.preserve_ids,
+            mount_map=session.mount_map,
+            planning_batch_size=session.planning_batch_size,
+            planning_concurrency=session.planning_concurrency,
+            transfer_batch_size=session.transfer_batch_size,
+            transfer_concurrency=session.transfer_concurrency,
+            staged_payload_storage_refs=None,
+            target_metadata_commit=True,
+        )
+        manager = DatasetSyncManager(datalake, datalake)
+        try:
+            result = await manager.commit_import(req)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        session.metadata_graph_committed = True
+        session.verified_asset_ids = []
+        await datalake.dataset_import_session_database.update(session)
+        return DatasetSyncCommitResultOutput(result=result)
+
     async def import_session_upload_payload(
         self, payload: DatasetImportSessionUploadInput
     ) -> DatasetImportSessionUploadOutput:
@@ -1237,6 +1284,23 @@ class DatalakeService(Service):
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         session.staged_refs[payload.asset_id] = ref.model_dump(mode="json")
+        if session.metadata_graph_committed:
+            if payload.asset_id in session.verified_asset_ids:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"asset_id {payload.asset_id!r} was already verified for this import session",
+                )
+            try:
+                await manager.finalize_pending_import_asset_payload(
+                    asset_id=payload.asset_id,
+                    payload_descriptor=desc,
+                    staged_storage_ref=ref,
+                    payload_bytes=data,
+                )
+            except (ValueError, RuntimeError) as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            verified = sorted(set(session.verified_asset_ids) | {payload.asset_id})
+            session.verified_asset_ids = verified
         await datalake.dataset_import_session_database.update(session)
         return DatasetImportSessionUploadOutput(storage_ref=ref)
 
@@ -1247,6 +1311,42 @@ class DatalakeService(Service):
             raise HTTPException(status_code=400, detail="import session expired")
 
         bundle = await _load_import_session_bundle(datalake, session)
+
+        if session.metadata_graph_committed:
+            if session.required_asset_ids:
+                missing = sorted(set(session.required_asset_ids) - set(session.verified_asset_ids))
+                if missing:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Payload verification still pending for asset ids: {missing}",
+                    )
+            try:
+                dv = await datalake.get_dataset_version(
+                    bundle.dataset_version.dataset_name,
+                    bundle.dataset_version.version,
+                )
+            except DocumentNotFoundError as exc:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Dataset version not found after metadata commit",
+                ) from exc
+            result = DatasetSyncCommitResult(
+                dataset_version=dv,
+                created_assets=0,
+                created_annotation_schemas=0,
+                created_annotation_records=0,
+                created_annotation_sets=0,
+                created_datums=0,
+                transferred_payloads=len(session.verified_asset_ids),
+                skipped_payloads=0,
+            )
+            await _delete_import_session_bundle_blob(datalake, session)
+            session.bundle_storage_ref = None
+            session.bundle_data = {}
+            session.status = "committed"
+            await datalake.dataset_import_session_database.update(session)
+            return DatasetSyncCommitResultOutput(result=result)
+
         staged: dict[str, StorageRef] | None = None
         if session.required_asset_ids:
             missing = [aid for aid in session.required_asset_ids if aid not in session.staged_refs]
