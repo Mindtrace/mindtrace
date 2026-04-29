@@ -267,6 +267,24 @@ class _ImportSessionProgressWriter:
         sess.import_progress_skipped_items = progress.skipped_items
         sess.import_progress_failed_items = progress.failed_items
         sess.import_progress_updated_at = utc_now()
+        sess.metadata_commit_cursor_entity_kind = progress.entity_kind
+        sess.metadata_commit_cursor_completed_items = progress.entity_completed_items
+        sess.metadata_commit_cursor_total_items = progress.entity_total_items
+        if progress.phase == "planning":
+            sess.import_stage = "planning_metadata_commit"
+        elif progress.phase == "committing":
+            sess.import_stage = "committing_metadata"
+        elif progress.phase == "transferring":
+            sess.import_stage = "awaiting_payload_uploads"
+        elif progress.phase == "complete":
+            if sess.metadata_graph_committed:
+                verified = len(sess.verified_asset_ids)
+                required = len(sess.required_asset_ids)
+                sess.import_stage = "ready_to_finalize" if verified >= required else "awaiting_payload_uploads"
+            else:
+                sess.import_stage = "metadata_commit_complete"
+        elif progress.phase == "failed":
+            sess.import_stage = "failed"
         if progress.phase == "failed":
             sess.import_progress_error = error or progress.message
         else:
@@ -320,16 +338,27 @@ def _dataset_import_session_status_output(session: DatasetImportSession) -> Data
             }
         )
 
+    required_asset_ids = list(session.required_asset_ids)
+    verified_asset_ids = list(session.verified_asset_ids)
+    pending_asset_count = max(len(required_asset_ids) - len(verified_asset_ids), 0)
+
     return DatasetImportSessionStatusOutput(
         session_id=session.import_session_id,
         status=session.status,
         expires_at=session.expires_at,
         metadata_graph_committed=session.metadata_graph_committed,
-        required_asset_ids=list(session.required_asset_ids),
-        verified_asset_ids=list(session.verified_asset_ids),
+        session_stage=session.import_stage,
+        required_asset_ids=required_asset_ids,
+        verified_asset_ids=verified_asset_ids,
+        required_asset_count=len(required_asset_ids),
+        verified_asset_count=len(verified_asset_ids),
+        pending_asset_count=pending_asset_count,
         progress=progress_model,
         import_progress_updated_at=session.import_progress_updated_at,
         import_progress_error=session.import_progress_error,
+        metadata_commit_cursor_entity_kind=session.metadata_commit_cursor_entity_kind,
+        metadata_commit_cursor_completed_items=session.metadata_commit_cursor_completed_items,
+        metadata_commit_cursor_total_items=session.metadata_commit_cursor_total_items,
     )
 
 
@@ -1299,6 +1328,7 @@ class DatalakeService(Service):
             commit_progress_every_items=payload.commit_progress_every_items,
             commit_progress_every_seconds=payload.commit_progress_every_seconds,
             required_asset_ids=required,
+            import_stage="awaiting_metadata_commit",
             expires_at=now + timedelta(hours=24),
         )
         bundle_bytes = json.dumps(payload.bundle.model_dump(mode="json")).encode("utf-8")
@@ -1384,6 +1414,7 @@ class DatalakeService(Service):
             raise
         session.metadata_graph_committed = True
         session.verified_asset_ids = []
+        session.import_stage = "awaiting_payload_uploads" if session.required_asset_ids else "ready_to_finalize"
         await datalake.dataset_import_session_database.update(session)
         return DatasetSyncCommitResultOutput(result=result)
 
@@ -1434,6 +1465,7 @@ class DatalakeService(Service):
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             verified = sorted(set(session.verified_asset_ids) | {payload.asset_id})
             session.verified_asset_ids = verified
+            session.import_stage = "ready_to_finalize" if len(verified) >= len(session.required_asset_ids) else "awaiting_payload_uploads"
         await datalake.dataset_import_session_database.update(session)
         return DatasetImportSessionUploadOutput(storage_ref=ref)
 
@@ -1477,6 +1509,7 @@ class DatalakeService(Service):
             session.bundle_storage_ref = None
             session.bundle_data = {}
             session.status = "committed"
+            session.import_stage = "committed"
             await datalake.dataset_import_session_database.update(session)
             return DatasetSyncCommitResultOutput(result=result)
 
@@ -1516,6 +1549,7 @@ class DatalakeService(Service):
         session.bundle_storage_ref = None
         session.bundle_data = {}
         session.status = "committed"
+        session.import_stage = "committed"
         await datalake.dataset_import_session_database.update(session)
         return DatasetSyncCommitResultOutput(result=result)
 

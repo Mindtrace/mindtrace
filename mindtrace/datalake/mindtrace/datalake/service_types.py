@@ -768,11 +768,18 @@ class DatasetImportSessionStatusOutput(BaseModel):
     status: Literal["open", "committed", "failed"]
     expires_at: datetime
     metadata_graph_committed: bool = False
+    session_stage: str | None = None
     required_asset_ids: list[str] = Field(default_factory=list)
     verified_asset_ids: list[str] = Field(default_factory=list)
+    required_asset_count: int = 0
+    verified_asset_count: int = 0
+    pending_asset_count: int = 0
     progress: DatasetSyncProgress | None = None
     import_progress_updated_at: datetime | None = None
     import_progress_error: str | None = None
+    metadata_commit_cursor_entity_kind: str | None = None
+    metadata_commit_cursor_completed_items: int | None = None
+    metadata_commit_cursor_total_items: int | None = None
 
 
 DatasetSyncJobMode = Literal["prepare", "import"]
