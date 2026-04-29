@@ -9,10 +9,10 @@ from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 from pymongo import MongoClient
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DocumentTooLarge, DuplicateKeyError
 
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
-from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
+from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError, DocumentTooLargeError
 
 
 class MindtraceDocument(Document):
@@ -370,6 +370,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
 
         Raises:
             DuplicateInsertError: If the document violates unique constraints.
+            DocumentTooLargeError: If the BSON document exceeds server size limits.
             ValueError: If in multi-model mode (use db.model_name.insert() instead).
 
         Example:
@@ -425,8 +426,10 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             return await doc.insert()
         except DuplicateKeyError as e:
             raise DuplicateInsertError(f"Duplicate key error: {str(e)}")
+        except DocumentTooLarge as e:
+            raise DocumentTooLargeError(str(e)) from e
         except Exception as e:
-            raise DuplicateInsertError(str(e))
+            raise DuplicateInsertError(str(e)) from e
 
     async def get(self, id: str | PydanticObjectId, fetch_links: bool = False) -> T:
         """

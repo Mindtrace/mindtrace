@@ -44,3 +44,10 @@ class DuplicateInsertError(Exception):
     """
 
     pass
+
+
+class DocumentTooLargeError(Exception):
+    """Raised when a serialized document exceeds server BSON/size limits (e.g. MongoDB 16 MiB maximum)."""
+
+
+__all__ = ["DocumentNotFoundError", "DuplicateInsertError", "DocumentTooLargeError"]

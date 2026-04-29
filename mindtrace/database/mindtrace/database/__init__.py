@@ -9,7 +9,7 @@ from mindtrace.database.backends.unified_odm import (
     UnifiedMindtraceDocument,
     UnifiedMindtraceODM,
 )
-from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
+from mindtrace.database.core.exceptions import DocumentNotFoundError, DocumentTooLargeError, DuplicateInsertError
 
 __all__ = [
     "BackendType",
@@ -17,6 +17,7 @@ __all__ = [
     "MindtraceODM",
     "DocumentNotFoundError",
     "DuplicateInsertError",
+    "DocumentTooLargeError",
     "Link",
     "RegistryMindtraceODM",
     "MindtraceDocument",
