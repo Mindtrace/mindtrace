@@ -45,6 +45,7 @@ htmlcov/
 .cache
 nosetests.xml
 coverage.xml
+coverage-unit.json
 *.cover
 *.py,cover
 .hypothesis/

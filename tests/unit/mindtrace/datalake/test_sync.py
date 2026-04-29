@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
@@ -95,6 +96,17 @@ def source_datalake(sync_objects):
 def target_datalake(sync_objects):
     datalake = Mock()
     datalake.mongo_db_name = "target_db"
+    target_store = MagicMock()
+    target_store.list_mount_info.return_value = {
+        "source": {},
+        "target": {},
+        "remote": {},
+        "target-vol": {},
+        "s3-target": {},
+    }
+    target_store.has_mount.side_effect = lambda m: m in target_store.list_mount_info.return_value
+    target_store.list_mounts.side_effect = lambda: sorted(target_store.list_mount_info.return_value.keys())
+    datalake.store = target_store
     datalake.object_exists = AsyncMock(return_value=False)
     datalake.create_object_upload_session = AsyncMock(
         return_value=SimpleNamespace(
@@ -174,6 +186,94 @@ class TestDatasetSyncManager:
         probed_ref = target_datalake.object_exists.await_args.args[0]
         assert probed_ref.mount == "remote"
         assert probed_ref.name == plan.payloads[0].source_storage_ref.name
+
+    @pytest.mark.asyncio
+    async def test_plan_import_cross_lake_raises_when_effective_mount_not_on_target(
+        self,
+        source_datalake,
+        target_datalake,
+    ):
+        target_datalake.store.list_mount_info.return_value = {"other_mount": {}}
+
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+
+        with pytest.raises(ValueError, match="After applying mount_map"):
+            await manager.plan_import(
+                DatasetSyncImportRequest(
+                    bundle=bundle,
+                    transfer_policy="copy_if_missing",
+                )
+            )
+
+    @pytest.mark.asyncio
+    async def test_plan_import_checks_payloads_with_bounded_concurrency(self, source_datalake, target_datalake):
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        payloads = [
+            ObjectPayloadDescriptor(
+                asset_id=f"asset_{idx}",
+                storage_ref=StorageRef(mount="source", name=f"images/{idx}.jpg", version="v1"),
+                media_type="image/jpeg",
+            )
+            for idx in range(10)
+        ]
+        bundle = bundle.model_copy(update={"payloads": payloads})
+        active = 0
+        max_active = 0
+
+        async def object_exists(_storage_ref):
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            return False
+
+        target_datalake.object_exists = AsyncMock(side_effect=object_exists)
+
+        plan = await manager.plan_import(
+            DatasetSyncImportRequest(
+                bundle=bundle,
+                transfer_policy="copy_if_missing",
+                planning_batch_size=10,
+                planning_concurrency=3,
+            )
+        )
+
+        assert len(plan.payloads) == 10
+        assert target_datalake.object_exists.await_count == 10
+        assert 1 < max_active <= 3
+
+    @pytest.mark.asyncio
+    async def test_plan_import_emits_progress_per_batch(self, source_datalake, target_datalake):
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        payloads = [
+            ObjectPayloadDescriptor(
+                asset_id=f"asset_{idx}",
+                storage_ref=StorageRef(mount="source", name=f"images/{idx}.jpg", version="v1"),
+                media_type="image/jpeg",
+            )
+            for idx in range(5)
+        ]
+        bundle = bundle.model_copy(update={"payloads": payloads})
+        progress_events = []
+
+        await manager.plan_import(
+            DatasetSyncImportRequest(
+                bundle=bundle,
+                transfer_policy="copy_if_missing",
+                planning_batch_size=2,
+                planning_concurrency=2,
+            ),
+            progress_callback=progress_events.append,
+        )
+
+        assert [event.batch_index for event in progress_events] == [1, 2, 3]
+        assert all(event.phase == "planning" for event in progress_events)
+        assert progress_events[-1].completed_items == 5
+        assert progress_events[-1].total_items == 5
 
     @pytest.mark.asyncio
     async def test_plan_import_handles_fail_if_missing_payload(self, source_datalake, target_datalake):
@@ -291,6 +391,116 @@ class TestDatasetSyncManager:
         inserted_dataset_version = target_datalake.dataset_version_database.insert.await_args.args[0]
         assert inserted_dataset_version.metadata["origin"]["entity_id"] == "dataset_version_1"
         assert inserted_dataset_version.metadata["origin"]["dataset_name"] == "demo"
+
+    @pytest.mark.asyncio
+    async def test_commit_import_transfers_payloads_with_bounded_concurrency(
+        self, source_datalake, target_datalake, sync_objects
+    ):
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        assets = [
+            sync_objects.asset.model_copy(
+                update={
+                    "asset_id": f"asset_{idx}",
+                    "storage_ref": StorageRef(mount="source", name=f"images/{idx}.jpg", version="v1"),
+                }
+            )
+            for idx in range(8)
+        ]
+        payloads = [
+            ObjectPayloadDescriptor(
+                asset_id=asset.asset_id,
+                storage_ref=asset.storage_ref,
+                media_type=asset.media_type,
+            )
+            for asset in assets
+        ]
+        bundle = bundle.model_copy(update={"assets": assets, "payloads": payloads})
+        active = 0
+        max_active = 0
+
+        async def transfer_payload(payload, _mount_map):
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            return StorageRef(mount="target", name=payload.storage_ref.name, version="v2")
+
+        manager._transfer_payload = AsyncMock(side_effect=transfer_payload)
+
+        result = await manager.commit_import(
+            DatasetSyncImportRequest(
+                bundle=bundle,
+                transfer_batch_size=8,
+                transfer_concurrency=3,
+            )
+        )
+
+        assert result.transferred_payloads == 8
+        assert manager._transfer_payload.await_count == 8
+        assert 1 < max_active <= 3
+        assert target_datalake.asset_database.insert.await_count == 8
+
+    @pytest.mark.asyncio
+    async def test_commit_import_emits_transfer_progress_per_batch(
+        self, source_datalake, target_datalake, sync_objects
+    ):
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        assets = [
+            sync_objects.asset.model_copy(
+                update={
+                    "asset_id": f"asset_{idx}",
+                    "storage_ref": StorageRef(mount="source", name=f"images/{idx}.jpg", version="v1"),
+                }
+            )
+            for idx in range(5)
+        ]
+        payloads = [
+            ObjectPayloadDescriptor(
+                asset_id=asset.asset_id,
+                storage_ref=asset.storage_ref,
+                media_type=asset.media_type,
+            )
+            for asset in assets
+        ]
+        bundle = bundle.model_copy(update={"assets": assets, "payloads": payloads})
+        manager._transfer_payload = AsyncMock(
+            side_effect=lambda payload, _mount_map: StorageRef(
+                mount="target", name=payload.storage_ref.name, version="v2"
+            )
+        )
+        progress_events = []
+
+        await manager.commit_import(
+            DatasetSyncImportRequest(
+                bundle=bundle,
+                transfer_batch_size=2,
+                transfer_concurrency=2,
+            ),
+            progress_callback=progress_events.append,
+        )
+
+        transfer_events = [event for event in progress_events if event.phase == "transferring"]
+        assert [event.batch_index for event in transfer_events] == [1, 2, 3]
+        assert [event.completed_items for event in transfer_events] == [2, 4, 5]
+        assert all(event.total_items == 5 for event in transfer_events)
+
+    @pytest.mark.asyncio
+    async def test_commit_import_fails_before_metadata_when_transfer_fails(
+        self, source_datalake, target_datalake, sync_objects
+    ):
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        manager._transfer_payload = AsyncMock(side_effect=RuntimeError("transfer failed"))
+
+        with pytest.raises(RuntimeError, match="transfer failed"):
+            await manager.commit_import(DatasetSyncImportRequest(bundle=bundle))
+
+        target_datalake.asset_database.insert.assert_not_awaited()
+        target_datalake.annotation_schema_database.insert.assert_not_awaited()
+        target_datalake.dataset_version_database.insert.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_commit_import_skips_when_target_entities_exist(self, source_datalake, target_datalake, sync_objects):
@@ -515,6 +725,7 @@ class TestDatasetSyncManager:
 
         assert plan.payloads[0].transfer_required is True
         assert plan.payloads[0].reason == "policy_copy"
+        target_datalake.object_exists.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_plan_import_fail_if_missing_when_payload_present(self, source_datalake, target_datalake):

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -26,6 +26,7 @@ from mindtrace.datalake.sync_types import (
     DatasetSyncCommitResult,
     DatasetSyncImportPlan,
     DatasetSyncImportRequest,
+    DatasetSyncProgress,
 )
 from mindtrace.datalake.types import (
     AnnotationRecord,
@@ -731,6 +732,52 @@ class DatasetSyncCommitResultOutput(BaseModel):
     result: DatasetSyncCommitResult
 
 
+DatasetSyncJobMode = Literal["prepare", "import"]
+DatasetSyncJobStatus = Literal["queued", "running", "completed", "failed"]
+
+
+class DatasetSyncJobStartOutput(BaseModel):
+    job_id: str
+    mode: DatasetSyncJobMode
+    status: DatasetSyncJobStatus
+    progress: DatasetSyncProgress
+
+
+class DatasetSyncJobStatusInput(BaseModel):
+    job_id: str
+
+
+class DatasetSyncJobErrorDetail(BaseModel):
+    """Structured failure diagnostics for dataset sync/async import jobs."""
+
+    exception_type: str = Field(description="Fully qualified exception class name when helpful, else simple name.")
+    exception_repr: str = Field(description="repr(exc)", max_length=32_768)
+    traceback: str | None = Field(default=None, description="traceback.format_exc() from the failing task.")
+
+
+class DatasetSyncJobStatusOutput(BaseModel):
+    job_id: str
+    mode: DatasetSyncJobMode
+    status: DatasetSyncJobStatus
+    progress: DatasetSyncProgress
+    error: str | None = Field(
+        default=None,
+        description="Short failure summary (exception type plus repr(exc), not bare str(exc) alone).",
+    )
+    error_detail: DatasetSyncJobErrorDetail | None = None
+
+
+class DatasetSyncJobResultOutput(BaseModel):
+    job_id: str
+    mode: DatasetSyncJobMode
+    status: DatasetSyncJobStatus
+    progress: DatasetSyncProgress
+    plan: DatasetSyncImportPlan | None = None
+    result: DatasetSyncCommitResult | None = None
+    error: str | None = None
+    error_detail: DatasetSyncJobErrorDetail | None = None
+
+
 class ReplicationHydrateAssetPayloadInput(BaseModel):
     asset_id: str
     mount_map: dict[str, str] = Field(default_factory=dict)
@@ -771,6 +818,26 @@ DatasetSyncImportCommitSchema = TaskSchema(
     name="dataset_versions.import_commit",
     input_schema=DatasetSyncImportRequest,
     output_schema=DatasetSyncCommitResultOutput,
+)
+DatasetSyncImportPrepareStartSchema = TaskSchema(
+    name="dataset_versions.import_prepare_start",
+    input_schema=DatasetSyncImportRequest,
+    output_schema=DatasetSyncJobStartOutput,
+)
+DatasetSyncImportStartSchema = TaskSchema(
+    name="dataset_versions.import_start",
+    input_schema=DatasetSyncImportRequest,
+    output_schema=DatasetSyncJobStartOutput,
+)
+DatasetSyncImportJobStatusSchema = TaskSchema(
+    name="dataset_versions.import_job_status",
+    input_schema=DatasetSyncJobStatusInput,
+    output_schema=DatasetSyncJobStatusOutput,
+)
+DatasetSyncImportJobResultSchema = TaskSchema(
+    name="dataset_versions.import_job_result",
+    input_schema=DatasetSyncJobStatusInput,
+    output_schema=DatasetSyncJobResultOutput,
 )
 ReplicationBatchUpsertSchema = TaskSchema(
     name="replication.upsert_batch",

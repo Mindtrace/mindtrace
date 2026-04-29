@@ -64,6 +64,7 @@ from .sync_types import (
     DatasetSyncImportPlan,
     DatasetSyncImportRequest,
     DatasetSyncPayloadPlan,
+    DatasetSyncProgress,
     ObjectPayloadDescriptor,
 )
 from .types import (
@@ -142,6 +143,7 @@ __all__ = [
     "DatasetSyncImportRequest",
     "DatasetSyncManager",
     "DatasetSyncPayloadPlan",
+    "DatasetSyncProgress",
     "ReplicationManager",
     "ReplicatedAssetState",
     "ReplicationBatchRequest",
