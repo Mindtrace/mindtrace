@@ -21,6 +21,8 @@ TransferPolicy = Literal[
     "fail_if_missing_payload",
 ]
 
+TargetObjectMatchPolicy = Literal["exists", "size", "checksum"]
+
 
 class ObjectPayloadDescriptor(BaseModel):
     asset_id: str
@@ -93,6 +95,32 @@ class DatasetSyncImportRequest(BaseModel):
             "When False, preserve the legacy probe-all behavior."
         ),
     )
+    greenfield_skip_target_metadata_probes: bool = Field(
+        default=True,
+        description=(
+            "When True and importing a dataset version graph that does not yet exist on the target, "
+            "skip per-row metadata existence probes during commit and rely on direct inserts / duplicate-key "
+            "handling instead."
+        ),
+    )
+    target_object_match_policy: TargetObjectMatchPolicy = Field(
+        default="exists",
+        description=(
+            "How strongly to verify that a target payload already matches before ``copy_if_missing`` skips "
+            "transfer: ``exists`` checks only object presence, ``size`` also compares content length when "
+            "available, and ``checksum`` prefers checksum metadata when both sides expose one."
+        ),
+    )
+    commit_progress_every_items: int = Field(
+        default=100,
+        ge=1,
+        description="Emit committing progress at least every N examined metadata rows.",
+    )
+    commit_progress_every_seconds: float = Field(
+        default=0.25,
+        gt=0,
+        description="Emit committing progress at least every N seconds while metadata commit is active.",
+    )
     metadata_first: bool = Field(
         default=False,
         description=(
@@ -147,6 +175,8 @@ class DatasetSyncImportPlan(BaseModel):
     missing_payload_count: int = 0
     transfer_required_count: int = 0
     ready_to_commit: bool = False
+    total_payload_bytes: int | None = None
+    transfer_required_bytes: int | None = None
 
 
 class DatasetSyncProgress(BaseModel):
@@ -156,6 +186,17 @@ class DatasetSyncProgress(BaseModel):
     completed_items: int = 0
     total_items: int = 0
     message: str = ""
+    entity_kind: str | None = None
+    phase_detail: str | None = None
+    entity_completed_items: int | None = None
+    entity_total_items: int | None = None
+    skipped_items: int | None = None
+    failed_items: int | None = None
+    current_asset_id: str | None = None
+    items_per_second: float | None = None
+    bytes_completed: int | None = None
+    bytes_total: int | None = None
+    bytes_per_second: float | None = None
 
 
 class DatasetSyncCommitResult(BaseModel):

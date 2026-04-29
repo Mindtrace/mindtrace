@@ -128,6 +128,7 @@ class DatasetImportSession(DatalakeDocument):
     bundle_storage_ref: StorageRef | None = None
     bundle_sha256: str | None = None
     transfer_policy: str = "copy_if_missing"
+    target_object_match_policy: str = "exists"
     preserve_ids: bool = True
     mount_map: dict[str, str] = Field(default_factory=dict)
     origin_lake_id: str | None = None
@@ -135,6 +136,10 @@ class DatasetImportSession(DatalakeDocument):
     planning_concurrency: int = 32
     transfer_batch_size: int = 100
     transfer_concurrency: int = 8
+    greenfield_skip_target_object_probes: bool = True
+    greenfield_skip_target_metadata_probes: bool = True
+    commit_progress_every_items: int = 100
+    commit_progress_every_seconds: float = 0.25
     required_asset_ids: list[str] = Field(default_factory=list)
     staged_refs: dict[str, dict[str, Any]] = Field(default_factory=dict)
     metadata_graph_committed: bool = False
@@ -146,6 +151,14 @@ class DatasetImportSession(DatalakeDocument):
     import_progress_completed_items: int | None = None
     import_progress_total_items: int | None = None
     import_progress_message: str | None = None
+    import_progress_entity_kind: str | None = None
+    import_progress_phase_detail: str | None = None
+    import_progress_entity_completed_items: int | None = None
+    import_progress_entity_total_items: int | None = None
+    import_progress_bytes_completed: int | None = None
+    import_progress_bytes_total: int | None = None
+    import_progress_skipped_items: int | None = None
+    import_progress_failed_items: int | None = None
     import_progress_updated_at: datetime | None = None
     import_progress_error: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
