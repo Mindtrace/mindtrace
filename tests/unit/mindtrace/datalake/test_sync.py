@@ -6,8 +6,13 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
-from mindtrace.datalake.sync import DatasetSyncManager, _head_object_size_bytes
-from mindtrace.datalake.sync_types import DatasetSyncBundle, DatasetSyncImportRequest, ObjectPayloadDescriptor
+from mindtrace.datalake.sync import DatasetSyncManager, _apply_mount_map_to_storage_ref, _head_object_size_bytes
+from mindtrace.datalake.sync_types import (
+    DatasetSyncBundle,
+    DatasetSyncImportRequest,
+    DatasetSyncProgress,
+    ObjectPayloadDescriptor,
+)
 from mindtrace.datalake.types import (
     AnnotationRecord,
     AnnotationSchema,
@@ -1119,3 +1124,35 @@ class TestDatasetSyncManager:
         assert row.metadata == new_asset.metadata
         target_datalake.asset_database.update.assert_awaited_once_with(row)
         target_datalake.asset_database.insert.assert_not_awaited()
+
+
+class TestDatasetSyncProgressHelpers:
+    @pytest.mark.asyncio
+    async def test_emit_progress_awaits_coroutine_returned_from_callback(self):
+        phases: list[str] = []
+
+        async def cb(progress: DatasetSyncProgress):
+            phases.append(progress.phase)
+            await asyncio.sleep(0)
+
+        await DatasetSyncManager._emit_progress(
+            cb,
+            DatasetSyncProgress(phase="planning", message="m"),
+        )
+        assert phases == ["planning"]
+
+    @pytest.mark.asyncio
+    async def test_resolve_payload_transfers_returns_early_when_no_transfer_items(self, sync_objects):
+        bundle = DatasetSyncBundle(dataset_version=sync_objects.dataset_version)
+        request = DatasetSyncImportRequest(bundle=bundle, mount_map={"source": "target-vol"})
+        manager = DatasetSyncManager(Mock(), Mock())
+        expected_ref = _apply_mount_map_to_storage_ref(sync_objects.asset.storage_ref, request.mount_map)
+        refs, transferred, skipped = await manager._resolve_payload_transfers(
+            [sync_objects.asset],
+            payload_by_asset_id={},
+            plan_by_asset_id={},
+            request=request,
+            progress_callback=None,
+        )
+        assert (transferred, skipped) == (0, 0)
+        assert refs == {sync_objects.asset.asset_id: expected_ref}

@@ -62,6 +62,12 @@ class TestHardwareModuleLazyImports:
         assert PlanarHomographyMeasurer is not None
         assert hasattr(PlanarHomographyMeasurer, "__name__")
 
+    def test_service_status_lazy_import(self):
+        from mindtrace.hardware import ServiceStatus
+        from mindtrace.hardware.core.types import ServiceStatus as CoreServiceStatus
+
+        assert ServiceStatus is CoreServiceStatus
+
     def test_measured_box_lazy_import(self):
         """Test that MeasuredBox is lazily imported."""
         from mindtrace.hardware import MeasuredBox
@@ -88,6 +94,7 @@ class TestHardwareModuleLazyImports:
             "CalibrationData",
             "PlanarHomographyMeasurer",
             "MeasuredBox",
+            "ServiceStatus",
         ]
 
         for export in expected_exports:
