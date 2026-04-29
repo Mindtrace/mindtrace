@@ -7,6 +7,35 @@ from mindtrace.core.types.bounding_box import BoundingBox
 from mindtrace.core.types.crop import Crop
 
 
+def test_crop_post_init_requires_numpy(monkeypatch: pytest.MonkeyPatch) -> None:
+    import mindtrace.core.types.crop as crop_mod
+
+    monkeypatch.setattr(crop_mod, "_HAS_NUMPY", False)
+    bb = BoundingBox(0, 0, 1, 1)
+    with pytest.raises(ImportError, match="numpy"):
+        Crop(image=object(), source_bbox=bb, source_key="k")  # type: ignore[arg-type]
+
+
+def test_from_image_requires_numpy(monkeypatch: pytest.MonkeyPatch) -> None:
+    import mindtrace.core.types.crop as crop_mod
+
+    monkeypatch.setattr(crop_mod, "_HAS_NUMPY", False)
+    with pytest.raises(ImportError, match="numpy"):
+        Crop.from_image_and_bbox(np.zeros((2, 2)), BoundingBox(0, 0, 1, 1))
+
+
+def test_crop_eq_requires_numpy(monkeypatch: pytest.MonkeyPatch) -> None:
+    import mindtrace.core.types.crop as crop_mod
+
+    img = np.ones((3, 3), dtype=np.uint8)
+    bb = BoundingBox(0, 0, 3, 3)
+    a = Crop(image=img, source_bbox=bb, source_key="")
+    b = Crop(image=img.copy(), source_bbox=bb, source_key="")
+    monkeypatch.setattr(crop_mod, "_HAS_NUMPY", False)
+    with pytest.raises(ImportError, match="numpy"):
+        _ = a == b
+
+
 def test_crop_post_init_rejects_non_ndarray() -> None:
     bb = BoundingBox(0, 0, 10, 10)
     with pytest.raises(TypeError, match="numpy ndarray"):

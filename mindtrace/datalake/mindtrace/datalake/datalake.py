@@ -899,6 +899,20 @@ class Datalake(Mindtrace):
         return self._submit_coro(self._backend.create_asset(**kwargs))
 
     def close(self) -> None:
+        # Close the async backend (and its motor client) BEFORE stopping the
+        # loop — submitting a coroutine after the loop is stopped raises
+        # "Event loop is closed" and leaks the motor client's resources.
+        # ``_backend`` may be absent on partially-initialized instances
+        # (``__init__`` bails before assigning it on ctor failure).
+        backend = getattr(self, "_backend", None)
+        if self._owns_loop_thread and self._loop is not None and backend is not None:
+            try:
+                if self._loop.is_running():
+                    fut = asyncio.run_coroutine_threadsafe(backend.close(), self._loop)
+                    fut.result(timeout=5.0)
+            except Exception:
+                pass
+            self._backend = None
         try:
             if self._owns_loop_thread and self._loop is not None:
                 try:

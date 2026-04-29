@@ -8,6 +8,44 @@ from mindtrace.core.utils import cropping as cropping_mod
 from mindtrace.core.utils.cropping import CropExtractor
 
 
+def test_extractor_init_requires_numpy(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cropping_mod, "_HAS_NUMPY", False)
+    with pytest.raises(ImportError, match="numpy"):
+        CropExtractor()
+
+
+def test_make_square_shifts_when_negative_x() -> None:
+    bbox = BoundingBox(-10.0, 40.0, 20.0, 10.0)
+    sq = CropExtractor._make_square(bbox, img_w=100, img_h=100)
+    assert sq.x >= 0
+
+
+def test_make_square_shifts_when_overflow_right() -> None:
+    bbox = BoundingBox(85.0, 40.0, 30.0, 10.0)
+    sq = CropExtractor._make_square(bbox, img_w=100, img_h=100)
+    assert sq.x + sq.width <= 100 + 1e-6
+
+
+def test_make_square_shifts_when_negative_y() -> None:
+    bbox = BoundingBox(40.0, -10.0, 10.0, 20.0)
+    sq = CropExtractor._make_square(bbox, img_w=100, img_h=100)
+    assert sq.y >= 0
+
+
+def test_make_square_shifts_when_overflow_bottom() -> None:
+    bbox = BoundingBox(40.0, 85.0, 10.0, 30.0)
+    sq = CropExtractor._make_square(bbox, img_w=100, img_h=100)
+    assert sq.y + sq.height <= 100 + 1e-6
+
+
+def test_from_mask_skips_contours_below_min_area() -> None:
+    img = np.zeros((30, 30))
+    mask = np.zeros((30, 30), dtype=np.uint8)
+    mask[10:11, 10:11] = 255
+    crops = CropExtractor().from_mask(img, mask, min_area=500, source_key="x")
+    assert crops == []
+
+
 def test_extractor_init_negative_padding() -> None:
     with pytest.raises(ValueError, match="padding"):
         CropExtractor(padding=-0.1)

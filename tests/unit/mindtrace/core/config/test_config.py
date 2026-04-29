@@ -882,6 +882,58 @@ class TestConfigUtils:
         assert config["key1"] == "value1"
         assert config["key2"] == "value2"
 
+    def test_config_to_revealed_strings_secret_path_inside_list_dict(self):
+        """Nested dicts inside lists use paths like (\"items\", \"0\", \"key\")."""
+        config = Config({"items": [{"credential": "***"}]})
+        config._secrets[("items", "0", "credential")] = "s3cr3t"
+        revealed = config.to_revealed_strings()
+        assert revealed["items"][0]["credential"] == "s3cr3t"
+
+    def test_to_revealed_strings_recurses_into_nested_dicts(self):
+        config = Config({"outer": {"inner": {"tok": "***"}}})
+        config._secrets[("outer", "inner", "tok")] = "revealed"
+        assert config.to_revealed_strings()["outer"]["inner"]["tok"] == "revealed"
+
+    def test_config_extract_model_class_issubclass_typeerror_direct(self, monkeypatch):
+        """First branch ignores types for which issubclass raises TypeError."""
+        import builtins
+
+        real_issubclass = builtins.issubclass
+
+        class Mark(BaseModel):
+            x: int
+
+        def wrapped(a, b):
+            if a is Mark:
+                raise TypeError("simulated issubclass failure")
+            return real_issubclass(a, b)
+
+        monkeypatch.setattr(builtins, "issubclass", wrapped)
+        config = Config()
+        assert config._extract_model_class(Mark) is None
+
+    def test_config_extract_model_class_union_skips_typeerror_members(self, monkeypatch):
+        """Union branch continues when a member triggers TypeError from issubclass."""
+        import builtins
+        from typing import Union
+
+        real_issubclass = builtins.issubclass
+
+        class Bad(BaseModel):
+            x: int
+
+        class Good(BaseModel):
+            y: int
+
+        def wrapped(a, b):
+            if a is Bad:
+                raise TypeError("simulated issubclass failure")
+            return real_issubclass(a, b)
+
+        monkeypatch.setattr(builtins, "issubclass", wrapped)
+        config = Config()
+        assert config._extract_model_class(Union[str, Bad, Good]) is Good
+
     def test_config_to_revealed_strings_with_nested_lists(self):
         """Test to_revealed_strings with nested lists containing dicts.
 
