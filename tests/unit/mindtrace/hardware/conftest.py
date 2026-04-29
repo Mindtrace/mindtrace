@@ -1,31 +1,9 @@
 import sys
-from types import ModuleType
 from unittest.mock import Mock
 
 import pytest
 
 from .mocks import create_fake_pycomm3, create_fake_pypylon
-
-
-@pytest.fixture(scope="session", autouse=True)
-def block_beartype_claw():
-    """Block beartype.claw to prevent circular import issues.
-
-    The beartype.claw module causes circular imports when key_value package
-    tries to import it during fastmcp initialization. We mock it as an empty
-    module to allow tests to run.
-    """
-    if "beartype.claw" not in sys.modules:
-        # Create minimal mock module
-        mock_beartype_claw = ModuleType("beartype.claw")
-        mock_beartype_claw.beartype_this_package = lambda *args, **kwargs: None
-        sys.modules["beartype.claw"] = mock_beartype_claw
-
-        # Also mock _clawstate with claw_state attribute
-        mock_clawstate = ModuleType("beartype.claw._clawstate")
-        mock_clawstate.claw_state = None
-        sys.modules["beartype.claw._clawstate"] = mock_clawstate
-    yield
 
 
 @pytest.fixture(scope="session", autouse=True)
