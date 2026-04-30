@@ -199,6 +199,9 @@ class AnnotationLabelDefinition(BaseModel):
         return f"AnnotationLabelDefinition(name={self.name}, id={self.id})"
 
 
+PayloadStatus = Literal["missing", "uploading", "present", "corrupt"]
+
+
 class Asset(DatalakeDocument):
     """Canonical metadata row for a payload-bearing object."""
 
@@ -211,6 +214,13 @@ class Asset(DatalakeDocument):
     storage_ref: StorageRef
     checksum: str | None = None
     size_bytes: int | None = None
+    payload_status: PayloadStatus = "present"
+    payload_status_updated_at: datetime | None = Field(default_factory=utc_now)
+    payload_status_reason: str | None = None
+    payload_storage_ref: StorageRef | None = None
+    payload_checksum: str | None = None
+    payload_size_bytes: int | None = None
+    payload_verified_at: datetime | None = None
     subject: SubjectRef | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
@@ -224,6 +234,10 @@ class Asset(DatalakeDocument):
             "storage_ref.mount",
             "storage_ref.name",
             "storage_ref.version",
+            "payload_status",
+            "payload_checksum",
+            "payload_storage_ref.mount",
+            "payload_storage_ref.name",
             "subject.kind",
             "subject.id",
             "metadata.origin.asset_id",

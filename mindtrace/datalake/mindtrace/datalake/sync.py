@@ -188,12 +188,16 @@ class DatasetSyncManager:
         payloads = [
             ObjectPayloadDescriptor(
                 asset_id=asset.asset_id,
-                storage_ref=asset.storage_ref,
+                storage_ref=asset.payload_storage_ref or asset.storage_ref,
                 media_type=asset.media_type,
-                size_bytes=asset.size_bytes,
-                checksum=asset.checksum,
+                size_bytes=asset.payload_size_bytes if asset.payload_size_bytes is not None else asset.size_bytes,
+                checksum=asset.payload_checksum if asset.payload_checksum is not None else asset.checksum,
                 content_type=asset.media_type,
-                metadata=dict(asset.metadata or {}),
+                metadata={
+                    **dict(asset.metadata or {}),
+                    "payload_status": asset.payload_status,
+                    "payload_status_reason": asset.payload_status_reason,
+                },
             )
             for asset in assets.values()
         ]
@@ -345,6 +349,7 @@ class DatasetSyncManager:
         skip_target_probe: bool = False,
         match_policy: str = "exists",
     ) -> DatasetSyncPayloadPlan:
+        del semaphore, skip_target_probe, match_policy
         target_storage_ref = _apply_mount_map_to_storage_ref(payload.storage_ref, mount_map)
         if transfer_policy == "copy":
             return DatasetSyncPayloadPlan(
@@ -356,32 +361,37 @@ class DatasetSyncManager:
                 reason="policy_copy",
             )
 
-        if skip_target_probe and transfer_policy == "copy_if_missing":
-            return DatasetSyncPayloadPlan(
-                asset_id=payload.asset_id,
-                source_storage_ref=payload.storage_ref,
-                target_storage_ref=target_storage_ref,
-                target_exists=False,
-                transfer_required=True,
-                reason="greenfield_skip_probe",
-            )
+        target_asset = await self._get_existing_asset(payload.asset_id)
+        payload_checksum = payload.checksum
+        payload_size = payload.size_bytes
+        status = getattr(target_asset, "payload_status", None) if target_asset is not None else None
+        target_payload_ref = None
+        if target_asset is not None:
+            target_payload_ref = target_asset.payload_storage_ref or target_asset.storage_ref
 
-        async with semaphore:
-            target_exists, target_match_reason = await self._target_payload_matches(
-                payload,
-                target_storage_ref,
-                match_policy=match_policy,
-            )
+        db_says_present = (
+            target_asset is not None
+            and status == "present"
+            and (payload_checksum is None or target_asset.payload_checksum == payload_checksum or target_asset.checksum == payload_checksum)
+            and (payload_size is None or target_asset.payload_size_bytes == payload_size or target_asset.size_bytes == payload_size)
+            and target_payload_ref is not None
+            and _storage_refs_equivalent(target_payload_ref, target_storage_ref)
+        )
 
         if transfer_policy == "copy_if_missing":
-            transfer_required = not target_exists
-            reason = "missing_on_target" if transfer_required else target_match_reason
+            transfer_required = not db_says_present
+            if target_asset is None:
+                reason = "missing_asset_in_db"
+            elif db_says_present:
+                reason = "db_payload_present"
+            else:
+                reason = f"db_payload_status_{status or 'unknown'}"
         elif transfer_policy == "metadata_only":
             transfer_required = False
             reason = "metadata_only"
         elif transfer_policy == "fail_if_missing_payload":
             transfer_required = False
-            reason = "already_present" if target_exists else "missing_payload"
+            reason = "db_payload_present" if db_says_present else "missing_payload"
         else:
             raise ValueError(f"Unsupported transfer policy: {transfer_policy}")
 
@@ -389,10 +399,16 @@ class DatasetSyncManager:
             asset_id=payload.asset_id,
             source_storage_ref=payload.storage_ref,
             target_storage_ref=target_storage_ref,
-            target_exists=target_exists,
+            target_exists=db_says_present,
             transfer_required=transfer_required,
             reason=reason,
         )
+
+    async def _get_existing_asset(self, asset_id: str) -> Asset | None:
+        try:
+            return await self.target.get_asset(asset_id)
+        except DocumentNotFoundError:
+            return None
 
     @staticmethod
     async def _emit_progress(
@@ -620,6 +636,9 @@ class DatasetSyncManager:
                     entity_id=asset.asset_id,
                     asset_id=asset.asset_id,
                 )
+                payload_status = "present"
+                payload_status_reason = None
+                payload_verified_at = utc_now()
                 if replication_manager is not None:
                     merged_origin = replication_manager.build_asset_replication_metadata(
                         merged_origin,
@@ -628,10 +647,20 @@ class DatasetSyncManager:
                         replication_mode="metadata_first",
                         payload_status="pending",
                     )
+                    payload_status = "missing"
+                    payload_status_reason = "metadata_first_pending_payload"
+                    payload_verified_at = None
                 created = Asset.model_validate(
                     {
                         **asset.model_dump(),
                         "storage_ref": storage_ref.model_dump(),
+                        "payload_status": payload_status,
+                        "payload_status_updated_at": utc_now(),
+                        "payload_status_reason": payload_status_reason,
+                        "payload_storage_ref": storage_ref.model_dump(),
+                        "payload_checksum": asset.checksum,
+                        "payload_size_bytes": asset.size_bytes,
+                        "payload_verified_at": payload_verified_at,
                         "metadata": merged_origin,
                     }
                 )
@@ -846,12 +875,20 @@ class DatasetSyncManager:
 
         await self._verify_transferred_payload(payload_descriptor, payload_bytes, staged_storage_ref)
         asset = await self.target.get_asset(asset_id)
+        now = utc_now()
         asset.storage_ref = staged_storage_ref
         asset.size_bytes = len(payload_bytes)
         if payload_descriptor.checksum:
             asset.checksum = payload_descriptor.checksum
+        asset.payload_status = "present"
+        asset.payload_status_updated_at = now
+        asset.payload_status_reason = None
+        asset.payload_storage_ref = staged_storage_ref
+        asset.payload_size_bytes = len(payload_bytes)
+        asset.payload_checksum = payload_descriptor.checksum or asset.checksum
+        asset.payload_verified_at = now
         asset.media_type = payload_descriptor.media_type or asset.media_type
-        asset.updated_at = utc_now()
+        asset.updated_at = now
         rm = ReplicationManager(self.target)
         await rm._set_asset_replication_state(
             asset,
