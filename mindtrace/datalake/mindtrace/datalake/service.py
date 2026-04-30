@@ -1479,7 +1479,11 @@ class DatalakeService(Service):
 
         if session.metadata_graph_committed:
             if session.required_asset_ids:
-                missing = sorted(set(session.required_asset_ids) - set(session.verified_asset_ids))
+                missing: list[str] = []
+                for aid in session.required_asset_ids:
+                    asset = await datalake.get_asset(aid)
+                    if asset.payload_status != "present":
+                        missing.append(aid)
                 if missing:
                     raise HTTPException(
                         status_code=400,
