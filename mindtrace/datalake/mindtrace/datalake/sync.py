@@ -645,7 +645,7 @@ class DatasetSyncManager:
                         origin_lake_id=origin_lake_id,
                         origin_asset_id=asset.asset_id,
                         replication_mode="metadata_first",
-                        payload_status="pending",
+                        payload_status="missing",
                     )
                     payload_status = "missing"
                     payload_status_reason = "metadata_first_pending_payload"
@@ -892,7 +892,7 @@ class DatasetSyncManager:
         rm = ReplicationManager(self.target)
         await rm._set_asset_replication_state(
             asset,
-            payload_status="verified",
+            payload_status="present",
             payload_verified_at=utc_now(),
             payload_last_error=None,
         )
