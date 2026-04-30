@@ -39,6 +39,7 @@ from mindtrace.datalake.types import (
     Datum,
     DirectUploadSession,
     DuplicateAliasError,
+    PayloadStatus,
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
@@ -796,6 +797,22 @@ class AsyncDatalake(Mindtrace):
         key = self.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
         return self.store.info(key, version=storage_ref.version)
 
+    async def get_asset_payload(self, asset_id: str, **kwargs: Any) -> Any:
+        asset = await self.get_asset(asset_id)
+        if asset.payload_status != "present":
+            raise FileNotFoundError(
+                f"Asset {asset_id!r} payload is not available on this datalake (payload_status={asset.payload_status!r})"
+            )
+        storage_ref = asset.payload_storage_ref or asset.storage_ref
+        try:
+            return await self.get_object(storage_ref, **kwargs)
+        except Exception as exc:
+            asset.payload_status = "corrupt"
+            asset.payload_status_reason = f"payload read failed: {exc}"
+            asset.payload_status_updated_at = self._utc_now()
+            await self.asset_database.update(asset)
+            raise
+
     async def object_exists(self, storage_ref: StorageRef) -> bool:
         """Return True if the object version exists on this lake's store.
 
@@ -1002,18 +1019,30 @@ class AsyncDatalake(Mindtrace):
         subject: SubjectRef | None = None,
         metadata: dict[str, Any] | None = None,
         created_by: str | None = None,
+        payload_status: PayloadStatus = "present",
+        payload_status_reason: str | None = None,
+        payload_verified_at: datetime | None = None,
     ) -> Asset:
+        normalized_storage_ref = self._normalize_storage_ref(storage_ref)
+        now = self._utc_now()
         asset = self._build_document(
             Asset,
             kind=kind,
             media_type=media_type,
-            storage_ref=self._normalize_storage_ref(storage_ref),
+            storage_ref=normalized_storage_ref,
             checksum=checksum,
             size_bytes=size_bytes,
+            payload_status=payload_status,
+            payload_status_updated_at=now,
+            payload_status_reason=payload_status_reason,
+            payload_storage_ref=normalized_storage_ref,
+            payload_checksum=checksum,
+            payload_size_bytes=size_bytes,
+            payload_verified_at=payload_verified_at if payload_verified_at is not None else (now if payload_status == "present" else None),
             subject=subject,
             metadata=metadata or {},
             created_by=created_by,
-            updated_at=self._utc_now(),
+            updated_at=now,
         )
         inserted = await self.asset_database.insert(asset)
         await self.ensure_primary_asset_alias(inserted)
