@@ -1008,38 +1008,28 @@ class TestHuggingFaceTrackerBridge:
 
 
 class TestBridgesTransformersImportFallback:
-    def test_hf_bridge_base_is_object_when_transformers_missing(self):
-        import subprocess
+    def test_hf_bridge_base_is_object_when_transformers_missing(self, monkeypatch):
+        import builtins
+        import importlib
         import sys
-        from pathlib import Path
 
-        root = Path(__file__).resolve().parents[4]
-        script = r"""
-import builtins
-import sys
+        real_import = builtins.__import__
 
-sys.path.insert(0, sys.argv[1])
-_real = builtins.__import__
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "transformers" or name.startswith("transformers."):
+                raise ImportError("simulated missing transformers")
+            return real_import(name, globals, locals, fromlist, level)
 
-def _fake(name, globals=None, locals=None, fromlist=(), level=0):
-    if name == "transformers" or name.startswith("transformers."):
-        raise ImportError("simulated missing transformers")
-    return _real(name, globals, locals, fromlist, level)
+        prefix = "mindtrace.models.tracking"
+        saved = {k: v for k, v in sys.modules.items() if k == prefix or k.startswith(prefix + ".")}
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        for k in list(saved):
+            sys.modules.pop(k, None)
 
-builtins.__import__ = _fake
-for key in list(sys.modules.keys()):
-    if key.startswith("mindtrace.models.tracking"):
-        del sys.modules[key]
-
-import mindtrace.models.tracking.bridges as bridges
-
-assert bridges._HFBase is object
-"""
-        proc = subprocess.run(
-            [sys.executable, "-c", script, str(root)],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-        )
-        assert proc.returncode == 0, proc.stderr
+        try:
+            bridges = importlib.import_module("mindtrace.models.tracking.bridges")
+            assert bridges._HFBase is object
+        finally:
+            for k in [k for k in sys.modules if k == prefix or k.startswith(prefix + ".")]:
+                sys.modules.pop(k, None)
+            sys.modules.update(saved)

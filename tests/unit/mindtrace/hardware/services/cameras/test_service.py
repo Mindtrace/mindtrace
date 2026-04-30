@@ -60,6 +60,14 @@ def _patch_hardware_exports(monkeypatch, **attrs):
         monkeypatch.setattr(hardware_pkg, name, value, raising=False)
 
 
+@pytest.fixture(scope="module")
+def _shared_camera_service():
+    # CameraManagerService construction is expensive (FastAPI + MCP wiring).
+    # Per-test fixtures that just want to swap in a mock ``_camera_manager``
+    # share this instance to amortize that cost.
+    return CameraManagerService(include_mocks=True)
+
+
 class TestCameraManagerServiceInitialization:
     """Test service initialization and lifecycle management."""
 
@@ -194,9 +202,11 @@ class TestCameraManagerServiceBusinessLogic:
     """Test real business logic: error handling, request validation, response formatting."""
 
     @pytest.fixture
-    def service_with_mock_manager(self):
+    def service_with_mock_manager(self, _shared_camera_service):
         """Create service with controlled mock manager for testing business logic."""
-        service = CameraManagerService(include_mocks=True)
+        service = _shared_camera_service
+        service._active_streams = {}
+        service._capabilities_cache = {}
 
         # Create mock manager that we can control for specific test scenarios
         mock_manager = Mock()
@@ -632,9 +642,11 @@ class TestCameraManagerServiceErrorHandling:
     """Test error handling and exception mapping in service layer."""
 
     @pytest.fixture
-    def service_with_mock_manager(self):
+    def service_with_mock_manager(self, _shared_camera_service):
         """Service with mock manager for error testing."""
-        service = CameraManagerService(include_mocks=True)
+        service = _shared_camera_service
+        service._active_streams = {}
+        service._capabilities_cache = {}
         mock_manager = Mock()
         mock_manager.active_cameras = []
         service._camera_manager = mock_manager
@@ -688,8 +700,10 @@ class TestCameraManagerServiceResponseModels:
     """Test response model creation and data formatting."""
 
     @pytest.fixture
-    def service_with_mock_manager(self):
-        service = CameraManagerService(include_mocks=True)
+    def service_with_mock_manager(self, _shared_camera_service):
+        service = _shared_camera_service
+        service._active_streams = {}
+        service._capabilities_cache = {}
         mock_manager = Mock()
         service._camera_manager = mock_manager
         return service, mock_manager
@@ -796,8 +810,10 @@ class TestCameraManagerServiceCaptureAndHomography:
     """Additional capture, health, and homography service coverage."""
 
     @pytest.fixture
-    def service_with_mock_manager(self):
-        service = CameraManagerService(include_mocks=True)
+    def service_with_mock_manager(self, _shared_camera_service):
+        service = _shared_camera_service
+        service._active_streams = {}
+        service._capabilities_cache = {}
         mock_manager = Mock()
         mock_manager.active_cameras = ["Basler:cam1", "Basler:cam2"]
         mock_manager.open = AsyncMock()
