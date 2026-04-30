@@ -1,153 +1,180 @@
-## Contributing to Mindtrace
+# Contributing to Mindtrace
 
-Thank you for your interest in contributing to Mindtrace!  
-This guide will help you get started with contributing to the project.  
+Thanks for your interest in contributing to Mindtrace!
 
-The Mindtrace project is organized into the following modules:  
-`apps`, `automation`, `cluster`, `core`, `database`, `datalake`, `hardware`, `jobs`, `models`, `registry`, `services`, `storage`, `ui`  
-When contributing, ensure your changes respect the modular architecture and dependency boundaries.  
+Mindtrace is a modular project, so contributions should respect module boundaries and dependency direction. The main modules include:
 
+`apps`, `agents`, `automation`, `cluster`, `core`, `database`, `datalake`, `hardware`, `jobs`, `models`, `registry`, `services`, `storage`, and `ui`.
 
-### Prerequisites
+## Before You Start
+
+You will need:
 
 - Python 3.12+
 - Git
 - [uv](https://docs.astral.sh/uv/)
-- Docker with Compose - For integration tests (both `docker-compose` v1 and `docker compose` v2 are supported)
+- Docker (recommended for integration tests and backend services)
 
+## Setup
 
-### Setup
+### 1. Fork and clone
 
-1. **Fork the repository:**
-   - [Fork your copy of the mindtrace repo](https://github.com/Mindtrace/mindtrace/fork)
-   - Clone your fork locally:
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/mindtrace.git
-   cd mindtrace/
-   ```
+Fork the repository, then clone your fork locally:
 
-2. **Install dependencies:**
-   ```bash
-   uv sync --dev
-   uv tool install ds-run
-   uv tool install ruff
-   ```
+```bash
+git clone https://github.com/YOUR_USERNAME/mindtrace.git && cd mindtrace
+```
 
-3. **Verify your setup:**
-   ```bash
-   ds test --unit
-   ```
+### 2. Install dependencies
 
+```bash
+uv sync --dev --all-extras
+uv tool install ds-run
+uv tool install ruff
+```
 
-### Development Workflow
+### 3. Verify your environment
 
-#### 1. Create a Branch
+```bash
+ds test --unit
+```
 
-Create a new branch from `dev` with a descriptive name:
+## Development Workflow
+
+### 1. Create a branch from `dev`
 
 ```bash
 git checkout dev
 git pull origin dev
 git checkout -b feature/short-description
-# or
-git checkout -b fix/issue-description
-# or
-git checkout -b docs/update-description
 ```
 
-#### 2. Make Changes
+Use a descriptive branch name, for example:
 
-- **Focus on small, atomic changes** - Keep your PRs focused and manageable
-- **Write clear, descriptive code** with proper naming conventions
-- **Add docstrings** for new functions and classes using [Google-style docstrings](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html)
-- **Use type hints** for better code clarity and IDE support
-- **Add unit tests** for new functionality (`tests/unit/mindtrace/[module]`)
-- **Add integration tests** where applicable (`tests/integration/mindtrace/[module]`)
-- **Add or update any relevant README files** to include descriptions of important functionality and modules. Link to sub-module READMEs for covering more detail where necessary.
-- **Add or update any relevant samples** in `samples/[module]/` providing simple, clear, self-contained example usage code that just works
+- `feature/add-service-endpoint`
+- `fix/redis-timeout-handling`
+- `docs/update-registry-readme`
 
-#### 3. Code Quality
+### 2. Make focused changes
 
-Before committing, ensure your code meets quality standards:
+Prefer small, atomic pull requests.
+
+As you work:
+
+- keep changes scoped to a clear purpose
+- use clear names and type hints
+- follow [Google's Python Style Guide](https://google.github.io/styleguide/pyguide.html)
+- add docstrings for new public functions and classes using Google-style Python docstrings
+- update relevant tests
+- update relevant README files when behavior or public interfaces change
+- add or update samples in `samples/[module]/` when new functionality needs example usage
+
+For documentation work specifically:
+
+- keep top-level READMEs as practical guides, not full API references
+- use module READMEs for deeper walkthroughs
+- prefer human-readable example links over raw file paths when possible
+- keep examples and prose aligned with [Google's Python Style Guide](https://google.github.io/styleguide/pyguide.html) where applicable
+
+## Code Quality
+
+Run linting and formatting before you commit:
 
 ```bash
-# Check for linting issues
 ruff check
-
-# Check formatting
 ruff format --check
+```
 
-# Apply auto-fixes for linting and formatting
+To auto-fix where possible:
+
+```bash
 ruff check --fix
 ruff format
 ```
 
-#### 4. Testing
+## Testing
 
-Run the standard test suite and ensure that tests pass locally before submitting your PR.  
+Run the test suite relevant to your change.
+
+### Fast local loop
+
+```bash
+ds test --unit
+```
+
+### Full local test run
+
 ```bash
 ds test
 ```
-Ensure that code coverage does not regress.  
-For more details on running tests, including running smaller test sets for iterative development, see [TESTING.md](./TESTING.md)
 
-#### 5. Commit Changes
+### Module-specific test runs
 
-Make small, focused commits with clear messages:
+Examples:
 
 ```bash
-git add .
-git commit -m "feat: add new feature description"
-# or
-git commit -m "fix: resolve issue with specific component"
-# or
-git commit -m "docs: update API documentation"
+ds test: services
+ds test: --unit services
+
+ds test: registry
+ds test: --unit registry
 ```
 
-#### 6. Push and Create Pull Request
+For more detail, see [TESTING.md](./TESTING.md).
+
+## Commits
+
+Use small, focused commits with clear messages.
+
+Examples:
 
 ```bash
-git push origin your-branch-name
+git commit -m "feat: add Redis queue priority support"
+git commit -m "fix: handle missing registry metadata"
+git commit -m "docs: rewrite services README"
 ```
 
-Then create a pull request to the `dev` branch on the main repo: [https://github.com/Mindtrace/mindtrace](https://github.com/Mindtrace/mindtrace).
+## Pull Requests
 
+Open pull requests against the `dev` branch.
 
-### Pull Request Guidelines
+Your PR should include:
 
-#### PR Title and Description
+- a clear title
+- a short explanation of the problem or goal
+- a summary of what changed
+- testing notes explaining how you verified the change
+- links to any relevant issues, PRs, or discussions
 
-Your pull request should include:
+### PR checklist
 
-- **Clear, descriptive title** that summarizes the change
-- **Detailed description** covering:
-  - **Scope and motivation** - What problem does this solve?
-  - **Changes included** - What was modified, added, or removed?
-  - **How to test** - Specific steps to verify the changes work
-  - **Impact** - Any breaking changes, potential concerns, or side effects
+Before opening a PR, make sure:
 
+- [ ] the PR targets `dev`
+- [ ] tests pass locally for the affected scope
+- [ ] `ruff check` passes
+- [ ] formatting is clean
+- [ ] documentation is updated where needed
+- [ ] samples are updated where needed
+- [ ] commit messages are clear and useful
 
-#### Requirements Checklist
+## Review Process
 
-- [x] All tests pass (`ds test`)
-- [x] Code is properly formatted (`ruff format --check`)
-- [x] No linting issues (`ruff check`)
-- [x] PR targets the `dev` branch
-- [x] Tests added for new functionality
-- [x] No regression in test coverage
-- [x] Documentation and READMEs updated as needed
-- [x] Useful commit messages
-- [x] Links to relevant issues/PRs/discussions, if any
-- [x] Samples working as expected
+Typical review flow:
 
+1. automated checks run
+2. maintainers review the change
+3. follow-up fixes or clarifications are requested if needed
+4. once approved, the PR is merged into `dev`
 
-### Code Review Process
+## Contribution Tips
 
-1. **Automated Checks** - All PRs run automated tests, linting, and formatting checks. Please ensure they pass
-2. **Review** - Maintainers will review your code and may request clarifications and/or changes
-3. **Merge** - Once approved, your PR will be merged to `dev` and included in the next release cycle
+A few things that help a lot:
 
+- prefer clear examples over clever abstractions
+- keep public APIs typed and documented
+- when changing a module README, make sure the examples match the actual current code
+- if there are real sample files in `samples/`, link to them from the relevant README
+- if there are no real external examples, do not add a self-referential “Examples” section
 
----
-
-Thank you for contributing to Mindtrace and helping to improve it! 🎉
+Thanks for helping improve Mindtrace.
