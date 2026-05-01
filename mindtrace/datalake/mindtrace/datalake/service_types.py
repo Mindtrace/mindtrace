@@ -69,7 +69,26 @@ class MountsOutput(BaseModel):
     mounts: list[dict[str, Any]]
 
 
+class DatalakeWipeInput(BaseModel):
+    delete_payloads: bool = True
+    delete_metadata: bool = True
+    clear_registry_metadata: bool = False
+
+
+class DatalakeWipeOutput(BaseModel):
+    database: str
+    deleted_payloads: bool
+    deleted_metadata: bool
+    clear_registry_metadata: bool
+    cleared_mounts: list[str] = Field(default_factory=list)
+
+
 MountsSchema = TaskSchema(name="mounts", output_schema=MountsOutput)
+DatalakeWipeSchema = TaskSchema(
+    name="datalake.wipe",
+    input_schema=DatalakeWipeInput,
+    output_schema=DatalakeWipeOutput,
+)
 
 
 class PutObjectInput(BaseModel):

@@ -78,6 +78,9 @@ from mindtrace.datalake.service_types import (
     DatalakeHealthSchema,
     DatalakeSummaryOutput,
     DatalakeSummarySchema,
+    DatalakeWipeInput,
+    DatalakeWipeOutput,
+    DatalakeWipeSchema,
     DatasetImportSessionCommitInput,
     DatasetImportSessionCommitMetadataSchema,
     DatasetImportSessionCommitSchema,
@@ -433,6 +436,7 @@ class DatalakeService(Service):
         self.add_endpoint("health", self.health, schema=DatalakeHealthSchema, as_tool=True)
         self.add_endpoint("summary", self.summary, schema=DatalakeSummarySchema, as_tool=True)
         self.add_endpoint("mounts", self.mounts_info, schema=MountsSchema)
+        self.add_endpoint("datalake.wipe", self.wipe_datalake, schema=DatalakeWipeSchema)
 
         self.add_endpoint("objects.put", self.put_object, schema=PutObjectSchema)
         self.add_endpoint("objects.get", self.get_object, schema=GetObjectSchema)
@@ -734,6 +738,10 @@ class DatalakeService(Service):
     async def mounts_info(self) -> MountsOutput:
         datalake = await self._ensure_datalake()
         return MountsOutput(**datalake.get_mounts())
+
+    async def wipe_datalake(self, payload: DatalakeWipeInput) -> DatalakeWipeOutput:
+        datalake = await self._ensure_datalake()
+        return DatalakeWipeOutput(**(await datalake.wipe(**payload.model_dump())))
 
     async def put_object(self, payload: PutObjectInput) -> ObjectOutput:
         datalake = await self._ensure_datalake()

@@ -184,19 +184,57 @@ class AsyncDatalake(Mindtrace):
             db_uri=mongo_db_uri,
         )
 
+    def _odm_backends(self) -> tuple[MongoMindtraceODM, ...]:
+        return (
+            self.asset_database,
+            self.collection_database,
+            self.collection_item_database,
+            self.asset_retention_database,
+            self.annotation_record_database,
+            self.annotation_schema_database,
+            self.annotation_set_database,
+            self.datum_database,
+            self.dataset_version_database,
+            self.direct_upload_session_database,
+            self.dataset_import_session_database,
+            self.asset_alias_database,
+        )
+
     async def initialize(self) -> None:
-        await self.asset_database.initialize()
-        await self.collection_database.initialize()
-        await self.collection_item_database.initialize()
-        await self.asset_retention_database.initialize()
-        await self.annotation_record_database.initialize()
-        await self.annotation_schema_database.initialize()
-        await self.annotation_set_database.initialize()
-        await self.datum_database.initialize()
-        await self.dataset_version_database.initialize()
-        await self.direct_upload_session_database.initialize()
-        await self.dataset_import_session_database.initialize()
-        await self.asset_alias_database.initialize()
+        for odm in self._odm_backends():
+            await odm.initialize()
+
+    async def wipe(
+        self,
+        *,
+        delete_payloads: bool = True,
+        delete_metadata: bool = True,
+        clear_registry_metadata: bool = False,
+    ) -> dict[str, Any]:
+        if not delete_payloads and not delete_metadata:
+            raise ValueError("wipe() requires delete_payloads and/or delete_metadata to be enabled")
+
+        cleared_mounts: list[str] = []
+        if delete_payloads:
+            for mount_name in self.store.list_mounts():
+                self.store.get_mount(mount_name).registry.clear(clear_registry_metadata=clear_registry_metadata)
+                cleared_mounts.append(mount_name)
+            self.store.clear_location_cache()
+
+        if delete_metadata:
+            await self.asset_database.client.drop_database(self.mongo_db_name)
+            for odm in self._odm_backends():
+                if hasattr(odm, "_is_initialized"):
+                    odm._is_initialized = False
+            await self.initialize()
+
+        return {
+            "database": self.mongo_db_name,
+            "deleted_payloads": delete_payloads,
+            "deleted_metadata": delete_metadata,
+            "clear_registry_metadata": clear_registry_metadata,
+            "cleared_mounts": cleared_mounts,
+        }
 
     @classmethod
     async def create(

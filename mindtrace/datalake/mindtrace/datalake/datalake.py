@@ -319,6 +319,21 @@ class Datalake(Mindtrace):
     def get_mounts(self) -> dict[str, Any]:
         return self._backend.get_mounts()
 
+    def wipe(
+        self,
+        *,
+        delete_payloads: bool = True,
+        delete_metadata: bool = True,
+        clear_registry_metadata: bool = False,
+    ) -> dict[str, Any]:
+        return self._submit_coro(
+            self._backend.wipe(
+                delete_payloads=delete_payloads,
+                delete_metadata=delete_metadata,
+                clear_registry_metadata=clear_registry_metadata,
+            )
+        )
+
     def put_object(self, **kwargs: Any):
         return self._submit_coro(self._backend.put_object(**kwargs))
 
