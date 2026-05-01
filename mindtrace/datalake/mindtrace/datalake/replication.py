@@ -371,11 +371,15 @@ class ReplicationManager:
             return source_asset
         if not self.is_local_delete_eligible(source_asset):
             raise RuntimeError(f"Source asset {asset_id} is not delete-eligible")
-        storage_ref = source_asset.storage_ref
-        key = self.source.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
-        version = storage_ref.version if storage_ref.version is not None else "latest"
+        payload_ref = _asset_payload_storage_ref(source_asset)
+        key = self.source.store.build_key(payload_ref.mount, payload_ref.name, payload_ref.version)
+        version = payload_ref.version if payload_ref.version is not None else "latest"
         self.source.store.delete(key, version=version)
-        source_asset.storage_ref = LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF
+        source_asset.payload_status = "missing"
+        source_asset.payload_status_updated_at = self._utc_now()
+        source_asset.payload_status_reason = "local payload deleted"
+        source_asset.payload_storage_ref = LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF
+        source_asset.payload_verified_at = None
         await self._set_source_asset_reclaim_state(
             source_asset,
             local_deleted_at=self._utc_now(),
