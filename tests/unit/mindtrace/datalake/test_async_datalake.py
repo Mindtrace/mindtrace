@@ -84,7 +84,7 @@ class TestAsyncDatalakeUnit:
     @pytest.fixture
     def mock_odm(self):
         mock = AsyncMock()
-        mock.initialize = AsyncMock()
+        mock.initialize = AsyncMock(side_effect=lambda *args, **kwargs: setattr(mock, "_is_initialized", True))
         mock.insert = AsyncMock(side_effect=lambda obj: obj)
         mock.find = AsyncMock(return_value=[])
         mock.find_iter = AsyncMock()
@@ -92,6 +92,9 @@ class TestAsyncDatalakeUnit:
         mock.count_documents = AsyncMock(return_value=0)
         mock.update = AsyncMock(side_effect=lambda obj: obj)
         mock.delete = AsyncMock()
+        mock.client = MagicMock()
+        mock.client.drop_database = AsyncMock()
+        mock._is_initialized = False
         return mock
 
     @pytest.fixture
@@ -121,8 +124,14 @@ class TestAsyncDatalakeUnit:
                 "version_digits": 6,
             },
         }
+        mounts = {mount: MagicMock() for mount in store.list_mount_info.return_value}
+        for mount in mounts.values():
+            mount.registry = MagicMock()
+            mount.registry.clear = MagicMock()
         store.has_mount.side_effect = lambda mount: mount in store.list_mount_info.return_value
         store.list_mounts.side_effect = lambda: sorted(store.list_mount_info.return_value.keys())
+        store.get_mount.side_effect = lambda mount: mounts[mount]
+        store.clear_location_cache = MagicMock()
         store.build_key.side_effect = lambda mount, name, version=None: (
             f"{mount}/{name}" if version is None else f"{mount}/{name}@{version}"
         )
@@ -199,6 +208,50 @@ class TestAsyncDatalakeUnit:
         assert isinstance(created, AsyncDatalake)
         assert created.store == mock_store
         assert mock_odm.initialize.await_count == 12
+
+    @pytest.mark.asyncio
+    async def test_wipe_requires_payload_or_metadata_deletion(self, async_datalake):
+        with pytest.raises(ValueError, match="delete_payloads and/or delete_metadata"):
+            await async_datalake.wipe(delete_payloads=False, delete_metadata=False)
+
+    @pytest.mark.asyncio
+    async def test_wipe_clears_mounts_and_drops_database(
+        self, async_datalake, mock_odm, mock_store
+    ):
+        result = await async_datalake.wipe(clear_registry_metadata=True)
+
+        assert result == {
+            "database": "test_db",
+            "deleted_payloads": True,
+            "deleted_metadata": True,
+            "clear_registry_metadata": True,
+            "cleared_mounts": ["archive", "nas", "temp"],
+        }
+        for mount_name in ["archive", "nas", "temp"]:
+            mock_store.get_mount(mount_name).registry.clear.assert_called_once_with(clear_registry_metadata=True)
+        mock_store.clear_location_cache.assert_called_once_with()
+        mock_odm.client.drop_database.assert_awaited_once_with("test_db")
+        assert mock_odm.initialize.await_count == 12
+        assert mock_odm._is_initialized is True
+
+    @pytest.mark.asyncio
+    async def test_wipe_can_leave_payloads_intact(self, async_datalake, mock_odm, mock_store):
+        result = await async_datalake.wipe(delete_payloads=False, delete_metadata=True)
+
+        assert result["cleared_mounts"] == []
+        mock_store.get_mount.assert_not_called()
+        mock_store.clear_location_cache.assert_not_called()
+        mock_odm.client.drop_database.assert_awaited_once_with("test_db")
+        assert mock_odm.initialize.await_count == 12
+
+    @pytest.mark.asyncio
+    async def test_wipe_can_leave_metadata_intact(self, async_datalake, mock_odm, mock_store):
+        result = await async_datalake.wipe(delete_payloads=True, delete_metadata=False)
+
+        assert result["cleared_mounts"] == ["archive", "nas", "temp"]
+        mock_odm.client.drop_database.assert_not_awaited()
+        assert mock_odm.initialize.await_count == 0
+        mock_store.clear_location_cache.assert_called_once_with()
 
     def test_init_defaults_slow_ops_policy_to_warn(self, mock_odm, mock_store):
         with patch("mindtrace.datalake.async_datalake.MongoMindtraceODM", return_value=mock_odm):
