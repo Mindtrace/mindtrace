@@ -1767,6 +1767,45 @@ async def test_service_import_dataset_version_commit_uses_sync_manager(service, 
 
 
 @pytest.mark.asyncio
+async def test_service_import_session_commit_metadata_uses_single_lake_manager(service, datalake_objects):
+    session = Mock()
+    session.metadata_graph_committed = False
+    session.transfer_policy = "copy_if_missing"
+    session.target_object_match_policy = "size_then_checksum"
+    session.origin_lake_id = "lake-a"
+    session.preserve_ids = True
+    session.mount_map = {}
+    session.planning_batch_size = 500
+    session.planning_concurrency = 8
+    session.transfer_batch_size = 250
+    session.transfer_concurrency = 8
+    session.greenfield_skip_target_object_probes = True
+    session.greenfield_skip_target_metadata_probes = True
+    session.commit_progress_every_items = 100
+    session.commit_progress_every_seconds = 1.0
+    session.required_asset_ids = []
+    session.import_session_id = "session-1"
+    session.expires_at = "2099-01-01T00:00:00Z"
+
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    commit_result = DatasetSyncCommitResult(dataset_version=datalake_objects.dataset_version, created_assets=1)
+    with patch("mindtrace.datalake.service._import_session_expired", return_value=False), \
+         patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)), \
+         patch.object(service, "_require_open_import_session", new=AsyncMock(return_value=session)), \
+         patch.object(service, "_ensure_datalake", new=AsyncMock(return_value=service._datalake)), \
+         patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.commit_import = AsyncMock(return_value=commit_result)
+
+        result = await service.import_session_commit_metadata(DatasetImportSessionCommitInput(session_id="session-1"))
+
+    assert isinstance(result, DatasetSyncCommitResultOutput)
+    assert result.result == commit_result
+    manager_cls.assert_called_once_with(service._datalake)
+    manager.commit_import.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_service_import_prepare_start_runs_background_job(service, datalake_objects):
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
     request = DatasetSyncImportRequest(bundle=bundle)

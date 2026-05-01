@@ -1516,7 +1516,7 @@ class DatalakeService(Service):
             staged_payload_storage_refs=None,
             target_metadata_commit=True,
         )
-        manager = DatasetSyncManager(datalake, datalake)
+        manager = DatasetSyncManager(datalake)
         progress_writer = _ImportSessionProgressWriter(datalake, session)
         try:
             result = await manager.commit_import(req, progress_callback=progress_writer)
