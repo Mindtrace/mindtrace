@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 from pydantic import BaseModel
+from zenml.materializers import CloudpickleMaterializer
 
 from mindtrace.core import Config, compute_dir_hash
 from mindtrace.registry import LocalRegistryBackend, Registry, S3RegistryBackend
@@ -111,6 +112,27 @@ def test_registry_initialization(registry, temp_registry_dir):
     assert registry is not None
     assert isinstance(registry.backend, LocalRegistryBackend)
     assert Path(temp_registry_dir).exists()
+
+
+def test_registry_serialization_hints_for_object_uses_core_materializer_lookup(registry, test_bytes):
+    hints = registry.serialization_hints_for_object(test_bytes)
+
+    assert hints == {
+        "class": "builtins.bytes",
+        "materializer": "zenml.materializers.BytesMaterializer",
+    }
+
+
+def test_registry_materialize_from_bytes_delegates_to_core(registry):
+    raw = b"hello-bytes"
+
+    out = registry.materialize_from_bytes(
+        raw,
+        object_class="builtins.bytes",
+        materializer="zenml.materializers.BytesMaterializer",
+    )
+
+    assert out == raw
 
 
 def test_registry_default_directory():
@@ -475,6 +497,62 @@ def test_load_without_class_metadata(registry, test_config):
     # Attempt to load the object with corrupted metadata - now raises KeyError
     with pytest.raises(KeyError, match="class"):
         registry.load("test:config", version="1.0.0")
+
+
+def _rewrite_registry_metadata(registry, name: str, version: str, **updates):
+    metadata_result = registry.backend.fetch_metadata(name, version)
+    metadata = dict(metadata_result[(name, version)].metadata)
+    metadata.update(updates)
+
+    import yaml
+
+    meta_path = registry.backend._object_metadata_path(name, version)
+    with open(meta_path, "w") as f:
+        yaml.safe_dump(metadata, f)
+
+
+def test_materialize_from_bytes_uses_any_when_class_path_is_not_importable(registry):
+    raw = b"hello-bytes"
+
+    out = registry._core.materialize_from_bytes(
+        raw,
+        object_class="missing.module.Type",
+        materializer="zenml.materializers.BytesMaterializer",
+    )
+
+    assert out == raw
+
+
+def test_registry_load_bytes_artifact_with_stale_class_metadata(registry, test_bytes):
+    registry.save("test:bytes", test_bytes, version="1.0.0")
+    _rewrite_registry_metadata(registry, "test:bytes", "1.0.0", **{"class": "missing.module.Type"})
+
+    assert registry.load("test:bytes", version="1.0.0") == test_bytes
+
+
+def test_registry_load_cloudpickle_artifact_with_stale_class_metadata(registry):
+    func = lambda x: x + 1  # noqa: E731 - intentional lambda regression case
+
+    registry.register_materializer(type(func), CloudpickleMaterializer)
+
+    registry.save("test:lambda", func, version="1.0.0")
+    _rewrite_registry_metadata(registry, "test:lambda", "1.0.0", **{"class": "missing.module.Type"})
+
+    loaded = registry.load("test:lambda", version="1.0.0")
+    assert loaded(1) == 2
+
+
+def test_registry_load_still_raises_when_materializer_cannot_be_imported(registry, test_bytes):
+    registry.save("test:bytes", test_bytes, version="1.0.0")
+    _rewrite_registry_metadata(
+        registry,
+        "test:bytes",
+        "1.0.0",
+        **{"materializer": "missing.module.Materializer"},
+    )
+
+    with pytest.raises(ModuleNotFoundError, match="missing"):
+        registry.load("test:bytes", version="1.0.0")
 
 
 def test_load_directory_with_contents(registry):

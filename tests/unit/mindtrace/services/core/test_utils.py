@@ -1,7 +1,8 @@
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import ANY, AsyncMock, Mock, patch
 
 import pytest
 from fastapi import HTTPException
+from pydantic import BaseModel
 from urllib3.util.url import parse_url
 
 from mindtrace.services.core.connection_manager import ConnectionManager
@@ -301,6 +302,40 @@ class TestGenerateConnectionManager:
         mock_output_schema.assert_called_once_with(result="success")
 
     @patch("mindtrace.services.core.utils.httpx")
+    def test_generated_method_uses_default_timeout(self, mock_httpx, mock_service_class):
+        """Test generated sync methods use the default endpoint timeout."""
+        mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "success"}
+        mock_httpx.post.return_value = mock_response
+        mock_endpoint1.input_schema = None
+        mock_endpoint1.output_schema = Mock()
+
+        ConnectionManagerClass = generate_connection_manager(mock_service_class)
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
+        manager.test_endpoint()
+
+        mock_httpx.post.assert_called_once_with("http://test.com/test_endpoint", json={}, timeout=60)
+
+    @patch("mindtrace.services.core.utils.httpx")
+    def test_generated_method_allows_timeout_override(self, mock_httpx, mock_service_class):
+        """Test generated sync methods allow a method-local timeout override."""
+        mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "success"}
+        mock_httpx.post.return_value = mock_response
+        mock_endpoint1.input_schema = None
+        mock_endpoint1.output_schema = Mock()
+
+        ConnectionManagerClass = generate_connection_manager(mock_service_class)
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
+        manager.test_endpoint(timeout=5)
+
+        mock_httpx.post.assert_called_once_with("http://test.com/test_endpoint", json={}, timeout=5)
+
+    @patch("mindtrace.services.core.utils.httpx")
     @pytest.mark.asyncio
     async def test_generated_method_async_call_success(self, mock_httpx, mock_service_class):
         """Test successful async method call."""
@@ -331,6 +366,27 @@ class TestGenerateConnectionManager:
 
         # Verify async client call
         mock_client.post.assert_called_once_with("http://test.com/test_endpoint", json={"async": "data"}, timeout=60)
+
+    @patch("mindtrace.services.core.utils.httpx")
+    @pytest.mark.asyncio
+    async def test_generated_async_method_allows_timeout_override(self, mock_httpx, mock_service_class):
+        """Test generated async methods allow a method-local timeout override."""
+        mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "async_success"}
+        mock_client.post.return_value = mock_response
+        mock_httpx.AsyncClient.return_value.__aenter__.return_value = mock_client
+        mock_endpoint1.input_schema = None
+        mock_endpoint1.output_schema = Mock()
+
+        ConnectionManagerClass = generate_connection_manager(mock_service_class)
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
+        await manager.atest_endpoint(timeout=300)
+
+        mock_httpx.AsyncClient.assert_called_once_with(timeout=300)
+        mock_client.post.assert_called_once_with("http://test.com/test_endpoint", json={}, timeout=300)
 
     @patch("mindtrace.services.core.utils.httpx")
     def test_generated_method_http_error(self, mock_httpx, mock_service_class):
@@ -692,7 +748,6 @@ class TestGenerateConnectionManager:
     @patch("mindtrace.services.core.utils.httpx")
     def test_generated_method_single_valid_arg(self, mock_httpx, mock_service_class):
         """Test that method works with a single valid arg."""
-        from pydantic import BaseModel
 
         class TestInput(BaseModel):
             value: str
@@ -718,10 +773,63 @@ class TestGenerateConnectionManager:
         assert result == {"result": "success"}
 
     @patch("mindtrace.services.core.utils.httpx")
+    def test_generated_method_kwargs_uses_json_mode_dump(self, mock_httpx, mock_service_class):
+        """Validated kwargs should be serialized with model_dump(mode='json')."""
+        mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "success"}
+        mock_httpx.post.return_value = mock_response
+
+        mock_input_instance = Mock()
+        mock_input_instance.model_dump.return_value = {"object_id": "json-safe-id"}
+        mock_input_schema = Mock(return_value=mock_input_instance)
+        mock_endpoint1.input_schema = mock_input_schema
+        mock_endpoint1.output_schema = None
+
+        ConnectionManagerClass = generate_connection_manager(mock_service_class)
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
+
+        result = manager.test_endpoint(object_id="raw-id")
+
+        mock_input_schema.assert_called_once_with(object_id="raw-id")
+        mock_input_instance.model_dump.assert_called_once_with(mode="json")
+        mock_httpx.post.assert_called_once_with(
+            "http://test.com/test_endpoint", json={"object_id": "json-safe-id"}, timeout=60
+        )
+        assert result == {"result": "success"}
+
+    @patch("mindtrace.services.core.utils.httpx")
+    def test_generated_method_single_valid_arg_uses_json_mode_dump(self, mock_httpx, mock_service_class):
+        """Validated positional inputs should be serialized with model_dump(mode='json')."""
+
+        class TestInput(BaseModel):
+            value: str
+
+        mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
+        mock_endpoint1.input_schema = TestInput
+        mock_endpoint1.output_schema = None
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "success"}
+        mock_httpx.post.return_value = mock_response
+
+        ConnectionManagerClass = generate_connection_manager(mock_service_class)
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
+
+        with patch.object(TestInput, "model_dump", autospec=True, return_value={"value": "test"}) as mock_dump:
+            result = manager.test_endpoint(TestInput(value="test"))
+
+        mock_dump.assert_called_once_with(ANY, mode="json")
+        mock_httpx.post.assert_called_once_with("http://test.com/test_endpoint", json={"value": "test"}, timeout=60)
+        assert result == {"result": "success"}
+
+    @patch("mindtrace.services.core.utils.httpx")
     @pytest.mark.asyncio
     async def test_generated_async_method_single_valid_arg(self, mock_httpx, mock_service_class):
         """Test that async method works with a single valid arg."""
-        from pydantic import BaseModel
 
         class TestInput(BaseModel):
             value: str
@@ -745,6 +853,66 @@ class TestGenerateConnectionManager:
         result = await manager.atest_endpoint(TestInput(value="test"))
 
         # Should call async client with dumped payload
+        mock_client.post.assert_called_once_with("http://test.com/test_endpoint", json={"value": "test"}, timeout=60)
+        assert result == {"result": "async_success"}
+
+    @patch("mindtrace.services.core.utils.httpx")
+    @pytest.mark.asyncio
+    async def test_generated_async_method_kwargs_uses_json_mode_dump(self, mock_httpx, mock_service_class):
+        """Async validated kwargs should be serialized with model_dump(mode='json')."""
+        mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
+
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "async_success"}
+        mock_client.post.return_value = mock_response
+        mock_httpx.AsyncClient.return_value.__aenter__.return_value = mock_client
+
+        mock_input_instance = Mock()
+        mock_input_instance.model_dump.return_value = {"object_id": "json-safe-id"}
+        mock_input_schema = Mock(return_value=mock_input_instance)
+        mock_endpoint1.input_schema = mock_input_schema
+        mock_endpoint1.output_schema = None
+
+        ConnectionManagerClass = generate_connection_manager(mock_service_class)
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
+
+        result = await manager.atest_endpoint(object_id="raw-id")
+
+        mock_input_schema.assert_called_once_with(object_id="raw-id")
+        mock_input_instance.model_dump.assert_called_once_with(mode="json")
+        mock_client.post.assert_called_once_with(
+            "http://test.com/test_endpoint", json={"object_id": "json-safe-id"}, timeout=60
+        )
+        assert result == {"result": "async_success"}
+
+    @patch("mindtrace.services.core.utils.httpx")
+    @pytest.mark.asyncio
+    async def test_generated_async_method_single_valid_arg_uses_json_mode_dump(self, mock_httpx, mock_service_class):
+        """Async validated positional inputs should be serialized with model_dump(mode='json')."""
+
+        class TestInput(BaseModel):
+            value: str
+
+        mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
+        mock_endpoint1.input_schema = TestInput
+        mock_endpoint1.output_schema = None
+
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "async_success"}
+        mock_client.post.return_value = mock_response
+        mock_httpx.AsyncClient.return_value.__aenter__.return_value = mock_client
+
+        ConnectionManagerClass = generate_connection_manager(mock_service_class)
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
+
+        with patch.object(TestInput, "model_dump", autospec=True, return_value={"value": "test"}) as mock_dump:
+            result = await manager.atest_endpoint(TestInput(value="test"))
+
+        mock_dump.assert_called_once_with(ANY, mode="json")
         mock_client.post.assert_called_once_with("http://test.com/test_endpoint", json={"value": "test"}, timeout=60)
         assert result == {"result": "async_success"}
 

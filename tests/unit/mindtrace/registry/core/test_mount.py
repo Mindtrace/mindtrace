@@ -460,3 +460,12 @@ def test_registry_package_lazily_exports_gcp_backend():
     gcp_backend = getattr(reloaded, "GCPRegistryBackend")
 
     assert gcp_backend.__name__ == "GCPRegistryBackend"
+
+
+def test_registry_package_star_import_succeeds():
+    reloaded = importlib.reload(registry_package)
+    namespace: dict[str, Any] = {}
+
+    exec("from mindtrace.registry import *", namespace, namespace)
+
+    assert namespace["MountedRegistry"] is reloaded.MountedRegistry

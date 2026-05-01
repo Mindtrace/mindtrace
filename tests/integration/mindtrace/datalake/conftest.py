@@ -148,12 +148,8 @@ async def async_datalake(datalake_store):
     try:
         yield datalake
     finally:
-        await datalake.asset_database.client.drop_database(db_name)
-        datalake.asset_database.client.close()
-        datalake.annotation_record_database.client.close()
-        datalake.annotation_set_database.client.close()
-        datalake.datum_database.client.close()
-        datalake.dataset_version_database.client.close()
+        await datalake._mongo_client.drop_database(db_name)
+        await datalake.close()
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -174,12 +170,8 @@ async def async_datalake_secondary(datalake_store_secondary):
     try:
         yield datalake
     finally:
-        await datalake.asset_database.client.drop_database(db_name)
-        datalake.asset_database.client.close()
-        datalake.annotation_record_database.client.close()
-        datalake.annotation_set_database.client.close()
-        datalake.datum_database.client.close()
-        datalake.dataset_version_database.client.close()
+        await datalake._mongo_client.drop_database(db_name)
+        await datalake.close()
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -221,12 +213,8 @@ async def async_datalake_minio(s3_config, s3_test_bucket, s3_test_prefix):
     try:
         yield datalake
     finally:
-        await datalake.asset_database.client.drop_database(db_name)
-        datalake.asset_database.client.close()
-        datalake.annotation_record_database.client.close()
-        datalake.annotation_set_database.client.close()
-        datalake.datum_database.client.close()
-        datalake.dataset_version_database.client.close()
+        await datalake._mongo_client.drop_database(db_name)
+        await datalake.close()
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -269,12 +257,8 @@ async def async_datalake_minio_secondary_mongo(s3_config, s3_test_bucket, s3_tes
     try:
         yield datalake
     finally:
-        await datalake.asset_database.client.drop_database(db_name)
-        datalake.asset_database.client.close()
-        datalake.annotation_record_database.client.close()
-        datalake.annotation_set_database.client.close()
-        datalake.datum_database.client.close()
-        datalake.dataset_version_database.client.close()
+        await datalake._mongo_client.drop_database(db_name)
+        await datalake.close()
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -293,17 +277,13 @@ def sync_datalake(datalake_store):
     try:
         yield datalake
     finally:
-        client = datalake._backend.asset_database.client
+        client = datalake._backend._mongo_client
 
         async def _drop_database():
             await client.drop_database(db_name)
 
         datalake._call_in_loop(_drop_database)
         datalake.close()
-        try:
-            client.close()
-        except Exception:
-            pass
 
 
 @pytest.fixture(scope="function")
@@ -318,17 +298,13 @@ def sync_datalake_gcs(datalake_gcs_mounts, gcs_client, gcp_test_bucket, gcp_test
     try:
         yield datalake
     finally:
-        client = datalake._backend.asset_database.client
+        client = datalake._backend._mongo_client
 
         async def _drop_database():
             await client.drop_database(db_name)
 
         datalake._call_in_loop(_drop_database)
         datalake.close()
-        try:
-            client.close()
-        except Exception:
-            pass
 
         try:
             bucket = gcs_client.bucket(gcp_test_bucket)

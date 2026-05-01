@@ -59,6 +59,7 @@ In short, this document lays out a vision for V3 as the long-term data foundatio
     - [DatasetVersion](#10-datasetversion)
   - [Canonical semantic rule](#canonical-semantic-rule)
   - [Proposed minimal V3 API](#proposed-minimal-v3-api)
+  - [Common pagination model](#common-pagination-model)
     - [A. Storage / mounts API](#a-storage--mounts-api)
     - [B. Assets API](#b-assets-api)
     - [C. Datasets API](#c-datasets-api)
@@ -1267,6 +1268,408 @@ The API should be split into four slices:
 - assets
 - datasets
 - annotations
+
+### Common pagination model
+
+Pagination should be treated as a **cross-cutting API contract**, not as an endpoint-specific afterthought. Any V3 API that can return an unbounded number of rows should support **cursor-based pagination** by default.
+
+The main design goals are:
+
+- avoid unbounded list materialization in the service or SDK
+- avoid offset/skip scans that degrade with collection size
+- provide a stable, resumable contract for UI, jobs, and SDK consumers
+- separate **internal streaming / iteration primitives** from **external page-oriented service contracts**
+
+#### Core stance
+
+V3 should support **both**:
+
+1. **internal streaming iteration** for long-running jobs and unknown-length scans
+2. **external cursor-based page retrieval** for SDK and HTTP APIs
+
+In other words:
+
+- the **ODM / database layer** should expose lazy cursor/iterator primitives
+- the **Datalake SDK / facade** should expose both iterators and page-returning methods
+- the **HTTP service** should expose **page envelopes**, not raw iterators
+
+This keeps the implementation efficient while preserving a stable public API.
+
+#### Why cursor pagination, not offset pagination
+
+V3 should prefer **cursor (keyset) pagination** over page-number or offset-based pagination because:
+
+- MongoDB can use indexes efficiently for keyset scans
+- offset grows slower and less stable as collections get larger
+- inserts/deletes between requests make offset pagination ambiguous
+- cursor tokens make resumption and partial traversal easier for long-running clients
+
+Offset pagination may still exist for small internal tools, but it should **not** be the canonical V3 public API pattern.
+
+#### Internal data-access contracts
+
+At the ODM / storage-adapter layer, V3 should add explicit lazy traversal primitives alongside existing eager list methods.
+
+Async shape:
+
+```python
+async def find_iter(
+    query: dict[str, Any],
+    *,
+    sort: list[tuple[str, int]] | None = None,
+    batch_size: int | None = None,
+    limit: int | None = None,
+) -> AsyncIterator[T]: ...
+
+async def find_page(
+    query: dict[str, Any],
+    *,
+    sort: list[tuple[str, int]],
+    limit: int,
+    cursor: str | None = None,
+) -> Page[T]: ...
+
+async def count_documents(query: dict[str, Any]) -> int: ...
+```
+
+Sync shape:
+
+```python
+def find_iter(
+    query: dict[str, Any],
+    *,
+    sort: list[tuple[str, int]] | None = None,
+    batch_size: int | None = None,
+    limit: int | None = None,
+) -> Iterator[T]: ...
+
+def find_page(
+    query: dict[str, Any],
+    *,
+    sort: list[tuple[str, int]],
+    limit: int,
+    cursor: str | None = None,
+) -> Page[T]: ...
+
+def count_documents(query: dict[str, Any]) -> int: ...
+```
+
+Notes:
+
+- On the async side, this maps naturally to **Motor cursors** and `async for`.
+- On the sync side, use a **native synchronous cursor** implementation (for example PyMongo) rather than trying to proxy an async cursor through the sync bridge.
+- Existing eager `find(...) -> list[T]` helpers may remain for tests and small administrative paths, but V3 hot paths should avoid them.
+- `summary()`-style APIs should use `count_documents()` or equivalent count primitives rather than loading whole collections.
+
+#### Internal SDK / facade contracts
+
+At the `AsyncDatalake` / `Datalake` layer, V3 should expose two complementary families of methods:
+
+1. **iterator-style methods** for jobs, replication, exports, and maintenance
+2. **page-style methods** for interactive clients and service handlers
+
+Recommended examples:
+
+```python
+async def iter_assets(
+    *,
+    filters: dict[str, Any] | None = None,
+    sort: str = "created_desc",
+    batch_size: int | None = None,
+) -> AsyncIterator[Asset]: ...
+
+async def list_assets_page(
+    *,
+    filters: dict[str, Any] | None = None,
+    sort: str = "created_desc",
+    limit: int = 100,
+    cursor: str | None = None,
+    include_total: bool = False,
+) -> Page[Asset]: ...
+
+async def iter_datums(...) -> AsyncIterator[Datum]: ...
+async def list_datums_page(...) -> Page[Datum]: ...
+async def iter_annotation_records(...) -> AsyncIterator[AnnotationRecord]: ...
+async def list_annotation_records_page(...) -> Page[AnnotationRecord]: ...
+```
+
+For dataset consumption, V3 should avoid returning a giant fully resolved dataset object by default. Instead, add a dedicated paginated dataset-view surface:
+
+```python
+async def view_dataset_version_page(
+    dataset_name: str,
+    version: str,
+    *,
+    limit: int = 100,
+    cursor: str | None = None,
+    sort: str = "manifest_order",
+    filters: list[StructuredFilter] | None = None,
+    expand: DatasetViewExpand | None = None,
+) -> Page[DatasetViewRow]: ...
+
+async def iter_dataset_version_view(
+    dataset_name: str,
+    version: str,
+    *,
+    page_size: int = 100,
+    sort: str = "manifest_order",
+    filters: list[StructuredFilter] | None = None,
+    expand: DatasetViewExpand | None = None,
+) -> AsyncIterator[DatasetViewRow]: ...
+```
+
+The key rule is:
+
+- **iterators** are the most efficient internal primitive
+- **pages** are the canonical client-facing contract
+
+#### Shared schemas / contracts
+
+The V3 service and SDK should share a common page envelope and request model.
+
+```python
+PageInfo:
+    limit: int
+    next_cursor: str | None
+    has_more: bool
+    total_count: int | None = None
+
+Page[T]:
+    items: list[T]
+    page: PageInfo
+
+PageRequest:
+    limit: int = 100
+    cursor: str | None = None
+    sort: str = "created_desc"
+    include_total: bool = False
+
+DatasetViewExpand:
+    assets: bool = True
+    annotation_sets: bool = False
+    annotation_records: bool = False
+
+StructuredFilter:
+    field: str
+    op: Literal["eq", "ne", "gt", "gte", "lt", "lte", "in", "contains", "exists"]
+    value: Any
+
+DatasetViewRequest:
+    limit: int = 100
+    cursor: str | None = None
+    sort: str = "manifest_order"
+    include_total: bool = False
+    filters: list[StructuredFilter] = []
+    expand: DatasetViewExpand = DatasetViewExpand()
+```
+
+Example row shape:
+
+```python
+DatasetViewRow:
+    datum_id: str
+    split: str | None
+    metadata: dict[str, Any]
+    assets: dict[str, Asset] | None = None
+    annotation_sets: list[AnnotationSet] | None = None
+    annotation_records: dict[str, list[AnnotationRecord]] | None = None
+```
+
+The `expand` contract is important because pagination alone is not enough if each row still expands into an unbounded nested graph. V3 should make graph expansion **explicit** and **bounded by request**.
+
+#### Cursor token contract
+
+The cursor should be an **opaque token** to the client, but internally it should carry enough information to validate that the next request is continuing the same logical scan.
+
+Recommended cursor envelope:
+
+```python
+CursorEnvelope:
+    resource: str
+    sort: str
+    filter_fingerprint: str
+    last_key: dict[str, Any]
+    snapshot_token: str | None = None
+```
+
+Semantics:
+
+- `resource` identifies the endpoint or logical view (`assets`, `datums`, `dataset_version_view`, etc.)
+- `sort` ensures the cursor is only reused with the same ordering
+- `filter_fingerprint` prevents accidental reuse under a different filter set
+- `last_key` holds the last emitted indexed sort key
+- `snapshot_token` optionally pins a specific immutable or quasi-stable scan context
+
+If a client changes filters or sort while reusing an old cursor, the service should reject the request with a validation error rather than returning ambiguous results.
+
+#### Stable sort requirements
+
+Every paginated endpoint must define a small set of **stable sort modes** backed by indexes. Each sort must end with a unique tiebreaker, typically the entity id.
+
+Examples:
+
+- assets
+  - `created_desc` -> `(created_at desc, asset_id desc)`
+  - `created_asc` -> `(created_at asc, asset_id asc)`
+- datums
+  - `created_desc` -> `(created_at desc, datum_id desc)`
+  - `split_created_desc` -> `(split asc, created_at desc, datum_id desc)`
+- annotation records
+  - `created_desc` -> `(created_at desc, annotation_id desc)`
+  - `subject_created_desc` -> `(subject.kind asc, subject.id asc, created_at desc, annotation_id desc)`
+- dataset versions
+  - `dataset_version_desc` -> `(dataset_name asc, version desc, dataset_version_id desc)`
+
+For dataset version views, the canonical default should be:
+
+- `manifest_order` -> `(manifest ordinal asc, datum_id asc)`
+
+That preserves immutable dataset ordering and makes view pagination deterministic.
+
+#### Snapshot semantics
+
+For ordinary collection lists, V3 may use **best-effort stable pagination** without guaranteeing a full snapshot across all pages.
+
+For immutable dataset version views, V3 should behave as a **natural snapshot** because:
+
+- the dataset version identity is fixed
+- manifest order is fixed
+- the page traversal is over an immutable membership set
+
+That makes dataset view pagination especially clean and is one reason `resolve_dataset_version()` should evolve toward paginated views rather than full one-shot expansion.
+
+#### HTTP / service contract
+
+Public service endpoints should return a **page envelope**, not a raw stream and not an unbounded list.
+
+Recommended generic shape:
+
+```json
+{
+  "items": [...],
+  "page": {
+    "limit": 100,
+    "next_cursor": "opaque-token",
+    "has_more": true
+  }
+}
+```
+
+When explicitly requested:
+
+```json
+{
+  "items": [...],
+  "page": {
+    "limit": 100,
+    "next_cursor": "opaque-token",
+    "has_more": true,
+    "total_count": 12450
+  }
+}
+```
+
+Recommended query parameters for collection endpoints:
+
+- `limit`
+- `cursor`
+- `sort`
+- `include_total`
+- endpoint-specific filters
+
+Examples:
+
+```http
+GET /api/v1/datalake/assets?limit=100&cursor=...&sort=created_desc&kind=image
+GET /api/v1/datalake/datums?limit=200&cursor=...&sort=split_created_desc&split=train
+GET /api/v1/datalake/annotation-records?limit=100&cursor=...&sort=subject_created_desc&subject.kind=asset&subject.id=asset_123
+```
+
+For complex dataset reads and structured queries, prefer `POST` with a request body rather than overloading query strings.
+
+Example:
+
+```json
+POST /api/v1/datalake/datasets/surface-defects/versions/0.1.0/view
+
+{
+  "limit": 128,
+  "cursor": null,
+  "sort": "manifest_order",
+  "filters": [
+    { "field": "split", "op": "eq", "value": "train" },
+    { "field": "metadata.severity", "op": "gte", "value": 3 }
+  ],
+  "expand": {
+    "assets": true,
+    "annotation_sets": true,
+    "annotation_records": false
+  }
+}
+```
+
+Example response:
+
+```json
+{
+  "items": [
+    {
+      "datum_id": "datum_abc",
+      "split": "train",
+      "metadata": { "severity": 4 },
+      "assets": {
+        "image": {
+          "asset_id": "asset_img_1",
+          "kind": "image",
+          "media_type": "image/png"
+        }
+      },
+      "annotation_sets": [
+        {
+          "annotation_set_id": "annotation_set_gt_1",
+          "purpose": "ground_truth",
+          "status": "active"
+        }
+      ]
+    }
+  ],
+  "page": {
+    "limit": 128,
+    "next_cursor": "opaque-token",
+    "has_more": true
+  },
+  "view": {
+    "dataset_name": "surface-defects",
+    "version": "0.1.0",
+    "sort": "manifest_order"
+  }
+}
+```
+
+#### Recommended endpoint coverage
+
+At minimum, the following V3 endpoints should use the shared pagination contract:
+
+- `GET /api/v1/datalake/assets`
+- `GET /api/v1/datalake/datums`
+- `GET /api/v1/datalake/annotation-records`
+- `GET /api/v1/datalake/datasets`
+- `GET /api/v1/datalake/datasets/{dataset_name}/versions`
+- `POST /api/v1/datalake/datasets/{dataset_name}/versions/{version}/view`
+- `POST /api/v1/datalake/datasets/query`
+
+#### Practical implementation guidance
+
+The recommended implementation order is:
+
+1. add lazy iterator support at the ODM/data-access layer
+2. add `count_documents()` support for count-style APIs such as `summary()`
+3. add shared `PageRequest`, `PageInfo`, and `Page[T]` contracts at the SDK/service boundary
+4. add cursor-paginated collection endpoints
+5. add paginated dataset-view endpoints
+6. gradually migrate large read paths away from eager `resolve_*` / `list_*` methods
+
+This gives V3 a clean contract for large-scale traversal without forcing every caller into a low-level cursor API.
 
 ### A. Storage / mounts API
 

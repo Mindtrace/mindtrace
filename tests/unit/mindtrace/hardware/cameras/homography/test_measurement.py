@@ -438,5 +438,5 @@ class TestHomographyMeasurer:
         assert distance_cm == pytest.approx(5.0)
 
     def test_measure_distance_validates_point_shape(self):
-        with pytest.raises(ValueError):
-            self.measurer.measure_distance((1.0, 2.0, 3.0), (2.0, 3.0))
+        with pytest.raises(ValueError, match=r"\(x, y\)"):
+            self.measurer.measure_distance((0.0, 0.0, 0.0), (1.0, 1.0, 1.0))

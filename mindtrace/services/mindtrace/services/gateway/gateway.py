@@ -71,7 +71,11 @@ class Gateway(Service):
             raise HTTPException(status_code=500, detail=str(e))
 
     @classmethod
-    def connect(cls: Type["Gateway"], url: str | Url | None = None, timeout: int = 60) -> Any:
+    def connect(
+        cls: Type["Gateway"],
+        url: str | Url | None = None,
+        timeout: int = 60,
+    ) -> Any:
         """Connect to an existing Gateway service with enhanced connection manager."""
         url = ifnone_url(url, default=cls.default_url())
         host_status = cls.status_at_host(url, timeout=timeout)

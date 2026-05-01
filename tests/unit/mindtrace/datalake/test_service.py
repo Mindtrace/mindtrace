@@ -6,7 +6,16 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from fastapi import HTTPException
 
-from mindtrace.datalake.async_datalake import AsyncDatalake
+from mindtrace.datalake.async_datalake import AsyncDatalake, SlowOperationDisabledError, SlowOpsPolicy
+from mindtrace.datalake.pagination_types import (
+    CursorPage,
+    DatasetViewExpand,
+    DatasetViewInfo,
+    DatasetViewPage,
+    DatasetViewRow,
+    PageInfo,
+    StructuredFilter,
+)
 from mindtrace.datalake.replication_types import (
     ReplicationBatchRequest,
     ReplicationBatchResult,
@@ -23,19 +32,26 @@ from mindtrace.datalake.service_types import (
     AddedAnnotationRecordsOutput,
     AnnotationRecordListOutput,
     AnnotationRecordOutput,
+    AnnotationRecordPageOutput,
     AnnotationSchemaListOutput,
     AnnotationSchemaOutput,
+    AnnotationSchemaPageOutput,
     AnnotationSetListOutput,
     AnnotationSetOutput,
+    AnnotationSetPageOutput,
     AssetAliasOutput,
     AssetListOutput,
     AssetOutput,
+    AssetPageOutput,
     AssetRetentionListOutput,
     AssetRetentionOutput,
+    AssetRetentionPageOutput,
     CollectionItemListOutput,
     CollectionItemOutput,
+    CollectionItemPageOutput,
     CollectionListOutput,
     CollectionOutput,
+    CollectionPageOutput,
     CompleteObjectUploadSessionInput,
     CopyObjectInput,
     CreateAnnotationSchemaInput,
@@ -54,10 +70,17 @@ from mindtrace.datalake.service_types import (
     DatasetSyncBundleOutput,
     DatasetSyncCommitResultOutput,
     DatasetSyncImportPlanOutput,
+    DatasetSyncJobResultOutput,
+    DatasetSyncJobStartOutput,
+    DatasetSyncJobStatusInput,
+    DatasetSyncJobStatusOutput,
     DatasetVersionListOutput,
     DatasetVersionOutput,
+    DatasetVersionPageOutput,
+    DatasetViewPageOutput,
     DatumListOutput,
     DatumOutput,
+    DatumPageOutput,
     ExportDatasetVersionInput,
     GetAnnotationSchemaByNameVersionInput,
     GetAssetByAliasInput,
@@ -66,13 +89,16 @@ from mindtrace.datalake.service_types import (
     GetObjectInput,
     HeadObjectInput,
     ListAnnotationRecordsForAssetInput,
+    ListAnnotationRecordsForAssetPageInput,
     ListDatasetVersionsInput,
+    ListDatasetVersionsPageInput,
     ListInput,
     MountsOutput,
     ObjectDataOutput,
     ObjectHeadOutput,
     ObjectOutput,
     ObjectUploadSessionOutput,
+    PageInput,
     PutObjectInput,
     ReplicationBatchResultOutput,
     ReplicationHydrateAssetPayloadInput,
@@ -91,6 +117,7 @@ from mindtrace.datalake.service_types import (
     UpdateCollectionInput,
     UpdateCollectionItemInput,
     UpdateDatumInput,
+    ViewDatasetVersionPageInput,
 )
 from mindtrace.datalake.sync_types import (
     DatasetSyncBundle,
@@ -247,7 +274,9 @@ def datalake_objects():
 
 @pytest.fixture
 def mock_datalake():
-    return Mock(spec=AsyncDatalake)
+    datalake = Mock(spec=AsyncDatalake)
+    datalake.slow_ops_policy = SlowOpsPolicy.WARN
+    return datalake
 
 
 @pytest.fixture
@@ -1211,7 +1240,8 @@ class TestDatalakeServiceInitialization:
         assert service._datalake is mock_datalake
         assert service._initialized is True
         assert service.app.router.on_startup[-1] == service._startup_initialize
-        assert service.app.router.on_shutdown[-1] == service._shutdown_cleanup
+        # Shutdown cleanup is invoked via the base Service's ``combined_lifespan`` override of
+        # ``shutdown_cleanup``; we no longer register it on the deprecated ``on_shutdown`` list.
         assert "objects.put" in service.endpoints
         assert "objects.upload_session.create" in service.endpoints
         assert "assets.create_from_uploaded_object" in service.endpoints
@@ -1247,7 +1277,7 @@ class TestDatalakeServiceInitialization:
         task.cancel = _cancel
         service._upload_reconciler_task = task
 
-        await service._shutdown_cleanup()
+        await service.shutdown_cleanup()
 
         cancel.assert_called_once_with()
         assert service._upload_reconciler_task is None
@@ -1256,9 +1286,35 @@ class TestDatalakeServiceInitialization:
     async def test_shutdown_cleanup_returns_when_no_reconciler_task(self, service):
         service._upload_reconciler_task = None
 
-        await service._shutdown_cleanup()
+        await service.shutdown_cleanup()
 
         assert service._upload_reconciler_task is None
+
+    @pytest.mark.asyncio
+    async def test_shutdown_cleanup_closes_owned_datalake(self, service, mock_datalake):
+        service._datalake = mock_datalake
+        service._owns_datalake = True  # service-created datalakes are owned, thus closed on shutdown
+        mock_datalake.close = AsyncMock()
+        service._upload_reconciler_task = None
+
+        await service.shutdown_cleanup()
+
+        mock_datalake.close.assert_awaited_once()
+        assert service._datalake is None
+        assert service._initialized is False
+
+    @pytest.mark.asyncio
+    async def test_shutdown_cleanup_does_not_close_externally_owned_datalake(self, service, mock_datalake):
+        """A datalake passed via ``async_datalake=`` belongs to the caller and must not be closed here."""
+        # ``service`` fixture already passes ``async_datalake=mock_datalake`` → ``_owns_datalake is False``.
+        assert service._owns_datalake is False
+        mock_datalake.close = AsyncMock()
+        service._upload_reconciler_task = None
+
+        await service.shutdown_cleanup()
+
+        mock_datalake.close.assert_not_called()
+        assert service._datalake is mock_datalake
 
     @pytest.mark.asyncio
     async def test_run_upload_reconciler_logs_warning_on_iteration_failure(self, service):
@@ -1303,12 +1359,14 @@ class TestDatalakeServiceInitialization:
     async def test_ensure_datalake_builds_and_initializes_async_datalake(self):
         created_datalake = Mock(spec=AsyncDatalake)
         created_datalake.initialize = AsyncMock()
+        created_datalake.slow_ops_policy = SlowOpsPolicy.FORBID
 
         service = DatalakeService(
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="mindtrace",
             mounts=["mount-a"],
             default_mount="nas",
+            slow_ops_policy=SlowOpsPolicy.FORBID,
             live_service=False,
             initialize_on_startup=False,
         )
@@ -1324,6 +1382,7 @@ class TestDatalakeServiceInitialization:
             mongo_db_name="mindtrace",
             mounts=["mount-a"],
             default_mount="nas",
+            slow_ops_policy=SlowOpsPolicy.FORBID,
         )
         created_datalake.initialize.assert_awaited_once_with()
 
@@ -1379,6 +1438,28 @@ class TestDatalakeServiceUtilities:
 
         assert exc_info.value.status_code == 500
 
+    @pytest.mark.asyncio
+    async def test_await_client_safe_translates_disabled_slow_operation(self):
+        async def fail():
+            raise SlowOperationDisabledError("list_assets() eagerly materializes an unbounded result set.")
+
+        with pytest.raises(HTTPException, match="disables eager list endpoints") as exc_info:
+            await DatalakeService._await_client_safe(fail())
+
+        assert exc_info.value.status_code == 400
+        assert "list_assets()" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_await_pagination_client_safe_translates_value_error(self):
+        async def fail():
+            raise ValueError("Invalid snapshot token")
+
+        with pytest.raises(HTTPException, match="Invalid pagination request") as exc_info:
+            await DatalakeService._await_pagination_client_safe(fail())
+
+        assert exc_info.value.status_code == 400
+        assert "Invalid snapshot token" in exc_info.value.detail
+
 
 @pytest.mark.parametrize(
     "case",
@@ -1406,6 +1487,259 @@ async def test_service_methods_map_requests_to_async_datalake(case, service, moc
 
     assert isinstance(result, case["expected_output_type"])
     assert getattr(result, case["expected_output_field"]) == case["expected_output_factory"](datalake_objects)
+
+
+@pytest.mark.asyncio
+async def test_service_list_assets_page_maps_page_contract(service, mock_datalake, datalake_objects):
+    page = CursorPage(
+        items=[datalake_objects.asset],
+        page=PageInfo(limit=1, next_cursor="cursor-1", has_more=True, total_count=2),
+    )
+    mock_datalake.list_assets_page.return_value = page
+
+    result = await service.list_assets_page(PageInput(filters={"kind": "image"}, limit=1, include_total=True))
+
+    mock_datalake.list_assets_page.assert_awaited_once_with(
+        filters={"kind": "image"},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=True,
+    )
+    assert isinstance(result, AssetPageOutput)
+    assert result.items == [datalake_objects.asset]
+    assert result.page.next_cursor == "cursor-1"
+    assert result.page.total_count == 2
+
+
+@pytest.mark.asyncio
+async def test_service_list_assets_page_translates_invalid_cursor(service, mock_datalake):
+    mock_datalake.list_assets_page.side_effect = ValueError("Invalid snapshot token")
+
+    with pytest.raises(HTTPException, match="Invalid pagination request") as exc_info:
+        await service.list_assets_page(PageInput(filters={"kind": "image"}, limit=1, cursor="bad-cursor"))
+
+    assert exc_info.value.status_code == 400
+    assert "Invalid snapshot token" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_service_collection_pages_map_page_contracts(service, mock_datalake, datalake_objects):
+    collection_page = CursorPage(
+        items=[datalake_objects.collection],
+        page=PageInfo(limit=1, next_cursor="collection-cursor", has_more=True, total_count=2),
+    )
+    collection_item_page = CursorPage(
+        items=[datalake_objects.collection_item],
+        page=PageInfo(limit=1, next_cursor=None, has_more=False, total_count=1),
+    )
+    mock_datalake.list_collections_page.return_value = collection_page
+    mock_datalake.list_collection_items_page.return_value = collection_item_page
+
+    collection_result = await service.list_collections_page(PageInput(filters={"status": "active"}, limit=1))
+    collection_item_result = await service.list_collection_items_page(
+        PageInput(filters={"collection_id": datalake_objects.collection.collection_id}, limit=1, include_total=True)
+    )
+
+    mock_datalake.list_collections_page.assert_awaited_once_with(
+        filters={"status": "active"},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=False,
+    )
+    mock_datalake.list_collection_items_page.assert_awaited_once_with(
+        filters={"collection_id": datalake_objects.collection.collection_id},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=True,
+    )
+    assert isinstance(collection_result, CollectionPageOutput)
+    assert collection_result.items == [datalake_objects.collection]
+    assert isinstance(collection_item_result, CollectionItemPageOutput)
+    assert collection_item_result.items == [datalake_objects.collection_item]
+
+
+@pytest.mark.asyncio
+async def test_service_metadata_pages_map_page_contracts(service, mock_datalake, datalake_objects):
+    retention_page = CursorPage(
+        items=[datalake_objects.asset_retention],
+        page=PageInfo(limit=1, next_cursor=None, has_more=False, total_count=1),
+    )
+    schema_page = CursorPage(
+        items=[datalake_objects.annotation_schema],
+        page=PageInfo(limit=1, next_cursor="schema-cursor", has_more=True, total_count=2),
+    )
+    set_page = CursorPage(
+        items=[datalake_objects.annotation_set],
+        page=PageInfo(limit=1, next_cursor=None, has_more=False, total_count=1),
+    )
+    mock_datalake.list_asset_retentions_page.return_value = retention_page
+    mock_datalake.list_annotation_schemas_page.return_value = schema_page
+    mock_datalake.list_annotation_sets_page.return_value = set_page
+
+    retention_result = await service.list_asset_retentions_page(
+        PageInput(filters={"asset_id": datalake_objects.asset.asset_id}, limit=1)
+    )
+    schema_result = await service.list_annotation_schemas_page(
+        PageInput(filters={"task_type": "detection"}, limit=1, include_total=True)
+    )
+    set_result = await service.list_annotation_sets_page(PageInput(filters={"purpose": "ground_truth"}, limit=1))
+
+    mock_datalake.list_asset_retentions_page.assert_awaited_once_with(
+        filters={"asset_id": datalake_objects.asset.asset_id},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=False,
+    )
+    mock_datalake.list_annotation_schemas_page.assert_awaited_once_with(
+        filters={"task_type": "detection"},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=True,
+    )
+    mock_datalake.list_annotation_sets_page.assert_awaited_once_with(
+        filters={"purpose": "ground_truth"},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=False,
+    )
+    assert isinstance(retention_result, AssetRetentionPageOutput)
+    assert isinstance(schema_result, AnnotationSchemaPageOutput)
+    assert isinstance(set_result, AnnotationSetPageOutput)
+
+
+@pytest.mark.asyncio
+async def test_service_annotation_and_datum_pages_map_page_contracts(service, mock_datalake, datalake_objects):
+    record_page = CursorPage(
+        items=[datalake_objects.annotation_record],
+        page=PageInfo(limit=1, next_cursor="record-cursor", has_more=True, total_count=2),
+    )
+    datum_page = CursorPage(
+        items=[datalake_objects.datum],
+        page=PageInfo(limit=1, next_cursor=None, has_more=False, total_count=1),
+    )
+    mock_datalake.list_annotation_records_for_asset_page.return_value = record_page
+    mock_datalake.list_annotation_records_page.return_value = record_page
+    mock_datalake.list_datums_page.return_value = datum_page
+
+    asset_record_result = await service.list_annotation_records_for_asset_page(
+        ListAnnotationRecordsForAssetPageInput(
+            asset_id=datalake_objects.asset.asset_id,
+            limit=1,
+            include_total=True,
+            sort="subject_created_desc",
+        )
+    )
+    record_result = await service.list_annotation_records_page(PageInput(filters={"label": "cat"}, limit=1))
+    datum_result = await service.list_datums_page(PageInput(filters={"split": "train"}, limit=1))
+
+    mock_datalake.list_annotation_records_for_asset_page.assert_awaited_once_with(
+        datalake_objects.asset.asset_id,
+        sort="subject_created_desc",
+        limit=1,
+        cursor=None,
+        include_total=True,
+    )
+    mock_datalake.list_annotation_records_page.assert_awaited_once_with(
+        filters={"label": "cat"},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=False,
+    )
+    mock_datalake.list_datums_page.assert_awaited_once_with(
+        filters={"split": "train"},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=False,
+    )
+    assert isinstance(asset_record_result, AnnotationRecordPageOutput)
+    assert isinstance(record_result, AnnotationRecordPageOutput)
+    assert isinstance(datum_result, DatumPageOutput)
+
+
+@pytest.mark.asyncio
+async def test_service_list_dataset_versions_page_includes_dataset_name(service, mock_datalake, datalake_objects):
+    page = CursorPage(
+        items=[datalake_objects.dataset_version],
+        page=PageInfo(limit=1, next_cursor=None, has_more=False, total_count=1),
+    )
+    mock_datalake.list_dataset_versions_page.return_value = page
+
+    result = await service.list_dataset_versions_page(
+        ListDatasetVersionsPageInput(dataset_name="demo-dataset", filters={"version": "1.0"}, limit=1)
+    )
+
+    mock_datalake.list_dataset_versions_page.assert_awaited_once_with(
+        dataset_name="demo-dataset",
+        filters={"version": "1.0"},
+        sort="created_desc",
+        limit=1,
+        cursor=None,
+        include_total=False,
+    )
+    assert isinstance(result, DatasetVersionPageOutput)
+    assert result.items == [datalake_objects.dataset_version]
+    assert result.page.has_more is False
+
+
+@pytest.mark.asyncio
+async def test_service_view_dataset_version_page_maps_expand_and_filters(service, mock_datalake):
+    page = DatasetViewPage(
+        items=[DatasetViewRow(datum_id="datum_1", split="train", metadata={"rank": 1})],
+        page=PageInfo(limit=1, next_cursor="cursor-2", has_more=True, total_count=2),
+        view=DatasetViewInfo(dataset_name="demo", version="1.0.0", sort="manifest_order"),
+    )
+    mock_datalake.view_dataset_version_page.return_value = page
+
+    payload = ViewDatasetVersionPageInput(
+        dataset_name="demo",
+        version="1.0.0",
+        limit=1,
+        include_total=True,
+        filters=[StructuredFilter(field="split", op="eq", value="train")],
+        expand=DatasetViewExpand(assets=False, annotation_sets=False, annotation_records=False),
+    )
+    result = await service.view_dataset_version_page(payload)
+
+    mock_datalake.view_dataset_version_page.assert_awaited_once_with(
+        "demo",
+        "1.0.0",
+        limit=1,
+        cursor=None,
+        sort="manifest_order",
+        filters=[StructuredFilter(field="split", op="eq", value="train")],
+        expand=DatasetViewExpand(assets=False, annotation_sets=False, annotation_records=False),
+        include_total=True,
+    )
+    assert isinstance(result, DatasetViewPageOutput)
+    assert result.items[0].datum_id == "datum_1"
+    assert result.page.next_cursor == "cursor-2"
+    assert result.view.dataset_name == "demo"
+
+
+@pytest.mark.asyncio
+async def test_service_view_dataset_version_page_translates_invalid_cursor(service, mock_datalake):
+    mock_datalake.view_dataset_version_page.side_effect = ValueError("Cursor filters do not match this request")
+
+    payload = ViewDatasetVersionPageInput(
+        dataset_name="demo",
+        version="1.0.0",
+        limit=1,
+        cursor="bad-cursor",
+    )
+
+    with pytest.raises(HTTPException, match="Invalid pagination request") as exc_info:
+        await service.view_dataset_version_page(payload)
+
+    assert exc_info.value.status_code == 400
+    assert "Cursor filters do not match this request" in exc_info.value.detail
 
 
 @pytest.mark.asyncio
@@ -1457,6 +1791,94 @@ async def test_service_import_dataset_version_commit_uses_sync_manager(service, 
     assert isinstance(result, DatasetSyncCommitResultOutput)
     assert result.result == commit_result
     manager.commit_import.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_service_import_prepare_start_runs_background_job(service, datalake_objects):
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    request = DatasetSyncImportRequest(bundle=bundle)
+    plan = DatasetSyncImportPlan(
+        dataset_name="demo",
+        version="1.0",
+        transfer_policy="copy_if_missing",
+        ready_to_commit=True,
+    )
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.plan_import = AsyncMock(return_value=plan)
+
+        started = await service.import_dataset_version_prepare_start(request)
+        await service._dataset_sync_jobs[started.job_id].task
+        status = await service.import_dataset_version_job_status(DatasetSyncJobStatusInput(job_id=started.job_id))
+        result = await service.import_dataset_version_job_result(DatasetSyncJobStatusInput(job_id=started.job_id))
+
+    assert isinstance(started, DatasetSyncJobStartOutput)
+    assert isinstance(status, DatasetSyncJobStatusOutput)
+    assert isinstance(result, DatasetSyncJobResultOutput)
+    assert status.status == "completed"
+    assert status.progress.phase == "complete"
+    assert result.plan == plan
+    assert result.result is None
+    manager.plan_import.assert_awaited_once()
+    assert manager.plan_import.await_args.args == (request,)
+    assert "progress_callback" in manager.plan_import.await_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_service_import_start_runs_background_job(service, datalake_objects):
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    request = DatasetSyncImportRequest(bundle=bundle)
+    commit_result = DatasetSyncCommitResult(dataset_version=datalake_objects.dataset_version, created_assets=1)
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.commit_import = AsyncMock(return_value=commit_result)
+
+        started = await service.import_dataset_version_start(request)
+        await service._dataset_sync_jobs[started.job_id].task
+        result = await service.import_dataset_version_job_result(DatasetSyncJobStatusInput(job_id=started.job_id))
+
+    assert started.mode == "import"
+    assert result.status == "completed"
+    assert result.result == commit_result
+    assert result.plan is None
+    manager.commit_import.assert_awaited_once()
+    assert manager.commit_import.await_args.args == (request,)
+    assert "progress_callback" in manager.commit_import.await_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_service_import_prepare_failure_surfaces_error_detail(service, datalake_objects):
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    request = DatasetSyncImportRequest(bundle=bundle)
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.plan_import = AsyncMock(side_effect=KeyError("minio"))
+
+        started = await service.import_dataset_version_prepare_start(request)
+        await service._dataset_sync_jobs[started.job_id].task
+        status = await service.import_dataset_version_job_status(DatasetSyncJobStatusInput(job_id=started.job_id))
+        result = await service.import_dataset_version_job_result(DatasetSyncJobStatusInput(job_id=started.job_id))
+
+    assert result.status == "failed"
+    assert status.status == "failed"
+    assert status.error_detail is not None
+    assert status.error_detail.traceback == result.error_detail.traceback
+    assert result.error is not None
+    assert "KeyError" in result.error
+    assert "minio" in result.error
+    assert result.error_detail is not None
+    assert result.error_detail.exception_type.endswith("KeyError")
+    assert "minio" in result.error_detail.exception_repr
+    assert result.error_detail.traceback is not None
+    assert "_run_dataset_sync_job" in result.error_detail.traceback
+
+
+@pytest.mark.asyncio
+async def test_service_import_job_status_raises_for_unknown_job(service):
+    with pytest.raises(HTTPException) as exc_info:
+        await service.import_dataset_version_job_status(DatasetSyncJobStatusInput(job_id="missing"))
+
+    assert exc_info.value.status_code == 404
 
 
 @pytest.mark.asyncio

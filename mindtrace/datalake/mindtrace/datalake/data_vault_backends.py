@@ -10,25 +10,73 @@ from __future__ import annotations
 
 import base64
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 from unittest.mock import Mock as _UnitTestMock
 
 from mindtrace.datalake.async_datalake import AsyncDatalake
 from mindtrace.datalake.datalake import Datalake
+from mindtrace.datalake.pagination_types import CursorPage
 from mindtrace.datalake.service_types import (
     AddAliasInput,
     AddAnnotationRecordsInput,
+    CreateAnnotationSetInput,
     CreateAssetFromObjectInput,
+    CreateCollectionInput,
+    CreateCollectionItemInput,
+    CreateDatasetVersionInput,
+    CreateDatumInput,
+    DeleteByIdInput,
     GetAssetByAliasInput,
     GetByIdInput,
+    GetDatasetVersionInput,
     GetObjectInput,
     ListAnnotationRecordsForAssetInput,
     ListInput,
+    PageInput,
+    UpdateCollectionInput,
+    UpdateCollectionItemInput,
 )
-from mindtrace.datalake.types import AnnotationRecord, Asset, AssetAlias, StorageRef
+from mindtrace.datalake.types import (
+    AnnotationRecord,
+    AnnotationSet,
+    Asset,
+    AssetAlias,
+    Collection,
+    CollectionItem,
+    DatasetVersion,
+    Datum,
+    ResolvedDatasetVersion,
+    StorageRef,
+)
 from mindtrace.services.core.connection_manager import ConnectionManager
 
-_SYNC_VAULT_METHOD_NAMES = ("get_asset_by_alias", "get_object", "create_asset_from_object", "add_alias")
+_SYNC_VAULT_METHOD_NAMES = (
+    "list_assets",
+    "list_assets_page",
+    "iter_assets",
+    "get_asset",
+    "get_asset_by_alias",
+    "get_object",
+    "create_asset_from_object",
+    "add_alias",
+    "add_annotation_records",
+    "list_annotation_records_for_asset",
+    "list_collections",
+    "list_collections_page",
+    "iter_collections",
+    "create_collection",
+    "list_collection_items",
+    "list_collection_items_page",
+    "create_collection_item",
+    "update_collection_item",
+    "delete_collection_item",
+    "list_annotation_sets",
+    "create_annotation_set",
+    "get_annotation_record",
+    "list_annotation_records",
+    "delete_annotation_record",
+)
 _ASYNC_VAULT_METHOD_NAMES = _SYNC_VAULT_METHOD_NAMES
 
 # Sync/async method names on a ``DatalakeService`` client from ``Service.connect`` /
@@ -37,6 +85,7 @@ _SYNC_DATALAKE_SERVICE_CLIENT_METHODS = (
     "assets_get",
     "assets_get_by_alias",
     "assets_list",
+    "assets_list_page",
     "objects_get",
     "assets_create_from_object",
     "aliases_add",
@@ -45,6 +94,7 @@ _ASYNC_DATALAKE_SERVICE_CLIENT_METHODS = (
     "aassets_get",
     "aassets_get_by_alias",
     "aassets_list",
+    "aassets_list_page",
     "aobjects_get",
     "aassets_create_from_object",
     "aaliases_add",
@@ -64,7 +114,7 @@ def looks_like_datalake_service_sync_client(obj: Any) -> bool:
     """
 
     if isinstance(obj, ConnectionManager):
-        return all(callable(getattr(obj, name, None)) for name in _SYNC_DATALAKE_SERVICE_CLIENT_METHODS)
+        return True
     if _is_unittest_mock(obj):
         return False
     return all(callable(getattr(obj, name, None)) for name in _SYNC_DATALAKE_SERVICE_CLIENT_METHODS)
@@ -74,7 +124,7 @@ def looks_like_datalake_service_async_client(obj: Any) -> bool:
     """Return True if ``obj`` exposes async ``a``-prefixed ``DatalakeService`` task methods."""
 
     if isinstance(obj, ConnectionManager):
-        return all(callable(getattr(obj, name, None)) for name in _ASYNC_DATALAKE_SERVICE_CLIENT_METHODS)
+        return True
     if _is_unittest_mock(obj):
         return False
     return all(callable(getattr(obj, name, None)) for name in _ASYNC_DATALAKE_SERVICE_CLIENT_METHODS)
@@ -85,6 +135,26 @@ class AsyncDataVaultBackend(ABC):
 
     @abstractmethod
     async def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]: ...
+
+    @abstractmethod
+    async def list_assets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]: ...
+
+    @abstractmethod
+    async def iter_assets(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> AsyncIterator[Asset]: ...
 
     @abstractmethod
     async def get_asset(self, asset_id: str) -> Asset: ...
@@ -129,12 +199,164 @@ class AsyncDataVaultBackend(ABC):
     @abstractmethod
     async def list_annotation_records_for_asset(self, asset_id: str) -> list[AnnotationRecord]: ...
 
+    @abstractmethod
+    async def list_collections(self, filters: dict[str, Any] | None = None) -> list[Collection]: ...
+
+    @abstractmethod
+    async def list_collections_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Collection]: ...
+
+    @abstractmethod
+    async def iter_collections(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> AsyncIterator[Collection]: ...
+
+    @abstractmethod
+    async def create_collection(
+        self,
+        *,
+        name: str,
+        description: str | None = None,
+        status: str = "active",
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> Collection: ...
+
+    @abstractmethod
+    async def update_collection(self, collection_id: str, **changes: Any) -> Collection: ...
+
+    @abstractmethod
+    async def list_collection_items(self, filters: dict[str, Any] | None = None) -> list[CollectionItem]: ...
+
+    @abstractmethod
+    async def list_collection_items_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[CollectionItem]: ...
+
+    @abstractmethod
+    async def create_collection_item(
+        self,
+        *,
+        collection_id: str,
+        asset_id: str,
+        split: str | None = None,
+        status: str = "active",
+        metadata: dict[str, Any] | None = None,
+        added_by: str | None = None,
+    ) -> CollectionItem: ...
+
+    @abstractmethod
+    async def update_collection_item(self, collection_item_id: str, **changes: Any) -> CollectionItem: ...
+
+    @abstractmethod
+    async def delete_collection_item(self, collection_item_id: str) -> None: ...
+
+    @abstractmethod
+    async def list_annotation_sets(self, filters: dict[str, Any] | None = None) -> list[AnnotationSet]: ...
+
+    @abstractmethod
+    async def list_annotation_sets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationSet]: ...
+
+    @abstractmethod
+    async def create_annotation_set(
+        self,
+        *,
+        name: str,
+        purpose: str,
+        source_type: str,
+        status: str = "draft",
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+        datum_id: str | None = None,
+        annotation_schema_id: str | None = None,
+    ) -> AnnotationSet: ...
+
+    @abstractmethod
+    async def get_annotation_record(self, annotation_id: str) -> AnnotationRecord: ...
+
+    @abstractmethod
+    async def list_annotation_records(self, filters: dict[str, Any] | None = None) -> list[AnnotationRecord]: ...
+
+    @abstractmethod
+    async def delete_annotation_record(self, annotation_id: str) -> None: ...
+
+    @abstractmethod
+    async def create_datum(
+        self,
+        *,
+        asset_refs: dict[str, str],
+        split: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        annotation_set_ids: list[str] | None = None,
+    ) -> Datum: ...
+
+    @abstractmethod
+    async def create_dataset_version(
+        self,
+        *,
+        dataset_name: str,
+        version: str,
+        manifest: list[str],
+        description: str | None = None,
+        source_dataset_version_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> DatasetVersion: ...
+
+    @abstractmethod
+    async def resolve_dataset_version(self, dataset_name: str, version: str) -> ResolvedDatasetVersion: ...
+
 
 class DataVaultBackend(ABC):
     """Blocking backend contract for :class:`~mindtrace.datalake.DataVault`."""
 
     @abstractmethod
     def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]: ...
+
+    @abstractmethod
+    def list_assets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]: ...
+
+    @abstractmethod
+    def iter_assets(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Asset]: ...
 
     @abstractmethod
     def get_asset(self, asset_id: str) -> Asset: ...
@@ -179,6 +401,138 @@ class DataVaultBackend(ABC):
     @abstractmethod
     def list_annotation_records_for_asset(self, asset_id: str) -> list[AnnotationRecord]: ...
 
+    @abstractmethod
+    def list_collections(self, filters: dict[str, Any] | None = None) -> list[Collection]: ...
+
+    @abstractmethod
+    def list_collections_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Collection]: ...
+
+    @abstractmethod
+    def iter_collections(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Collection]: ...
+
+    @abstractmethod
+    def create_collection(
+        self,
+        *,
+        name: str,
+        description: str | None = None,
+        status: str = "active",
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> Collection: ...
+
+    @abstractmethod
+    def update_collection(self, collection_id: str, **changes: Any) -> Collection: ...
+
+    @abstractmethod
+    def list_collection_items(self, filters: dict[str, Any] | None = None) -> list[CollectionItem]: ...
+
+    @abstractmethod
+    def list_collection_items_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[CollectionItem]: ...
+
+    @abstractmethod
+    def create_collection_item(
+        self,
+        *,
+        collection_id: str,
+        asset_id: str,
+        split: str | None = None,
+        status: str = "active",
+        metadata: dict[str, Any] | None = None,
+        added_by: str | None = None,
+    ) -> CollectionItem: ...
+
+    @abstractmethod
+    def update_collection_item(self, collection_item_id: str, **changes: Any) -> CollectionItem: ...
+
+    @abstractmethod
+    def delete_collection_item(self, collection_item_id: str) -> None: ...
+
+    @abstractmethod
+    def list_annotation_sets(self, filters: dict[str, Any] | None = None) -> list[AnnotationSet]: ...
+
+    @abstractmethod
+    def list_annotation_sets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationSet]: ...
+
+    @abstractmethod
+    def create_annotation_set(
+        self,
+        *,
+        name: str,
+        purpose: str,
+        source_type: str,
+        status: str = "draft",
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+        datum_id: str | None = None,
+        annotation_schema_id: str | None = None,
+    ) -> AnnotationSet: ...
+
+    @abstractmethod
+    def get_annotation_record(self, annotation_id: str) -> AnnotationRecord: ...
+
+    @abstractmethod
+    def list_annotation_records(self, filters: dict[str, Any] | None = None) -> list[AnnotationRecord]: ...
+
+    @abstractmethod
+    def delete_annotation_record(self, annotation_id: str) -> None: ...
+
+    @abstractmethod
+    def create_datum(
+        self,
+        *,
+        asset_refs: dict[str, str],
+        split: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        annotation_set_ids: list[str] | None = None,
+    ) -> Datum: ...
+
+    @abstractmethod
+    def create_dataset_version(
+        self,
+        *,
+        dataset_name: str,
+        version: str,
+        manifest: list[str],
+        description: str | None = None,
+        source_dataset_version_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> DatasetVersion: ...
+
+    @abstractmethod
+    def resolve_dataset_version(self, dataset_name: str, version: str) -> ResolvedDatasetVersion: ...
+
 
 class LocalAsyncDataVaultBackend(AsyncDataVaultBackend):
     """Delegates to :class:`~mindtrace.datalake.AsyncDatalake` (or a compatible async facade)."""
@@ -188,6 +542,33 @@ class LocalAsyncDataVaultBackend(AsyncDataVaultBackend):
 
     async def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
         return await self._datalake.list_assets(filters)
+
+    async def list_assets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]:
+        return await self._datalake.list_assets_page(
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
+    async def iter_assets(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> AsyncIterator[Asset]:
+        async for asset in self._datalake.iter_assets(filters=filters, sort=sort, batch_size=batch_size):
+            yield asset
 
     async def get_asset(self, asset_id: str) -> Asset:
         return await self._datalake.get_asset(asset_id)
@@ -250,6 +631,192 @@ class LocalAsyncDataVaultBackend(AsyncDataVaultBackend):
     async def list_annotation_records_for_asset(self, asset_id: str) -> list[AnnotationRecord]:
         return await self._datalake.list_annotation_records_for_asset(asset_id)
 
+    async def list_collections(self, filters: dict[str, Any] | None = None) -> list[Collection]:
+        return await self._datalake.list_collections(filters)
+
+    async def list_collections_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Collection]:
+        return await self._datalake.list_collections_page(
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
+    async def iter_collections(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> AsyncIterator[Collection]:
+        async for collection in self._datalake.iter_collections(filters=filters, sort=sort, batch_size=batch_size):
+            yield collection
+
+    async def create_collection(
+        self,
+        *,
+        name: str,
+        description: str | None = None,
+        status: str = "active",
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> Collection:
+        return await self._datalake.create_collection(
+            name=name,
+            description=description,
+            status=status,
+            metadata=metadata,
+            created_by=created_by,
+        )
+
+    async def list_collection_items(self, filters: dict[str, Any] | None = None) -> list[CollectionItem]:
+        return await self._datalake.list_collection_items(filters)
+
+    async def update_collection(self, collection_id: str, **changes: Any) -> Collection:
+        return await self._datalake.update_collection(collection_id, **changes)
+
+    async def list_collection_items_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[CollectionItem]:
+        return await self._datalake.list_collection_items_page(
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
+    async def create_collection_item(
+        self,
+        *,
+        collection_id: str,
+        asset_id: str,
+        split: str | None = None,
+        status: str = "active",
+        metadata: dict[str, Any] | None = None,
+        added_by: str | None = None,
+    ) -> CollectionItem:
+        return await self._datalake.create_collection_item(
+            collection_id=collection_id,
+            asset_id=asset_id,
+            split=split,
+            status=status,
+            metadata=metadata,
+            added_by=added_by,
+        )
+
+    async def update_collection_item(self, collection_item_id: str, **changes: Any) -> CollectionItem:
+        return await self._datalake.update_collection_item(collection_item_id, **changes)
+
+    async def delete_collection_item(self, collection_item_id: str) -> None:
+        await self._datalake.delete_collection_item(collection_item_id)
+
+    async def list_annotation_sets(self, filters: dict[str, Any] | None = None) -> list[AnnotationSet]:
+        return await self._datalake.list_annotation_sets(filters)
+
+    async def list_annotation_sets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationSet]:
+        return await self._datalake.list_annotation_sets_page(
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
+    async def create_annotation_set(
+        self,
+        *,
+        name: str,
+        purpose: str,
+        source_type: str,
+        status: str = "draft",
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+        datum_id: str | None = None,
+        annotation_schema_id: str | None = None,
+    ) -> AnnotationSet:
+        return await self._datalake.create_annotation_set(
+            name=name,
+            purpose=purpose,
+            source_type=source_type,
+            status=status,
+            metadata=metadata,
+            created_by=created_by,
+            datum_id=datum_id,
+            annotation_schema_id=annotation_schema_id,
+        )
+
+    async def get_annotation_record(self, annotation_id: str) -> AnnotationRecord:
+        return await self._datalake.get_annotation_record(annotation_id)
+
+    async def list_annotation_records(self, filters: dict[str, Any] | None = None) -> list[AnnotationRecord]:
+        return await self._datalake.list_annotation_records(filters)
+
+    async def delete_annotation_record(self, annotation_id: str) -> None:
+        await self._datalake.delete_annotation_record(annotation_id)
+
+    async def create_datum(
+        self,
+        *,
+        asset_refs: dict[str, str],
+        split: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        annotation_set_ids: list[str] | None = None,
+    ) -> Datum:
+        return await self._datalake.create_datum(
+            asset_refs=asset_refs,
+            split=split,
+            metadata=metadata,
+            annotation_set_ids=annotation_set_ids,
+        )
+
+    async def create_dataset_version(
+        self,
+        *,
+        dataset_name: str,
+        version: str,
+        manifest: list[str],
+        description: str | None = None,
+        source_dataset_version_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> DatasetVersion:
+        return await self._datalake.create_dataset_version(
+            dataset_name=dataset_name,
+            version=version,
+            manifest=manifest,
+            description=description,
+            source_dataset_version_id=source_dataset_version_id,
+            metadata=metadata,
+            created_by=created_by,
+        )
+
+    async def resolve_dataset_version(self, dataset_name: str, version: str) -> ResolvedDatasetVersion:
+        return await self._datalake.resolve_dataset_version(dataset_name, version)
+
 
 class LocalDataVaultBackend(DataVaultBackend):
     """Delegates to :class:`~mindtrace.datalake.Datalake` (or a compatible sync facade)."""
@@ -259,6 +826,32 @@ class LocalDataVaultBackend(DataVaultBackend):
 
     def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
         return self._datalake.list_assets(filters)
+
+    def list_assets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]:
+        return self._datalake.list_assets_page(
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
+    def iter_assets(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Asset]:
+        yield from self._datalake.iter_assets(filters=filters, sort=sort, batch_size=batch_size)
 
     def get_asset(self, asset_id: str) -> Asset:
         return self._datalake.get_asset(asset_id)
@@ -321,6 +914,191 @@ class LocalDataVaultBackend(DataVaultBackend):
     def list_annotation_records_for_asset(self, asset_id: str) -> list[AnnotationRecord]:
         return self._datalake.list_annotation_records_for_asset(asset_id)
 
+    def list_collections(self, filters: dict[str, Any] | None = None) -> list[Collection]:
+        return self._datalake.list_collections(filters)
+
+    def list_collections_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Collection]:
+        return self._datalake.list_collections_page(
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
+    def iter_collections(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Collection]:
+        yield from self._datalake.iter_collections(filters=filters, sort=sort, batch_size=batch_size)
+
+    def create_collection(
+        self,
+        *,
+        name: str,
+        description: str | None = None,
+        status: str = "active",
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> Collection:
+        return self._datalake.create_collection(
+            name=name,
+            description=description,
+            status=status,
+            metadata=metadata,
+            created_by=created_by,
+        )
+
+    def list_collection_items(self, filters: dict[str, Any] | None = None) -> list[CollectionItem]:
+        return self._datalake.list_collection_items(filters)
+
+    def update_collection(self, collection_id: str, **changes: Any) -> Collection:
+        return self._datalake.update_collection(collection_id, **changes)
+
+    def list_collection_items_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[CollectionItem]:
+        return self._datalake.list_collection_items_page(
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
+    def create_collection_item(
+        self,
+        *,
+        collection_id: str,
+        asset_id: str,
+        split: str | None = None,
+        status: str = "active",
+        metadata: dict[str, Any] | None = None,
+        added_by: str | None = None,
+    ) -> CollectionItem:
+        return self._datalake.create_collection_item(
+            collection_id=collection_id,
+            asset_id=asset_id,
+            split=split,
+            status=status,
+            metadata=metadata,
+            added_by=added_by,
+        )
+
+    def update_collection_item(self, collection_item_id: str, **changes: Any) -> CollectionItem:
+        return self._datalake.update_collection_item(collection_item_id, **changes)
+
+    def delete_collection_item(self, collection_item_id: str) -> None:
+        self._datalake.delete_collection_item(collection_item_id)
+
+    def list_annotation_sets(self, filters: dict[str, Any] | None = None) -> list[AnnotationSet]:
+        return self._datalake.list_annotation_sets(filters)
+
+    def list_annotation_sets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationSet]:
+        return self._datalake.list_annotation_sets_page(
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
+    def create_annotation_set(
+        self,
+        *,
+        name: str,
+        purpose: str,
+        source_type: str,
+        status: str = "draft",
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+        datum_id: str | None = None,
+        annotation_schema_id: str | None = None,
+    ) -> AnnotationSet:
+        return self._datalake.create_annotation_set(
+            name=name,
+            purpose=purpose,
+            source_type=source_type,
+            status=status,
+            metadata=metadata,
+            created_by=created_by,
+            datum_id=datum_id,
+            annotation_schema_id=annotation_schema_id,
+        )
+
+    def get_annotation_record(self, annotation_id: str) -> AnnotationRecord:
+        return self._datalake.get_annotation_record(annotation_id)
+
+    def list_annotation_records(self, filters: dict[str, Any] | None = None) -> list[AnnotationRecord]:
+        return self._datalake.list_annotation_records(filters)
+
+    def delete_annotation_record(self, annotation_id: str) -> None:
+        self._datalake.delete_annotation_record(annotation_id)
+
+    def create_datum(
+        self,
+        *,
+        asset_refs: dict[str, str],
+        split: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        annotation_set_ids: list[str] | None = None,
+    ) -> Datum:
+        return self._datalake.create_datum(
+            asset_refs=asset_refs,
+            split=split,
+            metadata=metadata,
+            annotation_set_ids=annotation_set_ids,
+        )
+
+    def create_dataset_version(
+        self,
+        *,
+        dataset_name: str,
+        version: str,
+        manifest: list[str],
+        description: str | None = None,
+        source_dataset_version_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> DatasetVersion:
+        return self._datalake.create_dataset_version(
+            dataset_name=dataset_name,
+            version=version,
+            manifest=manifest,
+            description=description,
+            source_dataset_version_id=source_dataset_version_id,
+            metadata=metadata,
+            created_by=created_by,
+        )
+
+    def resolve_dataset_version(self, dataset_name: str, version: str) -> ResolvedDatasetVersion:
+        return self._datalake.resolve_dataset_version(dataset_name, version)
+
 
 def _encode_obj_for_service(obj: Any) -> str:
     if isinstance(obj, str):
@@ -346,11 +1124,56 @@ class DatalakeServiceAsyncDataVaultBackend(AsyncDataVaultBackend):
             method = getattr(self._cm, name, None)
             if method is not None:
                 return await method(input_obj)
-        raise AttributeError(f"connection_manager {type(self._cm)!r} has none of: {', '.join(method_names)}")
+        raise TypeError(
+            "This AsyncDataVault service client does not support the required ConnectionManager "
+            f"method(s): {', '.join(method_names)}"
+        )
 
     async def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
         out = await self._call("aassets_list", input_obj=ListInput(filters=filters))
         return out.assets
+
+    async def list_assets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]:
+        return await self._call(
+            "aassets_list_page",
+            input_obj=PageInput(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            ),
+        )
+
+    async def iter_assets(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> AsyncIterator[Asset]:
+        cursor: str | None = None
+        page_limit = batch_size
+        while True:
+            page = await self.list_assets_page(
+                filters=filters,
+                sort=sort,
+                limit=page_limit,
+                cursor=cursor,
+            )
+            for asset in page.items:
+                yield asset
+            if not page.page.has_more or page.page.next_cursor is None:
+                break
+            cursor = page.page.next_cursor
 
     async def get_asset(self, asset_id: str) -> Asset:
         out = await self._call("aassets_get", input_obj=GetByIdInput(id=asset_id))
@@ -438,6 +1261,250 @@ class DatalakeServiceAsyncDataVaultBackend(AsyncDataVaultBackend):
         )
         return out.annotation_records
 
+    async def list_collections(self, filters: dict[str, Any] | None = None) -> list[Collection]:
+        out = await self._call("acollections_list", input_obj=ListInput(filters=filters))
+        return out.collections
+
+    async def list_collections_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Collection]:
+        return await self._call(
+            "acollections_list_page",
+            input_obj=PageInput(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            ),
+        )
+
+    async def iter_collections(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> AsyncIterator[Collection]:
+        cursor: str | None = None
+        page_limit = batch_size
+        while True:
+            page = await self.list_collections_page(
+                filters=filters,
+                sort=sort,
+                limit=page_limit,
+                cursor=cursor,
+            )
+            for collection in page.items:
+                yield collection
+            if not page.page.has_more or page.page.next_cursor is None:
+                break
+            cursor = page.page.next_cursor
+
+    async def create_collection(
+        self,
+        *,
+        name: str,
+        description: str | None = None,
+        status: str = "active",
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> Collection:
+        out = await self._call(
+            "acollections_create",
+            input_obj=CreateCollectionInput(
+                name=name,
+                description=description,
+                status=status,
+                metadata=metadata,
+                created_by=created_by,
+            ),
+        )
+        return out.collection
+
+    async def update_collection(self, collection_id: str, **changes: Any) -> Collection:
+        out = await self._call(
+            "acollections_update",
+            input_obj=UpdateCollectionInput(collection_id=collection_id, changes=changes),
+        )
+        return out.collection
+
+    async def list_collection_items(self, filters: dict[str, Any] | None = None) -> list[CollectionItem]:
+        out = await self._call("acollection_items_list", input_obj=ListInput(filters=filters))
+        return out.collection_items
+
+    async def list_collection_items_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[CollectionItem]:
+        return await self._call(
+            "acollection_items_list_page",
+            input_obj=PageInput(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            ),
+        )
+
+    async def create_collection_item(
+        self,
+        *,
+        collection_id: str,
+        asset_id: str,
+        split: str | None = None,
+        status: str = "active",
+        metadata: dict[str, Any] | None = None,
+        added_by: str | None = None,
+    ) -> CollectionItem:
+        out = await self._call(
+            "acollection_items_create",
+            input_obj=CreateCollectionItemInput(
+                collection_id=collection_id,
+                asset_id=asset_id,
+                split=split,
+                status=status,
+                metadata=metadata,
+                added_by=added_by,
+            ),
+        )
+        return out.collection_item
+
+    async def update_collection_item(self, collection_item_id: str, **changes: Any) -> CollectionItem:
+        out = await self._call(
+            "acollection_items_update",
+            input_obj=UpdateCollectionItemInput(collection_item_id=collection_item_id, changes=changes),
+        )
+        return out.collection_item
+
+    async def delete_collection_item(self, collection_item_id: str) -> None:
+        await self._call("acollection_items_delete", input_obj=DeleteByIdInput(id=collection_item_id))
+
+    async def list_annotation_sets(self, filters: dict[str, Any] | None = None) -> list[AnnotationSet]:
+        out = await self._call("aannotation_sets_list", input_obj=ListInput(filters=filters))
+        return out.annotation_sets
+
+    async def list_annotation_sets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationSet]:
+        return await self._call(
+            "aannotation_sets_list_page",
+            input_obj=PageInput(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            ),
+        )
+
+    async def create_annotation_set(
+        self,
+        *,
+        name: str,
+        purpose: str,
+        source_type: str,
+        status: str = "draft",
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+        datum_id: str | None = None,
+        annotation_schema_id: str | None = None,
+    ) -> AnnotationSet:
+        out = await self._call(
+            "aannotation_sets_create",
+            input_obj=CreateAnnotationSetInput(
+                name=name,
+                purpose=purpose,
+                source_type=source_type,
+                status=status,
+                metadata=metadata,
+                created_by=created_by,
+                datum_id=datum_id,
+                annotation_schema_id=annotation_schema_id,
+            ),
+        )
+        return out.annotation_set
+
+    async def get_annotation_record(self, annotation_id: str) -> AnnotationRecord:
+        out = await self._call("aannotation_records_get", input_obj=GetByIdInput(id=annotation_id))
+        return out.annotation_record
+
+    async def list_annotation_records(self, filters: dict[str, Any] | None = None) -> list[AnnotationRecord]:
+        out = await self._call("aannotation_records_list", input_obj=ListInput(filters=filters))
+        return out.annotation_records
+
+    async def delete_annotation_record(self, annotation_id: str) -> None:
+        await self._call("aannotation_records_delete", input_obj=DeleteByIdInput(id=annotation_id))
+
+    async def create_datum(
+        self,
+        *,
+        asset_refs: dict[str, str],
+        split: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        annotation_set_ids: list[str] | None = None,
+    ) -> Datum:
+        out = await self._call(
+            "adatums_create",
+            input_obj=CreateDatumInput(
+                asset_refs=asset_refs,
+                split=split,
+                metadata=metadata,
+                annotation_set_ids=annotation_set_ids,
+            ),
+        )
+        return out.datum
+
+    async def create_dataset_version(
+        self,
+        *,
+        dataset_name: str,
+        version: str,
+        manifest: list[str],
+        description: str | None = None,
+        source_dataset_version_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> DatasetVersion:
+        out = await self._call(
+            "adataset_versions_create",
+            input_obj=CreateDatasetVersionInput(
+                dataset_name=dataset_name,
+                version=version,
+                manifest=manifest,
+                description=description,
+                source_dataset_version_id=source_dataset_version_id,
+                metadata=metadata,
+                created_by=created_by,
+            ),
+        )
+        return out.dataset_version
+
+    async def resolve_dataset_version(self, dataset_name: str, version: str) -> ResolvedDatasetVersion:
+        out = await self._call(
+            "adataset_versions_resolve",
+            input_obj=GetDatasetVersionInput(dataset_name=dataset_name, version=version),
+        )
+        return out.resolved_dataset_version
+
 
 class DatalakeServiceDataVaultBackend(DataVaultBackend):
     """Calls a ``DatalakeService`` connection manager's sync task methods (``assets_*``, ``objects_*``, ``aliases_*``)."""
@@ -450,11 +1517,55 @@ class DatalakeServiceDataVaultBackend(DataVaultBackend):
             method = getattr(self._cm, name, None)
             if method is not None:
                 return method(input_obj)
-        raise AttributeError(f"connection_manager {type(self._cm)!r} has none of: {', '.join(method_names)}")
+        raise TypeError(
+            "This DataVault service client does not support the required ConnectionManager "
+            f"method(s): {', '.join(method_names)}"
+        )
 
     def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
         out = self._call("assets_list", input_obj=ListInput(filters=filters))
         return out.assets
+
+    def list_assets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]:
+        return self._call(
+            "assets_list_page",
+            input_obj=PageInput(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            ),
+        )
+
+    def iter_assets(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Asset]:
+        cursor: str | None = None
+        page_limit = batch_size
+        while True:
+            page = self.list_assets_page(
+                filters=filters,
+                sort=sort,
+                limit=page_limit,
+                cursor=cursor,
+            )
+            yield from page.items
+            if not page.page.has_more or page.page.next_cursor is None:
+                break
+            cursor = page.page.next_cursor
 
     def get_asset(self, asset_id: str) -> Asset:
         out = self._call("assets_get", input_obj=GetByIdInput(id=asset_id))
@@ -538,3 +1649,246 @@ class DatalakeServiceDataVaultBackend(DataVaultBackend):
             input_obj=ListAnnotationRecordsForAssetInput(asset_id=asset_id),
         )
         return out.annotation_records
+
+    def list_collections(self, filters: dict[str, Any] | None = None) -> list[Collection]:
+        out = self._call("collections_list", input_obj=ListInput(filters=filters))
+        return out.collections
+
+    def list_collections_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Collection]:
+        return self._call(
+            "collections_list_page",
+            input_obj=PageInput(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            ),
+        )
+
+    def iter_collections(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> Iterator[Collection]:
+        cursor: str | None = None
+        page_limit = batch_size
+        while True:
+            page = self.list_collections_page(
+                filters=filters,
+                sort=sort,
+                limit=page_limit,
+                cursor=cursor,
+            )
+            yield from page.items
+            if not page.page.has_more or page.page.next_cursor is None:
+                break
+            cursor = page.page.next_cursor
+
+    def create_collection(
+        self,
+        *,
+        name: str,
+        description: str | None = None,
+        status: str = "active",
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> Collection:
+        out = self._call(
+            "collections_create",
+            input_obj=CreateCollectionInput(
+                name=name,
+                description=description,
+                status=status,
+                metadata=metadata,
+                created_by=created_by,
+            ),
+        )
+        return out.collection
+
+    def update_collection(self, collection_id: str, **changes: Any) -> Collection:
+        out = self._call(
+            "collections_update",
+            input_obj=UpdateCollectionInput(collection_id=collection_id, changes=changes),
+        )
+        return out.collection
+
+    def list_collection_items(self, filters: dict[str, Any] | None = None) -> list[CollectionItem]:
+        out = self._call("collection_items_list", input_obj=ListInput(filters=filters))
+        return out.collection_items
+
+    def list_collection_items_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[CollectionItem]:
+        return self._call(
+            "collection_items_list_page",
+            input_obj=PageInput(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            ),
+        )
+
+    def create_collection_item(
+        self,
+        *,
+        collection_id: str,
+        asset_id: str,
+        split: str | None = None,
+        status: str = "active",
+        metadata: dict[str, Any] | None = None,
+        added_by: str | None = None,
+    ) -> CollectionItem:
+        out = self._call(
+            "collection_items_create",
+            input_obj=CreateCollectionItemInput(
+                collection_id=collection_id,
+                asset_id=asset_id,
+                split=split,
+                status=status,
+                metadata=metadata,
+                added_by=added_by,
+            ),
+        )
+        return out.collection_item
+
+    def update_collection_item(self, collection_item_id: str, **changes: Any) -> CollectionItem:
+        out = self._call(
+            "collection_items_update",
+            input_obj=UpdateCollectionItemInput(collection_item_id=collection_item_id, changes=changes),
+        )
+        return out.collection_item
+
+    def delete_collection_item(self, collection_item_id: str) -> None:
+        self._call("collection_items_delete", input_obj=DeleteByIdInput(id=collection_item_id))
+
+    def list_annotation_sets(self, filters: dict[str, Any] | None = None) -> list[AnnotationSet]:
+        out = self._call("annotation_sets_list", input_obj=ListInput(filters=filters))
+        return out.annotation_sets
+
+    def list_annotation_sets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationSet]:
+        return self._call(
+            "annotation_sets_list_page",
+            input_obj=PageInput(
+                filters=filters,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+                include_total=include_total,
+            ),
+        )
+
+    def create_annotation_set(
+        self,
+        *,
+        name: str,
+        purpose: str,
+        source_type: str,
+        status: str = "draft",
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+        datum_id: str | None = None,
+        annotation_schema_id: str | None = None,
+    ) -> AnnotationSet:
+        out = self._call(
+            "annotation_sets_create",
+            input_obj=CreateAnnotationSetInput(
+                name=name,
+                purpose=purpose,
+                source_type=source_type,
+                status=status,
+                metadata=metadata,
+                created_by=created_by,
+                datum_id=datum_id,
+                annotation_schema_id=annotation_schema_id,
+            ),
+        )
+        return out.annotation_set
+
+    def get_annotation_record(self, annotation_id: str) -> AnnotationRecord:
+        out = self._call("annotation_records_get", input_obj=GetByIdInput(id=annotation_id))
+        return out.annotation_record
+
+    def list_annotation_records(self, filters: dict[str, Any] | None = None) -> list[AnnotationRecord]:
+        out = self._call("annotation_records_list", input_obj=ListInput(filters=filters))
+        return out.annotation_records
+
+    def delete_annotation_record(self, annotation_id: str) -> None:
+        self._call("annotation_records_delete", input_obj=DeleteByIdInput(id=annotation_id))
+
+    def create_datum(
+        self,
+        *,
+        asset_refs: dict[str, str],
+        split: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        annotation_set_ids: list[str] | None = None,
+    ) -> Datum:
+        out = self._call(
+            "datums_create",
+            input_obj=CreateDatumInput(
+                asset_refs=asset_refs,
+                split=split,
+                metadata=metadata,
+                annotation_set_ids=annotation_set_ids,
+            ),
+        )
+        return out.datum
+
+    def create_dataset_version(
+        self,
+        *,
+        dataset_name: str,
+        version: str,
+        manifest: list[str],
+        description: str | None = None,
+        source_dataset_version_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> DatasetVersion:
+        out = self._call(
+            "dataset_versions_create",
+            input_obj=CreateDatasetVersionInput(
+                dataset_name=dataset_name,
+                version=version,
+                manifest=manifest,
+                description=description,
+                source_dataset_version_id=source_dataset_version_id,
+                metadata=metadata,
+                created_by=created_by,
+            ),
+        )
+        return out.dataset_version
+
+    def resolve_dataset_version(self, dataset_name: str, version: str) -> ResolvedDatasetVersion:
+        out = self._call(
+            "dataset_versions_resolve",
+            input_obj=GetDatasetVersionInput(dataset_name=dataset_name, version=version),
+        )
+        return out.resolved_dataset_version

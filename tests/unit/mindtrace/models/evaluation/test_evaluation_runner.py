@@ -31,6 +31,11 @@ class _TensorDetectionModel(nn.Module):
 
 
 class TestEvaluationRunnerMirrored:
+    def test_init_requires_torch_when_not_available(self, monkeypatch):
+        monkeypatch.setattr("mindtrace.models.evaluation.runner._TORCH_AVAILABLE", False)
+        with pytest.raises(ImportError, match="PyTorch is required"):
+            EvaluationRunner(object(), task="classification", num_classes=2, device="cpu")
+
     def test_to_numpy_falls_back_for_non_torch_inputs(self):
         runner = EvaluationRunner(nn.Linear(4, 3), task="classification", num_classes=3, device="cpu")
 

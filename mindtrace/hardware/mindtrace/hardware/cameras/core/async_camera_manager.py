@@ -1013,6 +1013,26 @@ class AsyncCameraManager(Mindtrace):
                 self.logger.debug(
                     f"Creating mock camera instance for {backend}:{device_name} with timeout={kwargs['timeout_ms']}ms, retry={kwargs['retrieve_retry_count']}"
                 )
+                if backend_name == "basler":
+                    cam_cfg = self._hardware_config.cameras
+                    if "mock_image_paths" not in kwargs:
+                        fixture_paths: list[str] = []
+                        mapped = cam_cfg.mock_basler_image_map.get(device_name)
+                        if mapped:
+                            fixture_paths = [mapped]
+                        elif cam_cfg.mock_basler_image_dir:
+                            base = Path(cam_cfg.mock_basler_image_dir)
+                            for ext in (".png", ".jpg", ".jpeg"):
+                                candidate = str(base / f"{device_name}{ext}")
+                                if Path(candidate).exists():
+                                    fixture_paths = [candidate]
+                                    break
+                        if fixture_paths:
+                            kwargs["mock_image_paths"] = fixture_paths
+                    w, h = cam_cfg.mock_basler_width, cam_cfg.mock_basler_height
+                    if w > 0 and h > 0:
+                        kwargs.setdefault("synthetic_width", w)
+                        kwargs.setdefault("synthetic_height", h)
                 mock_class = self._get_mock_camera(backend_name)
                 return mock_class(device_name, **kwargs)
 

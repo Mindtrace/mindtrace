@@ -222,6 +222,54 @@ class TestReplicationManager:
         assert existing_asset.metadata["replication"]["payload_status"] == "pending"
 
     @pytest.mark.asyncio
+    async def test_upsert_metadata_batch_preserves_verified_payload_for_unchanged_asset(
+        self, source_datalake, target_datalake, replication_objects
+    ):
+        verified_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        existing_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "storage_ref": {"mount": "remote", "name": "images/cat.jpg", "version": "v1"},
+                "checksum": replication_objects.asset.checksum,
+                "size_bytes": replication_objects.asset.size_bytes,
+                "metadata": {
+                    "legacy": True,
+                    "replication": {
+                        "origin_lake_id": "source-lake",
+                        "origin_asset_id": replication_objects.asset.asset_id,
+                        "replication_mode": "metadata_first",
+                        "payload_status": "verified",
+                        "payload_available": True,
+                        "payload_verified_at": verified_at,
+                    },
+                },
+            }
+        )
+        target_datalake.get_asset = AsyncMock(return_value=existing_asset)
+        target_datalake.asset_database.find = AsyncMock(return_value=[existing_asset])
+
+        manager = ReplicationManager(source_datalake, target_datalake)
+        result = await manager.upsert_metadata_batch(
+            ReplicationBatchRequest(
+                assets=[
+                    Asset.model_validate(
+                        {
+                            **replication_objects.asset.model_dump(),
+                            "storage_ref": {"mount": "source", "name": "images/cat.jpg", "version": "v1"},
+                        }
+                    )
+                ],
+                origin_lake_id="source-lake",
+                mount_map={"source": "remote"},
+            )
+        )
+
+        assert result.updated_assets == 1
+        assert existing_asset.metadata["replication"]["payload_status"] == "verified"
+        assert existing_asset.metadata["replication"]["payload_available"] is True
+        assert existing_asset.metadata["replication"]["payload_verified_at"] == "2026-01-01T00:00:00Z"
+
+    @pytest.mark.asyncio
     async def test_status_counts_payload_states(self, source_datalake, target_datalake, replication_objects):
         pending_asset = Asset.model_validate(
             {
@@ -448,6 +496,31 @@ async def test_existence_helpers_return_false_on_document_not_found(source_datal
     assert await manager._annotation_record_exists("x") is False
     assert await manager._annotation_set_exists("x") is False
     assert await manager._datum_exists("x") is False
+
+
+@pytest.mark.asyncio
+async def test_asset_exists_returns_true_when_target_asset_is_present(
+    source_datalake, target_datalake, replication_objects
+):
+    target_datalake.get_asset = AsyncMock(return_value=replication_objects.asset)
+
+    manager = ReplicationManager(source_datalake, target_datalake)
+
+    assert await manager._asset_exists(replication_objects.asset.asset_id) is True
+
+
+def test_should_preserve_verified_payload_rejects_storage_ref_mismatch(replication_objects):
+    existing_asset = replication_objects.asset.model_copy(
+        update={
+            "metadata": {"replication": {"payload_status": "verified", "payload_available": True}},
+            "checksum": "sha256:abc",
+            "size_bytes": 12,
+        }
+    )
+    new_asset = replication_objects.asset.model_copy(update={"checksum": "sha256:abc", "size_bytes": 12})
+    mapped_storage_ref = StorageRef(mount="remote", name="different.jpg", version="v1")
+
+    assert ReplicationManager._should_preserve_verified_payload(existing_asset, new_asset, mapped_storage_ref) is False
 
 
 def test_head_object_size_bytes_parsing():

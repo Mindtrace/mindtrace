@@ -15,6 +15,9 @@ def main():
 
     args = parser.parse_args()
 
+    if not args.include_mocks and os.getenv("MINDTRACE_HW_CAMERA_MOCK_ENABLED", "").lower() == "true":
+        args.include_mocks = True
+
     # Create service with mock support if requested
     service = CameraManagerService(include_mocks=args.include_mocks)
 
