@@ -147,7 +147,8 @@ def build_exportable_dataset_from_resolved_version_sync(
             continue
         _, asset = primary_entry
         payload_loader = getattr(object_loader, "get_asset_payload", None)
-        payload_bytes = payload_loader(asset.asset_id) if callable(payload_loader) else object_loader.get_object(asset.storage_ref)
+        payload_ref = asset.payload_storage_ref or asset.storage_ref
+        payload_bytes = payload_loader(asset.asset_id) if callable(payload_loader) else object_loader.get_object(payload_ref)
         export_item, item_warnings = _build_exportable_item(
             resolved_datum,
             payload_bytes=payload_bytes,
@@ -182,7 +183,8 @@ async def build_exportable_dataset_from_resolved_version_async(
             continue
         _, asset = primary_entry
         payload_loader = getattr(object_loader, "get_asset_payload", None)
-        payload_bytes = await payload_loader(asset.asset_id) if callable(payload_loader) else await object_loader.get_object(asset.storage_ref)
+        payload_ref = asset.payload_storage_ref or asset.storage_ref
+        payload_bytes = await payload_loader(asset.asset_id) if callable(payload_loader) else await object_loader.get_object(payload_ref)
         export_item, item_warnings = _build_exportable_item(
             resolved_datum,
             payload_bytes=payload_bytes,

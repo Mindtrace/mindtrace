@@ -36,6 +36,10 @@ def _storage_refs_equivalent(a: StorageRef, b: StorageRef) -> bool:
     return a.mount == b.mount and a.name == b.name and av == bv
 
 
+def _asset_payload_storage_ref(asset: Asset) -> StorageRef:
+    return asset.payload_storage_ref or asset.storage_ref
+
+
 def _head_object_size_bytes(meta: dict[str, Any]) -> int | None:
     for key in ("size_bytes", "size", "content_length", "ContentLength"):
         val = meta.get(key)
@@ -609,20 +613,22 @@ class ReplicationManager:
         await self.source.asset_database.update(current)
 
     async def _transfer_payload(self, source_asset: Asset, mount_map: dict[str, str]) -> StorageRef:
-        data = await self.source.get_object(source_asset.storage_ref)
-        if source_asset.size_bytes is not None and len(data) != source_asset.size_bytes:
+        payload_ref = _asset_payload_storage_ref(source_asset)
+        data = await self.source.get_object(payload_ref)
+        expected_size = source_asset.payload_size_bytes or source_asset.size_bytes
+        if expected_size is not None and len(data) != expected_size:
             raise ValueError(
                 f"Source read size mismatch for asset {source_asset.asset_id}: "
-                f"expected {source_asset.size_bytes} bytes, read {len(data)}"
+                f"expected {expected_size} bytes, read {len(data)}"
             )
-        target_write_ref = _apply_mount_map_to_storage_ref(source_asset.storage_ref, mount_map)
+        target_write_ref = _apply_mount_map_to_storage_ref(payload_ref, mount_map)
         session = await self.target.create_object_upload_session(
             name=target_write_ref.name,
             mount=target_write_ref.mount,
             version=target_write_ref.version,
             metadata=source_asset.metadata,
             on_conflict="skip",
-            content_type=source_asset.media_type or self._guess_content_type(source_asset.storage_ref.name),
+            content_type=source_asset.media_type or self._guess_content_type(payload_ref.name),
         )
         if session.upload_method == "local_path":
             if not session.upload_path:
@@ -650,7 +656,7 @@ class ReplicationManager:
         return completed.storage_ref
 
     async def _verify_transferred_payload(self, source_asset: Asset, target_ref: StorageRef) -> None:
-        source_bytes = await self.source.get_object(source_asset.storage_ref)
+        source_bytes = await self.source.get_object(_asset_payload_storage_ref(source_asset))
         head = await self.target.head_object(target_ref)
         remote_size = _head_object_size_bytes(head)
         if remote_size is not None and remote_size != len(source_bytes):
