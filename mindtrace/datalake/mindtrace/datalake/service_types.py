@@ -27,6 +27,7 @@ from mindtrace.datalake.sync_types import (
     DatasetSyncImportPlan,
     DatasetSyncImportRequest,
     DatasetSyncProgress,
+    ObjectPayloadDescriptor,
 )
 from mindtrace.datalake.types import (
     AnnotationRecord,
@@ -743,6 +744,14 @@ class DatasetSyncBundleOutput(BaseModel):
     bundle: DatasetSyncBundle
 
 
+class DatasetSyncGraphExportOutput(BaseModel):
+    bundle: DatasetSyncBundle
+
+
+class DatasetSyncPayloadManifestOutput(BaseModel):
+    payloads: list[ObjectPayloadDescriptor] = Field(default_factory=list)
+
+
 class DatasetSyncImportPlanOutput(BaseModel):
     plan: DatasetSyncImportPlan
 
@@ -801,7 +810,7 @@ class DatasetImportSessionStatusOutput(BaseModel):
     metadata_commit_cursor_total_items: int | None = None
 
 
-DatasetSyncJobMode = Literal["prepare", "import"]
+DatasetSyncJobMode = Literal["prepare", "import", "fast_sync"]
 DatasetSyncJobStatus = Literal["queued", "running", "completed", "failed"]
 
 
@@ -877,6 +886,16 @@ ExportDatasetVersionSchema = TaskSchema(
     name="dataset_versions.export",
     input_schema=ExportDatasetVersionInput,
     output_schema=DatasetSyncBundleOutput,
+)
+DatasetSyncGraphExportSchema = TaskSchema(
+    name="dataset_versions.export_sync_graph",
+    input_schema=ExportDatasetVersionInput,
+    output_schema=DatasetSyncGraphExportOutput,
+)
+DatasetSyncPayloadManifestSchema = TaskSchema(
+    name="dataset_versions.export_sync_payload_manifest",
+    input_schema=ExportDatasetVersionInput,
+    output_schema=DatasetSyncPayloadManifestOutput,
 )
 DatasetSyncImportPrepareSchema = TaskSchema(
     name="dataset_versions.import_prepare",
