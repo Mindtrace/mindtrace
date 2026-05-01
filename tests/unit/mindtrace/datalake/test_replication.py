@@ -622,6 +622,41 @@ class TestReplicationTransferAndVerify:
         )
 
     @pytest.mark.asyncio
+    async def test_hydrate_asset_payload_uses_payload_storage_ref_when_present(
+        self, source_datalake, target_datalake, replication_objects
+    ):
+        payload_ref = StorageRef(mount="source-payloads", name="payloads/cat.jpg", version="v9")
+        source_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "payload_storage_ref": payload_ref.model_dump(),
+                "payload_size_bytes": len(b"payload-bytes"),
+            }
+        )
+        target_asset = Asset.model_validate(
+            {
+                **replication_objects.asset.model_dump(),
+                "metadata": {
+                    "origin": {"lake_id": "source-lake", "asset_id": source_asset.asset_id},
+                    "replication": {"payload_status": "pending", "payload_available": False},
+                },
+            }
+        )
+        source_datalake.get_asset = AsyncMock(return_value=source_asset)
+        source_datalake.get_object = AsyncMock(return_value=b"payload-bytes")
+        target_datalake.get_asset = AsyncMock(side_effect=[target_asset, target_asset, target_asset])
+        target_datalake.asset_database.find = AsyncMock(return_value=[target_asset])
+
+        manager = ReplicationManager(source_datalake, target_datalake)
+        await manager.hydrate_asset_payload(source_asset.asset_id, mount_map={"source-payloads": "remote"})
+
+        read_ref = source_datalake.get_object.await_args_list[0].args[0]
+        assert read_ref == payload_ref
+        target_datalake.create_object_upload_session.assert_awaited_once()
+        assert target_datalake.create_object_upload_session.await_args.kwargs["mount"] == "remote"
+        assert target_datalake.create_object_upload_session.await_args.kwargs["name"] == payload_ref.name
+
+    @pytest.mark.asyncio
     async def test_hydrate_asset_payload_marks_failed_on_transfer_error(
         self, source_datalake, target_datalake, replication_objects
     ):

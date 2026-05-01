@@ -217,6 +217,31 @@ def test_export_snapshot_helper_handles_non_asset_subjects_and_fallback_roles():
     assert warnings == []
 
 
+def test_build_exportable_dataset_sync_fallback_reads_payload_storage_ref():
+    asset = _asset()
+    asset.payload_storage_ref = StorageRef(mount="payloads", name="asset_img_payload", version="7")
+    resolved_dataset_version = _resolved_dataset_version(asset=asset)
+    datalake = Mock()
+    datalake.get_object.return_value = _png_bytes()
+
+    build_exportable_dataset_from_resolved_version_sync(datalake, resolved_dataset_version)
+
+    datalake.get_object.assert_called_once_with(asset.payload_storage_ref)
+
+
+@pytest.mark.asyncio
+async def test_build_exportable_dataset_async_fallback_reads_payload_storage_ref():
+    asset = _asset()
+    asset.payload_storage_ref = StorageRef(mount="payloads", name="asset_img_payload", version="7")
+    resolved_dataset_version = _resolved_dataset_version(asset=asset)
+    datalake = AsyncMock()
+    datalake.get_object = AsyncMock(return_value=_png_bytes())
+
+    await build_exportable_dataset_from_resolved_version_async(datalake, resolved_dataset_version)
+
+    datalake.get_object.assert_awaited_once_with(asset.payload_storage_ref)
+
+
 def test_export_snapshot_helper_rejects_datums_without_assets():
     export_item, warnings = _build_exportable_item(
         ResolvedDatum(
