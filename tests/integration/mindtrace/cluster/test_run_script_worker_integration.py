@@ -119,7 +119,9 @@ def test_run_script_worker_docker_environment(cluster_cm, node):
 
     # Launch worker on the node
     worker_url = f"http://localhost:{free_port()}"
-    cluster_cm.launch_worker(node_url=str(node.url), worker_type="runscriptworker", worker_url=worker_url)
+    launch = cluster_cm.launch_worker(node_url=str(node.url), worker_type="runscriptworker", worker_url=worker_url)
+    # Ensure the worker is ready before consuming the test timeout budget.
+    wait_for_worker_launch(cluster_cm, str(node.url), launch.launch_id, timeout=60.0)
 
     # Create job with Docker environment
     job = job_from_schema(
@@ -127,21 +129,23 @@ def test_run_script_worker_docker_environment(cluster_cm, node):
         input_data={
             "environment": {
                 "docker": {
-                    "image": "ubuntu:22.04",
+                    # Use a small image to avoid flaky timeouts on first-time pulls.
+                    "image": "alpine:3.20",
                     "environment": {},
                     "volumes": {},
                     "devices": [],
                     "working_dir": "/app",
                 }
             },
-            "command": "echo 'Hello, World!' && echo 'Goodnight, World!'",
+            # Run via shell so `&&` is interpreted reliably.
+            "command": "sh -lc \"echo 'Hello, World!' && echo 'Goodnight, World!'\"",
         },
     )
 
     # Submit job and wait for completion
     cluster_cm.submit_job(job)
 
-    status = wait_for_job_status(cluster_cm, job.id, "completed", timeout=60)
+    status = wait_for_job_status(cluster_cm, job.id, "completed", timeout=120)
     print(f"Final job status: {status}")
 
 
@@ -166,12 +170,14 @@ def test_run_script_worker_both_environments(cluster_cm, node):
     # Launch two workers so git and docker jobs can run concurrently
     port1 = free_port()
     port2 = get_free_port(start_port=port1 + 1, end_port=8390)
-    cluster_cm.launch_worker(
+    launch1 = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="runscriptworker", worker_url=f"http://localhost:{port1}"
     )
-    cluster_cm.launch_worker(
+    launch2 = cluster_cm.launch_worker(
         node_url=str(node.url), worker_type="runscriptworker", worker_url=f"http://localhost:{port2}"
     )
+    wait_for_worker_launch(cluster_cm, str(node.url), launch1.launch_id, timeout=60.0)
+    wait_for_worker_launch(cluster_cm, str(node.url), launch2.launch_id, timeout=60.0)
 
     # Git environment job
     git_job = job_from_schema(
@@ -195,14 +201,14 @@ def test_run_script_worker_both_environments(cluster_cm, node):
         input_data={
             "environment": {
                 "docker": {
-                    "image": "ubuntu:22.04",
+                    "image": "alpine:3.20",
                     "environment": {},
                     "volumes": {},
                     "devices": [],
                     "working_dir": "/app",
                 }
             },
-            "command": "echo 'Hello, World!' && echo 'Goodnight, World!'",
+            "command": "sh -lc \"echo 'Hello, World!' && echo 'Goodnight, World!'\"",
         },
     )
 
@@ -211,7 +217,7 @@ def test_run_script_worker_both_environments(cluster_cm, node):
     cluster_cm.submit_job(docker_job)
 
     git_status = wait_for_job_status(cluster_cm, git_job.id, "completed", timeout=60)
-    docker_status = wait_for_job_status(cluster_cm, docker_job.id, "completed", timeout=60)
+    docker_status = wait_for_job_status(cluster_cm, docker_job.id, "completed", timeout=120)
 
     print("Both jobs completed successfully:")
     print(f"Git job: {git_status}")
