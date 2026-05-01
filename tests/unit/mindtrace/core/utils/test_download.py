@@ -4,7 +4,11 @@ from unittest import mock
 
 import pytest
 
-from mindtrace.core.utils.download import download_and_extract_tarball, download_and_extract_zip
+from mindtrace.core.utils.download import (
+    download_and_extract_tarball,
+    download_and_extract_zip,
+    download_with_progress,
+)
 
 
 @pytest.fixture
@@ -16,6 +20,54 @@ def fake_zip_bytes():
         zf.writestr("test.txt", "This is a test file.")
     zip_buffer.seek(0)
     return zip_buffer
+
+
+@mock.patch("mindtrace.core.utils.download.tqdm")
+@mock.patch("mindtrace.core.utils.download.urlopen")
+def test_download_with_progress_reads_chunks(mock_urlopen, mock_tqdm, tmp_path):
+    dest = tmp_path / "blob.bin"
+    chunk = b"abcd"
+
+    class Resp:
+        headers = {"Content-Length": str(len(chunk))}
+
+        def read(self, n=-1):
+            if getattr(self, "_done", False):
+                return b""
+            self._done = True
+            return chunk
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    mock_urlopen.return_value = Resp()
+    mock_bar = mock.MagicMock()
+    mock_tqdm.return_value = mock_bar
+
+    out = download_with_progress("http://example.com/x", dest, chunk_size=2)
+    assert out == dest
+    assert dest.read_bytes() == chunk
+    mock_bar.update.assert_called()
+    mock_bar.close.assert_called()
+
+
+@mock.patch("mindtrace.core.utils.download.download_with_progress")
+@mock.patch("mindtrace.core.utils.download.tarfile.open")
+def test_download_tarball_uses_progress_when_requested(mock_tar_open, mock_dwp, tmp_path):
+    mock_dwp.side_effect = lambda url, path, **kw: Path(path).write_bytes(b"x")
+    mock_tar = mock.MagicMock()
+    mock_tar_open.return_value.__enter__.return_value = mock_tar
+
+    download_and_extract_tarball(
+        "http://example.com/x.tar.gz",
+        tmp_path,
+        filename="x.tar.gz",
+        show_progress=True,
+    )
+    mock_dwp.assert_called_once()
 
 
 @pytest.fixture

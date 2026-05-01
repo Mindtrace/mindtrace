@@ -14,8 +14,15 @@ from .annotations import (
     RotatedBboxAnnotation,
     annotation_from_record,
 )
-from .async_datalake import AnnotationSchemaInUseError, AsyncDatalake, DuplicateAnnotationSchemaError
-from .data_vault import AsyncDataVault, DataVault
+from .async_datalake import (
+    AnnotationSchemaInUseError,
+    AsyncDatalake,
+    DuplicateAnnotationSchemaError,
+    SlowOperationDisabledError,
+    SlowOperationWarning,
+    SlowOpsPolicy,
+)
+from .data_vault import AsyncDataVault, DataVault, VaultDataset
 from .data_vault_backends import (
     AsyncDataVaultBackend,
     DatalakeServiceAsyncDataVaultBackend,
@@ -25,6 +32,19 @@ from .data_vault_backends import (
     LocalDataVaultBackend,
 )
 from .datalake import Datalake
+from .exporters import ExportableDataset, ExportableItem, ExportResult, export_dataset_to_format, get_dataset_exporter
+from .pagination_types import (
+    CursorEnvelope,
+    CursorPage,
+    DatasetViewExpand,
+    DatasetViewInfo,
+    DatasetViewPage,
+    DatasetViewRequest,
+    DatasetViewRow,
+    PageInfo,
+    PageRequest,
+    StructuredFilter,
+)
 from .replication import ReplicationManager
 from .replication_types import (
     ReplicatedAssetState,
@@ -44,6 +64,7 @@ from .sync_types import (
     DatasetSyncImportPlan,
     DatasetSyncImportRequest,
     DatasetSyncPayloadPlan,
+    DatasetSyncProgress,
     ObjectPayloadDescriptor,
 )
 from .types import (
@@ -94,6 +115,15 @@ __all__ = [
     "AssetAlias",
     "AsyncDataVault",
     "AsyncDataVaultBackend",
+    "VaultDataset",
+    "ExportResult",
+    "ExportableDataset",
+    "ExportableItem",
+    "export_dataset_to_format",
+    "get_dataset_exporter",
+    "SlowOperationDisabledError",
+    "SlowOperationWarning",
+    "SlowOpsPolicy",
     "DataVault",
     "DataVaultBackend",
     "DatalakeServiceAsyncDataVaultBackend",
@@ -113,6 +143,7 @@ __all__ = [
     "DatasetSyncImportRequest",
     "DatasetSyncManager",
     "DatasetSyncPayloadPlan",
+    "DatasetSyncProgress",
     "ReplicationManager",
     "ReplicatedAssetState",
     "ReplicationBatchRequest",
@@ -128,13 +159,23 @@ __all__ = [
     "DatalakeService",
     "DirectUploadSession",
     "Datum",
+    "CursorEnvelope",
+    "CursorPage",
+    "DatasetViewExpand",
+    "DatasetViewInfo",
+    "DatasetViewPage",
+    "DatasetViewRequest",
+    "DatasetViewRow",
     "DuplicateAnnotationSchemaError",
+    "PageInfo",
+    "PageRequest",
     "ResolvedCollectionItem",
     "ResolvedDatasetVersion",
     "ResolvedDatum",
     "import_pascal_voc",
     "ObjectPayloadDescriptor",
     "StorageRef",
+    "StructuredFilter",
     "SubjectRef",
 ]
 

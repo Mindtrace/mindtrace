@@ -529,10 +529,10 @@ class OpenCVCameraBackend(CameraBackend):
         """Capture an image from the camera.
 
         Implements retry logic and proper error handling for robust image capture.
-        Converts OpenCV's default BGR format to RGB for consistency.
 
         Returns:
-            np.ndarray: Captured image as an RGB numpy array.
+            np.ndarray: Captured image as a BGR numpy array (OpenCV's native
+            channel order, matching the contract on ``CameraBackend.capture``).
 
         Raises:
             CameraConnectionError: If camera is not initialized or accessible
@@ -557,20 +557,18 @@ class OpenCVCameraBackend(CameraBackend):
                     ret, frame = await self._run_blocking(self.cap.read, timeout=read_timeout_s)
 
                 if ret and frame is not None:
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
                     if self.img_quality_enhancement:
                         try:
-                            frame_rgb = await asyncio.to_thread(self._enhance_image_quality, frame_rgb)
+                            frame = await asyncio.to_thread(self._enhance_image_quality, frame)
                         except Exception as enhance_error:
                             self.logger.warning(f"Image enhancement failed, using original image: {enhance_error}")
 
                     self.logger.debug(
                         f"Capture successful for camera '{self.camera_name}': "
-                        f"shape={frame_rgb.shape}, dtype={frame_rgb.dtype}, attempt={attempt + 1}"
+                        f"shape={frame.shape}, dtype={frame.dtype}, attempt={attempt + 1}"
                     )
 
-                    return frame_rgb
+                    return frame
                 else:
                     self.logger.warning(
                         f"Capture failed for camera '{self.camera_name}': "
@@ -605,10 +603,10 @@ class OpenCVCameraBackend(CameraBackend):
         """Apply image quality enhancement using CLAHE.
 
         Args:
-            image: Input image array (RGB format)
+            image: Input image array (BGR format)
 
         Returns:
-            Enhanced image array (RGB format)
+            Enhanced image array (BGR format)
 
         Raises:
             CameraCaptureError: If image enhancement fails
@@ -620,17 +618,17 @@ class OpenCVCameraBackend(CameraBackend):
         else:
             assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
         try:
-            # Convert RGB to LAB color space for better enhancement
-            lab = cv2.cvtColor(image, cv2.COLOR_RGB2LAB)
+            # Convert BGR to LAB color space for better enhancement
+            lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
             length, a, b = cv2.split(lab)
 
             # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to L channel
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
             cl = clahe.apply(length)
 
-            # Merge channels and convert back to RGB
+            # Merge channels and convert back to BGR
             enhanced_lab = cv2.merge((cl, a, b))
-            enhanced_img = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2RGB)
+            enhanced_img = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
 
             # Additional enhancement: gamma correction
             gamma = 1.1

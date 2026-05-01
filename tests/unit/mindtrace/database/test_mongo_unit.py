@@ -399,29 +399,29 @@ async def test_mongo_backend_insert_with_duplicate_key_error():
 
 
 @pytest.mark.asyncio
-async def test_mongo_backend_insert_with_generic_exception():
-    """Test MongoDB insert with generic Exception."""
-    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
-    from mindtrace.database.core.exceptions import DuplicateInsertError
+async def test_mongo_backend_insert_propagates_non_duplicate_exception():
+    """Non-duplicate errors from the underlying driver propagate unwrapped.
 
-    # Mock the backend with proper model class
+    Previously ``insert`` wrapped every exception as ``DuplicateInsertError``,
+    which masked connection failures, schema errors, etc. as "duplicate insert".
+    Only ``DuplicateKeyError`` should become ``DuplicateInsertError`` now.
+    """
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
     backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
     backend.model_cls = UserDoc
 
-    # Mock the initialize method to avoid actual MongoDB connections
     with patch.object(backend, "initialize"):
-        # Test insert with generic Exception
         with patch.object(UserDoc, "insert") as mock_insert:
-            mock_insert.side_effect = Exception("Generic error")
+            mock_insert.side_effect = RuntimeError("transport closed")
 
             user_data = {"name": "John", "age": 30, "email": "john@example.com"}
             user = UserCreate(**user_data)
 
-            # Mock the UserDoc constructor
             mock_doc = MagicMock()
             mock_doc.insert = mock_insert
             with patch.object(UserDoc, "__new__", return_value=mock_doc):
-                with pytest.raises(DuplicateInsertError, match="Generic error"):
+                with pytest.raises(RuntimeError, match="transport closed"):
                     await backend.insert(user)
 
 
@@ -632,6 +632,64 @@ def test_mongo_backend_sync_wrappers_from_sync_context():
             # Test initialize_sync from sync context
             backend.initialize_sync()
             mock_init.assert_called_once()
+
+
+def test_mongo_backend_find_iter_sync_streams_with_native_cursor():
+    """Test MongoDB sync iterator uses the sync cursor path without materializing a list."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    with (
+        patch("mindtrace.database.backends.mongo_odm.AsyncIOMotorClient"),
+        patch("mindtrace.database.backends.mongo_odm.MongoClient"),
+    ):
+        backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+        backend.model_cls = MotorDoc
+        backend._is_initialized = False
+
+        mock_cursor = MagicMock()
+        mock_cursor.sort.return_value = mock_cursor
+        mock_cursor.batch_size.return_value = mock_cursor
+        mock_cursor.limit.return_value = mock_cursor
+        mock_cursor.__iter__.return_value = iter(
+            [
+                {"_id": ObjectId("507f1f77bcf86cd799439011"), "name": "John", "age": 30, "email": "john@example.com"},
+                {"_id": ObjectId("507f1f77bcf86cd799439012"), "name": "Jane", "age": 31, "email": "jane@example.com"},
+            ]
+        )
+        mock_collection = MagicMock()
+        mock_collection.find.return_value = mock_cursor
+
+        with (
+            patch.object(backend, "initialize_sync") as initialize_sync,
+            patch.object(backend, "_sync_collection", return_value=mock_collection),
+        ):
+            rows = list(
+                backend.find_iter_sync(
+                    {"age": {"$gte": 30}},
+                    sort=[("age", 1)],
+                    batch_size=50,
+                    limit=10,
+                )
+            )
+
+        initialize_sync.assert_called_once_with()
+        mock_collection.find.assert_called_once_with({"age": {"$gte": 30}})
+        mock_cursor.sort.assert_called_once_with([("age", 1)])
+        mock_cursor.batch_size.assert_called_once_with(50)
+        mock_cursor.limit.assert_called_once_with(10)
+        assert [row.name for row in rows] == ["John", "Jane"]
+        assert [row.id for row in rows] == ["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012"]
+
+
+@pytest.mark.asyncio
+async def test_mongo_backend_find_iter_sync_rejects_async_context():
+    """Test MongoDB sync iterator rejects calls from an active event loop."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+
+    with pytest.raises(RuntimeError, match="find_iter_sync\\(\\) called from async context"):
+        backend.find_iter_sync({})
 
 
 # ============================================================================
@@ -1545,3 +1603,53 @@ async def test_motor_delete_success_returns_none():
 
     with patch.object(backend, "_motor_collection", return_value=mock_coll):
         assert await backend.delete("507f1f77bcf86cd799439011") is None
+
+
+def test_injected_client_is_not_owned_and_not_closed():
+    """ODMs given a ``client=`` kwarg hold a non-owning reference."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    injected = MagicMock()
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db", client=injected)
+    assert backend.client is injected
+    assert backend._owns_client is False
+
+    backend.close()
+    injected.close.assert_not_called()
+
+
+def test_owned_client_is_closed_on_close(mock_mongo_connection):
+    """Default construction creates and owns the motor client; ``close()`` releases it."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
+    assert backend._owns_client is True
+    underlying = backend.client  # the mocked AsyncIOMotorClient instance
+
+    backend.close()
+    underlying.close.assert_called_once()
+
+
+def test_close_is_idempotent(mock_mongo_connection):
+    """Calling ``close()`` twice only releases the underlying client once."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
+    underlying = backend.client
+
+    backend.close()
+    backend.close()
+    assert underlying.close.call_count == 1
+
+
+def test_close_releases_lazy_sync_client(mock_mongo_connection):
+    """If a sync ``MongoClient`` was lazily created, ``close()`` releases it too."""
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(UserDoc, "mongodb://localhost:27017", "test_db")
+    sync_stub = MagicMock()
+    backend._sync_client = sync_stub
+
+    backend.close()
+    sync_stub.close.assert_called_once()
+    assert backend._sync_client is None

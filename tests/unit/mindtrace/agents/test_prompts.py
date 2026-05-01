@@ -117,6 +117,26 @@ class TestBinaryContent:
             with pytest.raises(ImportError, match="google-cloud-storage is required"):
                 BinaryContent.from_gcs("bucket", "blob")
 
+    def test_from_gcs_creates_storage_client_when_omitted(self, monkeypatch):
+        """Covers ``storage.Client()`` when ``client`` is not passed."""
+        _install_fake_google_cloud(monkeypatch)
+        import google.cloud.storage as storage_mod
+
+        mock_client = Mock()
+        storage_mod.Client = Mock(return_value=mock_client)
+        blob = Mock(content_type="image/png")
+        blob.download_as_bytes.return_value = b"png-bytes"
+        mock_bucket = Mock()
+        mock_bucket.blob.return_value = blob
+        mock_client.bucket.return_value = mock_bucket
+
+        content = BinaryContent.from_gcs("my-bucket", "path/item.png")
+
+        storage_mod.Client.assert_called_once_with()
+        mock_client.bucket.assert_called_once_with("my-bucket")
+        assert content.data == b"png-bytes"
+        assert content.media_type == "image/png"
+
 
 class TestPromptTypes:
     def test_image_url_and_user_prompt_part_store_content(self):

@@ -24,27 +24,42 @@ services:
     image: minio/mc
     depends_on:
       - minio
-    restart: "no"
-    entrypoint: >-
-      /bin/sh -c '
-      until mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do
-        sleep 1;
-      done;
-      mc mb --ignore-existing local/"$${MINDTRACE_DATALAKE__S3_BUCKET}";
-      '
+    # One-shot jobs that exit(0) break `docker compose up --wait` (compose treats exit as failure).
+    # Run setup once, mark done, then idle so the service can become healthy and satisfy --wait.
+    restart: unless-stopped
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -euo pipefail
+        until mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do
+          sleep 1
+        done
+        mc mb --ignore-existing local/"$${MINDTRACE_DATALAKE__S3_BUCKET}"
+        touch /tmp/minio-setup-done
+        exec tail -f /dev/null
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINDTRACE_DATALAKE__S3_BUCKET: ${MINDTRACE_DATALAKE__S3_BUCKET:-datalake}
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/minio-setup-done"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
 
   datalake-service:
     build:
       context: ../..
       dockerfile: docker/datalake/Dockerfile
     depends_on:
-      - mongodb
-      - minio
-      - minio-setup
+      mongodb:
+        condition: service_started
+      minio:
+        condition: service_started
+      minio-setup:
+        condition: service_healthy
     restart: unless-stopped
     environment:
       MINDTRACE_DATALAKE__SERVICE_HOST: ${MINDTRACE_DATALAKE__SERVICE_HOST:-0.0.0.0}

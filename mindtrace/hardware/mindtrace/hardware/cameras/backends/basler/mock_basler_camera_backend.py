@@ -95,6 +95,8 @@ class MockBaslerCameraBackend(CameraBackend):
                 - synthetic_pattern: One of {"auto","gradient","checkerboard","circular","noise"}
                 - synthetic_checker_size: Checker size (int) used when pattern is checkerboard
                 - synthetic_overlay_text: If False, disables text overlays in synthetic images
+                - mock_image_paths: List of image file paths to cycle through as returned frames (optional; use a
+                  length-one list for a single fixture)
 
         Raises:
             CameraConfigurationError: If configuration is invalid
@@ -147,6 +149,14 @@ class MockBaslerCameraBackend(CameraBackend):
         self.synthetic_checker_size: int = int(backend_kwargs.get("synthetic_checker_size", 50))
         self.synthetic_overlay_text: bool = bool(backend_kwargs.get("synthetic_overlay_text", True))
 
+        # Optional file-backed fixtures for deterministic mock frames
+        raw_paths = backend_kwargs.get("mock_image_paths")
+        fixture_paths: List[str] = []
+        if isinstance(raw_paths, list):
+            fixture_paths.extend([p for p in raw_paths if isinstance(p, str) and p])
+        self._fixture_image_paths: List[str] = fixture_paths
+        self._fixture_images: Optional[List[np.ndarray]] = None
+
         # Optionally override image size via constructor
         syn_w = backend_kwargs.get("synthetic_width")
         syn_h = backend_kwargs.get("synthetic_height")
@@ -193,7 +203,16 @@ class MockBaslerCameraBackend(CameraBackend):
         Returns:
             List of mock camera names or dict with details
         """
-        mock_cameras = [f"mock_basler_{i}" for i in range(1, 6)]
+        count = 5
+        try:
+            from mindtrace.hardware.core.config import get_hardware_config
+
+            cfg = get_hardware_config().get_config()
+            count = int(getattr(cfg.cameras, "mock_camera_count", count))
+        except Exception:
+            pass
+        count = max(0, count)
+        mock_cameras = [f"mock_basler_{i}" for i in range(1, count + 1)]
 
         if include_details:
             camera_details = {}
@@ -816,6 +835,44 @@ class MockBaslerCameraBackend(CameraBackend):
         except Exception as e:
             self.logger.error(f"Failed to initialize image enhancement for mock camera '{self.camera_name}': {str(e)}")
 
+    def _get_fixture_image(self, *, width: int, height: int) -> Optional[np.ndarray]:
+        """Return a resized fixture image if configured; otherwise None."""
+        if not self._fixture_image_paths:
+            return None
+
+        if self._fixture_images is None:
+            images: List[np.ndarray] = []
+            for path in self._fixture_image_paths:
+                try:
+                    if not os.path.exists(path):
+                        self.logger.warning(
+                            f"Mock Basler fixture image not found for '{self.camera_name}': {path}. Falling back to synthetic."
+                        )
+                        continue
+                    with open(path, "rb") as f:
+                        encoded = np.frombuffer(f.read(), dtype=np.uint8)
+                    img = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
+                    if img is None or img.size == 0:
+                        self.logger.warning(
+                            f"Mock Basler fixture image unreadable for '{self.camera_name}': {path}. Falling back to synthetic."
+                        )
+                        continue
+                    images.append(img)
+                except Exception as e:
+                    self.logger.warning(
+                        f"Mock Basler fixture image failed to load for '{self.camera_name}': {path}. Error: {e}. Falling back to synthetic."
+                    )
+            self._fixture_images = images
+
+        if not self._fixture_images:
+            return None
+
+        idx = self.image_counter % len(self._fixture_images)
+        base = self._fixture_images[idx]
+        if base.shape[1] != width or base.shape[0] != height:
+            return cv2.resize(base, (width, height), interpolation=cv2.INTER_AREA)
+        return base.copy()
+
     def _generate_synthetic_image(self) -> np.ndarray:
         """Generate synthetic test image using vectorized operations for performance.
 
@@ -825,6 +882,10 @@ class MockBaslerCameraBackend(CameraBackend):
         width = self.roi["width"]
         height = self.roi["height"]
         try:
+            fixture = self._get_fixture_image(width=width, height=height)
+            if fixture is not None:
+                return fixture
+
             # Use vectorized operations for much better performance
             x_coords = np.arange(width)
             y_coords = np.arange(height)

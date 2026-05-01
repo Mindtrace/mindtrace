@@ -582,9 +582,18 @@ class _RegistryCore(Mindtrace):
         materializer = instantiate_target(materializer_class, uri=str(temp_dir), artifact_store=self._artifact_store)
 
         if isinstance(object_class, str):
-            module_name, class_name = object_class.rsplit(".", 1)
-            module = __import__(module_name, fromlist=[class_name])
-            object_class = getattr(module, class_name)
+            try:
+                module_name, class_name = object_class.rsplit(".", 1)
+                module = __import__(module_name, fromlist=[class_name])
+                object_class = getattr(module, class_name)
+            except (ImportError, AttributeError, ValueError) as exc:
+                self.logger.warning(
+                    "Failed to resolve object class '%s' for materializer '%s'; falling back to typing.Any: %s",
+                    object_class,
+                    materializer_class,
+                    exc,
+                )
+                object_class = Any
 
         return materializer.load(data_type=object_class, **init_params)
 

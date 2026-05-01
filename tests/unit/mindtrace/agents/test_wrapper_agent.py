@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
+import pytest
+
 from mindtrace.agents import MindtraceAgent
 from mindtrace.agents.core.wrapper import WrapperAgent
 
@@ -78,6 +82,29 @@ class TestWrapperAgentStream:
         result_events = [e for e in events if isinstance(e, AgentRunResultEvent)]
         assert len(result_events) == 1
         assert result_events[0].result.output == "streamed"
+
+    async def test_stream_events_raises_when_wrapped_has_no_stream_method(self):
+        inner = MagicMock(
+            spec=(
+                "name",
+                "description",
+                "deps_type",
+                "output_type",
+                "run",
+                "iter",
+                "__aenter__",
+                "__aexit__",
+            )
+        )
+        inner.name = "inner"
+        inner.description = None
+        inner.deps_type = dict
+        inner.output_type = str
+
+        wrapper = WrapperAgent(wrapped=inner)
+        with pytest.raises(NotImplementedError, match="does not implement run_stream_events"):
+            async for _ in wrapper.run_stream_events("x"):
+                pass
 
 
 class TestWrapperAgentIter:

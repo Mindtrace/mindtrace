@@ -110,25 +110,28 @@ class CaptureImageRequest(BaseModel):
 
     camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
     save_path: Optional[str] = Field(None, description="Optional path to save the captured image")
-    output_format: str = Field("pil", description="Output format for returned image ('numpy' or 'pil')")
+    output_format: str = Field(
+        "pil",
+        description="Output format: 'numpy' / 'pil' (return type) or 'jpeg' / 'jpg' / 'png' / 'tiff' / 'tif' / 'bmp' / 'webp' (wire encoding)",
+    )
     stage: Optional[str] = Field(None, description="Stage name for capture group routing")
     set_name: Optional[str] = Field(None, description="Set name for capture group routing")
 
     @field_validator("output_format")
     @classmethod
     def validate_output_format(cls, v: str) -> str:
-        """Validate output format is supported."""
+        """Normalize and validate the requested output format.
+
+        ``numpy`` / ``pil`` describe the in-memory return type; the file-format
+        names (``jpeg``, ``png``, ``tiff``, ``bmp``, ``webp``, ``jpg``, ``tif``)
+        select the wire encoding used when the response carries inline bytes.
+        """
         v_lower = v.lower()
-        # Accept common image formats and map them to appropriate return type
-        if v_lower in ("numpy", "pil"):
+        if v_lower in ("numpy", "pil", "jpg", "jpeg", "png", "tiff", "tif", "bmp", "webp"):
             return v_lower
-        elif v_lower in ("jpg", "jpeg", "png", "tiff", "tif", "bmp", "webp"):
-            # File formats map to numpy for simplicity
-            return "numpy"
-        else:
-            raise ValueError(
-                f"Unsupported output_format: '{v}'. Supported formats: 'numpy', 'pil', 'jpeg', 'jpg', 'png', 'tiff', 'bmp', 'webp'"
-            )
+        raise ValueError(
+            f"Unsupported output_format: '{v}'. Supported: numpy, pil, jpeg, jpg, png, tiff, tif, bmp, webp"
+        )
 
 
 class CaptureBatchRequest(BaseModel):
@@ -138,25 +141,22 @@ class CaptureBatchRequest(BaseModel):
     save_path_pattern: Optional[str] = Field(
         None, description="Optional path pattern for saving images. Use {camera} placeholder for camera name"
     )
-    output_format: str = Field("pil", description="Output format for returned images ('numpy' or 'pil')")
+    output_format: str = Field(
+        "pil",
+        description="Output format: 'numpy' / 'pil' (return type) or 'jpeg' / 'jpg' / 'png' / 'tiff' / 'tif' / 'bmp' / 'webp' (wire encoding)",
+    )
     stage: Optional[str] = Field(None, description="Stage name for capture group routing")
     set_name: Optional[str] = Field(None, description="Set name for capture group routing")
 
     @field_validator("output_format")
     @classmethod
     def validate_output_format(cls, v: str) -> str:
-        """Validate output format is supported."""
         v_lower = v.lower()
-        # Accept common image formats and map them to appropriate return type
-        if v_lower in ("numpy", "pil"):
+        if v_lower in ("numpy", "pil", "jpg", "jpeg", "png", "tiff", "tif", "bmp", "webp"):
             return v_lower
-        elif v_lower in ("jpg", "jpeg", "png", "tiff", "tif", "bmp", "webp"):
-            # File formats map to numpy for simplicity
-            return "numpy"
-        else:
-            raise ValueError(
-                f"Unsupported output_format: '{v}'. Supported formats: 'numpy', 'pil', 'jpeg', 'jpg', 'png', 'tiff', 'bmp', 'webp'"
-            )
+        raise ValueError(
+            f"Unsupported output_format: '{v}'. Supported: numpy, pil, jpeg, jpg, png, tiff, tif, bmp, webp"
+        )
 
 
 class CaptureHDRRequest(BaseModel):
@@ -514,6 +514,43 @@ class HomographyMeasureDistanceRequest(BaseModel):
     target_unit: Optional[str] = Field(
         None, description="Target unit for distance ('mm', 'cm', 'm', 'in', 'ft'). Uses calibration unit if None."
     )
+
+
+# Focus / Liquid Lens Operations
+class OpticalPowerRequest(BaseModel):
+    """Request model for setting optical power."""
+
+    camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
+    diopters: float = Field(..., description="Optical power in diopters")
+
+
+class TriggerAutofocusRequest(BaseModel):
+    """Request model for triggering one-shot autofocus."""
+
+    camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
+    accuracy: str = Field("Normal", description="Autofocus accuracy: 'Fast', 'Normal', or 'Accurate'")
+
+    @field_validator("accuracy")
+    @classmethod
+    def validate_accuracy(cls, v: str) -> str:
+        if v not in ("Fast", "Normal", "Accurate"):
+            raise ValueError(f"accuracy must be 'Fast', 'Normal', or 'Accurate', got '{v}'")
+        return v
+
+
+class FocusConfigRequest(BaseModel):
+    """Request model for setting focus configuration."""
+
+    camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
+    accuracy: Optional[str] = Field(None, description="Focus accuracy: Fast, Normal, Accurate")
+    stepper: Optional[float] = Field(None, ge=0.01, le=0.4, description="Autofocus step size")
+    stepper_lower_limit: Optional[float] = Field(None, description="Lower diopter limit for AF search")
+    stepper_upper_limit: Optional[float] = Field(None, description="Upper diopter limit for AF search")
+    roi_size: Optional[str] = Field(None, description="Focus ROI size: Size128, Size64, Size32")
+    focus_source: Optional[str] = Field(None, description="AF source: Auto, SourceL, SourceM, SourceS")
+    edge_detection: Optional[bool] = Field(None, description="Enable edge detection focusing")
+    roi_offset_x: Optional[int] = Field(None, description="Focus ROI X offset")
+    roi_offset_y: Optional[int] = Field(None, description="Focus ROI Y offset")
 
 
 class HomographyCalibrateMultiViewRequest(BaseModel):

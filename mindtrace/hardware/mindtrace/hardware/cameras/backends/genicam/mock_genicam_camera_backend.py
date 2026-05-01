@@ -365,7 +365,13 @@ class MockGenICamCameraBackend(CameraBackend):
         self.logger.debug(f"Mock camera trigger mode set to '{triggermode}'")
 
     async def capture(self) -> np.ndarray:
-        """Capture a simulated image from the mock camera."""
+        """Capture a simulated image from the mock camera.
+
+        Returns:
+            np.ndarray: BGR uint8 image array, matching the
+            ``CameraBackend.capture`` contract that all backends in this
+            repo follow.
+        """
         if not self.initialized:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
 

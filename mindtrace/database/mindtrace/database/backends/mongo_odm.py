@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import AsyncIterator, Iterator
 from typing import Any, Dict, List, Optional, Type, TypeVar
 
 from beanie import Document, PydanticObjectId, init_beanie
@@ -7,6 +8,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
+from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
@@ -96,6 +98,8 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         allow_index_dropping: bool = False,
         auto_init: bool = False,
         init_mode: InitMode | None = None,
+        *,
+        client: AsyncIOMotorClient | None = None,
     ):
         """
         Initialize the MongoDB ODM backend.
@@ -136,7 +140,15 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         if not db_uri or not db_name:
             raise ValueError("db_uri and db_name are required")
 
-        self.client = AsyncIOMotorClient(db_uri)
+        self.db_uri = db_uri
+        if client is not None:
+            self.client = client
+            self._owns_client = False
+        else:
+            self.client = AsyncIOMotorClient(db_uri)
+            self._owns_client = True
+        self._sync_client: MongoClient | None = None
+        self._closed = False
         self.db_name = db_name
         self._motor_routing = False
         self._allow_index_dropping = allow_index_dropping
@@ -162,9 +174,8 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                     allow_index_dropping=allow_index_dropping,
                     auto_init=False,  # We'll initialize all together
                     init_mode=init_mode,
+                    client=self.client,
                 )
-                # Share the same client instance
-                odm.client = self.client
                 # Store parent reference for initialization delegation
                 odm._parent_odm = self
                 self._model_odms[name] = odm
@@ -209,6 +220,11 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
 
     def _motor_collection(self):
         return self.client[self.db_name][self._collection_name()]
+
+    def _sync_collection(self):
+        if self._sync_client is None:
+            self._sync_client = MongoClient(self.db_uri)
+        return self._sync_client[self.db_name][self._collection_name()]
 
     def _mongo_doc_to_model(self, doc: dict | None) -> T | None:
         if doc is None:
@@ -313,6 +329,31 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             self._allow_index_dropping = allow_index_dropping
         await self._do_initialize()
 
+    def close(self) -> None:
+        """Release resources held by this ODM.
+
+        Closes the lazily-created synchronous client if present, and closes
+        the owning motor client if this ODM created it. ODMs constructed with
+        an injected ``client=`` hold a non-owning reference and do not close
+        it on shutdown — responsibility stays with whoever created the client.
+
+        Idempotent: safe to call multiple times.
+        """
+        if self._closed:
+            return
+        if self._sync_client is not None:
+            try:
+                self._sync_client.close()
+            except Exception:
+                pass
+            self._sync_client = None
+        if self._owns_client and self.client is not None:
+            try:
+                self.client.close()
+            except Exception:
+                pass
+        self._closed = True
+
     def __getattr__(self, name: str):
         """Support attribute-based access to model-specific ODMs in multi-model mode.
 
@@ -416,8 +457,6 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             return await doc.insert()
         except DuplicateKeyError as e:
             raise DuplicateInsertError(f"Duplicate key error: {str(e)}")
-        except Exception as e:
-            raise DuplicateInsertError(str(e))
 
     async def get(self, id: str | PydanticObjectId, fetch_links: bool = False) -> T:
         """
@@ -673,6 +712,122 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         # In Beanie, fetch_links is passed as a parameter to find(), not called as a method
         query = self.model_cls.find(*args, fetch_links=fetch_links, **kwargs_without_fetch_links)
         return await query.to_list()
+
+    async def find_iter(
+        self,
+        query: dict[str, Any] | None = None,
+        *,
+        sort: list[tuple[str, int]] | None = None,
+        batch_size: int | None = None,
+        limit: int | None = None,
+    ) -> AsyncIterator[T]:
+        """
+        Lazily iterate over matching documents using a Mongo cursor.
+
+        This is intended for large scans where materializing the full result set
+        would be wasteful.
+        """
+        if self._models is not None:
+            raise ValueError("Cannot use find_iter() in multi-model mode. Use db.model_name.find_iter() instead.")
+
+        if not self._is_initialized:
+            await self.initialize()
+
+        cursor = self._motor_collection().find(query or {})
+        if sort:
+            cursor = cursor.sort(sort)
+        if batch_size is not None:
+            cursor = cursor.batch_size(batch_size)
+        if limit is not None:
+            cursor = cursor.limit(limit)
+
+        try:
+            async for raw in cursor:
+                model = self._mongo_doc_to_model(raw)
+                if model is not None:
+                    yield model
+        finally:
+            await cursor.close()
+
+    async def find_window(
+        self,
+        query: dict[str, Any] | None = None,
+        *,
+        sort: list[tuple[str, int]] | None = None,
+        limit: int | None = None,
+    ) -> List[T]:
+        """
+        Return a bounded, sorted window of matching documents.
+
+        This is useful for page-oriented callers that need ``limit + 1`` rows to
+        determine whether another page exists without loading the full collection.
+        """
+        if self._models is not None:
+            raise ValueError("Cannot use find_window() in multi-model mode. Use db.model_name.find_window() instead.")
+
+        if not self._is_initialized:
+            await self.initialize()
+
+        cursor = self._motor_collection().find(query or {})
+        if sort:
+            cursor = cursor.sort(sort)
+        raw = await cursor.to_list(length=limit)
+        return [m for m in (self._mongo_doc_to_model(d) for d in raw) if m is not None]
+
+    def find_iter_sync(
+        self,
+        query: dict[str, Any] | None = None,
+        *,
+        sort: list[tuple[str, int]] | None = None,
+        batch_size: int | None = None,
+        limit: int | None = None,
+    ) -> Iterator[T]:
+        """Lazily iterate over matching documents using a synchronous Mongo cursor."""
+        if self._models is not None:
+            raise ValueError(
+                "Cannot use find_iter_sync() in multi-model mode. Use db.model_name.find_iter_sync() instead."
+            )
+
+        try:
+            asyncio.get_running_loop()
+            raise RuntimeError("find_iter_sync() called from async context. Use async for item in find_iter() instead.")
+        except RuntimeError as exc:
+            if "no running event loop" not in str(exc).lower():
+                raise
+
+        if not self._is_initialized:
+            self.initialize_sync()
+
+        cursor = self._sync_collection().find(query or {})
+        if sort:
+            cursor = cursor.sort(sort)
+        if batch_size is not None:
+            cursor = cursor.batch_size(batch_size)
+        if limit is not None:
+            cursor = cursor.limit(limit)
+
+        def _generator() -> Iterator[T]:
+            try:
+                for raw in cursor:
+                    model = self._mongo_doc_to_model(raw)
+                    if model is not None:
+                        yield model
+            finally:
+                cursor.close()
+
+        return _generator()
+
+    async def count_documents(self, query: dict[str, Any] | None = None) -> int:
+        """Return the number of documents matching ``query`` without loading them."""
+        if self._models is not None:
+            raise ValueError(
+                "Cannot use count_documents() in multi-model mode. Use db.model_name.count_documents() instead."
+            )
+
+        if not self._is_initialized:
+            await self.initialize()
+
+        return await self._motor_collection().count_documents(query or {})
 
     async def aggregate(self, pipeline: list) -> List[T]:
         """

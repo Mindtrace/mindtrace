@@ -185,6 +185,26 @@ async def test_dataset_sync_local_to_minio_plan_uses_mapped_target_ref(
 
 
 @pytest.mark.asyncio
+async def test_cross_lake_plan_import_rejects_bundle_when_resolved_mount_missing_on_target_without_map(
+    async_datalake: AsyncDatalake, async_datalake_minio: AsyncDatalake
+):
+    dataset_name = f"sync-mount-validate-{uuid4().hex[:10]}"
+    version = "1.0.0"
+    await _seed_minimal_image_dataset(async_datalake, dataset_name=dataset_name, version=version)
+    manager = DatasetSyncManager(async_datalake, async_datalake_minio)
+    bundle = await manager.export_dataset_version(dataset_name, version)
+
+    with pytest.raises(ValueError, match="After applying mount_map"):
+        await manager.plan_import(
+            DatasetSyncImportRequest(
+                bundle=bundle,
+                transfer_policy="copy_if_missing",
+                mount_map={},
+            )
+        )
+
+
+@pytest.mark.asyncio
 async def test_dataset_sync_copy_if_missing_second_run_skips_transfer(
     async_datalake: AsyncDatalake,
     async_datalake_secondary: AsyncDatalake,
@@ -633,7 +653,7 @@ async def test_complete_object_upload_session_is_idempotent(async_datalake: Asyn
 
 @pytest.mark.asyncio
 async def test_datalake_service_upload_reconciler_starts_and_stops(async_datalake: AsyncDatalake):
-    """Exercise ``_startup_initialize`` / ``_shutdown_cleanup`` and the upload reconciler loop."""
+    """Exercise ``_startup_initialize`` / ``shutdown_cleanup`` and the upload reconciler loop."""
     service = DatalakeService(
         mongo_db_uri=MONGO_URL,
         mongo_db_name=async_datalake.mongo_db_name,
@@ -646,4 +666,4 @@ async def test_datalake_service_upload_reconciler_starts_and_stops(async_datalak
     try:
         await asyncio.sleep(0.12)
     finally:
-        await service._shutdown_cleanup()
+        await service.shutdown_cleanup()

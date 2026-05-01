@@ -1,14 +1,30 @@
 from __future__ import annotations
 
+import base64
 import hashlib
-from collections.abc import Iterable
+import json
+import warnings
+from collections.abc import AsyncIterator, Iterable
 from datetime import datetime, timedelta, timezone
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, TypeVar
+
+from motor.motor_asyncio import AsyncIOMotorClient
 
 from mindtrace.core import Mindtrace
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
+from mindtrace.datalake.pagination_types import (
+    CursorEnvelope,
+    CursorPage,
+    DatasetViewExpand,
+    DatasetViewInfo,
+    DatasetViewPage,
+    DatasetViewRow,
+    PageInfo,
+    StructuredFilter,
+)
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -48,6 +64,22 @@ class AnnotationSchemaInUseError(ValueError):
     """Raised when attempting to delete an annotation schema still referenced by a set."""
 
 
+class SlowOpsPolicy(StrEnum):
+    """How eager collection-list operations should behave."""
+
+    ALLOW = "allow"
+    WARN = "warn"
+    FORBID = "forbid"
+
+
+class SlowOperationWarning(UserWarning):
+    """Raised when callers use an eager collection operation that may not scale."""
+
+
+class SlowOperationDisabledError(RuntimeError):
+    """Raised when eager collection operations are disabled by policy."""
+
+
 def _default_datalake_store_path(mongo_db_uri: str, mongo_db_name: str) -> Path:
     digest = hashlib.sha1(f"{mongo_db_uri}|{mongo_db_name}".encode()).hexdigest()[:12]
     return Path("~/.cache/mindtrace/temp").expanduser() / f"datalake-{digest}"
@@ -73,10 +105,12 @@ class AsyncDatalake(Mindtrace):
         store: Store | None = None,
         mounts: list[Mount] | None = None,
         default_mount: str | None = None,
+        slow_ops_policy: SlowOpsPolicy = SlowOpsPolicy.WARN,
     ) -> None:
         super().__init__()
         self.mongo_db_uri = mongo_db_uri
         self.mongo_db_name = mongo_db_name
+        self.slow_ops_policy = SlowOpsPolicy(slow_ops_policy)
 
         if store is not None and mounts is not None:
             raise ValueError("Provide either store or mounts, not both")
@@ -101,49 +135,66 @@ class AsyncDatalake(Mindtrace):
                 default_mount=effective_default_mount,
             )
 
-        self.asset_database = MongoMindtraceODM(model_cls=Asset, db_name=mongo_db_name, db_uri=mongo_db_uri)
-        self.collection_database = MongoMindtraceODM(model_cls=Collection, db_name=mongo_db_name, db_uri=mongo_db_uri)
-        self.collection_item_database = MongoMindtraceODM(
-            model_cls=CollectionItem,
-            db_name=mongo_db_name,
-            db_uri=mongo_db_uri,
-        )
-        self.asset_retention_database = MongoMindtraceODM(
-            model_cls=AssetRetention,
-            db_name=mongo_db_name,
-            db_uri=mongo_db_uri,
-        )
-        self.annotation_record_database = MongoMindtraceODM(
-            model_cls=AnnotationRecord,
-            db_name=mongo_db_name,
-            db_uri=mongo_db_uri,
-        )
-        self.annotation_schema_database = MongoMindtraceODM(
-            model_cls=AnnotationSchema,
-            db_name=mongo_db_name,
-            db_uri=mongo_db_uri,
-        )
-        self.annotation_set_database = MongoMindtraceODM(
-            model_cls=AnnotationSet,
-            db_name=mongo_db_name,
-            db_uri=mongo_db_uri,
-        )
-        self.datum_database = MongoMindtraceODM(model_cls=Datum, db_name=mongo_db_name, db_uri=mongo_db_uri)
-        self.dataset_version_database = MongoMindtraceODM(
-            model_cls=DatasetVersion,
-            db_name=mongo_db_name,
-            db_uri=mongo_db_uri,
-        )
-        self.direct_upload_session_database = MongoMindtraceODM(
-            model_cls=DirectUploadSession,
-            db_name=mongo_db_name,
-            db_uri=mongo_db_uri,
-        )
-        self.asset_alias_database = MongoMindtraceODM(
-            model_cls=AssetAlias,
-            db_name=mongo_db_name,
-            db_uri=mongo_db_uri,
-        )
+        # One shared motor client for every ODM owned by this AsyncDatalake.
+        # Motor binds to the event loop that first awaits on it; the sync
+        # Datalake wrapper always dispatches through a single dedicated loop,
+        # so this is loop-safe.
+        self._mongo_client = AsyncIOMotorClient(mongo_db_uri)
+        self._closed = False
+        odm_kwargs = {"db_name": mongo_db_name, "db_uri": mongo_db_uri, "client": self._mongo_client}
+        self.asset_database = MongoMindtraceODM(model_cls=Asset, **odm_kwargs)
+        self.collection_database = MongoMindtraceODM(model_cls=Collection, **odm_kwargs)
+        self.collection_item_database = MongoMindtraceODM(model_cls=CollectionItem, **odm_kwargs)
+        self.asset_retention_database = MongoMindtraceODM(model_cls=AssetRetention, **odm_kwargs)
+        self.annotation_record_database = MongoMindtraceODM(model_cls=AnnotationRecord, **odm_kwargs)
+        self.annotation_schema_database = MongoMindtraceODM(model_cls=AnnotationSchema, **odm_kwargs)
+        self.annotation_set_database = MongoMindtraceODM(model_cls=AnnotationSet, **odm_kwargs)
+        self.datum_database = MongoMindtraceODM(model_cls=Datum, **odm_kwargs)
+        self.dataset_version_database = MongoMindtraceODM(model_cls=DatasetVersion, **odm_kwargs)
+        self.direct_upload_session_database = MongoMindtraceODM(model_cls=DirectUploadSession, **odm_kwargs)
+        self.asset_alias_database = MongoMindtraceODM(model_cls=AssetAlias, **odm_kwargs)
+
+    def _all_odms(self) -> list[MongoMindtraceODM]:
+        return [
+            self.asset_database,
+            self.collection_database,
+            self.collection_item_database,
+            self.asset_retention_database,
+            self.annotation_record_database,
+            self.annotation_schema_database,
+            self.annotation_set_database,
+            self.datum_database,
+            self.dataset_version_database,
+            self.direct_upload_session_database,
+            self.asset_alias_database,
+        ]
+
+    async def close(self) -> None:
+        """Release the shared motor client and any per-ODM sync clients.
+
+        Each ODM was constructed with ``client=self._mongo_client``, so the
+        ODM-level ``close()`` calls only release any lazily-created sync
+        clients. The owning motor client is closed here exactly once.
+        Idempotent: safe to call multiple times.
+        """
+        if self._closed:
+            return
+        for odm in self._all_odms():
+            try:
+                odm.close()
+            except Exception:
+                pass
+        try:
+            self._mongo_client.close()
+        except Exception:
+            pass
+        self._closed = True
+
+    async def __aenter__(self) -> "AsyncDatalake":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        await self.close()
 
     async def initialize(self) -> None:
         await self.asset_database.initialize()
@@ -167,6 +218,7 @@ class AsyncDatalake(Mindtrace):
         store: Store | None = None,
         mounts: list[Mount] | None = None,
         default_mount: str | None = None,
+        slow_ops_policy: SlowOpsPolicy = SlowOpsPolicy.WARN,
     ) -> "AsyncDatalake":
         datalake = cls(
             mongo_db_uri=mongo_db_uri,
@@ -174,6 +226,7 @@ class AsyncDatalake(Mindtrace):
             store=store,
             mounts=mounts,
             default_mount=default_mount,
+            slow_ops_policy=slow_ops_policy,
         )
         await datalake.initialize()
         return datalake
@@ -200,6 +253,502 @@ class AsyncDatalake(Mindtrace):
     def _build_document(model_cls: type[DocumentT], **data: Any) -> DocumentT:
         return model_cls.model_construct(**data)
 
+    @staticmethod
+    def _serialize_cursor_value(value: Any) -> Any:
+        if isinstance(value, datetime):
+            return {"__mindtrace_type__": "datetime", "value": value.isoformat()}
+        return value
+
+    @classmethod
+    def _deserialize_cursor_value(cls, value: Any) -> Any:
+        if (
+            isinstance(value, dict)
+            and value.get("__mindtrace_type__") == "datetime"
+            and isinstance(value.get("value"), str)
+        ):
+            return datetime.fromisoformat(value["value"])
+        return value
+
+    @staticmethod
+    def _cursor_filter_fingerprint(filters: Any) -> str:
+        if isinstance(filters, list):
+            payload = [item.model_dump(mode="json") if hasattr(item, "model_dump") else item for item in filters]
+        elif hasattr(filters, "model_dump"):
+            payload = filters.model_dump(mode="json")
+        else:
+            payload = filters or {}
+        blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+        return hashlib.sha1(blob.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def _encode_cursor(cls, envelope: CursorEnvelope) -> str:
+        payload = envelope.model_dump(mode="json")
+        payload["last_key"] = {key: cls._serialize_cursor_value(value) for key, value in envelope.last_key.items()}
+        encoded = base64.urlsafe_b64encode(json.dumps(payload, sort_keys=True).encode("utf-8")).decode("ascii")
+        return encoded.rstrip("=")
+
+    @classmethod
+    def _decode_cursor(
+        cls,
+        cursor: str,
+        *,
+        expected_resource: str,
+        expected_sort: str,
+        expected_filters: Any,
+    ) -> CursorEnvelope:
+        padding = "=" * (-len(cursor) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(f"{cursor}{padding}".encode("ascii")).decode("utf-8"))
+        payload["last_key"] = {
+            key: cls._deserialize_cursor_value(value) for key, value in payload.get("last_key", {}).items()
+        }
+        envelope = CursorEnvelope.model_validate(payload)
+        if envelope.resource != expected_resource:
+            raise ValueError(f"Cursor resource mismatch: expected {expected_resource!r}, got {envelope.resource!r}")
+        if envelope.sort != expected_sort:
+            raise ValueError(f"Cursor sort mismatch: expected {expected_sort!r}, got {envelope.sort!r}")
+        expected_fingerprint = cls._cursor_filter_fingerprint(expected_filters)
+        if envelope.filter_fingerprint != expected_fingerprint:
+            raise ValueError("Cursor filters do not match this request")
+        return envelope
+
+    @staticmethod
+    def _snapshot_field_for(resource: str) -> str | None:
+        snapshot_fields = {
+            "assets": "created_at",
+            "collections": "created_at",
+            "collection_items": "added_at",
+            "asset_retentions": "created_at",
+            "annotation_schemas": "created_at",
+            "annotation_sets": "created_at",
+            "annotation_records": "created_at",
+            "datums": "created_at",
+            "dataset_versions": "created_at",
+        }
+        return snapshot_fields.get(resource)
+
+    @classmethod
+    def _encode_snapshot_token(cls, *, resource: str, field: str, cutoff: Any) -> str:
+        payload = {
+            "kind": "temporal_cutoff",
+            "resource": resource,
+            "field": field,
+            "cutoff": cls._serialize_cursor_value(cutoff),
+        }
+        return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+    @classmethod
+    def _decode_snapshot_token(cls, token: str | None, *, expected_resource: str) -> tuple[str, Any] | None:
+        if token is None:
+            return None
+        try:
+            payload = json.loads(token)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Invalid snapshot token") from exc
+
+        if payload.get("kind") != "temporal_cutoff":
+            raise ValueError("Unsupported snapshot token kind")
+        if payload.get("resource") != expected_resource:
+            raise ValueError("Snapshot token resource mismatch")
+        field = payload.get("field")
+        if not isinstance(field, str) or not field:
+            raise ValueError("Snapshot token missing field")
+        return field, cls._deserialize_cursor_value(payload.get("cutoff"))
+
+    @classmethod
+    def _build_snapshot_query(cls, *, resource: str, snapshot_token: str | None) -> dict[str, Any]:
+        decoded = cls._decode_snapshot_token(snapshot_token, expected_resource=resource)
+        if decoded is None:
+            return {}
+        field, cutoff = decoded
+        expected_field = cls._snapshot_field_for(resource)
+        if expected_field is None or field != expected_field:
+            raise ValueError(f"Snapshot token field mismatch for resource {resource!r}")
+        return {field: {"$lte": cutoff}}
+
+    @staticmethod
+    def _get_value_by_path(obj: Any, path: str) -> Any:
+        current = obj
+        for part in path.split("."):
+            if isinstance(current, dict):
+                current = current.get(part)
+            else:
+                current = getattr(current, part, None)
+            if current is None:
+                return None
+        return current
+
+    @classmethod
+    def _build_cursor_query(cls, sort_fields: list[tuple[str, int]], last_key: dict[str, Any]) -> dict[str, Any]:
+        clauses: list[dict[str, Any]] = []
+        for idx, (field, direction) in enumerate(sort_fields):
+            comparison = "$gt" if direction > 0 else "$lt"
+            clause: dict[str, Any] = {}
+            for prev_field, _ in sort_fields[:idx]:
+                clause[prev_field] = last_key[prev_field]
+            clause[field] = {comparison: last_key[field]}
+            clauses.append(clause)
+        return {"$or": clauses}
+
+    @staticmethod
+    def _merge_query(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
+        if not base:
+            return extra
+        if not extra:
+            return base
+        return {"$and": [base, extra]}
+
+    @staticmethod
+    def _sort_specs_for(resource: str) -> dict[str, tuple[list[tuple[str, int]], list[str]]]:
+        specs: dict[str, dict[str, tuple[list[tuple[str, int]], list[str]]]] = {
+            "assets": {
+                "created_desc": ([("created_at", -1), ("asset_id", -1)], ["created_at", "asset_id"]),
+                "created_asc": ([("created_at", 1), ("asset_id", 1)], ["created_at", "asset_id"]),
+            },
+            "collections": {
+                "created_desc": ([("created_at", -1), ("collection_id", -1)], ["created_at", "collection_id"]),
+                "created_asc": ([("created_at", 1), ("collection_id", 1)], ["created_at", "collection_id"]),
+            },
+            "collection_items": {
+                "created_desc": ([("added_at", -1), ("collection_item_id", -1)], ["added_at", "collection_item_id"]),
+                "created_asc": ([("added_at", 1), ("collection_item_id", 1)], ["added_at", "collection_item_id"]),
+            },
+            "asset_retentions": {
+                "created_desc": (
+                    [("created_at", -1), ("asset_retention_id", -1)],
+                    ["created_at", "asset_retention_id"],
+                ),
+                "created_asc": (
+                    [("created_at", 1), ("asset_retention_id", 1)],
+                    ["created_at", "asset_retention_id"],
+                ),
+            },
+            "annotation_schemas": {
+                "created_desc": (
+                    [("created_at", -1), ("annotation_schema_id", -1)],
+                    ["created_at", "annotation_schema_id"],
+                ),
+                "created_asc": (
+                    [("created_at", 1), ("annotation_schema_id", 1)],
+                    ["created_at", "annotation_schema_id"],
+                ),
+            },
+            "annotation_sets": {
+                "created_desc": (
+                    [("created_at", -1), ("annotation_set_id", -1)],
+                    ["created_at", "annotation_set_id"],
+                ),
+                "created_asc": (
+                    [("created_at", 1), ("annotation_set_id", 1)],
+                    ["created_at", "annotation_set_id"],
+                ),
+            },
+            "annotation_records": {
+                "created_desc": (
+                    [("created_at", -1), ("annotation_id", -1)],
+                    ["created_at", "annotation_id"],
+                ),
+                "subject_created_desc": (
+                    [("subject.kind", 1), ("subject.id", 1), ("created_at", -1), ("annotation_id", -1)],
+                    ["subject.kind", "subject.id", "created_at", "annotation_id"],
+                ),
+            },
+            "datums": {
+                "created_desc": ([("created_at", -1), ("datum_id", -1)], ["created_at", "datum_id"]),
+                "split_created_desc": (
+                    [("split", 1), ("created_at", -1), ("datum_id", -1)],
+                    ["split", "created_at", "datum_id"],
+                ),
+            },
+            "dataset_versions": {
+                "created_desc": (
+                    [("created_at", -1), ("dataset_version_id", -1)],
+                    ["created_at", "dataset_version_id"],
+                ),
+                "dataset_version_desc": (
+                    [("dataset_name", 1), ("version", -1), ("dataset_version_id", -1)],
+                    ["dataset_name", "version", "dataset_version_id"],
+                ),
+            },
+        }
+        if resource not in specs:
+            raise ValueError(f"Unsupported pagination resource: {resource}")
+        return specs[resource]
+
+    @classmethod
+    def _resolve_sort_spec(cls, resource: str, sort: str) -> tuple[list[tuple[str, int]], list[str]]:
+        specs = cls._sort_specs_for(resource)
+        if sort not in specs:
+            raise ValueError(f"Unsupported sort {sort!r} for resource {resource!r}")
+        return specs[sort]
+
+    def _default_page_limit(self) -> int:
+        return int(self.config["MINDTRACE_DATALAKE"]["DEFAULT_PAGE_LIMIT"])
+
+    def _max_page_limit(self) -> int:
+        return int(self.config["MINDTRACE_DATALAKE"]["MAX_PAGE_LIMIT"])
+
+    def _resolve_page_limit(self, limit: int | None) -> int:
+        resolved_limit = self._default_page_limit() if limit is None else limit
+        max_page_limit = self._max_page_limit()
+        if resolved_limit < 1 or resolved_limit > max_page_limit:
+            raise ValueError(f"Page limit must be between 1 and {max_page_limit}, got {resolved_limit}.")
+        return resolved_limit
+
+    async def _paginate_database(
+        self,
+        *,
+        database: MongoMindtraceODM[Any],
+        resource: str,
+        filters: dict[str, Any] | None,
+        sort: str,
+        limit: int | None,
+        cursor: str | None,
+        include_total: bool,
+    ) -> CursorPage[Any]:
+        limit = self._resolve_page_limit(limit)
+        base_query = dict(filters or {})
+        sort_spec, cursor_fields = self._resolve_sort_spec(resource, sort)
+        snapshot_field = self._snapshot_field_for(resource)
+        snapshot_token = (
+            self._encode_snapshot_token(resource=resource, field=snapshot_field, cutoff=self._utc_now())
+            if snapshot_field is not None
+            else None
+        )
+        page_query = base_query
+        if cursor is not None:
+            envelope = self._decode_cursor(
+                cursor,
+                expected_resource=resource,
+                expected_sort=sort,
+                expected_filters=base_query,
+            )
+            snapshot_token = envelope.snapshot_token
+            page_query = self._merge_query(page_query, self._build_cursor_query(sort_spec, envelope.last_key))
+        snapshot_query = self._build_snapshot_query(resource=resource, snapshot_token=snapshot_token)
+        base_query = self._merge_query(base_query, snapshot_query)
+        page_query = self._merge_query(page_query, snapshot_query)
+
+        window = await database.find_window(page_query, sort=sort_spec, limit=limit + 1)
+        items = window[:limit]
+        has_more = len(window) > limit
+        next_cursor: str | None = None
+        if has_more and items:
+            last_item = items[-1]
+            last_key = {field: self._get_value_by_path(last_item, field) for field in cursor_fields}
+            next_cursor = self._encode_cursor(
+                CursorEnvelope(
+                    resource=resource,
+                    sort=sort,
+                    filter_fingerprint=self._cursor_filter_fingerprint(filters or {}),
+                    last_key=last_key,
+                    snapshot_token=snapshot_token,
+                )
+            )
+
+        total_count = await database.count_documents(base_query) if include_total else None
+        return CursorPage(
+            items=items,
+            page=PageInfo(limit=limit, next_cursor=next_cursor, has_more=has_more, total_count=total_count),
+        )
+
+    async def _iter_database(
+        self,
+        *,
+        database: MongoMindtraceODM[Any],
+        resource: str,
+        filters: dict[str, Any] | None,
+        sort: str,
+        batch_size: int | None = None,
+    ) -> AsyncIterator[Any]:
+        sort_spec, _ = self._resolve_sort_spec(resource, sort)
+        async for item in database.find_iter(filters or {}, sort=sort_spec, batch_size=batch_size):
+            yield item
+
+    @classmethod
+    def _matches_structured_filters(cls, item: Any, filters: list[StructuredFilter]) -> bool:
+        if not filters:
+            return True
+        data = item.model_dump(mode="python") if hasattr(item, "model_dump") else item
+        for filter_item in filters:
+            actual = cls._get_value_by_path(data, filter_item.field)
+            expected = filter_item.value
+            op = filter_item.op
+            if op == "eq" and actual != expected:
+                return False
+            if op == "ne" and actual == expected:
+                return False
+            if op == "gt" and not (actual is not None and actual > expected):
+                return False
+            if op == "gte" and not (actual is not None and actual >= expected):
+                return False
+            if op == "lt" and not (actual is not None and actual < expected):
+                return False
+            if op == "lte" and not (actual is not None and actual <= expected):
+                return False
+            if op == "in" and not (expected is not None and actual in expected):
+                return False
+            if op == "contains":
+                if isinstance(actual, str):
+                    if not isinstance(expected, str) or expected not in actual:
+                        return False
+                elif isinstance(actual, (list, tuple, set)):
+                    if expected not in actual:
+                        return False
+                else:
+                    return False
+            if op == "exists":
+                exists = actual is not None
+                if bool(expected) != exists:
+                    return False
+        return True
+
+    def _guard_slow_list_operation(self, operation_name: str, *, alternatives: str) -> None:
+        if self.slow_ops_policy == SlowOpsPolicy.ALLOW:
+            return
+
+        message = (
+            f"{operation_name}() eagerly materializes an unbounded result set and may not scale. "
+            f"Use {alternatives} instead."
+        )
+        if self.slow_ops_policy == SlowOpsPolicy.WARN:
+            warnings.warn(message, SlowOperationWarning, stacklevel=2)
+            return
+        raise SlowOperationDisabledError(message)
+
+    @staticmethod
+    def _dataset_view_filter_payload(filters: list[StructuredFilter]) -> list[dict[str, Any]]:
+        return [filter_item.model_dump(mode="json") for filter_item in filters]
+
+    async def _find_rows_by_ids(
+        self,
+        *,
+        database: MongoMindtraceODM[Any],
+        id_field: str,
+        ids: list[str],
+    ) -> dict[str, Any]:
+        if not ids:
+            return {}
+        unique_ids = list(dict.fromkeys(ids))
+        rows = await database.find({id_field: {"$in": unique_ids}})
+        return {getattr(row, id_field): row for row in rows}
+
+    async def _scan_dataset_view_manifest(
+        self,
+        *,
+        manifest: list[str],
+        start_index: int,
+        filters: list[StructuredFilter],
+        target_count: int,
+        scan_chunk_size: int,
+    ) -> list[tuple[int, Datum]]:
+        matches: list[tuple[int, Datum]] = []
+        for chunk_start in range(start_index, len(manifest), scan_chunk_size):
+            chunk_ids = manifest[chunk_start : chunk_start + scan_chunk_size]
+            datums_by_id = await self._find_rows_by_ids(
+                database=self.datum_database,
+                id_field="datum_id",
+                ids=chunk_ids,
+            )
+            for offset, datum_id in enumerate(chunk_ids):
+                datum = datums_by_id.get(datum_id)
+                if datum is None or not self._matches_structured_filters(datum, filters):
+                    continue
+                matches.append((chunk_start + offset, datum))
+                if len(matches) >= target_count:
+                    return matches
+        return matches
+
+    async def _count_dataset_view_matches(
+        self,
+        *,
+        manifest: list[str],
+        filters: list[StructuredFilter],
+        scan_chunk_size: int,
+    ) -> int:
+        count = 0
+        for chunk_start in range(0, len(manifest), scan_chunk_size):
+            chunk_ids = manifest[chunk_start : chunk_start + scan_chunk_size]
+            datums_by_id = await self._find_rows_by_ids(
+                database=self.datum_database,
+                id_field="datum_id",
+                ids=chunk_ids,
+            )
+            for datum_id in chunk_ids:
+                datum = datums_by_id.get(datum_id)
+                if datum is not None and self._matches_structured_filters(datum, filters):
+                    count += 1
+        return count
+
+    async def _build_dataset_view_rows(
+        self,
+        *,
+        datums: list[Datum],
+        expand: DatasetViewExpand,
+    ) -> list[DatasetViewRow]:
+        if not datums:
+            return []
+
+        assets_by_id: dict[str, Asset] = {}
+        include_sets = expand.annotation_sets or expand.annotation_records
+        annotation_sets_by_id: dict[str, AnnotationSet] = {}
+        annotation_records_by_id: dict[str, AnnotationRecord] = {}
+
+        if expand.assets:
+            assets_by_id = await self._find_rows_by_ids(
+                database=self.asset_database,
+                id_field="asset_id",
+                ids=[asset_id for datum in datums for asset_id in datum.asset_refs.values()],
+            )
+
+        if include_sets:
+            annotation_sets_by_id = await self._find_rows_by_ids(
+                database=self.annotation_set_database,
+                id_field="annotation_set_id",
+                ids=[annotation_set_id for datum in datums for annotation_set_id in datum.annotation_set_ids],
+            )
+
+        if expand.annotation_records:
+            annotation_records_by_id = await self._find_rows_by_ids(
+                database=self.annotation_record_database,
+                id_field="annotation_id",
+                ids=[
+                    annotation_id
+                    for annotation_set in annotation_sets_by_id.values()
+                    for annotation_id in annotation_set.annotation_record_ids
+                ],
+            )
+
+        rows: list[DatasetViewRow] = []
+        for datum in datums:
+            row = DatasetViewRow(
+                datum_id=datum.datum_id,
+                split=datum.split,
+                metadata=dict(datum.metadata or {}),
+            )
+            if expand.assets:
+                row.assets = {
+                    role: assets_by_id[asset_id]
+                    for role, asset_id in datum.asset_refs.items()
+                    if asset_id in assets_by_id
+                }
+            if include_sets:
+                row.annotation_sets = [
+                    annotation_sets_by_id[annotation_set_id]
+                    for annotation_set_id in datum.annotation_set_ids
+                    if annotation_set_id in annotation_sets_by_id
+                ]
+            if expand.annotation_records:
+                row.annotation_records = {
+                    annotation_set.annotation_set_id: [
+                        annotation_records_by_id[annotation_id]
+                        for annotation_id in annotation_set.annotation_record_ids
+                        if annotation_id in annotation_records_by_id
+                    ]
+                    for annotation_set in row.annotation_sets or []
+                }
+            rows.append(row)
+        return rows
+
     async def get_health(self) -> dict[str, Any]:
         return {
             "status": "ok",
@@ -208,15 +757,15 @@ class AsyncDatalake(Mindtrace):
         }
 
     async def summary(self) -> str:
-        asset_count = len(await self.list_assets())
-        collection_count = len(await self.list_collections())
-        collection_item_count = len(await self.list_collection_items())
-        asset_retention_count = len(await self.list_asset_retentions())
-        annotation_schema_count = len(await self.list_annotation_schemas())
-        annotation_set_count = len(await self.list_annotation_sets())
-        annotation_record_count = len(await self.list_annotation_records())
-        datum_count = len(await self.list_datums())
-        dataset_version_count = len(await self.list_dataset_versions())
+        asset_count = await self.asset_database.count_documents()
+        collection_count = await self.collection_database.count_documents()
+        collection_item_count = await self.collection_item_database.count_documents()
+        asset_retention_count = await self.asset_retention_database.count_documents()
+        annotation_schema_count = await self.annotation_schema_database.count_documents()
+        annotation_set_count = await self.annotation_set_database.count_documents()
+        annotation_record_count = await self.annotation_record_database.count_documents()
+        datum_count = await self.datum_database.count_documents()
+        dataset_version_count = await self.dataset_version_database.count_documents()
         return (
             f"AsyncDatalake(database={self.mongo_db_name}, default_mount={self.store.default_mount}, "
             f"assets={asset_count}, collections={collection_count}, collection_items={collection_item_count}, "
@@ -265,13 +814,25 @@ class AsyncDatalake(Mindtrace):
         Uses :meth:`Store.has_object` so existence matches registry metadata (including nested
         object names). :meth:`Registry.info` can return an empty dict for missing objects without
         raising, so ``head_object`` alone would falsely report existence.
+
+        If ``storage_ref.mount`` is not configured on this datalake,
+        :exc:`~mindtrace.registry.core.exceptions.StoreLocationNotFound` is raised rather than
+        returning False, because a missing mount indicates misconfiguration, not a missing object.
         """
+
         storage_ref = self._normalize_storage_ref(storage_ref)
-        key = self.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
+        mount = storage_ref.mount
+        if not self.store.has_mount(mount):
+            configured = sorted(self.store.list_mounts())
+            raise StoreLocationNotFound(
+                f"Unknown store mount {mount!r} on datalake {self.mongo_db_name!r}; configured mounts: {configured}"
+            )
+
+        key = self.store.build_key(mount, storage_ref.name, storage_ref.version)
         version = storage_ref.version if storage_ref.version is not None else "latest"
         try:
             return self.store.has_object(key, version=version)
-        except (RegistryObjectNotFound, StoreLocationNotFound, FileNotFoundError, KeyError, OSError):
+        except (RegistryObjectNotFound, FileNotFoundError, KeyError, OSError):
             return False
 
     def dataset_sync(self, target: "AsyncDatalake" | None = None):
@@ -535,7 +1096,43 @@ class AsyncDatalake(Mindtrace):
         return results[0]
 
     async def list_assets(self, filters: dict[str, Any] | None = None) -> list[Asset]:
+        self._guard_slow_list_operation("list_assets", alternatives="iter_assets() or list_assets_page()")
         return await self.asset_database.find(filters or {})
+
+    async def iter_assets(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> AsyncIterator[Asset]:
+        async for asset in self._iter_database(
+            database=self.asset_database,
+            resource="assets",
+            filters=filters,
+            sort=sort,
+            batch_size=batch_size,
+        ):
+            yield asset
+
+    async def list_assets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Asset]:
+        return await self._paginate_database(
+            database=self.asset_database,
+            resource="assets",
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
 
     async def update_asset_metadata(self, asset_id: str, metadata: dict[str, Any]) -> Asset:
         asset = await self.get_asset(asset_id)
@@ -545,6 +1142,12 @@ class AsyncDatalake(Mindtrace):
 
     async def delete_asset(self, asset_id: str) -> None:
         asset = await self.get_asset(asset_id)
+        async for datum in self.iter_datums(batch_size=100):
+            if asset_id in getattr(datum, "asset_refs", {}).values():
+                raise ValueError(f"Asset {asset_id} is still referenced by one or more datums")
+        collection_items = await self.collection_item_database.find({"asset_id": asset_id})
+        if collection_items:
+            raise ValueError(f"Asset {asset_id} is still referenced by one or more collection items")
         alias_rows = await self.asset_alias_database.find({"asset_id": asset_id})
         for row in alias_rows:
             await self.asset_alias_database.delete(row.id)
@@ -577,7 +1180,27 @@ class AsyncDatalake(Mindtrace):
         return results[0]
 
     async def list_collections(self, filters: dict[str, Any] | None = None) -> list[Collection]:
+        self._guard_slow_list_operation("list_collections", alternatives="list_collections_page()")
         return await self.collection_database.find(filters or {})
+
+    async def list_collections_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Collection]:
+        return await self._paginate_database(
+            database=self.collection_database,
+            resource="collections",
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
 
     async def update_collection(self, collection_id: str, **changes: Any) -> Collection:
         collection = await self.get_collection(collection_id)
@@ -588,6 +1211,9 @@ class AsyncDatalake(Mindtrace):
 
     async def delete_collection(self, collection_id: str) -> None:
         collection = await self.get_collection(collection_id)
+        collection_items = await self.collection_item_database.find({"collection_id": collection_id})
+        for collection_item in collection_items:
+            await self.collection_item_database.delete(collection_item.id)
         await self.collection_database.delete(collection.id)
 
     async def create_collection_item(
@@ -621,7 +1247,27 @@ class AsyncDatalake(Mindtrace):
         return results[0]
 
     async def list_collection_items(self, filters: dict[str, Any] | None = None) -> list[CollectionItem]:
+        self._guard_slow_list_operation("list_collection_items", alternatives="list_collection_items_page()")
         return await self.collection_item_database.find(filters or {})
+
+    async def list_collection_items_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[CollectionItem]:
+        return await self._paginate_database(
+            database=self.collection_item_database,
+            resource="collection_items",
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
 
     async def resolve_collection_item(self, collection_item_id: str) -> ResolvedCollectionItem:
         collection_item = await self.get_collection_item(collection_item_id)
@@ -678,7 +1324,27 @@ class AsyncDatalake(Mindtrace):
         return results[0]
 
     async def list_asset_retentions(self, filters: dict[str, Any] | None = None) -> list[AssetRetention]:
+        self._guard_slow_list_operation("list_asset_retentions", alternatives="list_asset_retentions_page()")
         return await self.asset_retention_database.find(filters or {})
+
+    async def list_asset_retentions_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AssetRetention]:
+        return await self._paginate_database(
+            database=self.asset_retention_database,
+            resource="asset_retentions",
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
 
     async def update_asset_retention(self, asset_retention_id: str, **changes: Any) -> AssetRetention:
         asset_retention = await self.get_asset_retention(asset_retention_id)
@@ -748,7 +1414,27 @@ class AsyncDatalake(Mindtrace):
         return results[0]
 
     async def list_annotation_schemas(self, filters: dict[str, Any] | None = None) -> list[AnnotationSchema]:
+        self._guard_slow_list_operation("list_annotation_schemas", alternatives="list_annotation_schemas_page()")
         return await self.annotation_schema_database.find(filters or {})
+
+    async def list_annotation_schemas_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationSchema]:
+        return await self._paginate_database(
+            database=self.annotation_schema_database,
+            resource="annotation_schemas",
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
 
     async def update_annotation_schema(self, annotation_schema_id: str, **changes: Any) -> AnnotationSchema:
         schema = await self.get_annotation_schema(annotation_schema_id)
@@ -883,6 +1569,9 @@ class AsyncDatalake(Mindtrace):
     ) -> AnnotationSet:
         if annotation_schema_id is not None:
             await self.get_annotation_schema(annotation_schema_id)
+        datum = None
+        if datum_id is not None:
+            datum = await self.get_datum(datum_id)
         annotation_set = self._build_document(
             AnnotationSet,
             name=name,
@@ -895,12 +1584,18 @@ class AsyncDatalake(Mindtrace):
             updated_at=self._utc_now(),
         )
         inserted = await self.annotation_set_database.insert(annotation_set)
-        if datum_id is not None:
-            datum = await self.get_datum(datum_id)
+        if datum is not None:
             if inserted.annotation_set_id not in datum.annotation_set_ids:
                 datum.annotation_set_ids.append(inserted.annotation_set_id)
                 datum.updated_at = self._utc_now()
-                await self.datum_database.update(datum)
+                try:
+                    await self.datum_database.update(datum)
+                except Exception:
+                    try:
+                        await self.annotation_set_database.delete(inserted.id)
+                    except Exception:
+                        pass
+                    raise
         return inserted
 
     async def get_annotation_set(self, annotation_set_id: str) -> AnnotationSet:
@@ -910,7 +1605,27 @@ class AsyncDatalake(Mindtrace):
         return results[0]
 
     async def list_annotation_sets(self, filters: dict[str, Any] | None = None) -> list[AnnotationSet]:
+        self._guard_slow_list_operation("list_annotation_sets", alternatives="list_annotation_sets_page()")
         return await self.annotation_set_database.find(filters or {})
+
+    async def list_annotation_sets_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationSet]:
+        return await self._paginate_database(
+            database=self.annotation_set_database,
+            resource="annotation_sets",
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
 
     async def update_annotation_set(self, annotation_set_id: str, **changes: Any) -> AnnotationSet:
         annotation_set = await self.get_annotation_set(annotation_set_id)
@@ -1091,8 +1806,31 @@ class AsyncDatalake(Mindtrace):
 
     async def list_annotation_records_for_asset(self, asset_id: str) -> list[AnnotationRecord]:
         """Return annotation records whose subject is the given asset."""
-        return await self.list_annotation_records(
+        self._guard_slow_list_operation(
+            "list_annotation_records_for_asset",
+            alternatives="list_annotation_records_for_asset_page()",
+        )
+        return await self.annotation_record_database.find(
+            {"subject.kind": "asset", "subject.id": asset_id},
+        )
+
+    async def list_annotation_records_for_asset_page(
+        self,
+        asset_id: str,
+        *,
+        sort: str = "subject_created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationRecord]:
+        return await self._paginate_database(
+            database=self.annotation_record_database,
+            resource="annotation_records",
             filters={"subject.kind": "asset", "subject.id": asset_id},
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
         )
 
     async def get_annotation_record(self, annotation_id: str) -> AnnotationRecord:
@@ -1102,7 +1840,46 @@ class AsyncDatalake(Mindtrace):
         return results[0]
 
     async def list_annotation_records(self, filters: dict[str, Any] | None = None) -> list[AnnotationRecord]:
+        self._guard_slow_list_operation(
+            "list_annotation_records",
+            alternatives="iter_annotation_records() or list_annotation_records_page()",
+        )
         return await self.annotation_record_database.find(filters or {})
+
+    async def iter_annotation_records(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> AsyncIterator[AnnotationRecord]:
+        async for record in self._iter_database(
+            database=self.annotation_record_database,
+            resource="annotation_records",
+            filters=filters,
+            sort=sort,
+            batch_size=batch_size,
+        ):
+            yield record
+
+    async def list_annotation_records_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[AnnotationRecord]:
+        return await self._paginate_database(
+            database=self.annotation_record_database,
+            resource="annotation_records",
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
 
     async def update_annotation_record(self, annotation_id: str, **changes: Any) -> AnnotationRecord:
         record = await self.get_annotation_record(annotation_id)
@@ -1115,7 +1892,7 @@ class AsyncDatalake(Mindtrace):
 
     async def delete_annotation_record(self, annotation_id: str) -> None:
         record = await self.get_annotation_record(annotation_id)
-        annotation_sets = await self.list_annotation_sets()
+        annotation_sets = await self.annotation_set_database.find({"annotation_record_ids": annotation_id})
         for annotation_set in annotation_sets:
             if annotation_id in annotation_set.annotation_record_ids:
                 annotation_set.annotation_record_ids = [
@@ -1133,6 +1910,8 @@ class AsyncDatalake(Mindtrace):
         metadata: dict[str, Any] | None = None,
         annotation_set_ids: list[str] | None = None,
     ) -> Datum:
+        await self._validate_asset_refs_exist(asset_refs)
+        await self._validate_annotation_set_ids_exist(annotation_set_ids or [])
         datum = self._build_document(
             Datum,
             split=split,
@@ -1150,10 +1929,60 @@ class AsyncDatalake(Mindtrace):
         return results[0]
 
     async def list_datums(self, filters: dict[str, Any] | None = None) -> list[Datum]:
+        self._guard_slow_list_operation("list_datums", alternatives="iter_datums() or list_datums_page()")
         return await self.datum_database.find(filters or {})
+
+    async def iter_datums(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        batch_size: int | None = None,
+    ) -> AsyncIterator[Datum]:
+        async for datum in self._iter_database(
+            database=self.datum_database,
+            resource="datums",
+            filters=filters,
+            sort=sort,
+            batch_size=batch_size,
+        ):
+            yield datum
+
+    async def list_datums_page(
+        self,
+        *,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[Datum]:
+        return await self._paginate_database(
+            database=self.datum_database,
+            resource="datums",
+            filters=filters,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
+    async def _validate_asset_refs_exist(self, asset_refs: dict[str, str]) -> None:
+        for asset_id in asset_refs.values():
+            if not str(asset_id).strip():
+                raise ValueError("Datum asset_refs must contain non-empty asset ids")
+            await self.get_asset(asset_id)
+
+    async def _validate_annotation_set_ids_exist(self, annotation_set_ids: list[str]) -> None:
+        for annotation_set_id in annotation_set_ids:
+            await self.get_annotation_set(annotation_set_id)
 
     async def update_datum(self, datum_id: str, **changes: Any) -> Datum:
         datum = await self.get_datum(datum_id)
+        if "asset_refs" in changes and changes["asset_refs"] is not None:
+            await self._validate_asset_refs_exist(changes["asset_refs"])
+        if "annotation_set_ids" in changes and changes["annotation_set_ids"] is not None:
+            await self._validate_annotation_set_ids_exist(changes["annotation_set_ids"])
         for key, value in changes.items():
             setattr(datum, key, value)
         datum.updated_at = self._utc_now()
@@ -1173,6 +2002,10 @@ class AsyncDatalake(Mindtrace):
         existing = await self.dataset_version_database.find({"dataset_name": dataset_name, "version": version})
         if existing:
             raise ValueError(f"Dataset version already exists: {dataset_name}@{version}")
+        if len(manifest) != len(set(manifest)):
+            raise ValueError("Dataset version manifest must not contain duplicate datum ids")
+        for datum_id in manifest:
+            await self.get_datum(datum_id)
         dataset_version = self._build_document(
             DatasetVersion,
             dataset_name=dataset_name,
@@ -1196,12 +2029,145 @@ class AsyncDatalake(Mindtrace):
         dataset_name: str | None = None,
         filters: dict[str, Any] | None = None,
     ) -> list[DatasetVersion]:
+        self._guard_slow_list_operation("list_dataset_versions", alternatives="list_dataset_versions_page()")
         query = dict(filters or {})
         if dataset_name is not None:
             query["dataset_name"] = dataset_name
         return await self.dataset_version_database.find(query)
 
+    async def list_dataset_versions_page(
+        self,
+        *,
+        dataset_name: str | None = None,
+        filters: dict[str, Any] | None = None,
+        sort: str = "created_desc",
+        limit: int | None = None,
+        cursor: str | None = None,
+        include_total: bool = False,
+    ) -> CursorPage[DatasetVersion]:
+        query = dict(filters or {})
+        if dataset_name is not None:
+            query["dataset_name"] = dataset_name
+        return await self._paginate_database(
+            database=self.dataset_version_database,
+            resource="dataset_versions",
+            filters=query,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
+            include_total=include_total,
+        )
+
+    async def view_dataset_version_page(
+        self,
+        dataset_name: str,
+        version: str,
+        *,
+        limit: int | None = None,
+        cursor: str | None = None,
+        sort: str = "manifest_order",
+        filters: list[StructuredFilter] | None = None,
+        expand: DatasetViewExpand | None = None,
+        include_total: bool = False,
+    ) -> DatasetViewPage:
+        """Page through a dataset version manifest.
+
+        This can still be a heavy operation for large manifests, especially when filters force
+        per-row inspection or when expansions require loading linked assets or annotations.
+        """
+        if sort != "manifest_order":
+            raise ValueError("dataset version views currently support only sort='manifest_order'")
+
+        limit = self._resolve_page_limit(limit)
+        dataset_version = await self.get_dataset_version(dataset_name, version)
+        expand = expand or DatasetViewExpand()
+        filter_list = filters or []
+        filter_payload = self._dataset_view_filter_payload(filter_list)
+        resource = f"dataset_version_view:{dataset_name}:{version}"
+        start_index = 0
+        if cursor is not None:
+            envelope = self._decode_cursor(
+                cursor,
+                expected_resource=resource,
+                expected_sort=sort,
+                expected_filters=filter_payload,
+            )
+            start_index = int(envelope.last_key.get("ordinal", -1)) + 1
+
+        scan_chunk_size = max(limit * 2, self._default_page_limit())
+        matches = await self._scan_dataset_view_manifest(
+            manifest=dataset_version.manifest,
+            start_index=start_index,
+            filters=filter_list,
+            target_count=limit + 1,
+            scan_chunk_size=scan_chunk_size,
+        )
+        visible_matches = matches[:limit]
+        rows = await self._build_dataset_view_rows(
+            datums=[datum for _, datum in visible_matches],
+            expand=expand,
+        )
+        next_cursor: str | None = None
+        if len(matches) > limit and visible_matches:
+            last_ordinal, last_datum = visible_matches[-1]
+            next_cursor = self._encode_cursor(
+                CursorEnvelope(
+                    resource=resource,
+                    sort=sort,
+                    filter_fingerprint=self._cursor_filter_fingerprint(filter_payload),
+                    last_key={"ordinal": last_ordinal, "datum_id": last_datum.datum_id},
+                )
+            )
+
+        if include_total:
+            total_count_value = await self._count_dataset_view_matches(
+                manifest=dataset_version.manifest,
+                filters=filter_list,
+                scan_chunk_size=scan_chunk_size,
+            )
+        else:
+            total_count_value = None
+
+        has_more = len(matches) > limit
+        return DatasetViewPage(
+            items=rows,
+            page=PageInfo(limit=limit, next_cursor=next_cursor, has_more=has_more, total_count=total_count_value),
+            view=DatasetViewInfo(dataset_name=dataset_name, version=version, sort=sort),
+        )
+
+    async def iter_dataset_version_view(
+        self,
+        dataset_name: str,
+        version: str,
+        *,
+        page_size: int | None = None,
+        sort: str = "manifest_order",
+        filters: list[StructuredFilter] | None = None,
+        expand: DatasetViewExpand | None = None,
+    ) -> AsyncIterator[DatasetViewRow]:
+        cursor: str | None = None
+        while True:
+            page = await self.view_dataset_version_page(
+                dataset_name,
+                version,
+                limit=page_size,
+                cursor=cursor,
+                sort=sort,
+                filters=filters,
+                expand=expand,
+                include_total=False,
+            )
+            for row in page.items:
+                yield row
+            if not page.page.has_more:
+                break
+            cursor = page.page.next_cursor
+
     async def resolve_datum(self, datum_id: str) -> ResolvedDatum:
+        """Fully materialize the datum graph for one datum.
+
+        This is an explicit heavy operation intended for bounded use, not for bulk traversal.
+        """
         datum = await self.get_datum(datum_id)
         assets: dict[str, Asset] = {}
         for role, asset_id in datum.asset_refs.items():
@@ -1225,9 +2191,44 @@ class AsyncDatalake(Mindtrace):
         )
 
     async def resolve_dataset_version(self, dataset_name: str, version: str) -> ResolvedDatasetVersion:
+        """Fully materialize every datum in a dataset version.
+
+        This is an explicit heavy operation intended for bounded use, not for bulk traversal.
+        """
         dataset_version = await self.get_dataset_version(dataset_name, version)
         datums = [await self.resolve_datum(datum_id) for datum_id in dataset_version.manifest]
         return ResolvedDatasetVersion(dataset_version=dataset_version, datums=datums)
+
+    async def export_dataset_version_to_format(
+        self,
+        dataset_name: str,
+        version: str,
+        *,
+        format: str,
+        destination: str | Path,
+        include_media: bool = True,
+        overwrite: bool = False,
+        split_map: dict[str, str] | None = None,
+        exporter_options: dict[str, Any] | None = None,
+    ):
+        """Export an immutable dataset version to a named external format."""
+        from mindtrace.datalake.exporters import export_dataset_to_format
+        from mindtrace.datalake.exporters.base import build_exportable_dataset_from_resolved_version_async
+
+        resolved_dataset_version = await self.resolve_dataset_version(dataset_name, version)
+        exportable_dataset = await build_exportable_dataset_from_resolved_version_async(
+            self,
+            resolved_dataset_version,
+            split_map=split_map,
+        )
+        return export_dataset_to_format(
+            exportable_dataset,
+            format=format,
+            destination=destination,
+            include_media=include_media,
+            overwrite=overwrite,
+            exporter_options=exporter_options,
+        )
 
     async def create_asset_from_object(
         self,

@@ -34,6 +34,40 @@ def test_opencv_conversions_float():
     assert bb.to_opencv_xyxy(as_int=False) == (1.5, 2.5, 5.0, 7.0)
 
 
+def test_to_xcycwh_and_from_xcycwh_roundtrip():
+    bb = BoundingBox(10.0, 20.0, 30.0, 40.0)
+    assert bb.to_xcycwh() == (25.0, 40.0, 30.0, 40.0)
+    bb2 = BoundingBox.from_xcycwh(25.0, 40.0, 30.0, 40.0)
+    assert bb2.as_tuple() == bb.as_tuple()
+
+
+def test_crop_from_image_with_padding():
+    import numpy as np
+
+    bb = BoundingBox(4.0, 4.0, 4.0, 4.0)
+    img = np.arange(12 * 12, dtype=np.uint8).reshape(12, 12)
+    cropped = bb.crop_from_image(img, padding=0.25)
+    assert cropped.shape[0] >= 4
+    assert cropped.size > 16
+
+
+def test_crop_from_image_no_padding_branch():
+    import numpy as np
+
+    bb = BoundingBox(2.0, 2.0, 2.0, 2.0)
+    img = np.zeros((8, 8), dtype=np.uint8)
+    cropped = bb.crop_from_image(img, padding=0.0)
+    assert cropped.shape == (2, 2)
+
+
+def test_crop_from_image_raises_without_numpy(monkeypatch: pytest.MonkeyPatch):
+    import mindtrace.core.types.bounding_box as bbmod
+
+    monkeypatch.setattr(bbmod, "_HAS_NUMPY", False)
+    with pytest.raises(ImportError, match="numpy"):
+        BoundingBox(0, 0, 1, 1).crop_from_image([])  # type: ignore[arg-type]
+
+
 def test_geometry_translate_scale_clip_contains():
     bb = BoundingBox(5, 5, 10, 10)
     moved = bb.translate(3, -2)

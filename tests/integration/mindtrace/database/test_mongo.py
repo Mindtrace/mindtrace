@@ -1,11 +1,19 @@
 from typing import Annotated, Optional
+from uuid import uuid4
 
 import pytest
 from beanie import Indexed, PydanticObjectId
 from pydantic import BaseModel
+from pymongo import MongoClient
 from pymongo.errors import OperationFailure
 
-from mindtrace.database import DocumentNotFoundError, DuplicateInsertError, MindtraceDocument
+from mindtrace.database import (
+    DocumentNotFoundError,
+    DuplicateInsertError,
+    InitMode,
+    MindtraceDocument,
+    MongoMindtraceODM,
+)
 
 
 class UserDoc(MindtraceDocument):
@@ -15,6 +23,16 @@ class UserDoc(MindtraceDocument):
 
     class Settings:
         name = "users"
+        use_cache = False
+
+
+class SyncIterUserDoc(MindtraceDocument):
+    name: str
+    age: int
+    email: Annotated[str, Indexed(unique=True)]
+
+    class Settings:
+        name = "sync_iter_users"
         use_cache = False
 
 
@@ -247,3 +265,42 @@ async def test_initialize_multiple_calls(mongo_backend):
     user = UserCreate(name="Alice", age=30, email="alice@test.com")
     inserted = await mongo_backend.insert(user)
     assert inserted.name == "Alice"
+
+
+def test_mongo_backend_find_iter_sync_streams_with_real_mongo():
+    db_name = f"test_db_sync_iter_{uuid4().hex}"
+    backend = MongoMindtraceODM(
+        model_cls=SyncIterUserDoc,
+        db_uri="mongodb://localhost:27018",
+        db_name=db_name,
+        init_mode=InitMode.SYNC,
+    )
+
+    try:
+        backend.initialize_sync()
+        backend._sync_collection().insert_many(
+            [
+                {"name": "Alice", "age": 30, "email": f"alice-{uuid4().hex}@test.com"},
+                {"name": "Bob", "age": 25, "email": f"bob-{uuid4().hex}@test.com"},
+                {"name": "Charlie", "age": 35, "email": f"charlie-{uuid4().hex}@test.com"},
+            ]
+        )
+
+        rows = list(
+            backend.find_iter_sync(
+                {"age": {"$gte": 25}},
+                sort=[("age", 1)],
+                batch_size=2,
+                limit=2,
+            )
+        )
+
+        assert [row.name for row in rows] == ["Bob", "Alice"]
+        assert all(isinstance(row, SyncIterUserDoc) for row in rows)
+    finally:
+        sync_client = backend._sync_client or MongoClient("mongodb://localhost:27018")
+        try:
+            sync_client.drop_database(db_name)
+        finally:
+            sync_client.close()
+        backend.client.close()

@@ -13,6 +13,7 @@ from mindtrace.datalake.async_datalake import (
     DuplicateAnnotationSchemaError,
     _default_datalake_store_path,
 )
+from mindtrace.datalake.pagination_types import DatasetViewExpand, StructuredFilter
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -159,6 +160,7 @@ async def test_async_datalake_end_to_end(async_datalake: AsyncDatalake):
     assert created_from_object.subject.id == asset.asset_id
 
     await async_datalake.delete_annotation_record(annotation_record.annotation_id)
+    await async_datalake.update_datum(datum.datum_id, asset_refs={})
     await async_datalake.delete_asset(created_from_object.asset_id)
     await async_datalake.delete_asset(asset.asset_id)
 
@@ -655,3 +657,77 @@ async def test_async_datalake_mocked_duplicate_and_rollback_paths(async_datalake
             ],
             annotation_set_id=annotation_set.annotation_set_id,
         )
+
+
+@pytest.mark.asyncio
+async def test_async_datalake_pagination_end_to_end(async_datalake: AsyncDatalake):
+    hopper_path = Path("tests/resources/hopper.png")
+    image_bytes = hopper_path.read_bytes()
+    created_assets = []
+    created_datums = []
+
+    for index in range(3):
+        storage_ref = await async_datalake.put_object(name=f"page-asset-{index}.png", obj=image_bytes, metadata={})
+        asset = await async_datalake.create_asset(
+            kind="image",
+            media_type="image/png",
+            storage_ref=storage_ref,
+            checksum=f"sha256:page-{index}",
+            size_bytes=len(image_bytes),
+            metadata={"page_index": index},
+            created_by="pytest",
+        )
+        datum = await async_datalake.create_datum(
+            asset_refs={"image": asset.asset_id},
+            split="train",
+            metadata={"page_index": index},
+        )
+        created_assets.append(asset)
+        created_datums.append(datum)
+
+    dataset_version = await async_datalake.create_dataset_version(
+        dataset_name="pagination-dataset",
+        version="0.1.0",
+        manifest=[datum.datum_id for datum in created_datums],
+        metadata={"suite": "pagination"},
+        created_by="pytest",
+    )
+
+    first_asset_page = await async_datalake.list_assets_page(filters={"kind": "image"}, limit=2, include_total=True)
+    second_asset_page = await async_datalake.list_assets_page(
+        filters={"kind": "image"},
+        limit=2,
+        cursor=first_asset_page.page.next_cursor,
+    )
+
+    assert len(first_asset_page.items) == 2
+    assert first_asset_page.page.total_count >= 3
+    assert first_asset_page.page.has_more is True
+    assert first_asset_page.page.next_cursor is not None
+    assert len(second_asset_page.items) >= 1
+
+    filters = [StructuredFilter(field="split", op="eq", value="train")]
+    first_view_page = await async_datalake.view_dataset_version_page(
+        dataset_version.dataset_name,
+        dataset_version.version,
+        limit=2,
+        filters=filters,
+        expand=DatasetViewExpand(assets=True, annotation_sets=False, annotation_records=False),
+        include_total=True,
+    )
+    second_view_page = await async_datalake.view_dataset_version_page(
+        dataset_version.dataset_name,
+        dataset_version.version,
+        limit=2,
+        cursor=first_view_page.page.next_cursor,
+        filters=filters,
+        expand=DatasetViewExpand(assets=False, annotation_sets=False, annotation_records=False),
+    )
+
+    assert [row.datum_id for row in first_view_page.items] == [datum.datum_id for datum in created_datums[:2]]
+    assert first_view_page.items[0].assets is not None
+    assert first_view_page.page.total_count == 3
+    assert first_view_page.page.has_more is True
+    assert second_view_page.items[0].datum_id == created_datums[2].datum_id
+    assert second_view_page.items[0].assets is None
+    assert second_view_page.page.has_more is False
