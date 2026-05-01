@@ -1267,13 +1267,15 @@ class TestReplicationReclaim:
     async def test_delete_local_payload_marks_deleted_and_calls_store(
         self, source_datalake, target_datalake, replication_objects
     ):
+        payload_ref = StorageRef(mount="payloads", name="images/cat-payload.jpg", version="v2")
         source_asset = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
+                "payload_storage_ref": payload_ref.model_dump(),
                 "metadata": {
                     "replication": {
                         "local_delete_eligible_at": "2026-01-01T00:00:00Z",
-                        "payload_status": "verified",
+                        "payload_status": "present",
                         "payload_available": True,
                     }
                 },
@@ -1285,11 +1287,13 @@ class TestReplicationReclaim:
 
         updated = await manager.delete_local_payload(replication_objects.asset.asset_id)
 
-        source_datalake.store.delete.assert_called_once()
+        source_datalake.store.delete.assert_called_once_with("payloads/images/cat-payload.jpg@v2", version="v2")
         assert updated.metadata["replication"]["local_deleted_at"] is not None
         assert updated.metadata["replication"]["payload_available"] is False
-        assert updated.metadata["replication"]["payload_status"] == "verified"
-        assert updated.storage_ref == LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF
+        assert updated.metadata["replication"]["payload_status"] == "present"
+        assert updated.storage_ref == replication_objects.asset.storage_ref
+        assert updated.payload_status == "missing"
+        assert updated.payload_storage_ref == LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF
         assert ReplicationManager.is_local_deleted(updated) is True
 
     @pytest.mark.asyncio
@@ -1299,12 +1303,13 @@ class TestReplicationReclaim:
         source_asset = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
-                "storage_ref": LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF.model_dump(),
+                "payload_storage_ref": LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF.model_dump(),
+                "payload_status": "missing",
                 "metadata": {
                     "replication": {
                         "local_delete_eligible_at": "2026-01-01T00:00:00Z",
                         "local_deleted_at": "2026-01-01T00:01:00Z",
-                        "payload_status": "verified",
+                        "payload_status": "present",
                         "payload_available": False,
                     }
                 },
