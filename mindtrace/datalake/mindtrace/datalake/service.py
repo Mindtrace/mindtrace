@@ -122,6 +122,10 @@ from mindtrace.datalake.service_types import (
     DeleteCollectionSchema,
     ExportDatasetVersionInput,
     ExportDatasetVersionSchema,
+    DatasetSyncGraphExportOutput,
+    DatasetSyncGraphExportSchema,
+    DatasetSyncPayloadManifestOutput,
+    DatasetSyncPayloadManifestSchema,
     GetAnnotationRecordSchema,
     GetAnnotationSchemaByNameVersionInput,
     GetAnnotationSchemaByNameVersionSchema,
@@ -576,6 +580,12 @@ class DatalakeService(Service):
             as_tool=True,
         )
         self.add_endpoint("dataset_versions.export", self.export_dataset_version, schema=ExportDatasetVersionSchema)
+        self.add_endpoint("dataset_versions.export_sync_graph", self.export_sync_graph, schema=DatasetSyncGraphExportSchema)
+        self.add_endpoint(
+            "dataset_versions.export_sync_payload_manifest",
+            self.export_sync_payload_manifest,
+            schema=DatasetSyncPayloadManifestSchema,
+        )
         self.add_endpoint(
             "dataset_versions.import_prepare",
             self.import_dataset_version_prepare,
@@ -1252,6 +1262,18 @@ class DatalakeService(Service):
         manager = DatasetSyncManager(datalake)
         bundle = await manager.export_dataset_version(payload.dataset_name, payload.version)
         return DatasetSyncBundleOutput(bundle=bundle)
+
+    async def export_sync_graph(self, payload: ExportDatasetVersionInput) -> DatasetSyncGraphExportOutput:
+        datalake = await self._ensure_datalake()
+        manager = DatasetSyncManager(datalake)
+        bundle = await manager.export_dataset_version(payload.dataset_name, payload.version)
+        return DatasetSyncGraphExportOutput(bundle=bundle)
+
+    async def export_sync_payload_manifest(self, payload: ExportDatasetVersionInput) -> DatasetSyncPayloadManifestOutput:
+        datalake = await self._ensure_datalake()
+        manager = DatasetSyncManager(datalake)
+        bundle = await manager.export_dataset_version(payload.dataset_name, payload.version)
+        return DatasetSyncPayloadManifestOutput(payloads=list(bundle.payloads))
 
     async def import_dataset_version_prepare(self, payload: DatasetSyncImportRequest) -> DatasetSyncImportPlanOutput:
         datalake = await self._ensure_datalake()

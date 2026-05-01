@@ -135,6 +135,17 @@ def validate_cross_lake_target_mount_resolution(
             )
 
 
+FAST_SYNC_PROGRESS_PHASES = (
+    "importing_schemas",
+    "importing_assets",
+    "importing_annotation_records",
+    "importing_annotation_sets",
+    "importing_datums",
+    "finalizing_graph",
+    "hydrating_payloads",
+)
+
+
 class DatasetSyncManager:
     """Orchestrates export/import of a single immutable :class:`DatasetVersion` graph.
 
@@ -1116,6 +1127,128 @@ class DatasetSyncManager:
             await self._emit_progress(progress_callback, progress)
 
         return resolved_storage_refs, transferred_payloads, skipped_payloads
+
+    async def fast_import_graph(
+        self,
+        request: DatasetSyncImportRequest,
+        *,
+        progress_callback: ProgressCallback | None = None,
+    ) -> DatasetSyncCommitResult:
+        bundle = request.bundle
+
+        async def emit_phase(
+            *, phase_name: str, entity_kind: str, items: list[Any], inserter, detail: str
+        ) -> int:
+            total = len(items)
+            created = 0
+            for idx, item in enumerate(items, start=1):
+                await inserter(item)
+                created += 1
+                await self._emit_progress(
+                    progress_callback,
+                    DatasetSyncProgress(
+                        phase="committing",
+                        message=detail,
+                        entity_kind=entity_kind,
+                        phase_detail=phase_name,
+                        completed_items=idx,
+                        total_items=total,
+                        entity_completed_items=idx,
+                        entity_total_items=total,
+                    ),
+                )
+            return created
+
+        mapped_assets = [
+            Asset.model_validate(
+                {
+                    **asset.model_dump(),
+                    "storage_ref": _apply_mount_map_to_storage_ref(asset.storage_ref, request.mount_map).model_dump(),
+                    "payload_status": "missing",
+                    "payload_status_updated_at": utc_now(),
+                    "payload_status_reason": "fast_sync_pending_payload",
+                    "payload_storage_ref": _apply_mount_map_to_storage_ref(asset.storage_ref, request.mount_map).model_dump(),
+                    "payload_checksum": asset.checksum,
+                    "payload_size_bytes": asset.size_bytes,
+                    "payload_verified_at": None,
+                }
+            )
+            for asset in bundle.assets
+        ]
+
+        created_annotation_schemas = await emit_phase(
+            phase_name="importing_schemas",
+            entity_kind="annotation_schema",
+            items=bundle.annotation_schemas,
+            inserter=self.target.annotation_schema_database.insert,
+            detail="importing schemas",
+        )
+        created_assets = await emit_phase(
+            phase_name="importing_assets",
+            entity_kind="asset",
+            items=mapped_assets,
+            inserter=self.target.asset_database.insert,
+            detail="importing assets",
+        )
+        created_annotation_records = await emit_phase(
+            phase_name="importing_annotation_records",
+            entity_kind="annotation_record",
+            items=bundle.annotation_records,
+            inserter=self.target.annotation_record_database.insert,
+            detail="importing annotation records",
+        )
+        created_annotation_sets = await emit_phase(
+            phase_name="importing_annotation_sets",
+            entity_kind="annotation_set",
+            items=bundle.annotation_sets,
+            inserter=self.target.annotation_set_database.insert,
+            detail="importing annotation sets",
+        )
+        created_datums = await emit_phase(
+            phase_name="importing_datums",
+            entity_kind="datum",
+            items=bundle.datums,
+            inserter=self.target.datum_database.insert,
+            detail="importing datums",
+        )
+        await self._emit_progress(
+            progress_callback,
+            DatasetSyncProgress(
+                phase="committing",
+                message="finalizing graph",
+                entity_kind="dataset_version",
+                phase_detail="finalizing_graph",
+                completed_items=0,
+                total_items=1,
+                entity_completed_items=0,
+                entity_total_items=1,
+            ),
+        )
+        await self.target.dataset_version_database.insert(bundle.dataset_version)
+        await self._emit_progress(
+            progress_callback,
+            DatasetSyncProgress(
+                phase="complete",
+                message="finalizing graph",
+                entity_kind="dataset_version",
+                phase_detail="finalizing_graph",
+                completed_items=1,
+                total_items=1,
+                entity_completed_items=1,
+                entity_total_items=1,
+            ),
+        )
+        dv = await self.target.get_dataset_version(bundle.dataset_version.dataset_name, bundle.dataset_version.version)
+        return DatasetSyncCommitResult(
+            dataset_version=dv,
+            created_assets=created_assets,
+            created_annotation_schemas=created_annotation_schemas,
+            created_annotation_records=created_annotation_records,
+            created_annotation_sets=created_annotation_sets,
+            created_datums=created_datums,
+            transferred_payloads=0,
+            skipped_payloads=0,
+        )
 
     async def _resolve_payload_transfer_item(
         self,
