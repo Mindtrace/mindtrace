@@ -752,6 +752,20 @@ class DatasetSyncPayloadManifestOutput(BaseModel):
     payloads: list[ObjectPayloadDescriptor] = Field(default_factory=list)
 
 
+class DatasetSyncHydratePayloadsInput(BaseModel):
+    session_id: str
+    asset_id: str
+    data_base64: str
+
+
+class DatasetSyncHydratePayloadsOutput(BaseModel):
+    storage_ref: StorageRef
+
+
+class DatasetSyncFinalizeGraphInput(BaseModel):
+    session_id: str
+
+
 class DatasetSyncImportPlanOutput(BaseModel):
     plan: DatasetSyncImportPlan
 
@@ -896,6 +910,16 @@ DatasetSyncPayloadManifestSchema = TaskSchema(
     name="dataset_versions.export_sync_payload_manifest",
     input_schema=ExportDatasetVersionInput,
     output_schema=DatasetSyncPayloadManifestOutput,
+)
+DatasetSyncHydratePayloadsSchema = TaskSchema(
+    name="dataset_sync.hydrate_payload",
+    input_schema=DatasetSyncHydratePayloadsInput,
+    output_schema=DatasetSyncHydratePayloadsOutput,
+)
+DatasetSyncFinalizeGraphSchema = TaskSchema(
+    name="dataset_sync.finalize_graph",
+    input_schema=DatasetSyncFinalizeGraphInput,
+    output_schema=DatasetSyncCommitResultOutput,
 )
 DatasetSyncImportPrepareSchema = TaskSchema(
     name="dataset_versions.import_prepare",
