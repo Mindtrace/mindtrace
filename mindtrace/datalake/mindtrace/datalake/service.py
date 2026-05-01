@@ -126,6 +126,11 @@ from mindtrace.datalake.service_types import (
     DatasetSyncGraphExportSchema,
     DatasetSyncPayloadManifestOutput,
     DatasetSyncPayloadManifestSchema,
+    DatasetSyncHydratePayloadsInput,
+    DatasetSyncHydratePayloadsOutput,
+    DatasetSyncHydratePayloadsSchema,
+    DatasetSyncFinalizeGraphInput,
+    DatasetSyncFinalizeGraphSchema,
     GetAnnotationRecordSchema,
     GetAnnotationSchemaByNameVersionInput,
     GetAnnotationSchemaByNameVersionSchema,
@@ -586,6 +591,8 @@ class DatalakeService(Service):
             self.export_sync_payload_manifest,
             schema=DatasetSyncPayloadManifestSchema,
         )
+        self.add_endpoint("dataset_sync.hydrate_payload", self.dataset_sync_hydrate_payload, schema=DatasetSyncHydratePayloadsSchema)
+        self.add_endpoint("dataset_sync.finalize_graph", self.dataset_sync_finalize_graph, schema=DatasetSyncFinalizeGraphSchema)
         self.add_endpoint(
             "dataset_versions.import_prepare",
             self.import_dataset_version_prepare,
@@ -1274,6 +1281,60 @@ class DatalakeService(Service):
         manager = DatasetSyncManager(datalake)
         bundle = await manager.export_dataset_version(payload.dataset_name, payload.version)
         return DatasetSyncPayloadManifestOutput(payloads=list(bundle.payloads))
+
+    async def dataset_sync_hydrate_payload(
+        self, payload: DatasetSyncHydratePayloadsInput
+    ) -> DatasetSyncHydratePayloadsOutput:
+        datalake = await self._ensure_datalake()
+        session = await self._require_open_import_session(datalake, payload.session_id)
+        bundle = await _load_import_session_bundle(datalake, session)
+        desc = next((p for p in bundle.payloads if p.asset_id == payload.asset_id), None)
+        if desc is None:
+            raise HTTPException(status_code=400, detail="asset_id not found in session bundle")
+        data = self._decode_base64(payload.data_base64)
+        manager = DatasetSyncManager(datalake, datalake)
+        ref = await manager.ingest_import_payload_bytes(desc, session.mount_map, data)
+        session.staged_refs[payload.asset_id] = ref.model_dump(mode="json")
+        await manager.finalize_pending_import_asset_payload(
+            asset_id=payload.asset_id,
+            payload_descriptor=desc,
+            staged_storage_ref=ref,
+            payload_bytes=data,
+        )
+        session.verified_asset_ids = sorted(set(session.verified_asset_ids) | {payload.asset_id})
+        session.import_stage = "ready_to_finalize" if len(session.verified_asset_ids) >= len(session.required_asset_ids) else "hydrating_payloads"
+        await datalake.dataset_import_session_database.update(session)
+        return DatasetSyncHydratePayloadsOutput(storage_ref=ref)
+
+    async def dataset_sync_finalize_graph(self, payload: DatasetSyncFinalizeGraphInput) -> DatasetSyncCommitResultOutput:
+        datalake = await self._ensure_datalake()
+        session = await self._require_open_import_session(datalake, payload.session_id)
+        bundle = await _load_import_session_bundle(datalake, session)
+        missing: list[str] = []
+        for aid in session.required_asset_ids:
+            asset = await datalake.get_asset(aid)
+            if asset.payload_status != "present":
+                missing.append(aid)
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Payload hydration still pending for asset ids: {missing}")
+        dv = await datalake.get_dataset_version(bundle.dataset_version.dataset_name, bundle.dataset_version.version)
+        result = DatasetSyncCommitResult(
+            dataset_version=dv,
+            created_assets=0,
+            created_annotation_schemas=0,
+            created_annotation_records=0,
+            created_annotation_sets=0,
+            created_datums=0,
+            transferred_payloads=len(session.verified_asset_ids),
+            skipped_payloads=0,
+        )
+        await _delete_import_session_bundle_blob(datalake, session)
+        session.bundle_storage_ref = None
+        session.bundle_data = {}
+        session.status = "committed"
+        session.import_stage = "committed"
+        await datalake.dataset_import_session_database.update(session)
+        return DatasetSyncCommitResultOutput(result=result)
 
     async def import_dataset_version_prepare(self, payload: DatasetSyncImportRequest) -> DatasetSyncImportPlanOutput:
         datalake = await self._ensure_datalake()
