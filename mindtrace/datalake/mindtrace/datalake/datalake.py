@@ -413,6 +413,9 @@ class Datalake(Mindtrace):
     def get_asset_by_alias(self, alias: str):
         return self._submit_coro(self._backend.get_asset_by_alias(alias))
 
+    def get_asset_payload(self, asset_id: str, **kwargs: Any):
+        return self._submit_coro(self._backend.get_asset_payload(asset_id, **kwargs))
+
     def create_collection(self, **kwargs: Any):
         return self._submit_coro(self._backend.create_collection(**kwargs))
 

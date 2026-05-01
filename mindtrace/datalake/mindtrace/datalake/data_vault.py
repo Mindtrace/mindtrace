@@ -2506,7 +2506,7 @@ class DataVault:
         return materialized objects; in that case this step is skipped for non-bytes results.
         """
         asset = self._backend.get_asset_by_alias(alias)
-        payload = self._backend.get_object(asset.storage_ref, **get_object_kwargs)
+        payload = self._backend.get_asset_payload(asset.asset_id, **get_object_kwargs)
         reg = registry if registry is not None else self._registry
         if not materialize or reg is None:
             return payload
@@ -2525,7 +2525,7 @@ class DataVault:
     ) -> Any:
         """Load payload bytes for ``asset_id`` without resolving an alias."""
         asset = self._backend.get_asset(asset_id)
-        payload = self._backend.get_object(asset.storage_ref, **get_object_kwargs)
+        payload = self._backend.get_asset_payload(asset_id, **get_object_kwargs)
         reg = registry if registry is not None else self._registry
         if not materialize or reg is None:
             return payload
