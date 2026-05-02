@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import logging
 import mimetypes
 import time
@@ -85,6 +86,10 @@ def _head_object_checksum(meta: dict[str, Any]) -> str | None:
 
 def _chunked[T](items: Sequence[T], size: int) -> list[Sequence[T]]:
     return [items[index : index + size] for index in range(0, len(items), size)]
+
+
+def _chunk_count(total_items: int, chunk_size: int) -> int:
+    return max((total_items + chunk_size - 1) // chunk_size, 1) if total_items else 0
 
 
 def _commit_import_phase_item_count(bundle: DatasetSyncBundle) -> int:
@@ -558,6 +563,8 @@ class DatasetSyncManager:
             message: str,
             entity_completed_items: int,
             entity_total_items: int,
+            batch_index: int = 0,
+            total_batches: int = 0,
             force: bool = False,
         ) -> None:
             nonlocal last_commit_progress_mono
@@ -585,9 +592,44 @@ class DatasetSyncManager:
                     entity_completed_items=entity_completed_items,
                     entity_total_items=entity_total_items,
                     phase_detail=entity_kind,
+                    batch_index=batch_index,
+                    total_batches=total_batches,
                 ),
             )
             last_commit_progress_mono = now_mono
+
+        async def insert_models_chunk[T](
+            database: Any,
+            docs: list[T],
+            *,
+            existing_ids: set[str],
+            id_getter: Callable[[T], str],
+            on_duplicate: Callable[[T], Awaitable[None] | None] | None = None,
+        ) -> int:
+            inserted_count = 0
+            if not docs:
+                return inserted_count
+            if hasattr(database, "insert_many"):
+                try:
+                    inserted = await database.insert_many(docs, ordered=False)
+                    inserted_count = len(inserted)
+                    for row in inserted:
+                        existing_ids.add(id_getter(row))
+                    return inserted_count
+                except DuplicateInsertError:
+                    pass
+            for doc in docs:
+                try:
+                    inserted = await database.insert(doc)
+                    inserted_count += 1
+                    existing_ids.add(id_getter(inserted))
+                except DuplicateInsertError:
+                    existing_ids.add(id_getter(doc))
+                    if on_duplicate is not None:
+                        maybe = on_duplicate(doc)
+                        if inspect.isawaitable(maybe):
+                            await maybe
+            return inserted_count
 
         await emit_commit_progress(
             entity_kind="metadata",
@@ -597,45 +639,65 @@ class DatasetSyncManager:
             force=True,
         )
 
+        commit_batch_size = request.commit_batch_size
+
         created_annotation_schemas = 0
         processed_annotation_schemas = 0
-        for schema in bundle.annotation_schemas:
-            try:
+        schema_batches = _chunked(bundle.annotation_schemas, commit_batch_size)
+        total_schema_batches = len(schema_batches)
+        for batch_index, batch in enumerate(schema_batches, start=1):
+            new_docs: list[AnnotationSchema] = []
+            for schema in batch:
                 if schema.annotation_schema_id in existing_annotation_schema_ids:
                     continue
-                created = AnnotationSchema.model_validate(
-                    {
-                        **schema.model_dump(),
-                        "metadata": self._merge_origin_metadata(
-                            schema.metadata,
-                            lake_id=origin_lake_id,
-                            bundle=bundle,
-                            entity_id=schema.annotation_schema_id,
-                            annotation_schema_id=schema.annotation_schema_id,
-                        ),
-                    }
+                new_docs.append(
+                    AnnotationSchema.model_validate(
+                        {
+                            **schema.model_dump(),
+                            "metadata": self._merge_origin_metadata(
+                                schema.metadata,
+                                lake_id=origin_lake_id,
+                                bundle=bundle,
+                                entity_id=schema.annotation_schema_id,
+                                annotation_schema_id=schema.annotation_schema_id,
+                            ),
+                        }
+                    )
                 )
-                try:
-                    await self.target.annotation_schema_database.insert(created)
-                    created_annotation_schemas += 1
-                    existing_annotation_schema_ids.add(schema.annotation_schema_id)
-                except DuplicateInsertError:
-                    existing_annotation_schema_ids.add(schema.annotation_schema_id)
-            finally:
-                processed_annotation_schemas += 1
-                commit_done += 1
-                await emit_commit_progress(
-                    entity_kind="annotation_schema",
-                    message="Persisting annotation schemas",
-                    entity_completed_items=processed_annotation_schemas,
-                    entity_total_items=len(bundle.annotation_schemas),
-                )
+            created_annotation_schemas += await insert_models_chunk(
+                self.target.annotation_schema_database,
+                new_docs,
+                existing_ids=existing_annotation_schema_ids,
+                id_getter=lambda row: row.annotation_schema_id,
+            )
+            processed_annotation_schemas += len(batch)
+            commit_done += len(batch)
+            await emit_commit_progress(
+                entity_kind="annotation_schema",
+                message=f"Persisting annotation schemas batch {batch_index}/{total_schema_batches}",
+                entity_completed_items=processed_annotation_schemas,
+                entity_total_items=len(bundle.annotation_schemas),
+                batch_index=batch_index,
+                total_batches=total_schema_batches,
+                force=True,
+            )
 
         created_assets = 0
         processed_assets = 0
         inserted_assets: list[Asset] = []
-        for asset in bundle.assets:
-            try:
+        asset_batches = _chunked(bundle.assets, commit_batch_size)
+        total_asset_batches = len(asset_batches)
+        for batch_index, batch in enumerate(asset_batches, start=1):
+            batch_asset_ids = [asset.asset_id for asset in batch if asset.asset_id in existing_asset_ids]
+            existing_rows = []
+            existing_by_asset_id: dict[str, Asset] = {}
+            if batch_asset_ids and self.source is not self.target:
+                existing_rows = await self.target.asset_database.find({"asset_id": {"$in": list(dict.fromkeys(batch_asset_ids))}})
+                existing_by_asset_id = {row.asset_id: row for row in existing_rows}
+
+            new_docs: list[Asset] = []
+            refresh_docs: list[Asset] = []
+            for asset in batch:
                 storage_ref = _apply_mount_map_to_storage_ref(
                     resolved_storage_refs.get(asset.asset_id, asset.storage_ref),
                     mount_map,
@@ -675,149 +737,168 @@ class DatasetSyncManager:
                         "metadata": merged_origin,
                     }
                 )
+                if asset.asset_id not in existing_asset_ids:
+                    new_docs.append(created)
+                    continue
                 if self.source is self.target:
-                    if asset.asset_id in existing_asset_ids:
-                        continue
-                    try:
-                        await self.target.asset_database.insert(created)
-                        inserted_assets.append(created)
-                        created_assets += 1
-                        existing_asset_ids.add(asset.asset_id)
-                    except DuplicateInsertError:
-                        existing_asset_ids.add(asset.asset_id)
                     continue
-
-                if asset.asset_id in existing_asset_ids:
-                    existing = await self.target.get_asset(asset.asset_id)
-                    if _storage_refs_equivalent(existing.storage_ref, created.storage_ref):
-                        continue
-                    await self._refresh_target_asset_for_cross_lake_import(created)
+                existing = existing_by_asset_id.get(asset.asset_id)
+                if existing is None:
+                    refresh_docs.append(created)
                     continue
+                if not _storage_refs_equivalent(existing.storage_ref, created.storage_ref):
+                    refresh_docs.append(created)
 
-                try:
-                    await self.target.asset_database.insert(created)
-                    inserted_assets.append(created)
-                    created_assets += 1
-                    existing_asset_ids.add(asset.asset_id)
-                except DuplicateInsertError:
-                    existing_asset_ids.add(asset.asset_id)
-                    await self._refresh_target_asset_for_cross_lake_import(created)
-            finally:
-                processed_assets += 1
-                commit_done += 1
-                await emit_commit_progress(
-                    entity_kind="asset",
-                    message="Persisting assets",
-                    entity_completed_items=processed_assets,
-                    entity_total_items=len(bundle.assets),
-                )
+            created_assets += await insert_models_chunk(
+                self.target.asset_database,
+                new_docs,
+                existing_ids=existing_asset_ids,
+                id_getter=lambda row: row.asset_id,
+                on_duplicate=(None if self.source is self.target else self._refresh_target_asset_for_cross_lake_import),
+            )
+            inserted_assets.extend(new_docs)
+            for doc in refresh_docs:
+                await self._refresh_target_asset_for_cross_lake_import(doc)
+                existing_asset_ids.add(doc.asset_id)
+            processed_assets += len(batch)
+            commit_done += len(batch)
+            await emit_commit_progress(
+                entity_kind="asset",
+                message=f"Persisting assets batch {batch_index}/{total_asset_batches}",
+                entity_completed_items=processed_assets,
+                entity_total_items=len(bundle.assets),
+                batch_index=batch_index,
+                total_batches=total_asset_batches,
+                force=True,
+            )
 
         if inserted_assets:
             await self.target.ensure_primary_asset_aliases(inserted_assets)
 
         created_annotation_records = 0
         processed_annotation_records = 0
-        for record in bundle.annotation_records:
-            try:
+        record_batches = _chunked(bundle.annotation_records, commit_batch_size)
+        total_record_batches = len(record_batches)
+        for batch_index, batch in enumerate(record_batches, start=1):
+            new_docs: list[AnnotationRecord] = []
+            for record in batch:
                 if record.annotation_id in existing_annotation_record_ids:
                     continue
-                created = AnnotationRecord.model_validate(
-                    {
-                        **record.model_dump(),
-                        "metadata": self._merge_origin_metadata(
-                            record.metadata,
-                            lake_id=origin_lake_id,
-                            bundle=bundle,
-                            entity_id=record.annotation_id,
-                            annotation_id=record.annotation_id,
-                        ),
-                    }
+                new_docs.append(
+                    AnnotationRecord.model_validate(
+                        {
+                            **record.model_dump(),
+                            "metadata": self._merge_origin_metadata(
+                                record.metadata,
+                                lake_id=origin_lake_id,
+                                bundle=bundle,
+                                entity_id=record.annotation_id,
+                                annotation_id=record.annotation_id,
+                            ),
+                        }
+                    )
                 )
-                try:
-                    await self.target.annotation_record_database.insert(created)
-                    created_annotation_records += 1
-                    existing_annotation_record_ids.add(record.annotation_id)
-                except DuplicateInsertError:
-                    existing_annotation_record_ids.add(record.annotation_id)
-            finally:
-                processed_annotation_records += 1
-                commit_done += 1
-                await emit_commit_progress(
-                    entity_kind="annotation_record",
-                    message="Persisting annotation records",
-                    entity_completed_items=processed_annotation_records,
-                    entity_total_items=len(bundle.annotation_records),
-                )
+            created_annotation_records += await insert_models_chunk(
+                self.target.annotation_record_database,
+                new_docs,
+                existing_ids=existing_annotation_record_ids,
+                id_getter=lambda row: row.annotation_id,
+            )
+            processed_annotation_records += len(batch)
+            commit_done += len(batch)
+            await emit_commit_progress(
+                entity_kind="annotation_record",
+                message=f"Persisting annotation records batch {batch_index}/{total_record_batches}",
+                entity_completed_items=processed_annotation_records,
+                entity_total_items=len(bundle.annotation_records),
+                batch_index=batch_index,
+                total_batches=total_record_batches,
+                force=True,
+            )
 
         created_annotation_sets = 0
         processed_annotation_sets = 0
-        for annotation_set in bundle.annotation_sets:
-            try:
+        set_batches = _chunked(bundle.annotation_sets, commit_batch_size)
+        total_set_batches = len(set_batches)
+        for batch_index, batch in enumerate(set_batches, start=1):
+            new_docs: list[AnnotationSet] = []
+            for annotation_set in batch:
                 if annotation_set.annotation_set_id in existing_annotation_set_ids:
                     continue
-                created = AnnotationSet.model_validate(
-                    {
-                        **annotation_set.model_dump(),
-                        "metadata": self._merge_origin_metadata(
-                            annotation_set.metadata,
-                            lake_id=origin_lake_id,
-                            bundle=bundle,
-                            entity_id=annotation_set.annotation_set_id,
-                            annotation_set_id=annotation_set.annotation_set_id,
-                        ),
-                    }
+                new_docs.append(
+                    AnnotationSet.model_validate(
+                        {
+                            **annotation_set.model_dump(),
+                            "metadata": self._merge_origin_metadata(
+                                annotation_set.metadata,
+                                lake_id=origin_lake_id,
+                                bundle=bundle,
+                                entity_id=annotation_set.annotation_set_id,
+                                annotation_set_id=annotation_set.annotation_set_id,
+                            ),
+                        }
+                    )
                 )
-                try:
-                    await self.target.annotation_set_database.insert(created)
-                    created_annotation_sets += 1
-                    existing_annotation_set_ids.add(annotation_set.annotation_set_id)
-                except DuplicateInsertError:
-                    existing_annotation_set_ids.add(annotation_set.annotation_set_id)
-            finally:
-                processed_annotation_sets += 1
-                commit_done += 1
-                await emit_commit_progress(
-                    entity_kind="annotation_set",
-                    message="Persisting annotation sets",
-                    entity_completed_items=processed_annotation_sets,
-                    entity_total_items=len(bundle.annotation_sets),
-                )
+            created_annotation_sets += await insert_models_chunk(
+                self.target.annotation_set_database,
+                new_docs,
+                existing_ids=existing_annotation_set_ids,
+                id_getter=lambda row: row.annotation_set_id,
+            )
+            processed_annotation_sets += len(batch)
+            commit_done += len(batch)
+            await emit_commit_progress(
+                entity_kind="annotation_set",
+                message=f"Persisting annotation sets batch {batch_index}/{total_set_batches}",
+                entity_completed_items=processed_annotation_sets,
+                entity_total_items=len(bundle.annotation_sets),
+                batch_index=batch_index,
+                total_batches=total_set_batches,
+                force=True,
+            )
 
         created_datums = 0
         processed_datums = 0
-        for datum in bundle.datums:
-            try:
+        datum_batches = _chunked(bundle.datums, commit_batch_size)
+        total_datum_batches = len(datum_batches)
+        for batch_index, batch in enumerate(datum_batches, start=1):
+            new_docs: list[Datum] = []
+            for datum in batch:
                 if datum.datum_id in existing_datum_ids:
                     continue
                 mapped_asset_refs = {role: asset_id for role, asset_id in datum.asset_refs.items()}
-                created = Datum.model_validate(
-                    {
-                        **datum.model_dump(),
-                        "asset_refs": mapped_asset_refs,
-                        "metadata": self._merge_origin_metadata(
-                            datum.metadata,
-                            lake_id=origin_lake_id,
-                            bundle=bundle,
-                            entity_id=datum.datum_id,
-                            datum_id=datum.datum_id,
-                        ),
-                    }
+                new_docs.append(
+                    Datum.model_validate(
+                        {
+                            **datum.model_dump(),
+                            "asset_refs": mapped_asset_refs,
+                            "metadata": self._merge_origin_metadata(
+                                datum.metadata,
+                                lake_id=origin_lake_id,
+                                bundle=bundle,
+                                entity_id=datum.datum_id,
+                                datum_id=datum.datum_id,
+                            ),
+                        }
+                    )
                 )
-                try:
-                    await self.target.datum_database.insert(created)
-                    created_datums += 1
-                    existing_datum_ids.add(datum.datum_id)
-                except DuplicateInsertError:
-                    existing_datum_ids.add(datum.datum_id)
-            finally:
-                processed_datums += 1
-                commit_done += 1
-                await emit_commit_progress(
-                    entity_kind="datum",
-                    message="Persisting datums",
-                    entity_completed_items=processed_datums,
-                    entity_total_items=len(bundle.datums),
-                )
+            created_datums += await insert_models_chunk(
+                self.target.datum_database,
+                new_docs,
+                existing_ids=existing_datum_ids,
+                id_getter=lambda row: row.datum_id,
+            )
+            processed_datums += len(batch)
+            commit_done += len(batch)
+            await emit_commit_progress(
+                entity_kind="datum",
+                message=f"Persisting datums batch {batch_index}/{total_datum_batches}",
+                entity_completed_items=processed_datums,
+                entity_total_items=len(bundle.datums),
+                batch_index=batch_index,
+                total_batches=total_datum_batches,
+                force=True,
+            )
 
         if existing_dataset_version is None:
             dataset_version = DatasetVersion.model_validate(
@@ -840,6 +921,8 @@ class DatasetSyncManager:
             message="Persisting dataset version",
             entity_completed_items=1,
             entity_total_items=1,
+            batch_index=1,
+            total_batches=1,
             force=True,
         )
 
@@ -1369,6 +1452,13 @@ class DatasetSyncManager:
         current.media_type = new_asset.media_type
         current.kind = new_asset.kind
         current.metadata = new_asset.metadata
+        current.payload_status = new_asset.payload_status
+        current.payload_status_updated_at = new_asset.payload_status_updated_at
+        current.payload_status_reason = new_asset.payload_status_reason
+        current.payload_storage_ref = new_asset.payload_storage_ref
+        current.payload_checksum = new_asset.payload_checksum
+        current.payload_size_bytes = new_asset.payload_size_bytes
+        current.payload_verified_at = new_asset.payload_verified_at
         current.updated_at = new_asset.updated_at
         await self.target.asset_database.update(current)
 

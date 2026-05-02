@@ -79,6 +79,11 @@ class DatasetSyncImportRequest(BaseModel):
         ge=1,
         description="Maximum concurrent payload transfers during import commit.",
     )
+    commit_batch_size: int = Field(
+        default=1000,
+        ge=1,
+        description="Number of metadata rows to group into each bulk commit batch per entity type.",
+    )
     staged_payload_storage_refs: dict[str, StorageRef] | None = Field(
         default=None,
         description=(
