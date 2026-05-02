@@ -138,13 +138,29 @@ def target_datalake(sync_objects):
     datalake.get_annotation_set = AsyncMock(side_effect=DocumentNotFoundError("set missing"))
     datalake.get_datum = AsyncMock(side_effect=DocumentNotFoundError("datum missing"))
     datalake.get_dataset_version = AsyncMock(side_effect=DocumentNotFoundError("dataset missing"))
-    datalake.asset_database = SimpleNamespace(insert=AsyncMock(side_effect=lambda obj: obj))
-    datalake.annotation_schema_database = SimpleNamespace(insert=AsyncMock(side_effect=lambda obj: obj))
-    datalake.annotation_record_database = SimpleNamespace(insert=AsyncMock(side_effect=lambda obj: obj))
-    datalake.annotation_set_database = SimpleNamespace(insert=AsyncMock(side_effect=lambda obj: obj))
-    datalake.datum_database = SimpleNamespace(insert=AsyncMock(side_effect=lambda obj: obj))
+    datalake.asset_database = SimpleNamespace(
+        insert=AsyncMock(side_effect=lambda obj: obj),
+        insert_many=AsyncMock(side_effect=lambda objs, ordered=False: objs),
+    )
+    datalake.annotation_schema_database = SimpleNamespace(
+        insert=AsyncMock(side_effect=lambda obj: obj),
+        insert_many=AsyncMock(side_effect=lambda objs, ordered=False: objs),
+    )
+    datalake.annotation_record_database = SimpleNamespace(
+        insert=AsyncMock(side_effect=lambda obj: obj),
+        insert_many=AsyncMock(side_effect=lambda objs, ordered=False: objs),
+    )
+    datalake.annotation_set_database = SimpleNamespace(
+        insert=AsyncMock(side_effect=lambda obj: obj),
+        insert_many=AsyncMock(side_effect=lambda objs, ordered=False: objs),
+    )
+    datalake.datum_database = SimpleNamespace(
+        insert=AsyncMock(side_effect=lambda obj: obj),
+        insert_many=AsyncMock(side_effect=lambda objs, ordered=False: objs),
+    )
     datalake.dataset_version_database = SimpleNamespace(insert=AsyncMock(side_effect=lambda obj: obj))
     datalake.ensure_primary_asset_alias = AsyncMock(side_effect=lambda obj: obj)
+    datalake.ensure_primary_asset_aliases = AsyncMock(side_effect=lambda objs: objs)
     return datalake
 
 
