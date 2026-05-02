@@ -8,8 +8,8 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
-from pymongo import MongoClient
-from pymongo.errors import DocumentTooLarge, DuplicateKeyError
+from pymongo import InsertOne, MongoClient
+from pymongo.errors import BulkWriteError, DocumentTooLarge, DuplicateKeyError
 
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DocumentTooLargeError, DuplicateInsertError
@@ -426,6 +426,55 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             return await doc.insert()
         except DuplicateKeyError as e:
             raise DuplicateInsertError(f"Duplicate key error: {str(e)}")
+        except DocumentTooLarge as e:
+            raise DocumentTooLargeError(str(e)) from e
+        except Exception as e:
+            raise DuplicateInsertError(str(e)) from e
+
+    async def insert_many(self, objs: list[BaseModel | dict], ordered: bool = False) -> list[T]:
+        """Insert many documents efficiently and return the inserted models.
+
+        Uses raw Motor writes so bulk import paths can avoid per-row Beanie overhead.
+        """
+        if self._models is not None:
+            raise ValueError("Cannot use insert_many() in multi-model mode. Use db.model_name.insert_many() instead.")
+        if not objs:
+            return []
+        if not self._is_initialized:
+            await self.initialize()
+
+        raw_docs: list[dict[str, Any]] = []
+        for obj in objs:
+            if isinstance(obj, dict):
+                data = obj.copy()
+            else:
+                data = obj.model_dump(mode="python", by_alias=True, serialize_as_any=True)
+            data.pop("id", None)
+            data.pop("_id", None)
+            doc = self.model_cls(**data)
+            doc.id = None
+            raw = self._motor_model_dump(doc)
+            raw.pop("_id", None)
+            if raw.get("id") is None:
+                raw.pop("id", None)
+            raw_docs.append(raw)
+
+        try:
+            result = await self._motor_collection().insert_many(raw_docs, ordered=ordered)
+            inserted = await self._motor_collection().find({"_id": {"$in": list(result.inserted_ids)}}).to_list(length=None)
+            inserted_by_id = {row["_id"]: row for row in inserted}
+            out: list[T] = []
+            for inserted_id in result.inserted_ids:
+                row = inserted_by_id.get(inserted_id)
+                model = self._mongo_doc_to_model(row)
+                if model is None:
+                    raise DuplicateInsertError("Could not deserialize inserted document")
+                out.append(model)
+            return out
+        except DuplicateKeyError as e:
+            raise DuplicateInsertError(f"Duplicate key error: {str(e)}")
+        except BulkWriteError as e:
+            raise DuplicateInsertError(str(e)) from e
         except DocumentTooLarge as e:
             raise DocumentTooLargeError(str(e)) from e
         except Exception as e:

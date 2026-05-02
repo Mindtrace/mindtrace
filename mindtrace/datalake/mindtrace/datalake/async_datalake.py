@@ -1124,17 +1124,21 @@ class AsyncDatalake(Mindtrace):
                 )
             alias_rows.append(row)
 
+        missing_docs: list[AssetAlias] = []
         for asset_id in aliases:
             if asset_id in existing_by_alias:
                 continue
-            doc = self._build_document(
-                AssetAlias,
-                alias=asset_id,
-                asset_id=asset_id,
-                is_primary=True,
-                created_at=self._utc_now(),
+            missing_docs.append(
+                self._build_document(
+                    AssetAlias,
+                    alias=asset_id,
+                    asset_id=asset_id,
+                    is_primary=True,
+                    created_at=self._utc_now(),
+                )
             )
-            alias_rows.append(await self.asset_alias_database.insert(doc))
+        if missing_docs:
+            alias_rows.extend(await self.asset_alias_database.insert_many(missing_docs, ordered=False))
         return alias_rows
 
     async def resolve_alias(self, alias: str) -> str:
