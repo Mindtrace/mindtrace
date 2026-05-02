@@ -530,6 +530,22 @@ class DatasetSyncManager:
         commit_done = 0
         last_commit_progress_mono = 0.0
 
+        await self._emit_progress(
+            progress_callback,
+            DatasetSyncProgress(
+                phase="committing",
+                completed_items=0,
+                total_items=commit_phase_total,
+                message="Preparing metadata import",
+                entity_kind="metadata",
+                entity_completed_items=0,
+                entity_total_items=commit_phase_total,
+                phase_detail="metadata",
+                batch_index=0,
+                total_batches=0,
+            ),
+        )
+
         existing_dataset_version = await self._get_existing_dataset_version(
             bundle.dataset_version.dataset_name, bundle.dataset_version.version
         )
