@@ -13,6 +13,15 @@ from .types import (
     TokenUsage,
     WorkerInfo,
 )
+from .resilience import (
+    BackpressureConfig,
+    CircuitBreaker,
+    CircuitOpenError,
+    CircuitState,
+    RetryPolicy,
+    RetryStrategy,
+)
+from .collector import AgentMetrics, AgentObservabilityCollector, SpanQuery
 
 __all__ = [
     "AgentAckMessage",
@@ -20,11 +29,20 @@ __all__ = [
     "AgentInfo",
     "AgentInvokeRequest",
     "AgentInvokeResponse",
+    "AgentMetrics",
+    "AgentObservabilityCollector",
     "AgentSessionMessage",
     "AgentStreamEvent",
+    "BackpressureConfig",
+    "CircuitBreaker",
+    "CircuitOpenError",
+    "CircuitState",
     "MemoryEntry",
     "MemoryEntryRequest",
+    "RetryPolicy",
+    "RetryStrategy",
     "SessionInfo",
+    "SpanQuery",
     "TaskStatusResponse",
     "TokenUsage",
     "WorkerInfo",

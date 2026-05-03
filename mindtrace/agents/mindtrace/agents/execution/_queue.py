@@ -19,6 +19,7 @@ class AgentTask:
     input: str
     deps: Any = None
     session_id: str | None = None
+    user_id: str | None = None
     metadata: dict = field(default_factory=dict)
 
 

@@ -69,10 +69,14 @@ class MongoMemoryStore(AbstractMemoryStore):
         col = self._get_collection()
         now = datetime.now(timezone.utc)
         meta = metadata or {}
+        set_fields: dict[str, Any] = {"value": value, "metadata": meta, "updated_at": now}
+        if self._embedding_provider is not None:
+            embedding = await self._embedding_provider.embed(value)
+            set_fields["embedding"] = embedding
         await col.update_one(
             {"namespace": self.namespace, "key": key},
             {
-                "$set": {"value": value, "metadata": meta, "updated_at": now},
+                "$set": set_fields,
                 "$setOnInsert": {"created_at": now},
             },
             upsert=True,
@@ -86,8 +90,26 @@ class MongoMemoryStore(AbstractMemoryStore):
         return self._doc_to_entry(doc)
 
     async def search(self, query: str, top_k: int = 5) -> list[MemoryEntry]:
-        """$text search (vector search deferred to Phase 4)."""
         col = self._get_collection()
+        if self._embedding_provider is not None:
+            embedding = await self._embedding_provider.embed(query)
+            pipeline = [
+                {
+                    "$vectorSearch": {
+                        "index": self._vector_index_name,
+                        "path": "embedding",
+                        "queryVector": embedding,
+                        "numCandidates": top_k * 10,
+                        "limit": top_k,
+                        "filter": {"namespace": {"$eq": self.namespace}},
+                    }
+                }
+            ]
+            results = []
+            async for doc in col.aggregate(pipeline):
+                results.append(self._doc_to_entry(doc))
+            return results
+
         cursor = col.find(
             {"namespace": self.namespace, "$text": {"$search": query}},
             {"score": {"$meta": "textScore"}},

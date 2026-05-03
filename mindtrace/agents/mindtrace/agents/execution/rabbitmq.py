@@ -262,24 +262,85 @@ class RabbitMQAgentTaskQueue(AbstractTaskQueue):
             return TaskStatus.PENDING
         return TaskStatus(raw)
 
-    async def requeue_from_dlq(self, task_id: str) -> None:
-        """Move a task from the DLQ back to the main queue (resets retry_count)."""
-        redis = await self._get_redis()
-        raw = await redis.get(f"dlq:{task_id}")
-        if raw is None:
-            raise KeyError(f"Task {task_id!r} not found in DLQ")
+    async def list_dlq(self, limit: int = 100) -> list[dict]:
+        """Return up to `limit` messages from the DLQ without consuming them."""
         import json as _json
-        data = _json.loads(raw)
-        data["retry_count"] = 0
-        channel = await self._get_channel()
-        await channel.default_exchange.publish(
-            aio_pika.Message(
-                body=_json.dumps(data).encode(),
-                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-            ),
-            routing_key=self._queue_name,
-        )
-        await redis.delete(f"dlq:{task_id}")
+
+        connection = await aio_pika.connect_robust(self._rabbitmq_url)
+        results: list[dict] = []
+        try:
+            channel = await connection.channel()
+            queue = await channel.declare_queue(self._dlq_name, durable=True, passive=True)
+            collected: list[aio_pika.abc.AbstractIncomingMessage] = []
+            for _ in range(limit):
+                msg = await queue.get(no_ack=False, fail=False)
+                if msg is None:
+                    break
+                collected.append(msg)
+                try:
+                    results.append(_json.loads(msg.body))
+                except Exception:
+                    results.append({"raw": msg.body.decode(errors="replace")})
+            for msg in collected:
+                await msg.nack(requeue=True)
+        finally:
+            await connection.close()
+        return results
+
+    async def requeue_from_dlq(self, task_id: str) -> bool:
+        """Move a specific task_id message from DLQ back to the main queue.
+
+        Peeks messages one at a time; acks and republishes only the matching
+        task_id, nack-requeues everything else. Returns True if found.
+        """
+        import json as _json
+
+        connection = await aio_pika.connect_robust(self._rabbitmq_url)
+        found = False
+        try:
+            channel = await connection.channel()
+            queue = await channel.declare_queue(self._dlq_name, durable=True, passive=True)
+            queue_length = queue.declaration_result.message_count
+            skipped: list[aio_pika.abc.AbstractIncomingMessage] = []
+            for _ in range(queue_length):
+                msg = await queue.get(no_ack=False, fail=False)
+                if msg is None:
+                    break
+                try:
+                    body = _json.loads(msg.body)
+                except Exception:
+                    body = {}
+                if body.get("task_id") == task_id:
+                    body["retry_count"] = 0
+                    await channel.default_exchange.publish(
+                        aio_pika.Message(
+                            body=_json.dumps(body).encode(),
+                            delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+                        ),
+                        routing_key=self._queue_name,
+                    )
+                    await msg.ack()
+                    found = True
+                    break
+                else:
+                    skipped.append(msg)
+            for msg in skipped:
+                await msg.nack(requeue=True)
+        finally:
+            await connection.close()
+        return found
+
+    async def purge_dlq(self) -> int:
+        """Purge all messages from the DLQ. Returns count purged."""
+        connection = await aio_pika.connect_robust(self._rabbitmq_url)
+        try:
+            channel = await connection.channel()
+            queue = await channel.declare_queue(self._dlq_name, durable=True, passive=True)
+            count_before = queue.declaration_result.message_count
+            await queue.purge()
+        finally:
+            await connection.close()
+        return count_before
 
     async def close(self) -> None:
         if self._redis_client is not None:
