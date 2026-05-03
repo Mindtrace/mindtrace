@@ -8,7 +8,8 @@ from ._store import AbstractMemoryStore, MemoryEntry
 class InMemoryStore(AbstractMemoryStore):
     """In-process memory store. Lost on process restart. Useful for dev and tests."""
 
-    def __init__(self) -> None:
+    def __init__(self, namespace: str = "default", **kwargs: object) -> None:
+        super().__init__(namespace=namespace, **kwargs)
         self._data: dict[str, MemoryEntry] = {}
 
     async def save(self, key: str, value: str, metadata: dict | None = None) -> None:

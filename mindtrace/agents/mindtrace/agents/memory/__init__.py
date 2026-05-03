@@ -10,3 +10,5 @@ __all__ = [
     "MemoryEntry",
     "MemoryToolset",
 ]
+# RedisMemoryStore: from mindtrace.agents.memory.redis import RedisMemoryStore
+# MongoMemoryStore: from mindtrace.agents.memory.mongo import MongoMemoryStore

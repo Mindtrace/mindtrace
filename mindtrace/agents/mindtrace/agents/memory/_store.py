@@ -15,6 +15,14 @@ class MemoryEntry:
 
 
 class AbstractMemoryStore(ABC):
+    """Abstract base for all memory store backends.
+
+    namespace scopes all keys so stores sharing a backend (Redis, Mongo) do not collide.
+    """
+
+    def __init__(self, namespace: str = "default", **kwargs: object) -> None:
+        self.namespace = namespace
+
     @abstractmethod
     async def save(self, key: str, value: str, metadata: dict | None = None) -> None:
         raise NotImplementedError

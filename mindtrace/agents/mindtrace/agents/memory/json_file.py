@@ -32,7 +32,8 @@ def _dict_to_entry(d: dict) -> MemoryEntry:
 class JsonFileStore(AbstractMemoryStore):
     """Persists memories to a JSON file. Suitable for single-process apps."""
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, namespace: str = "default", **kwargs: object) -> None:
+        super().__init__(namespace=namespace, **kwargs)
         self._path = Path(path)
         self._data: dict[str, MemoryEntry] = {}
         if self._path.exists():

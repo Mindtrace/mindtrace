@@ -15,18 +15,24 @@ try:
     import aio_pika.abc
 except ImportError as e:
     raise ImportError(
-        "RabbitMQTaskQueue requires aio-pika. Install it with: pip install 'mindtrace-agents[distributed-rabbitmq]'"
+        "RabbitMQ queues require aio-pika. Install it with: pip install 'mindtrace-agents[distributed-rabbitmq]'"
     ) from e
 
 
-class RabbitMQTaskQueue(AbstractTaskQueue):
-    """Task queue backed by RabbitMQ using the AMQP RPC pattern.
+_LEGACY_MIGRATION_MSG = (
+    "RabbitMQTaskQueue has been replaced by RabbitMQAgentTaskQueue "
+    "(mindtrace-agents[distributed-rabbitmq]). "
+    "The legacy pickle-based queue is a security risk and will be removed in a future release. "
+    "See the distributed-agents migration guide for the new envelope-based API."
+)
 
-    Caller side:  submit() publishes to the agent's named queue and waits on a reply queue.
-    Worker side:  serve() consumes from the agent's named queue and publishes results back.
 
-    Note: AgentTask.deps must be pickle-serializable. For production, avoid passing
-    live connections in deps across processes — use clients that reconnect on the worker side.
+class _LegacyPickleRabbitMQTaskQueue(AbstractTaskQueue):
+    """DEPRECATED. Use RabbitMQAgentTaskQueue instead.
+
+    This class is retained only to allow graceful migration. It serialises
+    AgentTask.deps with pickle, which is unsafe across trust boundaries.
+    Do NOT use in new code.
     """
 
     def __init__(self, url: str) -> None:
@@ -48,7 +54,7 @@ class RabbitMQTaskQueue(AbstractTaskQueue):
                     correlation_id = message.correlation_id
                     future = self._pending.get(correlation_id)
                     if future and not future.done():
-                        result = pickle.loads(message.body)
+                        result = pickle.loads(message.body)  # noqa: S301
                         if isinstance(result, Exception):
                             self._statuses[correlation_id] = TaskStatus.FAILED
                             future.set_exception(result)
@@ -71,7 +77,7 @@ class RabbitMQTaskQueue(AbstractTaskQueue):
 
         await channel.default_exchange.publish(
             aio_pika.Message(
-                body=pickle.dumps(task),
+                body=pickle.dumps(task),  # noqa: S301
                 correlation_id=task_id,
                 reply_to=callback_queue.name,
             ),
@@ -96,13 +102,10 @@ class RabbitMQTaskQueue(AbstractTaskQueue):
         return self._statuses.get(task_id, TaskStatus.PENDING)
 
     async def serve(self, agent: AbstractMindtraceAgent) -> None:
-        """Worker side — consume tasks for this agent and publish results back.
-
-        Blocks until the process is interrupted.
-        """
+        """Worker side — consume tasks for this agent and publish results back."""
         agent_name = agent.name
         if not agent_name:
-            raise ValueError("Agent must have a name to serve via RabbitMQTaskQueue.")
+            raise ValueError("Agent must have a name to serve via queue.")
 
         connection = await aio_pika.connect_robust(self.url)
         async with connection:
@@ -112,12 +115,12 @@ class RabbitMQTaskQueue(AbstractTaskQueue):
 
             async def _on_task(message: aio_pika.abc.AbstractIncomingMessage) -> None:
                 async with message.process():
-                    task: AgentTask = pickle.loads(message.body)
+                    task: AgentTask = pickle.loads(message.body)  # noqa: S301
                     try:
                         result = await agent.run(task.input, deps=task.deps, session_id=task.session_id)
-                        body = pickle.dumps(result)
+                        body = pickle.dumps(result)  # noqa: S301
                     except Exception as exc:
-                        body = pickle.dumps(exc)
+                        body = pickle.dumps(exc)  # noqa: S301
 
                     if message.reply_to:
                         await channel.default_exchange.publish(
@@ -129,7 +132,13 @@ class RabbitMQTaskQueue(AbstractTaskQueue):
                         )
 
             await queue.consume(_on_task)
-            await asyncio.Future()  # run until interrupted
+            await asyncio.Future()
 
 
-__all__ = ["RabbitMQTaskQueue"]
+def __getattr__(name: str) -> object:
+    if name == "RabbitMQTaskQueue":
+        raise ImportError(_LEGACY_MIGRATION_MSG)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+__all__ = ["_LegacyPickleRabbitMQTaskQueue"]

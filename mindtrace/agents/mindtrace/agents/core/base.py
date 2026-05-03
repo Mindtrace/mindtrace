@@ -151,7 +151,7 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
 
         while iteration < max_iterations:
             iteration += 1
-            ctx = RunContext(deps=deps)
+            ctx = RunContext(deps=deps, session_id=session_id)
             await self._tool_manager.for_run_step(ctx)
             tool_definitions = [tool.tool_def for tool in (self._tool_manager.tools or {}).values()]
             request_params = ModelRequestParameters(function_tools=tool_definitions)
@@ -265,7 +265,7 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
 
         while iteration < max_iterations:
             iteration += 1
-            ctx = RunContext(deps=deps)
+            ctx = RunContext(deps=deps, session_id=session_id)
             await self._tool_manager.for_run_step(ctx)
             tool_definitions = [tool.tool_def for tool in (self._tool_manager.tools or {}).values()]
             request_params = ModelRequestParameters(function_tools=tool_definitions)
@@ -371,7 +371,7 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
             last_text = ""
 
             for iteration in range(max_iterations):
-                ctx = RunContext(deps=deps, step=iteration)
+                ctx = RunContext(deps=deps, step=iteration, session_id=session_id)
                 await self._tool_manager.for_run_step(ctx)
                 tool_definitions = [tool.tool_def for tool in (self._tool_manager.tools or {}).values()]
                 request_params = ModelRequestParameters(function_tools=tool_definitions)

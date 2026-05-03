@@ -23,6 +23,18 @@ mcp = ["fastmcp>=2.13.0"]
 distributed-rabbitmq = ["aio-pika>=9.0"]
 memory-redis = ["redis>=5.0"]
 memory-vector = ["chromadb>=0.4"]
+memory-mongo = ["motor>=3.0"]
+distributed-cluster = [
+    "mindtrace-cluster>=0.10.0",
+    "pyjwt[crypto]>=2.0",
+    "httpx>=0.25",
+]
+distributed = [
+    "mindtrace-agents[distributed-rabbitmq]",
+    "mindtrace-agents[distributed-cluster]",
+    "mindtrace-agents[memory-redis]",
+    "mindtrace-agents[memory-mongo]",
+]
 
 [project.urls]
 Homepage = "https://mindtrace.ai"
