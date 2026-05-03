@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 class AllowlistEntry(BaseModel):
@@ -12,6 +15,7 @@ class AllowlistEntry(BaseModel):
     registered_by: str
     registered_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     description: str | None = None
+    signature: str | None = None
 
 
 class AllowlistViolationError(Exception):
@@ -37,11 +41,12 @@ except ImportError:
 class MindtraceAllowlistRegistry:
     """Allowlist registry backed by Redis or in-memory (when redis_url is None)."""
 
-    def __init__(self, redis_url: str | None = None) -> None:
+    def __init__(self, redis_url: str | None = None, signing_secret: str | None = None) -> None:
         self._redis_url = redis_url
         self._mem: dict[str, dict[str, str]] = {}
         self._client: Any = None
         self._seeded = False
+        self._signing_secret = signing_secret
 
     async def _ensure_seeded(self) -> None:
         if self._seeded:
@@ -74,6 +79,9 @@ class MindtraceAllowlistRegistry:
 
     async def register(self, entry: AllowlistEntry) -> None:
         await self._ensure_seeded() if not self._seeded else None
+        if self._signing_secret is not None:
+            from .signing import sign_entry
+            entry = entry.model_copy(update={"signature": sign_entry(entry, self._signing_secret)})
         client = await self._get_client()
         if client is None:
             bucket = self._mem.setdefault(self._mem_key(entry.entry_type), {})
@@ -98,9 +106,32 @@ class MindtraceAllowlistRegistry:
         client = await self._get_client()
         if client is None:
             bucket = self._mem.get(self._mem_key(entry_type), {})
-            return dotted_path in bucket
+            raw_json = bucket.get(dotted_path)
+            if raw_json is None:
+                return False
+            if self._signing_secret is not None:
+                from .signing import verify_entry
+                stored = AllowlistEntry.model_validate_json(raw_json)
+                if stored.signature is None or not verify_entry(stored, stored.signature, self._signing_secret):
+                    logger.warning(
+                        "Allowlist entry %r has invalid/missing signature — treating as tampered",
+                        dotted_path,
+                    )
+                    return False
+            return True
         val = await client.hget(self._mem_key(entry_type), dotted_path)
-        return val is not None
+        if val is None:
+            return False
+        if self._signing_secret is not None:
+            from .signing import verify_entry
+            stored = AllowlistEntry.model_validate_json(val)
+            if stored.signature is None or not verify_entry(stored, stored.signature, self._signing_secret):
+                logger.warning(
+                    "Allowlist entry %r has invalid/missing signature — treating as tampered",
+                    dotted_path,
+                )
+                return False
+        return True
 
     async def enforce_agent_class(self, dotted_path: str) -> None:
         if not await self.is_permitted(dotted_path, "agent_class"):

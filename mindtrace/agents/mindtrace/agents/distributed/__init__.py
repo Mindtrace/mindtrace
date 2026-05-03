@@ -22,6 +22,8 @@ from .resilience import (
     RetryStrategy,
 )
 from .collector import AgentMetrics, AgentObservabilityCollector, SpanQuery
+from .rate_limiter import RateLimiter, RateLimitResult
+from .streams import StreamsRelay
 
 __all__ = [
     "AgentAckMessage",
@@ -39,10 +41,13 @@ __all__ = [
     "CircuitState",
     "MemoryEntry",
     "MemoryEntryRequest",
+    "RateLimitResult",
+    "RateLimiter",
     "RetryPolicy",
     "RetryStrategy",
     "SessionInfo",
     "SpanQuery",
+    "StreamsRelay",
     "TaskStatusResponse",
     "TokenUsage",
     "WorkerInfo",

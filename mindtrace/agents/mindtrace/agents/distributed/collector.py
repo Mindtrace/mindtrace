@@ -228,5 +228,15 @@ class AgentObservabilityCollector(Service if _SERVICES_AVAILABLE else object):  
     async def _health_endpoint(self) -> dict:
         return {"status": "ok"}
 
+    if _SERVICES_AVAILABLE:
+        async def shutdown_cleanup(self) -> None:
+            # Flush any pending OTLP exports. For in-memory store, nothing to flush.
+            logger.info(
+                "Collector %s shutting down (%d spans in memory)",
+                getattr(self, "id", "?"),
+                len(self._spans),
+            )
+            await super().shutdown_cleanup()
+
 
 __all__ = ["AgentMetrics", "AgentObservabilityCollector", "SpanQuery"]

@@ -464,5 +464,16 @@ class MindtraceAgentGateway(Service if _SERVICES_AVAILABLE else object):  # type
                 return 0
         return 0
 
+    if _SERVICES_AVAILABLE:
+        async def shutdown_cleanup(self) -> None:
+            # Close all active WebSocket sessions gracefully
+            logger.info(
+                "Gateway %s shutting down (%d active sessions)",
+                self.gateway_id,
+                len(self._active_sessions),
+            )
+            self._active_sessions.clear()
+            await super().shutdown_cleanup()
+
 
 __all__ = ["MindtraceAgentGateway"]

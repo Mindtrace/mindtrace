@@ -97,11 +97,19 @@ class MindtraceAgentWorker:
         finally:
             self._semaphore.release()
 
-    async def stop(self) -> None:
+    async def stop(self, drain_timeout: float = 30.0) -> None:
+        """Signal stop and wait for in-flight tasks to drain."""
         self._running = False
+        deadline = asyncio.get_event_loop().time() + drain_timeout
+        while self._semaphore._value < self.max_concurrent_agents:
+            if asyncio.get_event_loop().time() >= deadline:
+                logger.warning("Worker %s drain timeout (%ss) exceeded", self.worker_id, drain_timeout)
+                break
+            await asyncio.sleep(0.05)
         if self._pubsub_client is not None:
             await self._pubsub_client.aclose()
             self._pubsub_client = None
+        logger.info("Worker %s stopped", self.worker_id)
 
     async def _fetch_next_envelope(self) -> AgentTaskEnvelope | None:
         """Fetch one envelope from the task queue. Returns None if nothing available."""
