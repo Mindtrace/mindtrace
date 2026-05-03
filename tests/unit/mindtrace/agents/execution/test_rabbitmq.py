@@ -32,7 +32,7 @@ sys.modules.setdefault("aio_pika", _aio)
 sys.modules.setdefault("aio_pika.abc", _aio_abc)
 
 from mindtrace.agents.execution._queue import AgentTask, TaskStatus
-from mindtrace.agents.execution.rabbitmq import RabbitMQTaskQueue
+from mindtrace.agents.execution.rabbitmq import _LegacyPickleRabbitMQTaskQueue as RabbitMQTaskQueue
 
 
 @pytest.fixture

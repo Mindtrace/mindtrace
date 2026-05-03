@@ -141,4 +141,151 @@ def __getattr__(name: str) -> object:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = ["_LegacyPickleRabbitMQTaskQueue"]
+class RabbitMQAgentTaskQueue(AbstractTaskQueue):
+    """Envelope-based RabbitMQ task queue.
+
+    Publishes AgentTaskEnvelope JSON messages to a durable RabbitMQ queue.
+    Results and cancellation flags are stored in Redis. Failed tasks are
+    routed to a dead-letter queue after max_retries exhausted.
+    """
+
+    def __init__(
+        self,
+        rabbitmq_url: str,
+        redis_url: str,
+        queue_name: str = "mindtrace.agent.tasks",
+        dlq_name: str = "mindtrace.agent.tasks.dlq",
+        result_ttl: int = 3600,
+        max_retries: int = 3,
+    ) -> None:
+        try:
+            import redis.asyncio as _aioredis  # noqa: F401
+        except ImportError as e:
+            raise ImportError(
+                "RabbitMQAgentTaskQueue requires redis. "
+                "Install it with: pip install 'mindtrace-agents[distributed-rabbitmq]'"
+            ) from e
+        self._rabbitmq_url = rabbitmq_url
+        self._redis_url = redis_url
+        self._queue_name = queue_name
+        self._dlq_name = dlq_name
+        self._result_ttl = result_ttl
+        self._max_retries = max_retries
+        self._redis_client: Any = None
+        self._amqp_connection: Any = None
+        self._amqp_channel: Any = None
+
+    async def _get_redis(self) -> Any:
+        if self._redis_client is None:
+            import redis.asyncio as aioredis
+            self._redis_client = aioredis.from_url(self._redis_url, decode_responses=True)
+        return self._redis_client
+
+    async def _get_channel(self) -> Any:
+        if self._amqp_connection is None or self._amqp_connection.is_closed:
+            self._amqp_connection = await aio_pika.connect_robust(self._rabbitmq_url)
+            self._amqp_channel = await self._amqp_connection.channel()
+            await self._amqp_channel.declare_queue(self._queue_name, durable=True)
+            await self._amqp_channel.declare_queue(self._dlq_name, durable=True)
+        return self._amqp_channel
+
+    async def submit(self, task: AgentTask) -> str:
+        """Wrap task in an AgentTaskEnvelope and publish to RabbitMQ."""
+        from ..context.propagation import AgentRunContext, AgentTaskEnvelope, TaskProvenance
+        from uuid import uuid4 as _uuid4
+
+        trace_id = _uuid4().hex + _uuid4().hex
+        span_id = _uuid4().hex[:16]
+        session_id = task.session_id or str(_uuid4())
+        run_context = AgentRunContext(
+            trace_id=trace_id,
+            span_id=span_id,
+            session_id=session_id,
+            user_id="",
+        )
+        provenance = TaskProvenance(
+            submitter_id="",
+            submitter_role="service",
+            origin_gateway_id="",
+        )
+        envelope = AgentTaskEnvelope(
+            agent_name=task.agent_name,
+            input=task.input,
+            session_id=task.session_id,
+            run_context=run_context,
+            provenance=provenance,
+        )
+        task_id = envelope.task_id
+
+        channel = await self._get_channel()
+        await channel.default_exchange.publish(
+            aio_pika.Message(
+                body=envelope.model_dump_json().encode(),
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+            ),
+            routing_key=self._queue_name,
+        )
+
+        redis = await self._get_redis()
+        await redis.set(f"status:{task_id}", TaskStatus.PENDING.value, ex=self._result_ttl)
+        return task_id
+
+    async def get_result(self, task_id: str, timeout: int = 300) -> Any:
+        """Poll Redis result key with exponential backoff."""
+        import asyncio as _asyncio
+        import json as _json
+
+        redis = await self._get_redis()
+        delay = 0.5
+        elapsed = 0.0
+        while elapsed < timeout:
+            raw = await redis.get(f"result:{task_id}")
+            if raw is not None:
+                data = _json.loads(raw)
+                if data.get("status") == "error":
+                    raise RuntimeError(data.get("message", "Task failed"))
+                return data.get("result")
+            await _asyncio.sleep(delay)
+            elapsed += delay
+            delay = min(delay * 2, 10.0)
+        raise TimeoutError(f"Task {task_id!r} result not available within {timeout}s")
+
+    async def cancel(self, task_id: str) -> None:
+        redis = await self._get_redis()
+        await redis.set(f"cancel:{task_id}", "1", ex=self._result_ttl)
+        await redis.set(f"status:{task_id}", TaskStatus.FAILED.value, ex=self._result_ttl)
+
+    async def status(self, task_id: str) -> TaskStatus:
+        redis = await self._get_redis()
+        raw = await redis.get(f"status:{task_id}")
+        if raw is None:
+            return TaskStatus.PENDING
+        return TaskStatus(raw)
+
+    async def requeue_from_dlq(self, task_id: str) -> None:
+        """Move a task from the DLQ back to the main queue (resets retry_count)."""
+        redis = await self._get_redis()
+        raw = await redis.get(f"dlq:{task_id}")
+        if raw is None:
+            raise KeyError(f"Task {task_id!r} not found in DLQ")
+        import json as _json
+        data = _json.loads(raw)
+        data["retry_count"] = 0
+        channel = await self._get_channel()
+        await channel.default_exchange.publish(
+            aio_pika.Message(
+                body=_json.dumps(data).encode(),
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+            ),
+            routing_key=self._queue_name,
+        )
+        await redis.delete(f"dlq:{task_id}")
+
+    async def close(self) -> None:
+        if self._redis_client is not None:
+            await self._redis_client.aclose()
+        if self._amqp_connection is not None and not self._amqp_connection.is_closed:
+            await self._amqp_connection.close()
+
+
+__all__ = ["_LegacyPickleRabbitMQTaskQueue", "RabbitMQAgentTaskQueue"]
