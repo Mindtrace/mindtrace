@@ -832,6 +832,55 @@ class DatasetImportSessionStatusOutput(BaseModel):
     metadata_commit_cursor_total_items: int | None = None
 
 
+class DatasetStreamingImportStartInput(BaseModel):
+    dataset_name: str
+    version: str
+    manifest_total: int = Field(default=0, ge=0)
+    source_alias: str | None = None
+    transfer_policy: str = "copy_if_missing"
+    mount_map: dict[str, str] = Field(default_factory=dict)
+    preserve_ids: bool = True
+    origin_lake_id: str | None = None
+
+
+class DatasetStreamingImportStartOutput(BaseModel):
+    session_id: str
+    expires_at: datetime
+
+
+class DatasetStreamingAssetPayloadInput(BaseModel):
+    asset_id: str
+    data_base64: str
+
+
+class DatasetStreamingImportDatumBatchItem(BaseModel):
+    manifest_index: int = Field(ge=0)
+    datum: Datum
+    assets: list[Asset] = Field(default_factory=list)
+    annotation_schemas: list[AnnotationSchema] = Field(default_factory=list)
+    annotation_records: list[AnnotationRecord] = Field(default_factory=list)
+    annotation_sets: list[AnnotationSet] = Field(default_factory=list)
+    payloads: list[DatasetStreamingAssetPayloadInput] = Field(default_factory=list)
+
+
+class DatasetStreamingImportPushBatchInput(BaseModel):
+    session_id: str
+    items: list[DatasetStreamingImportDatumBatchItem] = Field(default_factory=list)
+
+
+class DatasetStreamingImportPushBatchOutput(BaseModel):
+    session_id: str
+    processed_manifest_items: int = 0
+    required_asset_count: int = 0
+    verified_asset_count: int = 0
+    pending_asset_count: int = 0
+    progress: DatasetSyncProgress | None = None
+
+
+class DatasetStreamingImportFinalizeInput(BaseModel):
+    session_id: str
+
+
 DatasetSyncJobMode = Literal["prepare", "import", "fast_sync"]
 DatasetSyncJobStatus = Literal["queued", "running", "completed", "failed"]
 
@@ -988,6 +1037,21 @@ DatasetImportSessionStatusSchema = TaskSchema(
     name="dataset_versions.import_session_status",
     input_schema=DatasetImportSessionStatusInput,
     output_schema=DatasetImportSessionStatusOutput,
+)
+DatasetStreamingImportStartSchema = TaskSchema(
+    name="dataset_versions.streaming_import_start",
+    input_schema=DatasetStreamingImportStartInput,
+    output_schema=DatasetStreamingImportStartOutput,
+)
+DatasetStreamingImportPushBatchSchema = TaskSchema(
+    name="dataset_versions.streaming_import_push_batch",
+    input_schema=DatasetStreamingImportPushBatchInput,
+    output_schema=DatasetStreamingImportPushBatchOutput,
+)
+DatasetStreamingImportFinalizeSchema = TaskSchema(
+    name="dataset_versions.streaming_import_finalize",
+    input_schema=DatasetStreamingImportFinalizeInput,
+    output_schema=DatasetSyncCommitResultOutput,
 )
 ReplicationBatchUpsertSchema = TaskSchema(
     name="replication.upsert_batch",

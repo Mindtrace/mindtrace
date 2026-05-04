@@ -144,6 +144,10 @@ class DatasetImportSession(DatalakeDocument):
     staged_refs: dict[str, dict[str, Any]] = Field(default_factory=dict)
     metadata_graph_committed: bool = False
     verified_asset_ids: list[str] = Field(default_factory=list)
+    dataset_name: str | None = None
+    dataset_version: str | None = None
+    expected_manifest_total: int = 0
+    ordered_manifest_ids: list[str] = Field(default_factory=list)
     import_stage: str | None = None
     metadata_commit_cursor_entity_kind: str | None = None
     metadata_commit_cursor_completed_items: int | None = None

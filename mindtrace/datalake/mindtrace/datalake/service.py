@@ -90,6 +90,14 @@ from mindtrace.datalake.service_types import (
     DatasetImportSessionStatusOutput,
     DatasetImportSessionStatusSchema,
     DatasetImportSessionUploadInput,
+    DatasetStreamingImportFinalizeInput,
+    DatasetStreamingImportFinalizeSchema,
+    DatasetStreamingImportPushBatchInput,
+    DatasetStreamingImportPushBatchOutput,
+    DatasetStreamingImportPushBatchSchema,
+    DatasetStreamingImportStartInput,
+    DatasetStreamingImportStartOutput,
+    DatasetStreamingImportStartSchema,
     DatasetImportSessionUploadOutput,
     DatasetImportSessionUploadSchema,
     DatasetSyncBundleOutput,
@@ -232,8 +240,9 @@ from mindtrace.datalake.sync_types import (
     DatasetSyncCommitResult,
     DatasetSyncImportPlan,
     DatasetSyncProgress,
+    ObjectPayloadDescriptor,
 )
-from mindtrace.datalake.types import DatasetImportSession, StorageRef, utc_now
+from mindtrace.datalake.types import Asset, DatasetImportSession, DatasetVersion, StorageRef, utc_now
 from mindtrace.registry import Mount
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.services import Service
@@ -651,6 +660,21 @@ class DatalakeService(Service):
             "dataset_versions.import_session_commit",
             self.import_session_commit,
             schema=DatasetImportSessionCommitSchema,
+        )
+        self.add_endpoint(
+            "dataset_versions.streaming_import_start",
+            self.streaming_import_start,
+            schema=DatasetStreamingImportStartSchema,
+        )
+        self.add_endpoint(
+            "dataset_versions.streaming_import_push_batch",
+            self.streaming_import_push_batch,
+            schema=DatasetStreamingImportPushBatchSchema,
+        )
+        self.add_endpoint(
+            "dataset_versions.streaming_import_finalize",
+            self.streaming_import_finalize,
+            schema=DatasetStreamingImportFinalizeSchema,
         )
         self.add_endpoint(
             "replication.upsert_batch", self.replication_upsert_batch, schema=ReplicationBatchUpsertSchema
@@ -1382,6 +1406,345 @@ class DatalakeService(Service):
         session.import_stage = "committed"
         await datalake.dataset_import_session_database.update(session)
         return DatasetSyncCommitResultOutput(result=result)
+
+    async def _streaming_upsert_model(self, database: Any, field: str, incoming: Any) -> tuple[Any, bool]:
+        rows = await database.find({field: getattr(incoming, field)})
+        if not rows:
+            inserted = await database.insert(incoming)
+            return inserted, True
+        existing = rows[0]
+        payload = incoming.model_dump()
+        for key, value in payload.items():
+            if key in {"id", "_id"}:
+                continue
+            setattr(existing, key, value)
+        if hasattr(existing, "updated_at"):
+            existing.updated_at = utc_now()
+        updated = await database.update(existing)
+        return updated, False
+
+    async def _streaming_upsert_asset(self, datalake: AsyncDatalake, asset: Asset) -> tuple[Asset, bool]:
+        rows = await datalake.asset_database.find({"asset_id": asset.asset_id})
+        if not rows:
+            inserted = await datalake.asset_database.insert(asset)
+            await datalake.ensure_primary_asset_alias(inserted)
+            return inserted, True
+        existing = rows[0]
+        payload = asset.model_dump()
+        for key, value in payload.items():
+            if key in {"id", "_id"}:
+                continue
+            setattr(existing, key, value)
+        existing.updated_at = utc_now()
+        updated = await datalake.asset_database.update(existing)
+        await datalake.ensure_primary_asset_alias(updated)
+        return updated, False
+
+    async def streaming_import_start(
+        self, payload: DatasetStreamingImportStartInput
+    ) -> DatasetStreamingImportStartOutput:
+        datalake = await self._ensure_datalake()
+        now = utc_now()
+        session = DatasetImportSession(
+            bundle_data={},
+            transfer_policy=payload.transfer_policy,
+            preserve_ids=payload.preserve_ids,
+            mount_map=dict(payload.mount_map),
+            origin_lake_id=payload.origin_lake_id or payload.source_alias,
+            required_asset_ids=[],
+            verified_asset_ids=[],
+            dataset_name=payload.dataset_name,
+            dataset_version=payload.version,
+            expected_manifest_total=payload.manifest_total,
+            ordered_manifest_ids=[],
+            import_stage="streaming",
+            expires_at=now + timedelta(hours=24),
+        )
+        session.metadata_graph_committed = False
+        session.import_progress_phase = "streaming"
+        session.import_progress_phase_detail = "importing_schemas"
+        session.import_progress_message = "Starting streaming import"
+        session.import_progress_total_items = payload.manifest_total
+        session.import_progress_completed_items = 0
+        session.import_progress_updated_at = now
+        await datalake.dataset_import_session_database.insert(session)
+        return DatasetStreamingImportStartOutput(session_id=session.import_session_id, expires_at=session.expires_at)
+
+    async def streaming_import_push_batch(
+        self, payload: DatasetStreamingImportPushBatchInput
+    ) -> DatasetStreamingImportPushBatchOutput:
+        datalake = await self._ensure_datalake()
+        session = await self._require_open_import_session(datalake, payload.session_id)
+        if _import_session_expired(session.expires_at):
+            raise HTTPException(status_code=400, detail="import session expired")
+        manager = DatasetSyncManager(datalake, datalake)
+
+        bytes_completed = int(session.import_progress_bytes_completed or 0)
+        required_asset_ids = set(session.required_asset_ids)
+        verified_asset_ids = set(session.verified_asset_ids)
+        ordered_manifest_ids = list(session.ordered_manifest_ids)
+        processed_total = int(session.import_progress_completed_items or 0)
+
+        total_batches = max(len(payload.items), 1)
+        writer = _ImportSessionProgressWriter(datalake, session)
+        last_progress: DatasetSyncProgress | None = None
+
+        for batch_index, item in enumerate(payload.items, start=1):
+            for schema in item.annotation_schemas:
+                await self._streaming_upsert_model(datalake.annotation_schema_database, "annotation_schema_id", schema)
+            last_progress = DatasetSyncProgress(
+                phase="streaming",
+                phase_detail="importing_schemas",
+                entity_kind="annotation_schema",
+                message=f"Streaming annotation schemas for datum {item.manifest_index + 1}",
+                completed_items=processed_total,
+                total_items=session.expected_manifest_total,
+                entity_completed_items=batch_index,
+                entity_total_items=total_batches,
+                batch_index=batch_index,
+                total_batches=total_batches,
+                bytes_completed=bytes_completed,
+            )
+            await writer.persist(last_progress, force=True)
+
+            asset_rows: list[Asset] = []
+            for asset in item.assets:
+                mapped_storage_ref = _apply_mount_map_to_storage_ref(asset.storage_ref, session.mount_map)
+                mapped_payload_ref = _apply_mount_map_to_storage_ref(asset.payload_storage_ref or asset.storage_ref, session.mount_map)
+                mapped_asset = Asset.model_validate(
+                    {
+                        **asset.model_dump(),
+                        "storage_ref": mapped_storage_ref.model_dump(),
+                        "payload_storage_ref": mapped_payload_ref.model_dump(),
+                        "payload_status": "missing",
+                        "payload_status_reason": "streaming_import_pending_payload",
+                        "payload_verified_at": None,
+                        "updated_at": utc_now(),
+                    }
+                )
+                row, _ = await self._streaming_upsert_asset(datalake, mapped_asset)
+                asset_rows.append(row)
+                required_asset_ids.add(asset.asset_id)
+            if asset_rows:
+                await datalake.ensure_primary_asset_aliases(asset_rows)
+            last_progress = DatasetSyncProgress(
+                phase="streaming",
+                phase_detail="importing_assets",
+                entity_kind="asset",
+                message=f"Streaming assets for datum {item.manifest_index + 1}",
+                completed_items=processed_total,
+                total_items=session.expected_manifest_total,
+                entity_completed_items=batch_index,
+                entity_total_items=total_batches,
+                batch_index=batch_index,
+                total_batches=total_batches,
+                bytes_completed=bytes_completed,
+            )
+            await writer.persist(last_progress, force=True)
+
+            payloads_by_asset = {entry.asset_id: entry for entry in item.payloads}
+            for asset in item.assets:
+                payload_entry = payloads_by_asset.get(asset.asset_id)
+                if payload_entry is None:
+                    continue
+                target_asset = await datalake.get_asset(asset.asset_id)
+                if (
+                    target_asset.payload_status == "present"
+                    and (asset.payload_checksum is None or target_asset.payload_checksum == asset.payload_checksum or target_asset.checksum == asset.payload_checksum)
+                    and (asset.payload_size_bytes is None or target_asset.payload_size_bytes == asset.payload_size_bytes or target_asset.size_bytes == asset.payload_size_bytes)
+                ):
+                    verified_asset_ids.add(asset.asset_id)
+                    continue
+                data = self._decode_base64(payload_entry.data_base64)
+                payload_descriptor = ObjectPayloadDescriptor(
+                    asset_id=asset.asset_id,
+                    storage_ref=asset.payload_storage_ref or asset.storage_ref,
+                    media_type=asset.media_type,
+                    size_bytes=asset.payload_size_bytes if asset.payload_size_bytes is not None else asset.size_bytes,
+                    checksum=asset.payload_checksum if asset.payload_checksum is not None else asset.checksum,
+                    content_type=asset.media_type,
+                    metadata=dict(asset.metadata or {}),
+                )
+                ref = await manager.ingest_import_payload_bytes(payload_descriptor, session.mount_map, data)
+                await manager.finalize_pending_import_asset_payload(
+                    asset_id=asset.asset_id,
+                    payload_descriptor=payload_descriptor,
+                    staged_storage_ref=ref,
+                    payload_bytes=data,
+                )
+                session.staged_refs[asset.asset_id] = ref.model_dump(mode="json")
+                verified_asset_ids.add(asset.asset_id)
+                bytes_completed += len(data)
+            last_progress = DatasetSyncProgress(
+                phase="streaming",
+                phase_detail="hydrating_payloads",
+                entity_kind="asset",
+                message=f"Streaming payloads for datum {item.manifest_index + 1}",
+                completed_items=processed_total,
+                total_items=session.expected_manifest_total,
+                entity_completed_items=batch_index,
+                entity_total_items=total_batches,
+                batch_index=batch_index,
+                total_batches=total_batches,
+                bytes_completed=bytes_completed,
+            )
+            await writer.persist(last_progress, force=True)
+
+            for record in item.annotation_records:
+                await self._streaming_upsert_model(datalake.annotation_record_database, "annotation_id", record)
+            last_progress = DatasetSyncProgress(
+                phase="streaming",
+                phase_detail="importing_annotation_records",
+                entity_kind="annotation_record",
+                message=f"Streaming annotation records for datum {item.manifest_index + 1}",
+                completed_items=processed_total,
+                total_items=session.expected_manifest_total,
+                entity_completed_items=batch_index,
+                entity_total_items=total_batches,
+                batch_index=batch_index,
+                total_batches=total_batches,
+                bytes_completed=bytes_completed,
+            )
+            await writer.persist(last_progress, force=True)
+
+            for annotation_set in item.annotation_sets:
+                await self._streaming_upsert_model(datalake.annotation_set_database, "annotation_set_id", annotation_set)
+            last_progress = DatasetSyncProgress(
+                phase="streaming",
+                phase_detail="importing_annotation_sets",
+                entity_kind="annotation_set",
+                message=f"Streaming annotation sets for datum {item.manifest_index + 1}",
+                completed_items=processed_total,
+                total_items=session.expected_manifest_total,
+                entity_completed_items=batch_index,
+                entity_total_items=total_batches,
+                batch_index=batch_index,
+                total_batches=total_batches,
+                bytes_completed=bytes_completed,
+            )
+            await writer.persist(last_progress, force=True)
+
+            await self._streaming_upsert_model(datalake.datum_database, "datum_id", item.datum)
+            if item.datum.datum_id not in ordered_manifest_ids:
+                ordered_manifest_ids.append(item.datum.datum_id)
+            processed_total += 1
+            last_progress = DatasetSyncProgress(
+                phase="streaming",
+                phase_detail="importing_datums",
+                entity_kind="datum",
+                message=f"Streaming datums batch item {batch_index}/{total_batches}",
+                completed_items=processed_total,
+                total_items=session.expected_manifest_total,
+                entity_completed_items=batch_index,
+                entity_total_items=total_batches,
+                batch_index=batch_index,
+                total_batches=total_batches,
+                bytes_completed=bytes_completed,
+            )
+            await writer.persist(last_progress, force=True)
+
+        session.required_asset_ids = sorted(required_asset_ids)
+        session.verified_asset_ids = sorted(verified_asset_ids)
+        session.ordered_manifest_ids = ordered_manifest_ids
+        session.import_stage = "streaming"
+        session.metadata_graph_committed = False
+        session.import_progress_completed_items = processed_total
+        session.import_progress_total_items = session.expected_manifest_total
+        session.import_progress_bytes_completed = bytes_completed
+        session.import_progress_updated_at = utc_now()
+        await datalake.dataset_import_session_database.update(session)
+        return DatasetStreamingImportPushBatchOutput(
+            session_id=session.import_session_id,
+            processed_manifest_items=processed_total,
+            required_asset_count=len(session.required_asset_ids),
+            verified_asset_count=len(session.verified_asset_ids),
+            pending_asset_count=max(len(session.required_asset_ids) - len(session.verified_asset_ids), 0),
+            progress=last_progress,
+        )
+
+    async def streaming_import_finalize(
+        self, payload: DatasetStreamingImportFinalizeInput
+    ) -> DatasetSyncCommitResultOutput:
+        datalake = await self._ensure_datalake()
+        session = await self._require_open_import_session(datalake, payload.session_id)
+        if _import_session_expired(session.expires_at):
+            raise HTTPException(status_code=400, detail="import session expired")
+        if not session.dataset_name or not session.dataset_version:
+            raise HTTPException(status_code=400, detail="streaming import session is missing dataset identity")
+        if session.expected_manifest_total and len(session.ordered_manifest_ids) != session.expected_manifest_total:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Streaming import manifest incomplete: got {len(session.ordered_manifest_ids)} / {session.expected_manifest_total} datums"
+                ),
+            )
+
+        writer = _ImportSessionProgressWriter(datalake, session)
+        await writer.persist(
+            DatasetSyncProgress(
+                phase="streaming",
+                phase_detail="finalizing_graph",
+                entity_kind="dataset_version",
+                message="Finalizing streaming graph import",
+                completed_items=len(session.ordered_manifest_ids),
+                total_items=session.expected_manifest_total,
+                entity_completed_items=0,
+                entity_total_items=1,
+                batch_index=1,
+                total_batches=1,
+                bytes_completed=session.import_progress_bytes_completed,
+            ),
+            force=True,
+        )
+
+        rows = await datalake.dataset_version_database.find(
+            {"dataset_name": session.dataset_name, "version": session.dataset_version}
+        )
+        if rows:
+            dataset_version = rows[0]
+            dataset_version.manifest = list(session.ordered_manifest_ids)
+            dataset_version.updated_at = utc_now()
+            dataset_version = await datalake.dataset_version_database.update(dataset_version)
+        else:
+            dataset_version = await datalake.create_dataset_version(
+                dataset_name=session.dataset_name,
+                version=session.dataset_version,
+                manifest=list(session.ordered_manifest_ids),
+                source_dataset_version_id=None,
+                metadata={"streaming_import": True, "origin_lake_id": session.origin_lake_id},
+            )
+        await writer.persist(
+            DatasetSyncProgress(
+                phase="complete",
+                phase_detail="finalizing_graph",
+                entity_kind="dataset_version",
+                message="Finalized streaming graph import",
+                completed_items=len(session.ordered_manifest_ids),
+                total_items=session.expected_manifest_total,
+                entity_completed_items=1,
+                entity_total_items=1,
+                batch_index=1,
+                total_batches=1,
+                bytes_completed=session.import_progress_bytes_completed,
+            ),
+            force=True,
+        )
+        session.status = "committed"
+        session.import_stage = "committed"
+        session.metadata_graph_committed = True
+        await datalake.dataset_import_session_database.update(session)
+        return DatasetSyncCommitResultOutput(
+            result=DatasetSyncCommitResult(
+                dataset_version=dataset_version,
+                created_assets=0,
+                created_annotation_schemas=0,
+                created_annotation_records=0,
+                created_annotation_sets=0,
+                created_datums=len(session.ordered_manifest_ids),
+                transferred_payloads=len(session.verified_asset_ids),
+                skipped_payloads=max(len(session.required_asset_ids) - len(session.verified_asset_ids), 0),
+            )
+        )
 
     async def import_dataset_version_prepare(self, payload: DatasetSyncImportRequest) -> DatasetSyncImportPlanOutput:
         datalake = await self._ensure_datalake()
