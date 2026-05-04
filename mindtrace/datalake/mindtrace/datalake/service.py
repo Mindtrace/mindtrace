@@ -1291,15 +1291,28 @@ class DatalakeService(Service):
         session = await self._require_open_import_session(datalake, payload.session_id)
         bundle = await _load_import_session_bundle(datalake, session)
         manager = DatasetSyncManager(datalake, datalake)
-        result = await manager.fast_import_graph(
-            DatasetSyncImportRequest(
-                bundle=bundle,
-                transfer_policy=session.transfer_policy,
-                origin_lake_id=session.origin_lake_id,
-                preserve_ids=session.preserve_ids,
-                mount_map=dict(session.mount_map),
+        progress_writer = _ImportSessionProgressWriter(datalake, session)
+        try:
+            result = await manager.fast_import_graph(
+                DatasetSyncImportRequest(
+                    bundle=bundle,
+                    transfer_policy=session.transfer_policy,
+                    origin_lake_id=session.origin_lake_id,
+                    preserve_ids=session.preserve_ids,
+                    mount_map=dict(session.mount_map),
+                    commit_batch_size=session.commit_batch_size,
+                    commit_progress_every_items=session.commit_progress_every_items,
+                    commit_progress_every_seconds=session.commit_progress_every_seconds,
+                    target_metadata_commit=True,
+                ),
+                progress_callback=progress_writer,
             )
-        )
+        except ValueError as exc:
+            await progress_writer.persist_failed(str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            await progress_writer.persist_failed(f"{type(exc).__name__}: {exc!s}")
+            raise
         session.metadata_graph_committed = True
         session.import_stage = "hydrating_payloads" if session.required_asset_ids else "ready_to_finalize"
         await datalake.dataset_import_session_database.update(session)

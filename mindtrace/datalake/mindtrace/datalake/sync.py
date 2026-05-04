@@ -1234,26 +1234,40 @@ class DatasetSyncManager:
         progress_callback: ProgressCallback | None = None,
     ) -> DatasetSyncCommitResult:
         bundle = request.bundle
+        commit_batch_size = request.commit_batch_size
+        commit_phase_total = _commit_import_phase_item_count(bundle)
+        completed_rows = 0
 
         async def emit_phase(
             *, phase_name: str, entity_kind: str, items: list[Any], inserter, detail: str
         ) -> int:
+            nonlocal completed_rows
             total = len(items)
             created = 0
-            for idx, item in enumerate(items, start=1):
-                await inserter(item)
-                created += 1
+            if total == 0:
+                return 0
+            batches = _chunked(items, commit_batch_size)
+            total_batches = len(batches)
+            processed = 0
+            for batch_index, batch in enumerate(batches, start=1):
+                for item in batch:
+                    await inserter(item)
+                    created += 1
+                processed += len(batch)
+                completed_rows += len(batch)
                 await self._emit_progress(
                     progress_callback,
                     DatasetSyncProgress(
                         phase="committing",
-                        message=detail,
+                        message=f"{detail} batch {batch_index}/{total_batches}",
                         entity_kind=entity_kind,
                         phase_detail=phase_name,
-                        completed_items=idx,
-                        total_items=total,
-                        entity_completed_items=idx,
+                        completed_items=completed_rows,
+                        total_items=commit_phase_total,
+                        entity_completed_items=processed,
                         entity_total_items=total,
+                        batch_index=batch_index,
+                        total_batches=total_batches,
                     ),
                 )
             return created
@@ -1280,61 +1294,66 @@ class DatasetSyncManager:
             entity_kind="annotation_schema",
             items=bundle.annotation_schemas,
             inserter=self.target.annotation_schema_database.insert,
-            detail="importing schemas",
+            detail="Persisting annotation schemas",
         )
         created_assets = await emit_phase(
             phase_name="importing_assets",
             entity_kind="asset",
             items=mapped_assets,
             inserter=self.target.asset_database.insert,
-            detail="importing assets",
+            detail="Persisting assets",
         )
         created_annotation_records = await emit_phase(
             phase_name="importing_annotation_records",
             entity_kind="annotation_record",
             items=bundle.annotation_records,
             inserter=self.target.annotation_record_database.insert,
-            detail="importing annotation records",
+            detail="Persisting annotation records",
         )
         created_annotation_sets = await emit_phase(
             phase_name="importing_annotation_sets",
             entity_kind="annotation_set",
             items=bundle.annotation_sets,
             inserter=self.target.annotation_set_database.insert,
-            detail="importing annotation sets",
+            detail="Persisting annotation sets",
         )
         created_datums = await emit_phase(
             phase_name="importing_datums",
             entity_kind="datum",
             items=bundle.datums,
             inserter=self.target.datum_database.insert,
-            detail="importing datums",
+            detail="Persisting datums",
         )
         await self._emit_progress(
             progress_callback,
             DatasetSyncProgress(
                 phase="committing",
-                message="finalizing graph",
+                message="Finalizing graph",
                 entity_kind="dataset_version",
                 phase_detail="finalizing_graph",
-                completed_items=0,
-                total_items=1,
+                completed_items=completed_rows,
+                total_items=commit_phase_total,
                 entity_completed_items=0,
                 entity_total_items=1,
+                batch_index=1,
+                total_batches=1,
             ),
         )
         await self.target.dataset_version_database.insert(bundle.dataset_version)
+        completed_rows += 1
         await self._emit_progress(
             progress_callback,
             DatasetSyncProgress(
                 phase="complete",
-                message="finalizing graph",
+                message="Finalizing graph",
                 entity_kind="dataset_version",
                 phase_detail="finalizing_graph",
-                completed_items=1,
-                total_items=1,
+                completed_items=completed_rows,
+                total_items=commit_phase_total,
                 entity_completed_items=1,
                 entity_total_items=1,
+                batch_index=1,
+                total_batches=1,
             ),
         )
         dv = await self.target.get_dataset_version(bundle.dataset_version.dataset_name, bundle.dataset_version.version)
