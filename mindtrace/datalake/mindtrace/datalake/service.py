@@ -1292,6 +1292,9 @@ class DatalakeService(Service):
         bundle = await _load_import_session_bundle(datalake, session)
         manager = DatasetSyncManager(datalake, datalake)
         progress_writer = _ImportSessionProgressWriter(datalake, session)
+        default_commit_batch_size = DatasetSyncImportRequest.model_fields["commit_batch_size"].default
+        default_commit_progress_every_items = DatasetSyncImportRequest.model_fields["commit_progress_every_items"].default
+        default_commit_progress_every_seconds = DatasetSyncImportRequest.model_fields["commit_progress_every_seconds"].default
         try:
             result = await manager.fast_import_graph(
                 DatasetSyncImportRequest(
@@ -1300,9 +1303,17 @@ class DatalakeService(Service):
                     origin_lake_id=session.origin_lake_id,
                     preserve_ids=session.preserve_ids,
                     mount_map=dict(session.mount_map),
-                    commit_batch_size=session.commit_batch_size,
-                    commit_progress_every_items=session.commit_progress_every_items,
-                    commit_progress_every_seconds=session.commit_progress_every_seconds,
+                    commit_batch_size=getattr(session, "commit_batch_size", default_commit_batch_size),
+                    commit_progress_every_items=getattr(
+                        session,
+                        "commit_progress_every_items",
+                        default_commit_progress_every_items,
+                    ),
+                    commit_progress_every_seconds=getattr(
+                        session,
+                        "commit_progress_every_seconds",
+                        default_commit_progress_every_seconds,
+                    ),
                     target_metadata_commit=True,
                 ),
                 progress_callback=progress_writer,
