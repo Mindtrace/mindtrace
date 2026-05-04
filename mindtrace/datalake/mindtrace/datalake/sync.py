@@ -1251,8 +1251,11 @@ class DatasetSyncManager:
             processed = 0
             for batch_index, batch in enumerate(batches, start=1):
                 for item in batch:
-                    await inserter(item)
-                    created += 1
+                    try:
+                        await inserter(item)
+                        created += 1
+                    except DuplicateInsertError:
+                        pass
                 processed += len(batch)
                 completed_rows += len(batch)
                 await self._emit_progress(
