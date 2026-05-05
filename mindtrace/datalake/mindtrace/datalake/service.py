@@ -1602,7 +1602,6 @@ class DatalakeService(Service):
         rows = await datalake.asset_database.find({"asset_id": asset.asset_id})
         if not rows:
             inserted = await datalake.asset_database.insert(asset)
-            await datalake.ensure_primary_asset_alias(inserted)
             return inserted, True
         existing = rows[0]
         payload = asset.model_dump()
@@ -1612,7 +1611,6 @@ class DatalakeService(Service):
             setattr(existing, key, value)
         existing.updated_at = utc_now()
         updated = await datalake.asset_database.update(existing)
-        await datalake.ensure_primary_asset_alias(updated)
         return updated, False
 
     async def streaming_import_start(
@@ -1729,18 +1727,18 @@ class DatalakeService(Service):
 
             payload_started_at = time.time()
             payloads_by_asset = {entry.asset_id: entry for entry in item.payloads}
-            for asset in item.assets:
+
+            async def process_payload(asset: Asset) -> tuple[str, int, dict[str, Any] | None]:
                 payload_entry = payloads_by_asset.get(asset.asset_id)
                 if payload_entry is None:
-                    continue
+                    return asset.asset_id, 0, None
                 target_asset = await datalake.get_asset(asset.asset_id)
                 if (
                     target_asset.payload_status == "present"
                     and (asset.payload_checksum is None or target_asset.payload_checksum == asset.payload_checksum or target_asset.checksum == asset.payload_checksum)
                     and (asset.payload_size_bytes is None or target_asset.payload_size_bytes == asset.payload_size_bytes or target_asset.size_bytes == asset.payload_size_bytes)
                 ):
-                    verified_asset_ids.add(asset.asset_id)
-                    continue
+                    return asset.asset_id, 0, None
                 data = self._decode_base64(payload_entry.data_base64)
                 payload_descriptor = ObjectPayloadDescriptor(
                     asset_id=asset.asset_id,
@@ -1758,9 +1756,14 @@ class DatalakeService(Service):
                     staged_storage_ref=ref,
                     payload_bytes=data,
                 )
-                session.staged_refs[asset.asset_id] = ref.model_dump(mode="json")
-                verified_asset_ids.add(asset.asset_id)
-                bytes_completed += len(data)
+                return asset.asset_id, len(data), ref.model_dump(mode="json")
+
+            payload_results = await asyncio.gather(*(process_payload(asset) for asset in item.assets))
+            for asset_id, added_bytes, staged_ref in payload_results:
+                verified_asset_ids.add(asset_id)
+                bytes_completed += added_bytes
+                if staged_ref is not None:
+                    session.staged_refs[asset_id] = staged_ref
             payload_seconds += max(0.0, time.time() - payload_started_at)
             last_progress = DatasetSyncProgress(
                 phase="transferring",
