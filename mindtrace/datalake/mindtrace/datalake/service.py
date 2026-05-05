@@ -1663,10 +1663,18 @@ class DatalakeService(Service):
         total_batches = max(len(payload.items), 1)
         writer = _ImportSessionProgressWriter(datalake, session)
         last_progress: DatasetSyncProgress | None = None
+        schema_seconds = 0.0
+        asset_seconds = 0.0
+        payload_seconds = 0.0
+        record_seconds = 0.0
+        annotation_set_seconds = 0.0
+        datum_seconds = 0.0
 
         for batch_index, item in enumerate(payload.items, start=1):
+            schema_started_at = time.time()
             for schema in item.annotation_schemas:
                 await self._streaming_upsert_model(datalake.annotation_schema_database, "annotation_schema_id", schema)
+            schema_seconds += max(0.0, time.time() - schema_started_at)
             last_progress = DatasetSyncProgress(
                 phase="committing",
                 phase_detail="importing_schemas",
@@ -1682,6 +1690,7 @@ class DatalakeService(Service):
             )
             await writer.persist(last_progress, force=True)
 
+            asset_started_at = time.time()
             asset_rows: list[Asset] = []
             for asset in item.assets:
                 mapped_storage_ref = _apply_mount_map_to_storage_ref(asset.storage_ref, session.mount_map)
@@ -1702,6 +1711,7 @@ class DatalakeService(Service):
                 required_asset_ids.add(asset.asset_id)
             if asset_rows:
                 await datalake.ensure_primary_asset_aliases(asset_rows)
+            asset_seconds += max(0.0, time.time() - asset_started_at)
             last_progress = DatasetSyncProgress(
                 phase="committing",
                 phase_detail="importing_assets",
@@ -1717,6 +1727,7 @@ class DatalakeService(Service):
             )
             await writer.persist(last_progress, force=True)
 
+            payload_started_at = time.time()
             payloads_by_asset = {entry.asset_id: entry for entry in item.payloads}
             for asset in item.assets:
                 payload_entry = payloads_by_asset.get(asset.asset_id)
@@ -1750,6 +1761,7 @@ class DatalakeService(Service):
                 session.staged_refs[asset.asset_id] = ref.model_dump(mode="json")
                 verified_asset_ids.add(asset.asset_id)
                 bytes_completed += len(data)
+            payload_seconds += max(0.0, time.time() - payload_started_at)
             last_progress = DatasetSyncProgress(
                 phase="transferring",
                 phase_detail="hydrating_payloads",
@@ -1765,8 +1777,10 @@ class DatalakeService(Service):
             )
             await writer.persist(last_progress, force=True)
 
+            record_started_at = time.time()
             for record in item.annotation_records:
                 await self._streaming_upsert_model(datalake.annotation_record_database, "annotation_id", record)
+            record_seconds += max(0.0, time.time() - record_started_at)
             last_progress = DatasetSyncProgress(
                 phase="committing",
                 phase_detail="importing_annotation_records",
@@ -1782,8 +1796,10 @@ class DatalakeService(Service):
             )
             await writer.persist(last_progress, force=True)
 
+            annotation_set_started_at = time.time()
             for annotation_set in item.annotation_sets:
                 await self._streaming_upsert_model(datalake.annotation_set_database, "annotation_set_id", annotation_set)
+            annotation_set_seconds += max(0.0, time.time() - annotation_set_started_at)
             last_progress = DatasetSyncProgress(
                 phase="committing",
                 phase_detail="importing_annotation_sets",
@@ -1799,7 +1815,9 @@ class DatalakeService(Service):
             )
             await writer.persist(last_progress, force=True)
 
+            datum_started_at = time.time()
             await self._streaming_upsert_model(datalake.datum_database, "datum_id", item.datum)
+            datum_seconds += max(0.0, time.time() - datum_started_at)
             if item.datum.datum_id not in ordered_manifest_ids:
                 ordered_manifest_ids.append(item.datum.datum_id)
             processed_total += 1
@@ -1807,7 +1825,12 @@ class DatalakeService(Service):
                 phase="committing",
                 phase_detail="importing_datums",
                 entity_kind="datum",
-                message=f"Streaming datums batch item {batch_index}/{total_batches}",
+                message=(
+                    f"Streaming datums batch item {batch_index}/{total_batches}"
+                    f" · target timings schema={schema_seconds:.2f}s assets={asset_seconds:.2f}s"
+                    f" payloads={payload_seconds:.2f}s records={record_seconds:.2f}s"
+                    f" sets={annotation_set_seconds:.2f}s datums={datum_seconds:.2f}s"
+                ),
                 completed_items=processed_total,
                 total_items=session.expected_manifest_total,
                 entity_completed_items=batch_index,
