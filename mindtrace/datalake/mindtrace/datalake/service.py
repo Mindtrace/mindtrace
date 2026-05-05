@@ -1339,7 +1339,28 @@ class DatalakeService(Service):
                     add_sample("missing_annotation_schema", annotation_schema_id, str(exc))
 
         if payload.mode == "full-lake":
-            known_mounts = set(datalake.get_mounts().keys())
+            mount_snapshot = datalake.get_mounts()
+            known_mounts = set(mount_snapshot.keys())
+            sample_asset_mounts: list[dict[str, Any]] = []
+            for asset_id, asset in list(assets_by_id.items())[: min(5, len(assets_by_id))]:
+                payload_ref = asset.payload_storage_ref or asset.storage_ref
+                sample_asset_mounts.append(
+                    {
+                        "asset_id": asset_id,
+                        "mount": None if payload_ref is None else str(payload_ref.mount or ""),
+                        "name": None if payload_ref is None else str(payload_ref.name or ""),
+                    }
+                )
+            print(
+                "[dataset-integrity] full-lake mount snapshot",
+                {
+                    "dataset": f"{payload.dataset_name}@{payload.version}",
+                    "mount_snapshot": mount_snapshot,
+                    "known_mounts": sorted(known_mounts),
+                    "sample_asset_mounts": sample_asset_mounts,
+                },
+                flush=True,
+            )
             for asset_id, asset in assets_by_id.items():
                 payload_ref = asset.payload_storage_ref or asset.storage_ref
                 if payload_ref is None:
