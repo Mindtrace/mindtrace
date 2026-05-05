@@ -1636,7 +1636,7 @@ class DatalakeService(Service):
             expires_at=now + timedelta(hours=24),
         )
         session.metadata_graph_committed = False
-        session.import_progress_phase = "streaming"
+        session.import_progress_phase = "committing"
         session.import_progress_phase_detail = "importing_schemas"
         session.import_progress_message = "Starting streaming import"
         session.import_progress_total_items = payload.manifest_total
@@ -1668,7 +1668,7 @@ class DatalakeService(Service):
             for schema in item.annotation_schemas:
                 await self._streaming_upsert_model(datalake.annotation_schema_database, "annotation_schema_id", schema)
             last_progress = DatasetSyncProgress(
-                phase="streaming",
+                phase="committing",
                 phase_detail="importing_schemas",
                 entity_kind="annotation_schema",
                 message=f"Streaming annotation schemas for datum {item.manifest_index + 1}",
@@ -1703,7 +1703,7 @@ class DatalakeService(Service):
             if asset_rows:
                 await datalake.ensure_primary_asset_aliases(asset_rows)
             last_progress = DatasetSyncProgress(
-                phase="streaming",
+                phase="committing",
                 phase_detail="importing_assets",
                 entity_kind="asset",
                 message=f"Streaming assets for datum {item.manifest_index + 1}",
@@ -1751,7 +1751,7 @@ class DatalakeService(Service):
                 verified_asset_ids.add(asset.asset_id)
                 bytes_completed += len(data)
             last_progress = DatasetSyncProgress(
-                phase="streaming",
+                phase="transferring",
                 phase_detail="hydrating_payloads",
                 entity_kind="asset",
                 message=f"Streaming payloads for datum {item.manifest_index + 1}",
@@ -1768,7 +1768,7 @@ class DatalakeService(Service):
             for record in item.annotation_records:
                 await self._streaming_upsert_model(datalake.annotation_record_database, "annotation_id", record)
             last_progress = DatasetSyncProgress(
-                phase="streaming",
+                phase="committing",
                 phase_detail="importing_annotation_records",
                 entity_kind="annotation_record",
                 message=f"Streaming annotation records for datum {item.manifest_index + 1}",
@@ -1785,7 +1785,7 @@ class DatalakeService(Service):
             for annotation_set in item.annotation_sets:
                 await self._streaming_upsert_model(datalake.annotation_set_database, "annotation_set_id", annotation_set)
             last_progress = DatasetSyncProgress(
-                phase="streaming",
+                phase="committing",
                 phase_detail="importing_annotation_sets",
                 entity_kind="annotation_set",
                 message=f"Streaming annotation sets for datum {item.manifest_index + 1}",
@@ -1804,7 +1804,7 @@ class DatalakeService(Service):
                 ordered_manifest_ids.append(item.datum.datum_id)
             processed_total += 1
             last_progress = DatasetSyncProgress(
-                phase="streaming",
+                phase="committing",
                 phase_detail="importing_datums",
                 entity_kind="datum",
                 message=f"Streaming datums batch item {batch_index}/{total_batches}",
@@ -1857,7 +1857,7 @@ class DatalakeService(Service):
         writer = _ImportSessionProgressWriter(datalake, session)
         await writer.persist(
             DatasetSyncProgress(
-                phase="streaming",
+                phase="committing",
                 phase_detail="finalizing_graph",
                 entity_kind="dataset_version",
                 message="Finalizing streaming graph import",
