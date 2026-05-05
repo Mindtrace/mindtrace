@@ -10,6 +10,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, TypeVar
 
+from motor.motor_asyncio import AsyncIOMotorClient
+
 from mindtrace.core import Mindtrace
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
@@ -135,54 +137,71 @@ class AsyncDatalake(Mindtrace):
                 default_mount=effective_default_mount,
             )
 
-        self.asset_database = MongoMindtraceODM(model_cls=Asset, db_name=mongo_db_name, db_uri=mongo_db_uri)
-        self.collection_database = MongoMindtraceODM(model_cls=Collection, db_name=mongo_db_name, db_uri=mongo_db_uri)
-        self.collection_item_database = MongoMindtraceODM(
-            model_cls=CollectionItem,
-            db_name=mongo_db_name,
-            db_uri=mongo_db_uri,
-        )
-        self.asset_retention_database = MongoMindtraceODM(
-            model_cls=AssetRetention,
-            db_name=mongo_db_name,
-            db_uri=mongo_db_uri,
-        )
-        self.annotation_record_database = MongoMindtraceODM(
-            model_cls=AnnotationRecord,
-            db_name=mongo_db_name,
-            db_uri=mongo_db_uri,
-        )
-        self.annotation_schema_database = MongoMindtraceODM(
-            model_cls=AnnotationSchema,
-            db_name=mongo_db_name,
-            db_uri=mongo_db_uri,
-        )
-        self.annotation_set_database = MongoMindtraceODM(
-            model_cls=AnnotationSet,
-            db_name=mongo_db_name,
-            db_uri=mongo_db_uri,
-        )
-        self.datum_database = MongoMindtraceODM(model_cls=Datum, db_name=mongo_db_name, db_uri=mongo_db_uri)
-        self.dataset_version_database = MongoMindtraceODM(
-            model_cls=DatasetVersion,
-            db_name=mongo_db_name,
-            db_uri=mongo_db_uri,
-        )
-        self.direct_upload_session_database = MongoMindtraceODM(
-            model_cls=DirectUploadSession,
-            db_name=mongo_db_name,
-            db_uri=mongo_db_uri,
-        )
+        # One shared motor client for every ODM owned by this AsyncDatalake.
+        # Motor binds to the event loop that first awaits on it; the sync
+        # Datalake wrapper always dispatches through a single dedicated loop,
+        # so this is loop-safe.
+        self._mongo_client = AsyncIOMotorClient(mongo_db_uri)
+        self._closed = False
+        odm_kwargs = {"db_name": mongo_db_name, "db_uri": mongo_db_uri, "client": self._mongo_client}
+        self.asset_database = MongoMindtraceODM(model_cls=Asset, **odm_kwargs)
+        self.collection_database = MongoMindtraceODM(model_cls=Collection, **odm_kwargs)
+        self.collection_item_database = MongoMindtraceODM(model_cls=CollectionItem, **odm_kwargs)
+        self.asset_retention_database = MongoMindtraceODM(model_cls=AssetRetention, **odm_kwargs)
+        self.annotation_record_database = MongoMindtraceODM(model_cls=AnnotationRecord, **odm_kwargs)
+        self.annotation_schema_database = MongoMindtraceODM(model_cls=AnnotationSchema, **odm_kwargs)
+        self.annotation_set_database = MongoMindtraceODM(model_cls=AnnotationSet, **odm_kwargs)
+        self.datum_database = MongoMindtraceODM(model_cls=Datum, **odm_kwargs)
+        self.dataset_version_database = MongoMindtraceODM(model_cls=DatasetVersion, **odm_kwargs)
+        self.direct_upload_session_database = MongoMindtraceODM(model_cls=DirectUploadSession, **odm_kwargs)
         self.dataset_import_session_database = MongoMindtraceODM(
             model_cls=DatasetImportSession,
-            db_name=mongo_db_name,
-            db_uri=mongo_db_uri,
+            **odm_kwargs,
         )
-        self.asset_alias_database = MongoMindtraceODM(
-            model_cls=AssetAlias,
-            db_name=mongo_db_name,
-            db_uri=mongo_db_uri,
-        )
+        self.asset_alias_database = MongoMindtraceODM(model_cls=AssetAlias, **odm_kwargs)
+
+    def _all_odms(self) -> list[MongoMindtraceODM]:
+        return [
+            self.asset_database,
+            self.collection_database,
+            self.collection_item_database,
+            self.asset_retention_database,
+            self.annotation_record_database,
+            self.annotation_schema_database,
+            self.annotation_set_database,
+            self.datum_database,
+            self.dataset_version_database,
+            self.direct_upload_session_database,
+            self.dataset_import_session_database,
+            self.asset_alias_database,
+        ]
+
+    async def close(self) -> None:
+        """Release the shared motor client and any per-ODM sync clients.
+
+        Each ODM was constructed with ``client=self._mongo_client``, so the
+        ODM-level ``close()`` calls only release any lazily-created sync
+        clients. The owning motor client is closed here exactly once.
+        Idempotent: safe to call multiple times.
+        """
+        if self._closed:
+            return
+        for odm in self._all_odms():
+            try:
+                odm.close()
+            except Exception:
+                pass
+        try:
+            self._mongo_client.close()
+        except Exception:
+            pass
+        self._closed = True
+
+    async def __aenter__(self) -> "AsyncDatalake":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        await self.close()
 
     def _odm_backends(self) -> tuple[MongoMindtraceODM, ...]:
         return (

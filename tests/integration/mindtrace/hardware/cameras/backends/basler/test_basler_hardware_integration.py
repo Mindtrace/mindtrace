@@ -4,8 +4,10 @@ These tests validate that the BaslerCameraBackend correctly integrates with actu
 when they are connected. They test full initialization, capture, configuration, and lifecycle
 management with real hardware.
 
-Note: These tests will be skipped if no Basler cameras are detected.
-Skip with: pytest -m "not hardware" or set SKIP_HARDWARE_TESTS=1
+Tests are always collected; they are skipped with explicit reasons when ``SKIP_HARDWARE_TESTS`` is set,
+pypylon is missing, or no cameras are enumerated (same visibility pattern as Photoneo 3D scanner tests).
+
+Skip entirely via: ``pytest -m "not hardware"`` or ``SKIP_HARDWARE_TESTS=1``.
 """
 
 import os
@@ -15,43 +17,55 @@ import pytest
 
 from mindtrace.core.utils.checks import check_libs
 
-# Skip all tests if SKIP_HARDWARE_TESTS is set
-if os.environ.get("SKIP_HARDWARE_TESTS", "0") == "1":
-    pytest.skip("Hardware tests disabled via SKIP_HARDWARE_TESTS env var", allow_module_level=True)
-
-# Skip all tests in this module if pypylon is not available
-missing_libs = check_libs(["pypylon"])
-if missing_libs:
-    pytest.skip(
-        f"Required libraries are not installed: {', '.join(missing_libs)}. Skipping test.", allow_module_level=True
-    )
+_missing_pypylon = check_libs(["pypylon"])
 
 
-def get_connected_cameras():
-    """Get list of connected Basler cameras for testing."""
+def check_basler_cameras_connected() -> bool:
+    """Return True if at least one Basler camera is enumerated by the SDK."""
+    if _missing_pypylon:
+        return False
     try:
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
 
-        return BaslerCameraBackend.get_available_cameras()
-    except Exception as e:
-        if "SDKNotAvailableError" in str(type(e)) or "SDK 'pypylon' is not available" in str(e):
-            pytest.skip(f"Pypylon SDK not available: {e}", allow_module_level=True)
-        return []
+        return len(BaslerCameraBackend.get_available_cameras()) > 0
+    except Exception:
+        return False
 
 
-# Skip all tests if no cameras are connected
-connected_cameras = get_connected_cameras()
-if not connected_cameras:
-    pytest.skip("No Basler cameras detected. Skipping Basler hardware integration tests.", allow_module_level=True)
-
-# Mark all tests in this module as hardware tests
-pytestmark = pytest.mark.hardware
+# Collect all tests even when hardware or SDK is missing; skip with visible reasons (like 3D scanner tests).
+pytestmark = [
+    pytest.mark.hardware,
+    pytest.mark.skipif(
+        os.environ.get("SKIP_HARDWARE_TESTS", "0") == "1",
+        reason="Hardware tests disabled via SKIP_HARDWARE_TESTS env var",
+    ),
+    pytest.mark.skipif(
+        bool(_missing_pypylon),
+        reason=(
+            "Required libraries are not installed: "
+            + ", ".join(_missing_pypylon)
+            + ". Install pypylon to run Basler hardware integration tests."
+        ),
+    ),
+    pytest.mark.skipif(
+        not _missing_pypylon and not check_basler_cameras_connected(),
+        reason=(
+            "No Basler cameras detected (or pypylon could not enumerate devices). "
+            "Connect cameras and verify the Basler SDK."
+        ),
+    ),
+]
 
 
 @pytest.fixture
 def camera_name():
     """Fixture providing the name of the first connected camera."""
-    return connected_cameras[0]
+    from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+
+    cameras = BaslerCameraBackend.get_available_cameras()
+    if not cameras:
+        pytest.skip("No Basler cameras available")
+    return cameras[0]
 
 
 def _is_camera_in_use_error(error: Exception) -> bool:
