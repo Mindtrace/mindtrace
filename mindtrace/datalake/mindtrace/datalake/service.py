@@ -92,6 +92,10 @@ from mindtrace.datalake.service_types import (
     DatasetImportSessionUploadInput,
     DatasetStreamingImportFinalizeInput,
     DatasetStreamingImportFinalizeSchema,
+    DatasetIntegrityIssueSample,
+    DatasetIntegrityVerifyInput,
+    DatasetIntegrityVerifyOutput,
+    DatasetIntegrityVerifySchema,
     DatasetStreamingImportPushBatchInput,
     DatasetStreamingImportPushBatchOutput,
     DatasetStreamingImportPushBatchSchema,
@@ -677,6 +681,11 @@ class DatalakeService(Service):
             schema=DatasetStreamingImportFinalizeSchema,
         )
         self.add_endpoint(
+            "dataset_versions.verify_integrity",
+            self.verify_dataset_integrity,
+            schema=DatasetIntegrityVerifySchema,
+        )
+        self.add_endpoint(
             "replication.upsert_batch", self.replication_upsert_batch, schema=ReplicationBatchUpsertSchema
         )
         self.add_endpoint(
@@ -1239,6 +1248,146 @@ class DatalakeService(Service):
     async def resolve_datum(self, payload: GetByIdInput) -> ResolvedDatumOutput:
         datalake = await self._ensure_datalake()
         return ResolvedDatumOutput(resolved_datum=await datalake.resolve_datum(payload.id))
+
+    async def verify_dataset_integrity(
+        self, payload: DatasetIntegrityVerifyInput
+    ) -> DatasetIntegrityVerifyOutput:
+        datalake = await self._ensure_datalake()
+        dataset_version = await datalake.get_dataset_version(payload.dataset_name, payload.version)
+        manifest_ids = [str(v) for v in dataset_version.manifest]
+        sample_limit = int(payload.sample_limit)
+        samples: list[DatasetIntegrityIssueSample] = []
+
+        def add_sample(kind: str, id_: str, detail: str | None = None) -> None:
+            if len(samples) < sample_limit:
+                samples.append(DatasetIntegrityIssueSample(kind=kind, id=id_, detail=detail))
+
+        duplicate_manifest_count = len(manifest_ids) - len(set(manifest_ids))
+        missing_manifest_datum_count = 0
+        missing_asset_count = 0
+        missing_annotation_set_count = 0
+        missing_annotation_record_count = 0
+        missing_annotation_schema_count = 0
+        missing_mask_asset_count = 0
+        registry_missing_payload_count = 0
+        invalid_mount_count = 0
+
+        datums_by_id: dict[str, Any] = {}
+        asset_ids: set[str] = set()
+        annotation_set_ids: set[str] = set()
+
+        for datum_id in manifest_ids:
+            try:
+                datum = await datalake.get_datum(datum_id)
+                datums_by_id[datum_id] = datum
+                for asset_id in (datum.asset_refs or {}).values():
+                    asset_ids.add(str(asset_id))
+                for annotation_set_id in (datum.annotation_set_ids or []):
+                    annotation_set_ids.add(str(annotation_set_id))
+            except Exception as exc:
+                missing_manifest_datum_count += 1
+                add_sample("missing_manifest_datum", datum_id, str(exc))
+
+        assets_by_id: dict[str, Any] = {}
+        if payload.mode in {"fast", "full-db", "full-lake"}:
+            for asset_id in sorted(asset_ids):
+                try:
+                    asset = await datalake.get_asset(asset_id)
+                    assets_by_id[asset_id] = asset
+                except Exception as exc:
+                    missing_asset_count += 1
+                    add_sample("missing_asset", asset_id, str(exc))
+
+        annotation_sets_by_id: dict[str, Any] = {}
+        annotation_record_ids: set[str] = set()
+        annotation_schema_ids: set[str] = set()
+        if payload.mode in {"full-db", "full-lake"}:
+            for annotation_set_id in sorted(annotation_set_ids):
+                try:
+                    annotation_set = await datalake.get_annotation_set(annotation_set_id)
+                    annotation_sets_by_id[annotation_set_id] = annotation_set
+                    if annotation_set.annotation_schema_id:
+                        annotation_schema_ids.add(str(annotation_set.annotation_schema_id))
+                    for annotation_record_id in annotation_set.annotation_record_ids or []:
+                        annotation_record_ids.add(str(annotation_record_id))
+                except Exception as exc:
+                    missing_annotation_set_count += 1
+                    add_sample("missing_annotation_set", annotation_set_id, str(exc))
+
+            for annotation_record_id in sorted(annotation_record_ids):
+                try:
+                    record = await datalake.get_annotation_record(annotation_record_id)
+                    geometry = record.geometry or {}
+                    if isinstance(geometry, dict):
+                        mask_asset_id = geometry.get("mask_asset_id")
+                        if mask_asset_id and str(mask_asset_id) not in assets_by_id:
+                            try:
+                                mask_asset = await datalake.get_asset(str(mask_asset_id))
+                                assets_by_id[str(mask_asset_id)] = mask_asset
+                            except Exception as exc:
+                                missing_mask_asset_count += 1
+                                add_sample("missing_mask_asset", str(mask_asset_id), str(exc))
+                except Exception as exc:
+                    missing_annotation_record_count += 1
+                    add_sample("missing_annotation_record", annotation_record_id, str(exc))
+
+            for annotation_schema_id in sorted(annotation_schema_ids):
+                try:
+                    await datalake.get_annotation_schema(annotation_schema_id)
+                except Exception as exc:
+                    missing_annotation_schema_count += 1
+                    add_sample("missing_annotation_schema", annotation_schema_id, str(exc))
+
+        if payload.mode == "full-lake":
+            known_mounts = set(datalake.get_mounts().keys())
+            for asset_id, asset in assets_by_id.items():
+                payload_ref = asset.payload_storage_ref or asset.storage_ref
+                if payload_ref is None:
+                    continue
+                mount_name = str(payload_ref.mount or "")
+                if mount_name not in known_mounts:
+                    invalid_mount_count += 1
+                    add_sample("invalid_mount", asset_id, mount_name)
+                    continue
+                try:
+                    exists = datalake.store.has_object(payload_ref.name, version=payload_ref.version, mount=mount_name)
+                except (RegistryObjectNotFound, FileNotFoundError, KeyError, OSError) as exc:
+                    registry_missing_payload_count += 1
+                    add_sample("registry_missing_payload", asset_id, str(exc))
+                    continue
+                if not exists:
+                    registry_missing_payload_count += 1
+                    add_sample("registry_missing_payload", asset_id, payload_ref.qualified_key)
+
+        ok = (
+            duplicate_manifest_count == 0
+            and missing_manifest_datum_count == 0
+            and missing_asset_count == 0
+            and missing_annotation_set_count == 0
+            and missing_annotation_record_count == 0
+            and missing_annotation_schema_count == 0
+            and missing_mask_asset_count == 0
+            and registry_missing_payload_count == 0
+            and invalid_mount_count == 0
+        )
+        return DatasetIntegrityVerifyOutput(
+            ok=ok,
+            dataset_name=payload.dataset_name,
+            version=payload.version,
+            mode=payload.mode,
+            manifest_count=len(manifest_ids),
+            resolved_manifest_count=len(datums_by_id),
+            duplicate_manifest_count=duplicate_manifest_count,
+            missing_manifest_datum_count=missing_manifest_datum_count,
+            missing_asset_count=missing_asset_count,
+            missing_annotation_set_count=missing_annotation_set_count,
+            missing_annotation_record_count=missing_annotation_record_count,
+            missing_annotation_schema_count=missing_annotation_schema_count,
+            missing_mask_asset_count=missing_mask_asset_count,
+            registry_missing_payload_count=registry_missing_payload_count,
+            invalid_mount_count=invalid_mount_count,
+            samples=samples,
+        )
 
     async def create_dataset_version(self, payload: CreateDatasetVersionInput) -> DatasetVersionOutput:
         datalake = await self._ensure_datalake()

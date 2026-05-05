@@ -881,6 +881,38 @@ class DatasetStreamingImportFinalizeInput(BaseModel):
     session_id: str
 
 
+class DatasetIntegrityVerifyInput(BaseModel):
+    dataset_name: str
+    version: str
+    mode: Literal["fast", "full-db", "full-lake"] = "fast"
+    sample_limit: int = Field(default=25, ge=1, le=500)
+
+
+class DatasetIntegrityIssueSample(BaseModel):
+    kind: str
+    id: str
+    detail: str | None = None
+
+
+class DatasetIntegrityVerifyOutput(BaseModel):
+    ok: bool
+    dataset_name: str
+    version: str
+    mode: Literal["fast", "full-db", "full-lake"]
+    manifest_count: int = 0
+    resolved_manifest_count: int = 0
+    duplicate_manifest_count: int = 0
+    missing_manifest_datum_count: int = 0
+    missing_asset_count: int = 0
+    missing_annotation_set_count: int = 0
+    missing_annotation_record_count: int = 0
+    missing_annotation_schema_count: int = 0
+    missing_mask_asset_count: int = 0
+    registry_missing_payload_count: int = 0
+    invalid_mount_count: int = 0
+    samples: list[DatasetIntegrityIssueSample] = Field(default_factory=list)
+
+
 DatasetSyncJobMode = Literal["prepare", "import", "fast_sync"]
 DatasetSyncJobStatus = Literal["queued", "running", "completed", "failed"]
 
@@ -1052,6 +1084,11 @@ DatasetStreamingImportFinalizeSchema = TaskSchema(
     name="dataset_versions.streaming_import_finalize",
     input_schema=DatasetStreamingImportFinalizeInput,
     output_schema=DatasetSyncCommitResultOutput,
+)
+DatasetIntegrityVerifySchema = TaskSchema(
+    name="dataset_versions.verify_integrity",
+    input_schema=DatasetIntegrityVerifyInput,
+    output_schema=DatasetIntegrityVerifyOutput,
 )
 ReplicationBatchUpsertSchema = TaskSchema(
     name="replication.upsert_batch",
