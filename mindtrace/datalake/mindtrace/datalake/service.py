@@ -1376,7 +1376,7 @@ class DatalakeService(Service):
                     add_sample("invalid_mount", asset_id, mount_name)
                     continue
                 try:
-                    exists = datalake.store.has_object(payload_ref.name, version=payload_ref.version, mount=mount_name)
+                    exists = await datalake.object_exists(payload_ref)
                 except (RegistryObjectNotFound, FileNotFoundError, KeyError, OSError) as exc:
                     registry_missing_payload_count += 1
                     add_sample("registry_missing_payload", asset_id, str(exc))
