@@ -238,7 +238,7 @@ from mindtrace.datalake.service_types import (
     ViewDatasetVersionPageInput,
     ViewDatasetVersionPageSchema,
 )
-from mindtrace.datalake.sync import DatasetSyncManager
+from mindtrace.datalake.sync import DatasetSyncManager, _apply_mount_map_to_storage_ref
 from mindtrace.datalake.sync_types import (
     DatasetSyncBundle,
     DatasetSyncCommitResult,
