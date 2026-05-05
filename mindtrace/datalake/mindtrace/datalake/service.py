@@ -1340,7 +1340,12 @@ class DatalakeService(Service):
 
         if payload.mode == "full-lake":
             mount_snapshot = datalake.get_mounts()
-            known_mounts = set(mount_snapshot.keys())
+            mount_entries = mount_snapshot.get("mounts", []) if isinstance(mount_snapshot, dict) else []
+            known_mounts = {
+                str(entry.get("name"))
+                for entry in mount_entries
+                if isinstance(entry, dict) and entry.get("name")
+            }
             sample_asset_mounts: list[dict[str, Any]] = []
             for asset_id, asset in list(assets_by_id.items())[: min(5, len(assets_by_id))]:
                 payload_ref = asset.payload_storage_ref or asset.storage_ref
