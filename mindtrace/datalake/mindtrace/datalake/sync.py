@@ -74,13 +74,13 @@ def _head_object_checksum(meta: dict[str, Any]) -> str | None:
     for key in ("checksum", "sha256", "etag", "ETag"):
         val = meta.get(key)
         if isinstance(val, str) and val:
-            return val.strip('\"')
+            return val.strip('"')
     metadata = meta.get("metadata")
     if isinstance(metadata, dict):
         for key in ("checksum", "sha256", "etag", "ETag"):
             val = metadata.get(key)
             if isinstance(val, str) and val:
-                return val.strip('\"')
+                return val.strip('"')
     return None
 
 
@@ -103,6 +103,30 @@ def _commit_import_phase_item_count(bundle: DatasetSyncBundle) -> int:
         + len(bundle.datums)
         + 1
     )
+
+
+def _commit_import_should_emit_commit_progress(
+    *,
+    force: bool,
+    commit_done: int,
+    commit_phase_total: int,
+    seconds_since_last_emit: float,
+    commit_progress_every_items: int,
+    commit_progress_every_seconds: float,
+) -> bool:
+    """Throttle ``commit_import`` granular progress emits (covers fast paths + divisors + timers)."""
+
+    if force:
+        return True
+    if commit_done == 0:
+        return True
+    if commit_done == commit_phase_total:
+        return True
+    if commit_progress_every_items and commit_done % commit_progress_every_items == 0:
+        return True
+    if seconds_since_last_emit >= commit_progress_every_seconds:
+        return True
+    return False
 
 
 def collect_bundle_mount_names(bundle: DatasetSyncBundle) -> set[str]:
@@ -388,8 +412,16 @@ class DatasetSyncManager:
         db_says_present = (
             target_asset is not None
             and status == "present"
-            and (payload_checksum is None or target_asset.payload_checksum == payload_checksum or target_asset.checksum == payload_checksum)
-            and (payload_size is None or target_asset.payload_size_bytes == payload_size or target_asset.size_bytes == payload_size)
+            and (
+                payload_checksum is None
+                or target_asset.payload_checksum == payload_checksum
+                or target_asset.checksum == payload_checksum
+            )
+            and (
+                payload_size is None
+                or target_asset.payload_size_bytes == payload_size
+                or target_asset.size_bytes == payload_size
+            )
             and target_payload_ref is not None
             and _storage_refs_equivalent(target_payload_ref, target_storage_ref)
         )
@@ -549,9 +581,7 @@ class DatasetSyncManager:
         existing_dataset_version = await self._get_existing_dataset_version(
             bundle.dataset_version.dataset_name, bundle.dataset_version.version
         )
-        greenfield_metadata = (
-            request.greenfield_skip_target_metadata_probes and existing_dataset_version is None
-        )
+        greenfield_metadata = request.greenfield_skip_target_metadata_probes and existing_dataset_version is None
         existing_annotation_schema_ids = await self._prefetch_existing_annotation_schema_ids(
             [schema.annotation_schema_id for schema in bundle.annotation_schemas],
             skip_lookup=greenfield_metadata,
@@ -585,17 +615,14 @@ class DatasetSyncManager:
         ) -> None:
             nonlocal last_commit_progress_mono
             now_mono = time.monotonic()
-            should_emit = force
-            if not should_emit:
-                if commit_done == 0:
-                    should_emit = True
-                elif commit_done == commit_phase_total:
-                    should_emit = True
-                elif commit_done % request.commit_progress_every_items == 0:
-                    should_emit = True
-                elif (now_mono - last_commit_progress_mono) >= request.commit_progress_every_seconds:
-                    should_emit = True
-            if not should_emit:
+            if not _commit_import_should_emit_commit_progress(
+                force=force,
+                commit_done=commit_done,
+                commit_phase_total=commit_phase_total,
+                seconds_since_last_emit=now_mono - last_commit_progress_mono,
+                commit_progress_every_items=request.commit_progress_every_items,
+                commit_progress_every_seconds=request.commit_progress_every_seconds,
+            ):
                 return
             await self._emit_progress(
                 progress_callback,
@@ -708,7 +735,9 @@ class DatasetSyncManager:
             existing_rows = []
             existing_by_asset_id: dict[str, Asset] = {}
             if batch_asset_ids and self.source is not self.target:
-                existing_rows = await self.target.asset_database.find({"asset_id": {"$in": list(dict.fromkeys(batch_asset_ids))}})
+                existing_rows = await self.target.asset_database.find(
+                    {"asset_id": {"$in": list(dict.fromkeys(batch_asset_ids))}}
+                )
                 existing_by_asset_id = {row.asset_id: row for row in existing_rows}
 
             new_docs: list[Asset] = []
@@ -1238,9 +1267,7 @@ class DatasetSyncManager:
         commit_phase_total = _commit_import_phase_item_count(bundle)
         completed_rows = 0
 
-        async def emit_phase(
-            *, phase_name: str, entity_kind: str, items: list[Any], inserter, detail: str
-        ) -> int:
+        async def emit_phase(*, phase_name: str, entity_kind: str, items: list[Any], inserter, detail: str) -> int:
             nonlocal completed_rows
             total = len(items)
             created = 0
@@ -1283,7 +1310,9 @@ class DatasetSyncManager:
                     "payload_status": "missing",
                     "payload_status_updated_at": utc_now(),
                     "payload_status_reason": "fast_sync_pending_payload",
-                    "payload_storage_ref": _apply_mount_map_to_storage_ref(asset.storage_ref, request.mount_map).model_dump(),
+                    "payload_storage_ref": _apply_mount_map_to_storage_ref(
+                        asset.storage_ref, request.mount_map
+                    ).model_dump(),
                     "payload_checksum": asset.checksum,
                     "payload_size_bytes": asset.size_bytes,
                     "payload_verified_at": None,
