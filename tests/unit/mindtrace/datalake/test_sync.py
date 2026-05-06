@@ -14,6 +14,7 @@ from mindtrace.datalake.sync import (
     _chunk_count,
     _chunked,
     _commit_import_phase_item_count,
+    _commit_import_should_emit_commit_progress,
     _head_object_checksum,
     _head_object_size_bytes,
     collect_bundle_mount_names,
@@ -22,6 +23,7 @@ from mindtrace.datalake.sync import (
 from mindtrace.datalake.sync_types import (
     DatasetSyncBundle,
     DatasetSyncImportRequest,
+    DatasetSyncPayloadPlan,
     DatasetSyncProgress,
     ObjectPayloadDescriptor,
 )
@@ -1395,6 +1397,205 @@ class TestDatasetSyncManager:
         )
         inserted = _docs_from_insert_many(target_datalake.asset_database)[0]
         assert inserted.metadata["replication"]["payload_status"] == "missing"
+
+
+@pytest.mark.parametrize(
+    ("kw", "expected"),
+    [
+        pytest.param(dict(force=False, commit_done=0, commit_phase_total=99, seconds_since_last_emit=0.0), True),
+        pytest.param(dict(force=False, commit_done=10, commit_phase_total=10, seconds_since_last_emit=0.0), True),
+        pytest.param(dict(force=False, commit_done=40, commit_phase_total=100, seconds_since_last_emit=600.0), True),
+        pytest.param(dict(force=False, commit_done=50, commit_phase_total=100, seconds_since_last_emit=600.0), True),
+        pytest.param(dict(force=False, commit_done=4, commit_phase_total=99, seconds_since_last_emit=0.0), False),
+    ],
+)
+def test_commit_import_should_emit_commit_progress_branches(kw: dict[str, Any], expected: bool) -> None:
+    assert (
+        _commit_import_should_emit_commit_progress(
+            commit_progress_every_items=10,
+            commit_progress_every_seconds=1.5,
+            **kw,
+        )
+        is expected
+    )
+
+
+@pytest.mark.parametrize("force_flag", [True, False])
+def test_commit_import_should_emit_commit_progress_force_overrides(force_flag: bool) -> None:
+    assert (
+        _commit_import_should_emit_commit_progress(
+            force=force_flag,
+            commit_done=4,
+            commit_phase_total=99,
+            seconds_since_last_emit=0.0,
+            commit_progress_every_items=1000,
+            commit_progress_every_seconds=1000.0,
+        )
+        is force_flag
+    )
+
+
+class TestCommitImportMetadataEdgeBranches:
+    @pytest.mark.asyncio
+    async def test_commit_import_insert_many_duplicate_falls_back_to_insert(
+        self, source_datalake, target_datalake, sync_objects
+    ):
+        original_insert = target_datalake.annotation_schema_database.insert
+        target_datalake.annotation_schema_database.insert_many = AsyncMock(
+            side_effect=DuplicateInsertError("dup"),
+        )
+
+        inserted: list[Any] = []
+
+        async def insert_side(obj):
+            inserted.append(obj)
+            return obj
+
+        target_datalake.annotation_schema_database.insert = AsyncMock(side_effect=insert_side)
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        duplicate_schema = AnnotationSchema.model_validate(
+            dict(sync_objects.schema.model_dump(), annotation_schema_id="extra-schema-dupe-id"),
+        )
+        bundle = bundle.model_copy(update={"annotation_schemas": list(bundle.annotation_schemas) + [duplicate_schema]})
+        manager._prefetch_existing_annotation_schema_ids = AsyncMock(return_value=set())
+
+        await manager.commit_import(
+            DatasetSyncImportRequest(bundle=bundle, commit_batch_size=1000),
+        )
+
+        assert target_datalake.annotation_schema_database.insert_many.await_count == 1
+        assert inserted
+        inserted_ids = {row.annotation_schema_id for row in inserted}
+        assert "extra-schema-dupe-id" in inserted_ids
+
+        target_datalake.annotation_schema_database.insert = original_insert
+
+    @pytest.mark.asyncio
+    async def test_commit_import_asset_refresh_when_prefetch_but_batch_misses_row(
+        self, source_datalake, target_datalake, sync_objects
+    ):
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        manager._refresh_target_asset_for_cross_lake_import = AsyncMock()
+        manager._prefetch_existing_asset_ids = AsyncMock(return_value={sync_objects.asset.asset_id})
+        batch_find = AsyncMock(return_value=[])
+        target_datalake.asset_database.find = batch_find
+
+        await manager.commit_import(
+            DatasetSyncImportRequest(bundle=bundle, greenfield_skip_target_metadata_probes=False)
+        )
+
+        batch_find.assert_awaited()
+        manager._refresh_target_asset_for_cross_lake_import.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_target_payload_matches_size_and_checksum_policies(
+        self, source_datalake, target_datalake, sync_objects
+    ):
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        target_datalake.object_exists = AsyncMock(return_value=False)
+        ok, tag = await manager._target_payload_matches(
+            ObjectPayloadDescriptor(
+                asset_id=sync_objects.asset.asset_id,
+                storage_ref=sync_objects.asset.storage_ref,
+                media_type="application/octet-stream",
+                size_bytes=123,
+                checksum="sha256:abc",
+            ),
+            StorageRef(mount="target", name="n", version="v"),
+            match_policy="size",
+        )
+        assert (ok, tag) == (False, "missing_on_target")
+
+        target_datalake.object_exists = AsyncMock(return_value=True)
+        target_datalake.head_object = AsyncMock(return_value={"size": "123"})
+        ok2, tag2 = await manager._target_payload_matches(
+            ObjectPayloadDescriptor(
+                asset_id=sync_objects.asset.asset_id,
+                storage_ref=sync_objects.asset.storage_ref,
+                media_type="application/octet-stream",
+                size_bytes=123,
+                checksum=None,
+            ),
+            StorageRef(mount="target", name="n", version="v"),
+            match_policy="size",
+        )
+        assert (ok2, tag2) == (True, "already_present_size_match")
+
+        target_datalake.head_object = AsyncMock(return_value={"size_bytes": 123, "checksum": "sha256:zzz"})
+        ok3, tag3 = await manager._target_payload_matches(
+            ObjectPayloadDescriptor(
+                asset_id=sync_objects.asset.asset_id,
+                storage_ref=sync_objects.asset.storage_ref,
+                media_type="application/octet-stream",
+                size_bytes=123,
+                checksum="sha256:want",
+            ),
+            StorageRef(mount="target", name="n", version="v"),
+            match_policy="checksum",
+        )
+        assert (ok3, tag3) == (False, "checksum_mismatch")
+
+        target_datalake.head_object = AsyncMock(return_value={"checksum": "sha256:want"})
+        ok4, tag4 = await manager._target_payload_matches(
+            ObjectPayloadDescriptor(
+                asset_id=sync_objects.asset.asset_id,
+                storage_ref=sync_objects.asset.storage_ref,
+                media_type="application/octet-stream",
+                size_bytes=None,
+                checksum="sha256:want",
+            ),
+            StorageRef(mount="target", name="n", version="v"),
+            match_policy="checksum",
+        )
+        assert (ok4, tag4) == (True, "already_present_checksum_match")
+
+    @pytest.mark.asyncio
+    async def test_resolve_payload_transfer_item_same_lake_missing_mount_raises(self, target_datalake, sync_objects):
+        solo = target_datalake
+        solo.store.list_mount_info.return_value = {"only": {}}
+        solo.store.has_mount = lambda _m: False
+        mgr = DatasetSyncManager(solo, solo)
+        plan = DatasetSyncPayloadPlan(
+            asset_id=sync_objects.asset.asset_id,
+            source_storage_ref=sync_objects.asset.storage_ref,
+            target_storage_ref=sync_objects.asset.storage_ref.model_copy(update={"mount": "target"}),
+            target_exists=False,
+            transfer_required=True,
+            reason="planned",
+        )
+        semaphore = asyncio.Semaphore(3)
+        request = DatasetSyncImportRequest(bundle=DatasetSyncBundle(dataset_version=sync_objects.dataset_version))
+        with pytest.raises(ValueError, match=r"bundle StorageRef mount .* is not configured"):
+            await mgr._resolve_payload_transfer_item(
+                ObjectPayloadDescriptor(
+                    asset_id=sync_objects.asset.asset_id,
+                    storage_ref=sync_objects.asset.storage_ref,
+                    media_type=sync_objects.asset.media_type,
+                ),
+                plan,
+                transfer_policy="copy_if_missing",
+                mount_map={},
+                semaphore=semaphore,
+                request=request,
+            )
+
+    @pytest.mark.asyncio
+    async def test_existing_entity_checks_return_false_when_document_missing(self, target_datalake, sync_objects):
+        mgr = DatasetSyncManager(target_datalake, target_datalake)
+        target_datalake.get_asset = AsyncMock(side_effect=DocumentNotFoundError("no"))
+        target_datalake.get_annotation_schema = AsyncMock(side_effect=DocumentNotFoundError("no"))
+        target_datalake.get_annotation_record = AsyncMock(side_effect=DocumentNotFoundError("no"))
+        target_datalake.get_annotation_set = AsyncMock(side_effect=DocumentNotFoundError("no"))
+        target_datalake.get_datum = AsyncMock(side_effect=DocumentNotFoundError("no"))
+
+        aid = sync_objects.asset.asset_id
+        assert await mgr._asset_exists(aid) is False
+        assert await mgr._annotation_schema_exists("schema-z") is False
+        assert await mgr._annotation_record_exists("record-z") is False
+        assert await mgr._annotation_set_exists("set-z") is False
+        assert await mgr._datum_exists("datum-z") is False
 
 
 class TestDatasetSyncProgressHelpers:
