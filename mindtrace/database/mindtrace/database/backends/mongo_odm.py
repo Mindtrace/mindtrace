@@ -460,8 +460,6 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             raise DuplicateInsertError(f"Duplicate key error: {str(e)}")
         except DocumentTooLarge as e:
             raise DocumentTooLargeError(str(e)) from e
-        except Exception as e:
-            raise DuplicateInsertError(str(e)) from e
 
     async def insert_many(self, objs: list[BaseModel | dict], ordered: bool = False) -> list[T]:
         """Insert many documents efficiently and return the inserted models.
@@ -509,8 +507,6 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             raise DuplicateInsertError(str(e)) from e
         except DocumentTooLarge as e:
             raise DocumentTooLargeError(str(e)) from e
-        except Exception as e:
-            raise DuplicateInsertError(str(e)) from e
 
     async def get(self, id: str | PydanticObjectId, fetch_links: bool = False) -> T:
         """
