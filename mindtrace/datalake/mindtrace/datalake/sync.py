@@ -722,7 +722,7 @@ class DatasetSyncManager:
                 entity_total_items=len(bundle.annotation_schemas),
                 batch_index=batch_index,
                 total_batches=total_schema_batches,
-                force=True,
+                force=False,
             )
 
         created_assets = 0
@@ -814,7 +814,7 @@ class DatasetSyncManager:
                 entity_total_items=len(bundle.assets),
                 batch_index=batch_index,
                 total_batches=total_asset_batches,
-                force=True,
+                force=False,
             )
 
         if inserted_assets:
@@ -858,7 +858,7 @@ class DatasetSyncManager:
                 entity_total_items=len(bundle.annotation_records),
                 batch_index=batch_index,
                 total_batches=total_record_batches,
-                force=True,
+                force=False,
             )
 
         created_annotation_sets = 0
@@ -899,7 +899,7 @@ class DatasetSyncManager:
                 entity_total_items=len(bundle.annotation_sets),
                 batch_index=batch_index,
                 total_batches=total_set_batches,
-                force=True,
+                force=False,
             )
 
         created_datums = 0
@@ -942,7 +942,7 @@ class DatasetSyncManager:
                 entity_total_items=len(bundle.datums),
                 batch_index=batch_index,
                 total_batches=total_datum_batches,
-                force=True,
+                force=False,
             )
 
         if existing_dataset_version is None:

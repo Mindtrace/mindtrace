@@ -1407,6 +1407,7 @@ class TestDatasetSyncManager:
         pytest.param(dict(force=False, commit_done=40, commit_phase_total=100, seconds_since_last_emit=600.0), True),
         pytest.param(dict(force=False, commit_done=50, commit_phase_total=100, seconds_since_last_emit=600.0), True),
         pytest.param(dict(force=False, commit_done=4, commit_phase_total=99, seconds_since_last_emit=0.0), False),
+        pytest.param(dict(force=False, commit_done=11, commit_phase_total=999, seconds_since_last_emit=4.0), True),
     ],
 )
 def test_commit_import_should_emit_commit_progress_branches(kw: dict[str, Any], expected: bool) -> None:
@@ -1490,6 +1491,45 @@ class TestCommitImportMetadataEdgeBranches:
         manager._refresh_target_asset_for_cross_lake_import.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_commit_import_batches_use_throttled_progress_emissions(
+        self, source_datalake, target_datalake, sync_objects
+    ):
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        progress_events: list[DatasetSyncProgress] = []
+
+        async def capture_progress(event: DatasetSyncProgress) -> None:
+            progress_events.append(event)
+
+        with patch("mindtrace.datalake.sync.time.monotonic", return_value=0.0):
+            await manager.commit_import(
+                DatasetSyncImportRequest(
+                    bundle=bundle,
+                    commit_progress_every_items=999_999,
+                    commit_progress_every_seconds=999_999.0,
+                ),
+                progress_callback=capture_progress,
+            )
+
+        committing = [e for e in progress_events if e.phase == "committing"]
+        assert committing[0].completed_items == 0
+        assert committing[-1].completed_items == committing[-1].total_items == _commit_import_phase_item_count(bundle)
+        assert committing[-1].entity_kind == "dataset_version"
+        assert not any(evt.entity_kind == "annotation_schema" for evt in committing)
+        assert not any(evt.entity_kind == "asset" for evt in committing)
+
+    @pytest.mark.asyncio
+    async def test_prefetch_existing_ids_skips_query_when_empty_or_skip_lookup_flag(self, target_datalake):
+        manager = DatasetSyncManager(target_datalake, target_datalake)
+
+        async def forbidden_find(*_: Any, **__: Any) -> list[Any]:
+            pytest.fail("_prefetch_existing_ids should not query the database here")
+
+        rogue_db = SimpleNamespace(find=forbidden_find)
+        assert await manager._prefetch_existing_ids(rogue_db, "asset_id", [], skip_lookup=False) == set()
+        assert await manager._prefetch_existing_ids(rogue_db, "asset_id", ["a1"], skip_lookup=True) == set()
+
+    @pytest.mark.asyncio
     async def test_target_payload_matches_size_and_checksum_policies(
         self, source_datalake, target_datalake, sync_objects
     ):
@@ -1551,6 +1591,34 @@ class TestCommitImportMetadataEdgeBranches:
         )
         assert (ok4, tag4) == (True, "already_present_checksum_match")
 
+        target_datalake.head_object = AsyncMock(return_value={"size_bytes": 99})
+        ok5, tag5 = await manager._target_payload_matches(
+            ObjectPayloadDescriptor(
+                asset_id=sync_objects.asset.asset_id,
+                storage_ref=sync_objects.asset.storage_ref,
+                media_type="application/octet-stream",
+                size_bytes=None,
+                checksum=None,
+            ),
+            StorageRef(mount="target", name="n", version="v"),
+            match_policy="size",
+        )
+        assert (ok5, tag5) == (True, "already_present")
+
+        target_datalake.head_object = AsyncMock(return_value={"etag": '"abc"'})
+        ok6, tag6 = await manager._target_payload_matches(
+            ObjectPayloadDescriptor(
+                asset_id=sync_objects.asset.asset_id,
+                storage_ref=sync_objects.asset.storage_ref,
+                media_type="application/octet-stream",
+                size_bytes=None,
+                checksum=None,
+            ),
+            StorageRef(mount="target", name="n", version="v"),
+            match_policy="checksum",
+        )
+        assert (ok6, tag6) == (True, "already_present")
+
     @pytest.mark.asyncio
     async def test_resolve_payload_transfer_item_same_lake_missing_mount_raises(self, target_datalake, sync_objects):
         solo = target_datalake
@@ -1596,6 +1664,21 @@ class TestCommitImportMetadataEdgeBranches:
         assert await mgr._annotation_record_exists("record-z") is False
         assert await mgr._annotation_set_exists("set-z") is False
         assert await mgr._datum_exists("datum-z") is False
+
+    @pytest.mark.asyncio
+    async def test_existing_entity_checks_return_true_when_document_present(self, target_datalake, sync_objects):
+        mgr = DatasetSyncManager(target_datalake, target_datalake)
+        target_datalake.get_asset = AsyncMock(return_value=sync_objects.asset)
+        target_datalake.get_annotation_schema = AsyncMock(return_value=sync_objects.schema)
+        target_datalake.get_annotation_record = AsyncMock(return_value=sync_objects.annotation_record)
+        target_datalake.get_annotation_set = AsyncMock(return_value=sync_objects.annotation_set)
+        target_datalake.get_datum = AsyncMock(return_value=sync_objects.datum)
+
+        assert await mgr._asset_exists(sync_objects.asset.asset_id) is True
+        assert await mgr._annotation_schema_exists(sync_objects.schema.annotation_schema_id) is True
+        assert await mgr._annotation_record_exists(sync_objects.annotation_record.annotation_id) is True
+        assert await mgr._annotation_set_exists(sync_objects.annotation_set.annotation_set_id) is True
+        assert await mgr._datum_exists(sync_objects.datum.datum_id) is True
 
 
 class TestDatasetSyncProgressHelpers:
