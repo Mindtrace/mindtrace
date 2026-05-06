@@ -1609,3 +1609,158 @@ class TestSyncModuleHelpers:
         assert out.payload_status == "present"
         assert out.storage_ref == staged
         rm_cls.return_value._set_asset_replication_state.assert_awaited_once()
+
+
+class TestSyncCommitGuardrails:
+    @pytest.mark.asyncio
+    async def test_commit_import_metadata_first_requires_distinct_lakes(self, target_datalake, sync_objects):
+        target_datalake.get_dataset_version = AsyncMock(return_value=sync_objects.dataset_version)
+        target_datalake.get_datum = AsyncMock(return_value=sync_objects.datum)
+        target_datalake.get_asset = AsyncMock(return_value=sync_objects.asset)
+        target_datalake.get_annotation_set = AsyncMock(return_value=sync_objects.annotation_set)
+        target_datalake.get_annotation_record = AsyncMock(return_value=sync_objects.annotation_record)
+        target_datalake.get_annotation_schema = AsyncMock(return_value=sync_objects.schema)
+        bundle = await DatasetSyncManager(target_datalake, target_datalake).export_dataset_version("demo", "1.0.0")
+        manager = DatasetSyncManager(target_datalake, target_datalake)
+        with pytest.raises(ValueError, match="metadata_first=True requires distinct"):
+            await manager.commit_import(
+                DatasetSyncImportRequest(bundle=bundle, metadata_first=True, transfer_policy="copy_if_missing"),
+            )
+
+    @pytest.mark.asyncio
+    async def test_commit_import_metadata_first_rejects_staged_refs(
+        self, source_datalake, target_datalake, sync_objects
+    ):
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        staged = {sync_objects.asset.asset_id: StorageRef(mount="target", name="x", version="v1")}
+        with pytest.raises(ValueError, match="metadata_first cannot be combined"):
+            await manager.commit_import(
+                DatasetSyncImportRequest(
+                    bundle=bundle,
+                    metadata_first=True,
+                    transfer_policy="copy_if_missing",
+                    staged_payload_storage_refs=staged,
+                ),
+            )
+
+    @pytest.mark.asyncio
+    async def test_commit_import_target_metadata_rejects_staged_refs(self, target_datalake, sync_objects):
+        target_datalake.get_dataset_version = AsyncMock(return_value=sync_objects.dataset_version)
+        target_datalake.get_datum = AsyncMock(return_value=sync_objects.datum)
+        target_datalake.get_asset = AsyncMock(return_value=sync_objects.asset)
+        target_datalake.get_annotation_set = AsyncMock(return_value=sync_objects.annotation_set)
+        target_datalake.get_annotation_record = AsyncMock(return_value=sync_objects.annotation_record)
+        target_datalake.get_annotation_schema = AsyncMock(return_value=sync_objects.schema)
+        bundle = await DatasetSyncManager(target_datalake, target_datalake).export_dataset_version("demo", "1.0.0")
+        manager = DatasetSyncManager(target_datalake, target_datalake)
+        staged = {sync_objects.asset.asset_id: StorageRef(mount="target", name="x", version="v1")}
+        with pytest.raises(ValueError, match="target_metadata_commit cannot be combined"):
+            await manager.commit_import(
+                DatasetSyncImportRequest(
+                    bundle=bundle,
+                    target_metadata_commit=True,
+                    transfer_policy="copy_if_missing",
+                    staged_payload_storage_refs=staged,
+                ),
+            )
+
+    @pytest.mark.asyncio
+    async def test_commit_import_not_ready_without_staged_error_message(self, target_datalake, sync_objects):
+        solo = target_datalake
+        solo.mongo_db_name = "solo"
+        solo.store.list_mount_info.return_value = {"source": {}, "remote": {}}
+        solo.store.has_mount.side_effect = lambda m: m != "source"
+        solo.object_exists = AsyncMock(return_value=False)
+        solo.get_dataset_version = AsyncMock(return_value=sync_objects.dataset_version)
+        solo.get_datum = AsyncMock(return_value=sync_objects.datum)
+        missing_payload_asset = Asset.model_validate(
+            {**sync_objects.asset.model_dump(), "payload_status": "missing", "payload_verified_at": None},
+        )
+        solo.get_asset = AsyncMock(return_value=missing_payload_asset)
+        solo.get_annotation_set = AsyncMock(return_value=sync_objects.annotation_set)
+        solo.get_annotation_record = AsyncMock(return_value=sync_objects.annotation_record)
+        solo.get_annotation_schema = AsyncMock(return_value=sync_objects.schema)
+        manager = DatasetSyncManager(solo, solo)
+        bundle = await manager.export_dataset_version("demo", "1.0.0")
+        with pytest.raises(ValueError, match="import_session_start"):
+            await manager.commit_import(DatasetSyncImportRequest(bundle=bundle, transfer_policy="copy_if_missing"))
+
+    @pytest.mark.asyncio
+    async def test_target_payload_matches_missing_object(self, target_datalake, sync_objects):
+        mgr = DatasetSyncManager(target_datalake)
+        ref = StorageRef(mount="target", name="obj", version="v1")
+        payload = ObjectPayloadDescriptor(
+            asset_id=sync_objects.asset.asset_id,
+            storage_ref=ref,
+            media_type="image/jpeg",
+        )
+        target_datalake.object_exists = AsyncMock(return_value=False)
+        ok, reason = await mgr._target_payload_matches(payload, ref, match_policy="size")
+        assert ok is False
+        assert reason == "missing_on_target"
+
+    @pytest.mark.asyncio
+    async def test_target_payload_matches_exists_policy_short_circuit(self, target_datalake, sync_objects):
+        mgr = DatasetSyncManager(target_datalake)
+        ref = StorageRef(mount="target", name="obj", version="v1")
+        payload = ObjectPayloadDescriptor(
+            asset_id=sync_objects.asset.asset_id,
+            storage_ref=ref,
+            media_type="image/jpeg",
+        )
+        target_datalake.object_exists = AsyncMock(return_value=True)
+        ok, reason = await mgr._target_payload_matches(payload, ref, match_policy="exists")
+        assert ok is True
+        assert reason == "already_present"
+
+    @pytest.mark.asyncio
+    async def test_ingest_import_payload_bytes_size_mismatch(self, target_datalake, sync_objects):
+        mgr = DatasetSyncManager(target_datalake, target_datalake)
+        desc = ObjectPayloadDescriptor(
+            asset_id=sync_objects.asset.asset_id,
+            storage_ref=sync_objects.storage_ref,
+            media_type="image/jpeg",
+            size_bytes=10,
+            checksum=None,
+        )
+        with pytest.raises(ValueError, match="descriptor declares"):
+            await mgr.ingest_import_payload_bytes(desc, {}, data=b"nope")
+
+    @pytest.mark.asyncio
+    async def test_resolve_payload_transfers_defers_using_asset_storage_ref_without_descriptor(
+        self,
+        target_datalake,
+        sync_objects,
+    ):
+        bundle = DatasetSyncBundle(dataset_version=sync_objects.dataset_version, assets=[sync_objects.asset])
+        request = DatasetSyncImportRequest(bundle=bundle, mount_map={}, target_metadata_commit=True)
+        manager = DatasetSyncManager(target_datalake, target_datalake)
+        refs, transferred, skipped = await manager._resolve_payload_transfers(
+            bundle.assets,
+            payload_by_asset_id={},
+            plan_by_asset_id={},
+            request=request,
+            progress_callback=None,
+            defer_inline_transfers=True,
+        )
+        assert transferred == 0
+        assert skipped == 0
+        assert refs[sync_objects.asset.asset_id].mount == sync_objects.asset.storage_ref.mount
+
+    @pytest.mark.asyncio
+    async def test_fast_import_graph_swallows_duplicate_schema_insert(self, target_datalake, sync_objects):
+        target_datalake.get_dataset_version = AsyncMock(return_value=sync_objects.dataset_version)
+        target_datalake.annotation_schema_database.insert = AsyncMock(side_effect=DuplicateInsertError("dup"))
+        mgr = DatasetSyncManager(target_datalake, target_datalake)
+        bundle = DatasetSyncBundle(
+            dataset_version=sync_objects.dataset_version,
+            annotation_schemas=[sync_objects.schema],
+        )
+        await mgr.fast_import_graph(DatasetSyncImportRequest(bundle=bundle, transfer_policy="copy_if_missing"))
+
+    @pytest.mark.asyncio
+    async def test_annotation_schema_exists_true_when_document_present(self, target_datalake, sync_objects):
+        target_datalake.get_annotation_schema = AsyncMock(return_value=sync_objects.schema)
+        mgr = DatasetSyncManager(target_datalake, target_datalake)
+        assert await mgr._annotation_schema_exists(sync_objects.schema.annotation_schema_id) is True

@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import hashlib
 import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -8,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 from fastapi import HTTPException
 
-from mindtrace.database.core.exceptions import DocumentNotFoundError
+from mindtrace.database.core.exceptions import DocumentNotFoundError, DocumentTooLargeError
 from mindtrace.datalake.async_datalake import AsyncDatalake, SlowOperationDisabledError, SlowOpsPolicy
 from mindtrace.datalake.pagination_types import (
     CursorPage,
@@ -80,10 +81,18 @@ from mindtrace.datalake.service_types import (
     DatalakeSummaryOutput,
     DatalakeWipeInput,
     DatasetImportSessionCommitInput,
+    DatasetImportSessionStatusInput,
+    DatasetImportSessionUploadInput,
     DatasetIntegrityVerifyInput,
+    DatasetStreamingAssetPayloadInput,
+    DatasetStreamingImportDatumBatchItem,
+    DatasetStreamingImportFinalizeInput,
+    DatasetStreamingImportPushBatchInput,
     DatasetStreamingImportStartInput,
     DatasetSyncBundleOutput,
     DatasetSyncCommitResultOutput,
+    DatasetSyncHydratePayloadsInput,
+    DatasetSyncImportGraphInput,
     DatasetSyncImportPlanOutput,
     DatasetSyncJobResultOutput,
     DatasetSyncJobStartOutput,
@@ -140,6 +149,7 @@ from mindtrace.datalake.sync_types import (
     DatasetSyncImportPlan,
     DatasetSyncImportRequest,
     DatasetSyncProgress,
+    ObjectPayloadDescriptor,
 )
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
@@ -162,6 +172,12 @@ from mindtrace.datalake.types import (
     SubjectRef,
 )
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound
+
+
+class _DatasetVersionRowForFinalize(DatasetVersion):
+    """Test double matching service behavior: finalize updates ``manifest`` + ``updated_at``."""
+
+    updated_at: datetime | None = None
 
 
 @pytest.fixture(autouse=True)
@@ -2478,3 +2494,966 @@ async def test_run_dataset_sync_job_fails_for_unsupported_mode(service, datalake
     assert job.status == "failed"
     assert job.error_detail is not None
     assert "Unsupported dataset sync job mode" in (job.error or "")
+
+
+def _minimal_streaming_database_mocks() -> SimpleNamespace:
+    """Return simple async find/insert/update mocks for streaming batch upserts."""
+
+    async def default_find(_q):
+        return []
+
+    async def default_insert(obj):
+        return obj
+
+    async def default_update(obj):
+        return obj
+
+    return SimpleNamespace(
+        find=AsyncMock(side_effect=default_find),
+        insert=AsyncMock(side_effect=default_insert),
+        update=AsyncMock(side_effect=default_update),
+    )
+
+
+def _import_session_db(mock_datalake) -> SimpleNamespace:
+    """Return mocked import-session ODM helpers; assigns parent first (needed for Mock(spec=…))."""
+
+    mock_datalake.dataset_import_session_database = SimpleNamespace(
+        find=AsyncMock(return_value=[]),
+        insert=AsyncMock(side_effect=lambda s: s),
+        update=AsyncMock(),
+    )
+    return mock_datalake.dataset_import_session_database
+
+
+@pytest.mark.parametrize(
+    ("metadata_graph_committed", "verified_asset_ids", "required_asset_ids", "expected_stage"),
+    [
+        pytest.param(True, ["a"], ["a"], "ready_to_finalize", id="committed_all_verified"),
+        pytest.param(True, [], ["needed"], "awaiting_payload_uploads", id="committed_partial_verify"),
+        pytest.param(False, [], [], "metadata_commit_complete", id="pre_commit_terminal"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_import_session_progress_writer_complete_snapshots_span_stages(
+    metadata_graph_committed,
+    verified_asset_ids,
+    required_asset_ids,
+    expected_stage,
+    monkeypatch,
+):
+    dl = MagicMock()
+    dl.dataset_import_session_database = SimpleNamespace(update=AsyncMock())
+    sess = DatasetImportSession(
+        expires_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        metadata_graph_committed=metadata_graph_committed,
+    )
+    sess.verified_asset_ids = verified_asset_ids
+    sess.required_asset_ids = required_asset_ids
+    writer = _ImportSessionProgressWriter(dl, sess)
+    monkeypatch.setattr("mindtrace.datalake.service.time.monotonic", lambda: 0.0)
+
+    async def persist_phase(phase: str) -> None:
+        await writer.persist(DatasetSyncProgress(phase=phase, message="t"), force=True)
+
+    await persist_phase("planning")
+    assert sess.import_stage == "planning_metadata_commit"
+
+    await persist_phase("committing")
+    assert sess.import_stage == "committing_metadata"
+
+    await persist_phase("transferring")
+    assert sess.import_stage == "awaiting_payload_uploads"
+
+    await persist_phase("complete")
+    assert sess.import_stage == expected_stage
+
+    await persist_phase("failed")
+    assert sess.import_stage == "failed"
+
+
+@pytest.mark.asyncio
+async def test_service_verify_integrity_fast_missing_asset(service, datalake_objects, mock_datalake):
+    dv = datalake_objects.dataset_version.model_copy(update={"manifest": [datalake_objects.datum.datum_id]})
+    mock_datalake.get_dataset_version = AsyncMock(return_value=dv)
+    mock_datalake.get_datum = AsyncMock(return_value=datalake_objects.datum)
+    mock_datalake.get_asset = AsyncMock(side_effect=DocumentNotFoundError("missing asset"))
+
+    out = await service.verify_dataset_integrity(
+        DatasetIntegrityVerifyInput(dataset_name="demo-dataset", version="1.0", mode="fast"),
+    )
+    assert out.missing_asset_count == 1
+    assert out.samples and out.samples[0].kind == "missing_asset"
+
+
+@pytest.mark.asyncio
+async def test_service_verify_integrity_full_db_missing_annotation_record(service, datalake_objects, mock_datalake):
+    datum = datalake_objects.datum.model_copy(
+        update={"annotation_set_ids": [datalake_objects.annotation_set.annotation_set_id]}
+    )
+    dv = datalake_objects.dataset_version.model_copy(update={"manifest": [datum.datum_id]})
+    mock_datalake.get_dataset_version = AsyncMock(return_value=dv)
+    mock_datalake.get_datum = AsyncMock(return_value=datum)
+    mock_datalake.get_asset = AsyncMock(return_value=datalake_objects.asset)
+    mock_datalake.get_annotation_set = AsyncMock(
+        return_value=datalake_objects.annotation_set.model_copy(
+            update={"annotation_record_ids": ["rec-missing"]},
+        ),
+    )
+    mock_datalake.get_annotation_record = AsyncMock(side_effect=DocumentNotFoundError("no record"))
+
+    out = await service.verify_dataset_integrity(
+        DatasetIntegrityVerifyInput(dataset_name="demo-dataset", version="1.0", mode="full-db"),
+    )
+    assert out.missing_annotation_record_count == 1
+
+
+@pytest.mark.asyncio
+async def test_service_verify_integrity_full_lake_skips_assets_with_no_payload_ref(
+    service, datalake_objects, mock_datalake
+):
+    datum = datalake_objects.datum
+    dv = datalake_objects.dataset_version.model_copy(update={"manifest": [datum.datum_id]})
+    bare_asset = SimpleNamespace(payload_storage_ref=None, storage_ref=None)
+
+    mock_datalake.get_dataset_version = AsyncMock(return_value=dv)
+    mock_datalake.get_datum = AsyncMock(return_value=datum)
+    mock_datalake.get_asset = AsyncMock(return_value=bare_asset)
+    mock_datalake.get_mounts.return_value = {
+        "mounts": [{"name": datalake_objects.storage_ref.mount}],
+        "default_mount": datalake_objects.storage_ref.mount,
+    }
+
+    with patch("builtins.print"):
+        out = await service.verify_dataset_integrity(
+            DatasetIntegrityVerifyInput(dataset_name="demo-dataset", version="1.0", mode="full-lake"),
+        )
+
+    assert out.registry_missing_payload_count == 0
+    assert out.invalid_mount_count == 0
+
+
+@pytest.mark.asyncio
+async def test_dataset_sync_import_graph_value_error_becomes_400(service, datalake_objects, mock_datalake):
+    session = DatasetImportSession(
+        expires_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        import_session_id="imp-graph",
+        status="open",
+    )
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.find = AsyncMock(return_value=[session])
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    with (
+        patch(
+            "mindtrace.datalake.service._load_import_session_bundle",
+            new=AsyncMock(return_value=DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)),
+        ),
+        patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
+    ):
+        mgr_cls.return_value.fast_import_graph = AsyncMock(side_effect=ValueError("bad graph"))
+        with pytest.raises(HTTPException) as ei:
+            await service.dataset_sync_import_graph(DatasetSyncImportGraphInput(session_id=session.import_session_id))
+        assert ei.value.status_code == 400
+        assert "bad graph" in str(ei.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_dataset_sync_import_graph_non_value_error_reraises_after_failed_progress(
+    service, datalake_objects, mock_datalake
+):
+    session = DatasetImportSession(
+        expires_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        import_session_id="imp-graph",
+        status="open",
+    )
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.find = AsyncMock(return_value=[session])
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    with (
+        patch(
+            "mindtrace.datalake.service._load_import_session_bundle",
+            new=AsyncMock(return_value=DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)),
+        ),
+        patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
+    ):
+        mgr_cls.return_value.fast_import_graph = AsyncMock(side_effect=RuntimeError("boom"))
+        with pytest.raises(RuntimeError, match="boom"):
+            await service.dataset_sync_import_graph(DatasetSyncImportGraphInput(session_id=session.import_session_id))
+
+
+@pytest.mark.asyncio
+async def test_dataset_sync_hydrate_payload_unknown_asset_is_400(service, datalake_objects, mock_datalake):
+    session = DatasetImportSession(
+        expires_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        import_session_id="hydrate-1",
+        status="open",
+    )
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.find = AsyncMock(return_value=[session])
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+    bundle = DatasetSyncBundle(
+        dataset_version=datalake_objects.dataset_version,
+        payloads=[
+            ObjectPayloadDescriptor(
+                asset_id="other-asset",
+                storage_ref=datalake_objects.storage_ref,
+                media_type="image/jpeg",
+            ),
+        ],
+    )
+    with patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)):
+        with pytest.raises(HTTPException) as ei:
+            await service.dataset_sync_hydrate_payload(
+                DatasetSyncHydratePayloadsInput(
+                    session_id=session.import_session_id,
+                    asset_id=datalake_objects.asset.asset_id,
+                    data_base64=base64.b64encode(b"x").decode("ascii"),
+                ),
+            )
+    assert ei.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_streaming_import_push_expired_session_is_400(service, datalake_objects, mock_datalake):
+    sess = DatasetImportSession(expires_at=datetime(2000, 1, 1, tzinfo=timezone.utc), expected_manifest_total=1)
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.find = AsyncMock(return_value=[sess])
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    batch = DatasetStreamingImportDatumBatchItem(
+        manifest_index=0,
+        datum=datalake_objects.datum,
+        assets=[datalake_objects.asset],
+    )
+
+    with pytest.raises(HTTPException) as ei:
+        await service.streaming_import_push_batch(
+            DatasetStreamingImportPushBatchInput(session_id=sess.import_session_id, items=[batch]),
+        )
+    assert ei.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_streaming_import_push_processes_asset_without_inline_payload(service, datalake_objects, mock_datalake):
+    sess = DatasetImportSession(
+        expires_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        expected_manifest_total=1,
+    )
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.find = AsyncMock(return_value=[sess])
+    imp_db.update = AsyncMock(return_value=sess)
+    mock_datalake.annotation_schema_database = _minimal_streaming_database_mocks()
+    mock_datalake.annotation_record_database = _minimal_streaming_database_mocks()
+    mock_datalake.annotation_set_database = _minimal_streaming_database_mocks()
+    mock_datalake.datum_database = _minimal_streaming_database_mocks()
+    mock_datalake.asset_database = _minimal_streaming_database_mocks()
+    mock_datalake.ensure_primary_asset_aliases = AsyncMock()
+    ingest = AsyncMock(return_value=datalake_objects.storage_ref)
+
+    asset = datalake_objects.asset
+    payload = b"streaming-bytes"
+    digest = f"sha256:{hashlib.sha256(payload).hexdigest()}"
+    batch = DatasetStreamingImportDatumBatchItem(
+        manifest_index=0,
+        datum=datalake_objects.datum,
+        assets=[asset.model_copy(update={"checksum": digest, "size_bytes": len(payload)})],
+        payloads=[
+            DatasetStreamingAssetPayloadInput(
+                asset_id=asset.asset_id,
+                data_base64=base64.b64encode(payload).decode("ascii"),
+            ),
+        ],
+    )
+
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+    missing = asset.model_copy(
+        update={
+            "payload_status": "missing",
+            "payload_checksum": None,
+            "payload_size_bytes": None,
+            "checksum": digest,
+            "size_bytes": len(payload),
+        },
+    )
+    present = missing.model_copy(
+        update={"payload_status": "present", "payload_checksum": digest, "payload_size_bytes": len(payload)},
+    )
+    mock_datalake.get_asset = AsyncMock(side_effect=[missing, present])
+
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+        mgr_cls.return_value.ingest_import_payload_bytes = ingest
+        mgr_cls.return_value.finalize_pending_import_asset_payload = AsyncMock()
+        empty_payload_batch = DatasetStreamingImportDatumBatchItem(
+            manifest_index=0,
+            datum=datalake_objects.datum,
+            assets=[
+                asset.model_copy(
+                    update={
+                        "checksum": digest,
+                        "size_bytes": len(payload),
+                        "payload_checksum": digest,
+                        "payload_size_bytes": len(payload),
+                    },
+                ),
+            ],
+            payloads=[],
+        )
+
+        sid = sess.import_session_id
+        await service.streaming_import_push_batch(DatasetStreamingImportPushBatchInput(session_id=sid, items=[batch]))
+        await service.streaming_import_push_batch(
+            DatasetStreamingImportPushBatchInput(session_id=sid, items=[empty_payload_batch]),
+        )
+
+    assert ingest.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_streaming_import_push_updates_existing_asset_and_schema_rows(service, datalake_objects, mock_datalake):
+    sess = DatasetImportSession(
+        expires_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        expected_manifest_total=1,
+    )
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.find = AsyncMock(return_value=[sess])
+    imp_db.update = AsyncMock(return_value=sess)
+
+    schema_calls = {"n": 0}
+
+    async def schema_find(q):
+        schema_calls["n"] += 1
+        if schema_calls["n"] >= 2:
+            return [datalake_objects.annotation_schema]
+        return []
+
+    mock_datalake.annotation_schema_database = SimpleNamespace(
+        find=AsyncMock(side_effect=schema_find),
+        insert=AsyncMock(side_effect=lambda x: x),
+        update=AsyncMock(side_effect=lambda x: x),
+    )
+    mock_datalake.annotation_record_database = _minimal_streaming_database_mocks()
+    mock_datalake.annotation_set_database = _minimal_streaming_database_mocks()
+    mock_datalake.datum_database = _minimal_streaming_database_mocks()
+
+    asset_calls = {"n": 0}
+    existing_asset_row = datalake_objects.asset.model_copy(deep=True)
+
+    async def asset_find(q):
+        asset_calls["n"] += 1
+        if asset_calls["n"] >= 2:
+            return [existing_asset_row]
+        return []
+
+    mock_datalake.asset_database = SimpleNamespace(
+        find=AsyncMock(side_effect=asset_find),
+        insert=AsyncMock(side_effect=lambda x: x),
+        update=AsyncMock(side_effect=lambda x: x),
+    )
+    mock_datalake.ensure_primary_asset_aliases = AsyncMock()
+    mock_datalake.get_asset = AsyncMock(
+        return_value=datalake_objects.asset.model_copy(update={"payload_status": "missing"}),
+    )
+
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    batch = DatasetStreamingImportDatumBatchItem(
+        manifest_index=0,
+        datum=datalake_objects.datum,
+        assets=[datalake_objects.asset],
+        annotation_schemas=[datalake_objects.annotation_schema],
+    )
+
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+        mgr_cls.return_value.ingest_import_payload_bytes = AsyncMock(return_value=datalake_objects.storage_ref)
+        mgr_cls.return_value.finalize_pending_import_asset_payload = AsyncMock()
+        await service.streaming_import_push_batch(
+            DatasetStreamingImportPushBatchInput(session_id=sess.import_session_id, items=[batch]),
+        )
+        await service.streaming_import_push_batch(
+            DatasetStreamingImportPushBatchInput(session_id=sess.import_session_id, items=[batch]),
+        )
+
+    mock_datalake.asset_database.update.assert_awaited()
+    mock_datalake.annotation_schema_database.update.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_streaming_import_finalize_negative_branches(service, datalake_objects, mock_datalake):
+    imp_db = _import_session_db(mock_datalake)
+    expired = DatasetImportSession(
+        expires_at=datetime(2000, 1, 1, tzinfo=timezone.utc),
+        expected_manifest_total=0,
+        dataset_name="d",
+        dataset_version="v",
+    )
+    imp_db.find = AsyncMock(return_value=[expired])
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    with pytest.raises(HTTPException) as ei:
+        await service.streaming_import_finalize(
+            DatasetStreamingImportFinalizeInput(session_id=expired.import_session_id)
+        )
+    assert ei.value.status_code == 400
+
+    open_sess = DatasetImportSession(
+        expires_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        expected_manifest_total=2,
+        dataset_name=None,
+        dataset_version=None,
+        ordered_manifest_ids=["only-one"],
+    )
+    imp_db.find = AsyncMock(return_value=[open_sess])
+
+    with pytest.raises(HTTPException) as ei2:
+        await service.streaming_import_finalize(
+            DatasetStreamingImportFinalizeInput(session_id=open_sess.import_session_id)
+        )
+    assert ei2.value.status_code == 400
+    assert "missing dataset identity" in str(ei2.value.detail)
+
+    mismatch = open_sess.model_copy(
+        update={
+            "dataset_name": "d",
+            "dataset_version": "v",
+            "expected_manifest_total": 3,
+            "ordered_manifest_ids": ["a", "b"],
+        },
+    )
+    imp_db.find = AsyncMock(return_value=[mismatch])
+    with pytest.raises(HTTPException) as ei3:
+        await service.streaming_import_finalize(
+            DatasetStreamingImportFinalizeInput(session_id=mismatch.import_session_id)
+        )
+    assert ei3.value.status_code == 400
+    assert "incomplete" in str(ei3.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_streaming_import_finalize_updates_existing_dataset_version_row(service, datalake_objects, mock_datalake):
+    sess = DatasetImportSession(
+        expires_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        expected_manifest_total=1,
+        dataset_name="demo-dataset",
+        dataset_version="1.0",
+        ordered_manifest_ids=[datalake_objects.datum.datum_id],
+    )
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.find = AsyncMock(return_value=[sess])
+    imp_db.update = AsyncMock(return_value=sess)
+    dv = datalake_objects.dataset_version
+    dv_row = _DatasetVersionRowForFinalize.model_validate(dv.model_dump(mode="python"))
+    mock_datalake.dataset_version_database = SimpleNamespace(
+        find=AsyncMock(return_value=[dv_row]),
+        update=AsyncMock(side_effect=lambda x: x),
+    )
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    out = await service.streaming_import_finalize(
+        DatasetStreamingImportFinalizeInput(session_id=sess.import_session_id)
+    )
+    assert out.result.dataset_version is dv_row
+    mock_datalake.dataset_version_database.update.assert_awaited()
+    assert dv_row.manifest == [datalake_objects.datum.datum_id]
+
+
+@pytest.mark.asyncio
+async def test_require_open_import_session_not_found_is_404(service, mock_datalake):
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.find = AsyncMock(return_value=[])
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    with pytest.raises(HTTPException) as ei:
+        await service.import_session_commit_metadata(DatasetImportSessionCommitInput(session_id="missing"))
+    assert ei.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_import_session_closed_returns_400(service, mock_datalake):
+    sess = DatasetImportSession(expires_at=datetime(2099, 1, 1, tzinfo=timezone.utc), status="committed")
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.find = AsyncMock(return_value=[sess])
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    with pytest.raises(HTTPException) as ei:
+        await service.import_session_upload_payload(
+            DatasetImportSessionUploadInput(session_id=sess.import_session_id, asset_id="a", data_base64="e30="),
+        )
+    assert ei.value.status_code == 400
+    assert "not open" in str(ei.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_import_session_start_plan_validation_and_storage_errors(service, datalake_objects, mock_datalake):
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    req = DatasetSyncImportRequest(bundle=bundle)
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.insert = AsyncMock(return_value=None)
+    mock_datalake.put_object = AsyncMock(return_value=datalake_objects.storage_ref)
+
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+        mgr_cls.return_value.plan_import = AsyncMock(side_effect=ValueError("bad plan"))
+
+        with pytest.raises(HTTPException) as ei:
+            await service.import_session_start(req)
+        assert ei.value.status_code == 400
+        assert "bad plan" in str(ei.value.detail)
+
+        not_ready_plan = DatasetSyncImportPlan(
+            dataset_name=bundle.dataset_version.dataset_name,
+            version=bundle.dataset_version.version,
+            transfer_policy="copy_if_missing",
+            ready_to_commit=False,
+        )
+        mgr_cls.return_value.plan_import = AsyncMock(return_value=not_ready_plan)
+
+        with pytest.raises(HTTPException) as ei2:
+            await service.import_session_start(req.model_copy(update={"transfer_policy": "fail_if_missing_payload"}))
+        assert ei2.value.status_code == 400
+        assert "fail_if_missing_payload" in str(ei2.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_import_session_start_put_object_failure_is_500(service, datalake_objects, mock_datalake):
+    mock_datalake.put_object = AsyncMock(side_effect=OSError("minio"))
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.insert = AsyncMock()
+    plan = DatasetSyncImportPlan(
+        dataset_name=datalake_objects.dataset_version.dataset_name,
+        version=datalake_objects.dataset_version.version,
+        transfer_policy="copy_if_missing",
+        ready_to_commit=True,
+    )
+
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    req = DatasetSyncImportRequest(bundle=bundle)
+
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+        mgr_cls.return_value.plan_import = AsyncMock(return_value=plan)
+        with pytest.raises(HTTPException) as ei:
+            await service.import_session_start(req)
+    assert ei.value.status_code == 500
+    assert "Failed to persist import bundle" in str(ei.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_import_session_start_document_too_large_cleans_bundle_and_413(service, datalake_objects, mock_datalake):
+    mock_datalake.put_object = AsyncMock(return_value=datalake_objects.storage_ref)
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.insert = AsyncMock(side_effect=DocumentTooLargeError("too large"))
+    plan_ok = DatasetSyncImportPlan(
+        dataset_name=datalake_objects.dataset_version.dataset_name,
+        version=datalake_objects.dataset_version.version,
+        transfer_policy="copy_if_missing",
+        ready_to_commit=True,
+    )
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    req = DatasetSyncImportRequest(bundle=bundle)
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    with (
+        patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
+        patch(
+            "mindtrace.datalake.service._delete_import_session_bundle_blob",
+            new=AsyncMock(),
+        ) as del_blob,
+    ):
+        mgr_cls.return_value.plan_import = AsyncMock(return_value=plan_ok)
+
+        with pytest.raises(HTTPException) as ei:
+            await service.import_session_start(req)
+        assert ei.value.status_code == 413
+        assert ei.value.detail["code"] == "DOCUMENT_TOO_LARGE"
+
+    del_blob.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_import_session_start_generic_insert_failure_cleans_bundle(service, datalake_objects, mock_datalake):
+    mock_datalake.put_object = AsyncMock(return_value=datalake_objects.storage_ref)
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.insert = AsyncMock(side_effect=RuntimeError("mongo"))
+    plan_ok = DatasetSyncImportPlan(
+        dataset_name=datalake_objects.dataset_version.dataset_name,
+        version=datalake_objects.dataset_version.version,
+        transfer_policy="copy_if_missing",
+        ready_to_commit=True,
+    )
+
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    req = DatasetSyncImportRequest(bundle=bundle)
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    with (
+        patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
+        patch(
+            "mindtrace.datalake.service._delete_import_session_bundle_blob",
+            new=AsyncMock(),
+        ) as del_blob,
+    ):
+        mgr_cls.return_value.plan_import = AsyncMock(return_value=plan_ok)
+
+        with pytest.raises(RuntimeError, match="mongo"):
+            await service.import_session_start(req)
+
+    del_blob.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_import_session_commit_metadata_branches(service, datalake_objects, mock_datalake):
+    imp_db = _import_session_db(mock_datalake)
+    session = DatasetImportSession(
+        expires_at=datetime(2000, 1, 1, tzinfo=timezone.utc),
+        import_session_id="meta-1",
+        status="open",
+    )
+    imp_db.find = AsyncMock(return_value=[session])
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    with pytest.raises(HTTPException) as ei:
+        await service.import_session_commit_metadata(
+            DatasetImportSessionCommitInput(session_id=session.import_session_id)
+        )
+    assert ei.value.status_code == 400
+
+    session_live = DatasetImportSession(
+        expires_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        import_session_id="meta-2",
+        metadata_graph_committed=True,
+        status="open",
+    )
+    imp_db.find = AsyncMock(return_value=[session_live])
+    with pytest.raises(HTTPException) as ei2:
+        await service.import_session_commit_metadata(
+            DatasetImportSessionCommitInput(session_id=session_live.import_session_id)
+        )
+    assert ei2.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_import_session_commit_metadata_commit_import_exceptions(service, datalake_objects, mock_datalake):
+    session = Mock()
+    session.metadata_graph_committed = False
+    session.transfer_policy = "copy_if_missing"
+    session.target_object_match_policy = "exists"
+    session.origin_lake_id = None
+    session.preserve_ids = True
+    session.mount_map = {}
+    session.planning_batch_size = 500
+    session.planning_concurrency = 8
+    session.transfer_batch_size = 100
+    session.transfer_concurrency = 8
+    session.greenfield_skip_target_object_probes = True
+    session.greenfield_skip_target_metadata_probes = True
+    session.commit_progress_every_items = 100
+    session.commit_progress_every_seconds = 0.25
+    session.required_asset_ids = []
+    session.import_session_id = "sess-x"
+    session.expires_at = datetime(2099, 1, 1, tzinfo=timezone.utc)
+
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    mock_dl_update = AsyncMock()
+    mock_datalake.dataset_import_session_database = SimpleNamespace(update=mock_dl_update)
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    with (
+        patch("mindtrace.datalake.service._import_session_expired", return_value=False),
+        patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)),
+        patch.object(service, "_require_open_import_session", new=AsyncMock(return_value=session)),
+        patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
+    ):
+        mgr_cls.return_value.commit_import = AsyncMock(side_effect=ValueError("commit"))
+
+        with pytest.raises(HTTPException) as ei:
+            await service.import_session_commit_metadata(
+                DatasetImportSessionCommitInput(session_id=session.import_session_id)
+            )
+        assert ei.value.status_code == 400
+
+        mgr_cls.return_value.commit_import = AsyncMock(side_effect=RuntimeError("db"))
+        with pytest.raises(RuntimeError, match="db"):
+            await service.import_session_commit_metadata(
+                DatasetImportSessionCommitInput(session_id=session.import_session_id)
+            )
+
+
+@pytest.mark.asyncio
+async def test_import_session_status_not_found(service, mock_datalake):
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.find = AsyncMock(return_value=[])
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    with pytest.raises(HTTPException) as ei:
+        await service.import_session_status(DatasetImportSessionStatusInput(session_id="gone"))
+    assert ei.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_import_session_upload_payload_branches(service, datalake_objects, mock_datalake):
+    sess = DatasetImportSession(
+        expires_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        status="open",
+        required_asset_ids=["a1"],
+        metadata_graph_committed=True,
+        verified_asset_ids=[],
+        mount_map={},
+        import_session_id="up-1",
+    )
+    desc = ObjectPayloadDescriptor(
+        asset_id="a1",
+        storage_ref=datalake_objects.storage_ref,
+        media_type="image/jpeg",
+    )
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version, payloads=[desc])
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.find = AsyncMock(return_value=[sess])
+    imp_db.update = AsyncMock(return_value=sess)
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    with (
+        patch("mindtrace.datalake.service._import_session_expired", side_effect=[True]),
+        patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)),
+    ):
+        with pytest.raises(HTTPException) as ei:
+            await service.import_session_upload_payload(
+                DatasetImportSessionUploadInput(session_id=sess.import_session_id, asset_id="a1", data_base64="e30="),
+            )
+        assert ei.value.status_code == 400
+
+    with patch("mindtrace.datalake.service._import_session_expired", return_value=False):
+        imp_db.find = AsyncMock(return_value=[sess])
+        with patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)):
+            with pytest.raises(HTTPException) as ei2:
+                await service.import_session_upload_payload(
+                    DatasetImportSessionUploadInput(
+                        session_id=sess.import_session_id,
+                        asset_id="wrong",
+                        data_base64="e30=",
+                    ),
+                )
+            assert ei2.value.status_code == 400
+
+        imp_db.find = AsyncMock(return_value=[sess])
+        sparse = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version, payloads=[])
+        with patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=sparse)):
+            with pytest.raises(HTTPException) as ei3:
+                await service.import_session_upload_payload(
+                    DatasetImportSessionUploadInput(
+                        session_id=sess.import_session_id, asset_id="a1", data_base64="e30="
+                    ),
+                )
+            assert ei3.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_import_session_upload_payload_ingest_value_error_wraps(service, datalake_objects, mock_datalake):
+    sess = DatasetImportSession(
+        expires_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        status="open",
+        required_asset_ids=["a1"],
+        metadata_graph_committed=False,
+        mount_map={},
+    )
+    desc = ObjectPayloadDescriptor(
+        asset_id="a1",
+        storage_ref=datalake_objects.storage_ref,
+        media_type="image/jpeg",
+        size_bytes=10,
+    )
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version, payloads=[desc])
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.find = AsyncMock(return_value=[sess])
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    with patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)):
+        with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+            mgr_cls.return_value.ingest_import_payload_bytes = AsyncMock(side_effect=ValueError("bytes"))
+            with pytest.raises(HTTPException) as ei:
+                await service.import_session_upload_payload(
+                    DatasetImportSessionUploadInput(
+                        session_id=sess.import_session_id,
+                        asset_id="a1",
+                        data_base64=base64.b64encode(b"short").decode("ascii"),
+                    ),
+                )
+            assert ei.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_import_session_upload_payload_duplicate_when_metadata_committed(
+    service, datalake_objects, mock_datalake
+):
+    sess = DatasetImportSession(
+        expires_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        status="open",
+        required_asset_ids=["a1"],
+        metadata_graph_committed=True,
+        verified_asset_ids=["a1"],
+        mount_map={},
+    )
+    desc = ObjectPayloadDescriptor(
+        asset_id="a1",
+        storage_ref=datalake_objects.storage_ref,
+        media_type="image/jpeg",
+    )
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version, payloads=[desc])
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.find = AsyncMock(return_value=[sess])
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    with patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)):
+        with pytest.raises(HTTPException) as ei:
+            await service.import_session_upload_payload(
+                DatasetImportSessionUploadInput(
+                    session_id=sess.import_session_id,
+                    asset_id="a1",
+                    data_base64=base64.b64encode(b"x").decode("ascii"),
+                ),
+            )
+        assert ei.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_import_session_commit_failure_paths(service, datalake_objects, mock_datalake):
+    stale = DatasetImportSession(
+        expires_at=datetime(2000, 1, 1, tzinfo=timezone.utc),
+        metadata_graph_committed=True,
+        required_asset_ids=[datalake_objects.asset.asset_id],
+        import_session_id="c1",
+        status="open",
+    )
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.find = AsyncMock(return_value=[stale])
+    mock_datalake.get_asset = AsyncMock(
+        return_value=datalake_objects.asset.model_copy(update={"payload_status": "missing"}),
+    )
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    with pytest.raises(HTTPException) as ei:
+        await service.import_session_commit(DatasetImportSessionCommitInput(session_id=stale.import_session_id))
+    assert ei.value.status_code == 400
+
+    good_meta = stale.model_copy(
+        update={
+            "expires_at": datetime(2099, 1, 1, tzinfo=timezone.utc),
+            "metadata_graph_committed": True,
+            "required_asset_ids": [],
+        },
+    )
+    imp_db.find = AsyncMock(return_value=[good_meta])
+    mock_datalake.store = MagicMock()
+
+    with patch(
+        "mindtrace.datalake.service._load_import_session_bundle",
+        new=AsyncMock(return_value=bundle),
+    ):
+        with patch.object(
+            mock_datalake,
+            "get_dataset_version",
+            new=AsyncMock(side_effect=DocumentNotFoundError("missing dv")),
+        ):
+            with pytest.raises(HTTPException) as ei3:
+                await service.import_session_commit(
+                    DatasetImportSessionCommitInput(session_id=good_meta.import_session_id)
+                )
+            assert ei3.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_import_session_commit_staged_refs_and_value_error(service, datalake_objects, mock_datalake):
+    staged_session = DatasetImportSession(
+        expires_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        metadata_graph_committed=False,
+        required_asset_ids=["a1"],
+        staged_refs={},
+        status="open",
+    )
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.find = AsyncMock(return_value=[staged_session])
+    imp_db.update = AsyncMock()
+    mock_datalake.store = MagicMock()
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    with patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)):
+        with pytest.raises(HTTPException) as ei:
+            await service.import_session_commit(
+                DatasetImportSessionCommitInput(session_id=staged_session.import_session_id)
+            )
+        assert ei.value.status_code == 400
+        assert "Missing staged payloads" in str(ei.value.detail)
+
+    staged_session.staged_refs = {"a1": datalake_objects.storage_ref.model_dump(mode="json")}
+    imp_db.find = AsyncMock(return_value=[staged_session])
+
+    with (
+        patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)),
+        patch(
+            "mindtrace.datalake.service.DatasetSyncManager",
+        ) as mgr_cls,
+    ):
+        mgr_cls.return_value.commit_import = AsyncMock(side_effect=ValueError("staging"))
+        with pytest.raises(HTTPException) as ei2:
+            await service.import_session_commit(
+                DatasetImportSessionCommitInput(session_id=staged_session.import_session_id)
+            )
+        assert ei2.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_run_dataset_sync_job_prepare_records_mid_run_progress_phase(service, datalake_objects, mock_datalake):
+    snapshot: list[str] = []
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    request = DatasetSyncImportRequest(bundle=bundle)
+    plan = DatasetSyncImportPlan(
+        dataset_name=bundle.dataset_version.dataset_name,
+        version=bundle.dataset_version.version,
+        transfer_policy="copy_if_missing",
+        ready_to_commit=True,
+    )
+
+    job = _DatasetSyncJobState(job_id="jid", mode="prepare")
+
+    async def intercept_plan_imp(req, *, progress_callback=None):
+        await progress_callback(
+            DatasetSyncProgress(
+                phase="planning",
+                message="mid",
+                batch_index=1,
+                total_batches=4,
+                completed_items=0,
+                total_items=10,
+            ),
+        )
+        snapshot.append(job.progress.phase)
+        return plan
+
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+        mgr_cls.return_value.plan_import = AsyncMock(side_effect=intercept_plan_imp)
+        await service._run_dataset_sync_job(job, request)
+
+    assert snapshot == ["planning"]
+    assert job.progress.phase == "complete"
+    assert job.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_run_dataset_sync_job_import_records_failure_detail(service, datalake_objects, mock_datalake):
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    request = DatasetSyncImportRequest(bundle=bundle)
+    job = _DatasetSyncJobState(job_id="imp-j", mode="import")
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+        mgr_cls.return_value.commit_import = AsyncMock(side_effect=RuntimeError("commit boom"))
+        await service._run_dataset_sync_job(job, request)
+
+    assert job.status == "failed"
+    assert job.error_detail is not None
+    assert "commit boom" in (job.error or "")
