@@ -46,6 +46,7 @@ from .pagination_types import (
     StructuredFilter,
 )
 from .replication import ReplicationManager
+from .replication_queue import ReplicationQueueManager
 from .replication_types import (
     ReplicatedAssetState,
     ReplicationBatchRequest,
@@ -85,6 +86,8 @@ from .types import (
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
+    ReplicationRule,
+    ReplicationTask,
     StorageRef,
     SubjectRef,
 )
@@ -145,6 +148,7 @@ __all__ = [
     "DatasetSyncPayloadPlan",
     "DatasetSyncProgress",
     "ReplicationManager",
+    "ReplicationQueueManager",
     "ReplicatedAssetState",
     "ReplicationBatchRequest",
     "ReplicationBatchResult",
@@ -172,6 +176,8 @@ __all__ = [
     "ResolvedCollectionItem",
     "ResolvedDatasetVersion",
     "ResolvedDatum",
+    "ReplicationRule",
+    "ReplicationTask",
     "import_pascal_voc",
     "ObjectPayloadDescriptor",
     "StorageRef",

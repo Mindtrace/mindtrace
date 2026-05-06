@@ -19,6 +19,7 @@ from fastapi import HTTPException
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DocumentTooLargeError
 from mindtrace.datalake.async_datalake import AsyncDatalake, SlowOperationDisabledError, SlowOpsPolicy
 from mindtrace.datalake.replication import ReplicationManager
+from mindtrace.datalake.replication_queue import ReplicationQueueManager
 from mindtrace.datalake.replication_types import ReplicationReclaimRequest, ReplicationReconcileRequest
 from mindtrace.datalake.service_types import (
     AddAliasInput,
@@ -213,6 +214,23 @@ from mindtrace.datalake.service_types import (
     ReplicationReconcileSchema,
     ReplicationStatusOutput,
     ReplicationStatusSchema,
+    ReplicationTaskClaimInput,
+    ReplicationTaskClaimOutput,
+    ReplicationTaskClaimSchema,
+    ReplicationTaskEnqueueInput,
+    ReplicationTaskEnqueueOutput,
+    ReplicationTaskEnqueueSchema,
+    ReplicationTaskFailInput,
+    ReplicationTaskFailSchema,
+    ReplicationTaskGetSchema,
+    ReplicationTaskIdInput,
+    ReplicationTaskListInput,
+    ReplicationTaskListOutput,
+    ReplicationTaskListSchema,
+    ReplicationTaskOutput,
+    ReplicationTaskRetrySchema,
+    ReplicationTaskStatusUpdateInput,
+    ReplicationTaskUpdateStatusSchema,
     ResolveCollectionItemSchema,
     ResolveDatasetVersionSchema,
     ResolveDatumSchema,
@@ -712,6 +730,21 @@ class DatalakeService(Service):
             schema=ReplicationReclaimSchema,
         )
         self.add_endpoint("replication.status", self.replication_status, schema=ReplicationStatusSchema)
+        self.add_endpoint(
+            "replication.tasks.enqueue",
+            self.replication_task_enqueue,
+            schema=ReplicationTaskEnqueueSchema,
+        )
+        self.add_endpoint("replication.tasks.list", self.replication_task_list, schema=ReplicationTaskListSchema)
+        self.add_endpoint("replication.tasks.get", self.replication_task_get, schema=ReplicationTaskGetSchema)
+        self.add_endpoint("replication.tasks.claim", self.replication_task_claim, schema=ReplicationTaskClaimSchema)
+        self.add_endpoint(
+            "replication.tasks.update_status",
+            self.replication_task_update_status,
+            schema=ReplicationTaskUpdateStatusSchema,
+        )
+        self.add_endpoint("replication.tasks.fail", self.replication_task_fail, schema=ReplicationTaskFailSchema)
+        self.add_endpoint("replication.tasks.retry", self.replication_task_retry, schema=ReplicationTaskRetrySchema)
 
     async def _startup_initialize(self) -> None:
         await self._ensure_datalake()
@@ -2393,3 +2426,103 @@ class DatalakeService(Service):
         manager = ReplicationManager(datalake)
         status = await manager.status()
         return ReplicationStatusOutput(status=status)
+
+    async def replication_task_enqueue(self, payload: ReplicationTaskEnqueueInput) -> ReplicationTaskEnqueueOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationQueueManager(datalake)
+        task, created = await manager.enqueue_task(
+            target_lake_id=payload.target_lake_id,
+            root_kind=payload.root_kind,
+            root_id=payload.root_id,
+            rule_id=payload.rule_id,
+            dedupe_key=payload.dedupe_key,
+            source_version=payload.source_version,
+            hydrate_policy=payload.hydrate_policy,
+            mount_map=payload.mount_map,
+            include_graph=payload.include_graph,
+            max_attempts=payload.max_attempts,
+            metadata=payload.metadata,
+        )
+        return ReplicationTaskEnqueueOutput(task=task, created=created)
+
+    async def replication_task_list(self, payload: ReplicationTaskListInput) -> ReplicationTaskListOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationQueueManager(datalake)
+        tasks = await manager.list_tasks(
+            status=payload.status,
+            target_lake_id=payload.target_lake_id,
+            root_kind=payload.root_kind,
+            rule_id=payload.rule_id,
+            limit=payload.limit,
+        )
+        return ReplicationTaskListOutput(tasks=tasks)
+
+    async def replication_task_get(self, payload: ReplicationTaskIdInput) -> ReplicationTaskOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationQueueManager(datalake)
+        try:
+            task = await manager.get_task(payload.task_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return ReplicationTaskOutput(task=task)
+
+    async def replication_task_claim(self, payload: ReplicationTaskClaimInput) -> ReplicationTaskClaimOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationQueueManager(datalake)
+        tasks = await manager.claim_due_tasks(
+            worker_id=payload.worker_id,
+            limit=payload.limit,
+            lease_seconds=payload.lease_seconds,
+        )
+        return ReplicationTaskClaimOutput(tasks=tasks)
+
+    async def replication_task_update_status(
+        self, payload: ReplicationTaskStatusUpdateInput
+    ) -> ReplicationTaskOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationQueueManager(datalake)
+        try:
+            task = await manager.mark_status(
+                payload.task_id,
+                status=payload.status,
+                worker_id=payload.worker_id,
+                error=payload.error,
+                progress_phase=payload.progress_phase,
+                progress_message=payload.progress_message,
+                completed_items=payload.completed_items,
+                total_items=payload.total_items,
+                bytes_completed=payload.bytes_completed,
+                bytes_total=payload.bytes_total,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return ReplicationTaskOutput(task=task)
+
+    async def replication_task_fail(self, payload: ReplicationTaskFailInput) -> ReplicationTaskOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationQueueManager(datalake)
+        try:
+            task = await manager.fail_task(
+                payload.task_id,
+                worker_id=payload.worker_id,
+                error=payload.error,
+                retry_delay_seconds=payload.retry_delay_seconds,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return ReplicationTaskOutput(task=task)
+
+    async def replication_task_retry(self, payload: ReplicationTaskIdInput) -> ReplicationTaskOutput:
+        datalake = await self._ensure_datalake()
+        manager = ReplicationQueueManager(datalake)
+        try:
+            task = await manager.retry_task(payload.task_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return ReplicationTaskOutput(task=task)

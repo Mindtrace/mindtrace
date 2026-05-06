@@ -44,6 +44,10 @@ from mindtrace.datalake.types import (
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
+    ReplicationEntityKind,
+    ReplicationHydratePolicy,
+    ReplicationTask,
+    ReplicationTaskStatus,
     StorageRef,
     SubjectRef,
 )
@@ -969,6 +973,75 @@ class ReplicationMarkLocalDeleteEligibleInput(BaseModel):
     when: datetime | None = None
 
 
+class ReplicationTaskOutput(BaseModel):
+    task: ReplicationTask
+
+
+class ReplicationTaskListInput(BaseModel):
+    status: ReplicationTaskStatus | None = None
+    target_lake_id: str | None = None
+    root_kind: ReplicationEntityKind | None = None
+    rule_id: str | None = None
+    limit: int = Field(default=100, ge=1, le=1000)
+
+
+class ReplicationTaskListOutput(BaseModel):
+    tasks: list[ReplicationTask] = Field(default_factory=list)
+
+
+class ReplicationTaskEnqueueInput(BaseModel):
+    target_lake_id: str
+    root_kind: ReplicationEntityKind
+    root_id: str
+    rule_id: str | None = None
+    dedupe_key: str | None = None
+    source_version: str | None = None
+    hydrate_policy: ReplicationHydratePolicy = "async"
+    mount_map: dict[str, str] = Field(default_factory=dict)
+    include_graph: bool = True
+    max_attempts: int = Field(default=5, ge=1)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReplicationTaskEnqueueOutput(BaseModel):
+    task: ReplicationTask
+    created: bool
+
+
+class ReplicationTaskClaimInput(BaseModel):
+    worker_id: str
+    limit: int = Field(default=10, ge=1, le=100)
+    lease_seconds: int = Field(default=300, ge=1)
+
+
+class ReplicationTaskClaimOutput(BaseModel):
+    tasks: list[ReplicationTask] = Field(default_factory=list)
+
+
+class ReplicationTaskStatusUpdateInput(BaseModel):
+    task_id: str
+    status: ReplicationTaskStatus
+    worker_id: str | None = None
+    error: str | None = None
+    progress_phase: str | None = None
+    progress_message: str | None = None
+    completed_items: int | None = None
+    total_items: int | None = None
+    bytes_completed: int | None = None
+    bytes_total: int | None = None
+
+
+class ReplicationTaskFailInput(BaseModel):
+    task_id: str
+    error: str
+    worker_id: str | None = None
+    retry_delay_seconds: int = Field(default=60, ge=0)
+
+
+class ReplicationTaskIdInput(BaseModel):
+    task_id: str
+
+
 class ReplicationBatchResultOutput(BaseModel):
     result: ReplicationBatchResult
 
@@ -1123,4 +1196,46 @@ ReplicationReclaimSchema = TaskSchema(
 ReplicationStatusSchema = TaskSchema(
     name="replication.status",
     output_schema=ReplicationStatusOutput,
+)
+
+ReplicationTaskEnqueueSchema = TaskSchema(
+    name="replication.tasks.enqueue",
+    input_schema=ReplicationTaskEnqueueInput,
+    output_schema=ReplicationTaskEnqueueOutput,
+)
+
+ReplicationTaskListSchema = TaskSchema(
+    name="replication.tasks.list",
+    input_schema=ReplicationTaskListInput,
+    output_schema=ReplicationTaskListOutput,
+)
+
+ReplicationTaskGetSchema = TaskSchema(
+    name="replication.tasks.get",
+    input_schema=ReplicationTaskIdInput,
+    output_schema=ReplicationTaskOutput,
+)
+
+ReplicationTaskClaimSchema = TaskSchema(
+    name="replication.tasks.claim",
+    input_schema=ReplicationTaskClaimInput,
+    output_schema=ReplicationTaskClaimOutput,
+)
+
+ReplicationTaskUpdateStatusSchema = TaskSchema(
+    name="replication.tasks.update_status",
+    input_schema=ReplicationTaskStatusUpdateInput,
+    output_schema=ReplicationTaskOutput,
+)
+
+ReplicationTaskFailSchema = TaskSchema(
+    name="replication.tasks.fail",
+    input_schema=ReplicationTaskFailInput,
+    output_schema=ReplicationTaskOutput,
+)
+
+ReplicationTaskRetrySchema = TaskSchema(
+    name="replication.tasks.retry",
+    input_schema=ReplicationTaskIdInput,
+    output_schema=ReplicationTaskOutput,
 )
