@@ -216,6 +216,15 @@ class TestDatalakeSyncFacade:
             "get_asset_by_alias": Asset(
                 kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")
             ),
+            "wipe": {
+                "database": "test_db",
+                "deleted_payloads": True,
+                "deleted_metadata": False,
+                "clear_registry_metadata": False,
+                "cleared_mounts": [],
+            },
+            "delete_object": None,
+            "get_asset_payload": b"asset-payload",
         }.items():
             setattr(backend, name, AsyncMock(return_value=value))
         return backend
@@ -675,3 +684,27 @@ class TestDatalakeSyncFacade:
         assert datalake.__enter__() is datalake
         assert datalake.__exit__(None, None, None) is False
         assert datalake._owns_loop_thread is False
+
+    def test_close_swallows_exceptions_from_backend_close_future(self, datalake, mock_backend):
+        datalake.initialize()
+        fake_future = MagicMock()
+        fake_future.result.side_effect = RuntimeError("backend close failed")
+        with patch("mindtrace.datalake.datalake.asyncio.run_coroutine_threadsafe", return_value=fake_future):
+            datalake.close()
+        assert datalake._backend is None
+        assert datalake._owns_loop_thread is False
+
+    def test_wipe_delete_object_and_get_asset_payload_delegate(self, datalake, mock_backend):
+        ref = StorageRef(mount="temp", name="x.bin", version="v1")
+
+        wiped = datalake.wipe(delete_metadata=False)
+        assert wiped["deleted_metadata"] is False
+        mock_backend.wipe.assert_awaited_once_with(
+            delete_payloads=True, delete_metadata=False, clear_registry_metadata=False
+        )
+
+        datalake.delete_object(ref)
+        mock_backend.delete_object.assert_awaited_once_with(ref)
+
+        assert datalake.get_asset_payload("asset_1", mmap=True) == b"asset-payload"
+        mock_backend.get_asset_payload.assert_awaited_once_with("asset_1", mmap=True)

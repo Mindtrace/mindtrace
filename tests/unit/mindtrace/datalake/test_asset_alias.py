@@ -53,6 +53,7 @@ def mock_async_datalake():
     dl.add_alias = AsyncMock()
     dl.create_asset_from_object = AsyncMock()
     dl.get_object = AsyncMock(return_value=b"payload")
+    dl.get_asset_payload = AsyncMock(return_value=b"payload")
     return dl
 
 
@@ -70,7 +71,7 @@ async def test_async_data_vault_load_delegates(mock_async_datalake):
     out = await vault.load("my-alias")
 
     mock_async_datalake.get_asset_by_alias.assert_awaited_once_with("my-alias")
-    mock_async_datalake.get_object.assert_awaited_once_with(asset.storage_ref)
+    mock_async_datalake.get_asset_payload.assert_awaited_once_with(asset.asset_id)
     assert out == b"payload"
 
 
@@ -113,6 +114,7 @@ def mock_sync_datalake():
     dl = Mock()
     dl.get_asset_by_alias = Mock()
     dl.get_object = Mock(return_value=b"sync-payload")
+    dl.get_asset_payload = Mock(return_value=b"sync-payload")
     dl.create_asset_from_object = Mock()
     dl.add_alias = Mock()
     return dl
@@ -131,7 +133,7 @@ def test_data_vault_load(mock_sync_datalake):
     out = vault.load("alias1")
 
     mock_sync_datalake.get_asset_by_alias.assert_called_once_with("alias1")
-    mock_sync_datalake.get_object.assert_called_once_with(asset.storage_ref)
+    mock_sync_datalake.get_asset_payload.assert_called_once_with(asset.asset_id)
     assert out == b"sync-payload"
 
 

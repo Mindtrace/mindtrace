@@ -78,6 +78,7 @@ def test_data_vault_load_materializes_with_mock_backend(tmp_path: Path):
     )
     backend = Mock()
     backend.get_asset_by_alias = Mock(return_value=asset)
+    backend.get_asset_payload = Mock(return_value=b"payload-bytes")
     backend.get_object = Mock(return_value=b"payload-bytes")
 
     vault = DataVault(backend, registry=reg)
@@ -95,6 +96,7 @@ def test_data_vault_load_skips_materialize_when_disabled(tmp_path: Path):
     )
     backend = Mock()
     backend.get_asset_by_alias = Mock(return_value=asset)
+    backend.get_asset_payload = Mock(return_value=b"raw")
     backend.get_object = Mock(return_value=b"raw")
 
     vault = DataVault(backend, registry=reg)
@@ -112,6 +114,7 @@ async def test_async_data_vault_load_materializes(tmp_path: Path):
     )
     backend = Mock()
     backend.get_asset_by_alias = AsyncMock(return_value=asset)
+    backend.get_asset_payload = AsyncMock(return_value=b"x")
     backend.get_object = AsyncMock(return_value=b"x")
 
     vault = AsyncDataVault(backend, registry=reg)
@@ -144,6 +147,7 @@ def test_data_vault_save_load_image_roundtrip_sync():
     backend.create_asset_from_object = Mock(side_effect=create_from_object)
     backend.add_alias = Mock()
     backend.get_asset_by_alias = Mock(side_effect=lambda _a: saved_asset)
+    backend.get_asset_payload = Mock(side_effect=lambda _aid: png_payload)
     backend.get_object = Mock(side_effect=lambda _ref: png_payload)
 
     vault = DataVault(backend)
@@ -176,6 +180,7 @@ async def test_data_vault_save_load_image_roundtrip_async():
     backend.create_asset_from_object = AsyncMock(side_effect=create_from_object)
     backend.add_alias = AsyncMock()
     backend.get_asset_by_alias = AsyncMock(side_effect=lambda _a: saved_asset)
+    backend.get_asset_payload = AsyncMock(side_effect=lambda _aid: png_payload)
     backend.get_object = AsyncMock(side_effect=lambda _ref: png_payload)
 
     vault = AsyncDataVault(backend)
@@ -208,6 +213,7 @@ def test_load_image_raises_on_non_image_payload():
     )
     backend = Mock()
     backend.get_asset_by_alias = Mock(return_value=asset)
+    backend.get_asset_payload = Mock(return_value="not-bytes")
     backend.get_object = Mock(return_value="not-bytes")
     vault = DataVault(backend)
     with pytest.raises(TypeError, match="load_image expected"):
@@ -225,6 +231,7 @@ async def test_async_load_image_raises_on_non_image_payload():
     )
     backend = Mock()
     backend.get_asset_by_alias = AsyncMock(return_value=asset)
+    backend.get_asset_payload = AsyncMock(return_value=[])
     backend.get_object = AsyncMock(return_value=[])
     vault = AsyncDataVault(backend)
     with pytest.raises(TypeError, match="load_image expected"):
@@ -243,6 +250,7 @@ def test_load_image_decodes_bytearray_payload():
     )
     backend = Mock()
     backend.get_asset_by_alias = Mock(return_value=asset)
+    backend.get_asset_payload = Mock(return_value=bytearray(png))
     backend.get_object = Mock(return_value=bytearray(png))
     vault = DataVault(backend)
     out = vault.load_image("x")
@@ -260,6 +268,7 @@ def test_load_image_passes_through_pil_payload():
     )
     backend = Mock()
     backend.get_asset_by_alias = Mock(return_value=asset)
+    backend.get_asset_payload = Mock(return_value=im)
     backend.get_object = Mock(return_value=im)
     vault = DataVault(backend)
     assert vault.load_image("x") is im
@@ -353,8 +362,9 @@ def test_load_skips_materialize_when_no_registry():
     )
     backend = Mock()
     backend.get_asset_by_alias = Mock(return_value=asset)
+    backend.get_asset_payload = Mock(return_value=b"raw")
     backend.get_object = Mock(return_value=b"raw")
-    vault = DataVault(backend, registry=None)
+    vault = DataVault(backend)
     assert vault.load("a") == b"raw"
 
 
@@ -368,6 +378,7 @@ def test_load_skips_when_no_serialization_hints(tmp_path: Path):
     )
     backend = Mock()
     backend.get_asset_by_alias = Mock(return_value=asset)
+    backend.get_asset_payload = Mock(return_value=b"payload")
     backend.get_object = Mock(return_value=b"payload")
     vault = DataVault(backend, registry=reg)
     assert vault.load("a") == b"payload"
@@ -383,6 +394,7 @@ def test_load_skips_materialize_when_payload_not_bytes(tmp_path: Path):
     )
     backend = Mock()
     backend.get_asset_by_alias = Mock(return_value=asset)
+    backend.get_asset_payload = Mock(return_value=[1, 2])
     backend.get_object = Mock(return_value=[1, 2])
     vault = DataVault(backend, registry=reg)
     assert vault.load("a") == [1, 2]
@@ -399,6 +411,7 @@ async def test_async_load_skips_materialize_without_hints(tmp_path: Path):
     )
     backend = Mock()
     backend.get_asset_by_alias = AsyncMock(return_value=asset)
+    backend.get_asset_payload = AsyncMock(return_value=b"payload")
     backend.get_object = AsyncMock(return_value=b"payload")
     vault = AsyncDataVault(backend, registry=reg)
     assert await vault.load("a") == b"payload"
@@ -415,6 +428,7 @@ async def test_async_load_skips_materialize_when_payload_not_bytes(tmp_path: Pat
     )
     backend = Mock()
     backend.get_asset_by_alias = AsyncMock(return_value=asset)
+    backend.get_asset_payload = AsyncMock(return_value=[1, 2])
     backend.get_object = AsyncMock(return_value=[1, 2])
     vault = AsyncDataVault(backend, registry=reg)
     assert await vault.load("a") == [1, 2]
