@@ -190,31 +190,40 @@ class RabbitMQAgentTaskQueue(AbstractTaskQueue):
         return self._amqp_channel
 
     async def submit(self, task: AgentTask) -> str:
-        """Wrap task in an AgentTaskEnvelope and publish to RabbitMQ."""
+        """Wrap task in an AgentTaskEnvelope and publish to RabbitMQ.
+
+        If the gateway already built a full envelope (stored in task.metadata["envelope"]),
+        use it directly so that run_context fields (user_id, project_id, org_id, etc.)
+        are preserved. Otherwise, construct a minimal envelope from the task fields.
+        """
         from ..context.propagation import AgentRunContext, AgentTaskEnvelope, TaskProvenance
         from uuid import uuid4 as _uuid4
 
-        trace_id = _uuid4().hex + _uuid4().hex
-        span_id = _uuid4().hex[:16]
-        session_id = task.session_id or str(_uuid4())
-        run_context = AgentRunContext(
-            trace_id=trace_id,
-            span_id=span_id,
-            session_id=session_id,
-            user_id="",
-        )
-        provenance = TaskProvenance(
-            submitter_id="",
-            submitter_role="service",
-            origin_gateway_id="",
-        )
-        envelope = AgentTaskEnvelope(
-            agent_name=task.agent_name,
-            input=task.input,
-            session_id=task.session_id,
-            run_context=run_context,
-            provenance=provenance,
-        )
+        pre_built = (task.metadata or {}).get("envelope")
+        if pre_built:
+            envelope = AgentTaskEnvelope.model_validate_json(pre_built)
+        else:
+            trace_id = _uuid4().hex + _uuid4().hex
+            span_id = _uuid4().hex[:16]
+            session_id = task.session_id or str(_uuid4())
+            run_context = AgentRunContext(
+                trace_id=trace_id,
+                span_id=span_id,
+                session_id=session_id,
+                user_id=task.user_id or "",
+            )
+            provenance = TaskProvenance(
+                submitter_id="",
+                submitter_role="service",
+                origin_gateway_id="",
+            )
+            envelope = AgentTaskEnvelope(
+                agent_name=task.agent_name,
+                input=task.input,
+                session_id=task.session_id,
+                run_context=run_context,
+                provenance=provenance,
+            )
         task_id = envelope.task_id
 
         channel = await self._get_channel()
@@ -249,6 +258,20 @@ class RabbitMQAgentTaskQueue(AbstractTaskQueue):
             elapsed += delay
             delay = min(delay * 2, 10.0)
         raise TimeoutError(f"Task {task_id!r} result not available within {timeout}s")
+
+    async def dequeue(self) -> str | None:
+        """Pull one message from the queue without a persistent consumer.
+
+        Returns the raw JSON string of the envelope, or None if the queue is
+        empty. The message is acked immediately on successful retrieval.
+        """
+        channel = await self._get_channel()
+        queue = await channel.declare_queue(self._queue_name, durable=True, passive=True)
+        msg = await queue.get(no_ack=False, fail=False)
+        if msg is None:
+            return None
+        await msg.ack()
+        return msg.body.decode()
 
     async def cancel(self, task_id: str) -> None:
         redis = await self._get_redis()

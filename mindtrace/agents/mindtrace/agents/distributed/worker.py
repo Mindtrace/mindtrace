@@ -49,6 +49,7 @@ class MindtraceAgentWorker:
         max_concurrent_agents: int = 4,
         worker_id: str | None = None,
         node_id: str = "",
+        mongo_url: str | None = None,
     ) -> None:
         self.agent_registry = agent_registry
         self.task_queue = task_queue
@@ -60,6 +61,7 @@ class MindtraceAgentWorker:
         self.max_concurrent_agents = max_concurrent_agents
         self.worker_id = worker_id or str(uuid4())
         self.node_id = node_id
+        self.mongo_url = mongo_url
         self._semaphore = asyncio.Semaphore(max_concurrent_agents)
         self._pubsub_client: aioredis.Redis | None = None
         self._running = False
@@ -195,7 +197,11 @@ class MindtraceAgentWorker:
             from ..toolsets.compound import CompoundToolset
             kwargs["toolset"] = CompoundToolset(*required_toolsets)
 
-        return agent_cls(**kwargs)
+        agent = agent_cls(**kwargs)
+        # Inject history strategy so the agent auto-loads/saves per session_id
+        if self.history_strategy is not None and hasattr(agent, "history") and agent.history is None:
+            agent.history = self.history_strategy  # type: ignore[attr-defined]
+        return agent
 
     async def _publish_event(self, task_id: str, event: Any) -> None:
         """Publish a NativeEvent as JSON to Redis Pub/Sub channel task:{task_id}."""
@@ -261,13 +267,25 @@ class MindtraceAgentWorker:
 
     async def _build_system_context(self, envelope: AgentTaskEnvelope) -> str | None:
         """Load inject=true memory entries for user/project/org and format as text."""
+        if not self.mongo_url:
+            return None
+
         from .memory_api import MemoryContextBuilder
         from ..memory.mongo import MongoMemoryStore
 
         run_ctx = envelope.run_context
-        user_store: MongoMemoryStore | None = None
-        project_store: MongoMemoryStore | None = None
-        org_store: MongoMemoryStore | None = None
+
+        def _store(namespace: str) -> MongoMemoryStore:
+            return MongoMemoryStore(
+                mongo_url=self.mongo_url,  # type: ignore[arg-type]
+                database="mindtrace_agents",
+                collection="agent_memory",
+                namespace=namespace,
+            )
+
+        user_store = _store(f"users:{run_ctx.user_id}") if run_ctx.user_id else None
+        project_store = _store(f"projects:{run_ctx.project_id}") if run_ctx.project_id else None
+        org_store = _store(f"orgs:{run_ctx.org_id}") if run_ctx.org_id else None
 
         builder = MemoryContextBuilder(
             user_store=user_store,

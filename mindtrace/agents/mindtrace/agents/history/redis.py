@@ -15,43 +15,46 @@ except ImportError as e:
     ) from e
 
 
-def _msg_to_dict(msg: ModelMessage) -> dict:
-    """Serialize a ModelMessage to a JSON-serializable dict."""
-    if hasattr(msg, "model_dump"):
-        return msg.model_dump()
-    return {"__type__": type(msg).__name__, "__data__": str(msg)}
+def _part_to_dict(part: object) -> dict:
+    import dataclasses
+    d = dataclasses.asdict(part) if dataclasses.is_dataclass(part) else {"content": str(part)}  # type: ignore[arg-type]
+    d["__part_type__"] = type(part).__name__
+    return d
 
 
-def _dict_to_msg(d: dict) -> ModelMessage:
-    """Deserialize a dict back to a ModelMessage."""
-    if "__type__" in d and "__data__" in d:
-        return ModelMessage(content=d["__data__"])  # type: ignore[call-arg]
+def _dict_to_part(d: dict) -> object:
+    from ..messages import HandoffPart, SystemPromptPart, TextPart, ToolCallPart, ToolReturnPart
+    from ..prompts import UserPromptPart
 
-    msg_type = d.get("type") or d.get("__type__", "")
-
-    from ..messages import (
-        HandoffPart,
-        SystemPromptPart,
-        TextPart,
-        ToolCallPart,
-        ToolReturnPart,
-    )
-
-    part_classes = {
+    part_classes: dict[str, type] = {
         "TextPart": TextPart,
         "ToolCallPart": ToolCallPart,
         "ToolReturnPart": ToolReturnPart,
         "HandoffPart": HandoffPart,
         "SystemPromptPart": SystemPromptPart,
+        "UserPromptPart": UserPromptPart,
+    }
+    d = dict(d)
+    part_type = d.pop("__part_type__", None)
+    cls = part_classes.get(part_type)  # type: ignore[arg-type]
+    if cls is None:
+        return TextPart(content=str(d))
+    return cls(**d)
+
+
+def _msg_to_dict(msg: ModelMessage) -> dict:
+    return {
+        "role": msg.role,
+        "parts": [_part_to_dict(p) for p in msg.parts],
     }
 
-    if hasattr(ModelMessage, "model_validate"):
-        try:
-            return ModelMessage.model_validate(d)
-        except Exception:
-            pass
 
-    raise ValueError(f"Cannot deserialize ModelMessage from: {d!r}")
+def _dict_to_msg(d: dict) -> ModelMessage:
+    role = d.get("role", "user")
+    parts = [_dict_to_part(p) for p in d.get("parts", [])]
+    if not parts:
+        parts = [TextPart(content="")]  # type: ignore[list-item]
+    return ModelMessage(role=role, parts=parts)  # type: ignore[arg-type]
 
 
 class RedisHistoryStrategy(AbstractHistoryStrategy):

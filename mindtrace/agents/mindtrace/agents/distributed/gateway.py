@@ -30,7 +30,7 @@ except ImportError:  # pragma: no cover
     _SERVICES_AVAILABLE = False
 
 try:
-    from fastapi import WebSocket, WebSocketDisconnect
+    from fastapi import Request, WebSocket, WebSocketDisconnect
     from fastapi.responses import JSONResponse
 
     _FASTAPI_AVAILABLE = True
@@ -60,6 +60,7 @@ class MindtraceAgentGateway(Service if _SERVICES_AVAILABLE else object):  # type
         auth_secret: str | None = None,
         backpressure: BackpressureConfig | None = None,
         gateway_id: str | None = None,
+        mongo_url: str | None = None,
         **kwargs: Any,
     ) -> None:
         if _SERVICES_AVAILABLE:
@@ -71,6 +72,7 @@ class MindtraceAgentGateway(Service if _SERVICES_AVAILABLE else object):  # type
         self.auth_secret = auth_secret
         self.backpressure = backpressure or BackpressureConfig()
         self.gateway_id = gateway_id or uuid4().hex[:12]
+        self.mongo_url = mongo_url
 
         # Circuit breakers for downstream dependencies
         self._cb_queue = CircuitBreaker(dependency="task_queue")
@@ -80,6 +82,15 @@ class MindtraceAgentGateway(Service if _SERVICES_AVAILABLE else object):  # type
         self._active_sessions: dict[str, set[str]] = {}
 
         if _FASTAPI_AVAILABLE and _SERVICES_AVAILABLE:
+            from starlette.middleware.cors import CORSMiddleware
+
+            self.app.add_middleware(
+                CORSMiddleware,
+                allow_origins=["*"],
+                allow_credentials=True,
+                allow_methods=["*"],
+                allow_headers=["*"],
+            )
             self._register_routes()
 
     # ------------------------------------------------------------------
@@ -114,6 +125,89 @@ class MindtraceAgentGateway(Service if _SERVICES_AVAILABLE else object):  # type
             methods=["GET"],
             response_class=JSONResponse,
         )
+
+        # Session history routes
+        self.app.add_api_route(
+            "/sessions",
+            self._list_sessions_route,
+            methods=["GET"],
+            response_class=JSONResponse,
+        )
+        self.app.add_api_route(
+            "/sessions/{session_id}/history",
+            self._get_session_history_route,
+            methods=["GET"],
+            response_class=JSONResponse,
+        )
+        self.app.add_api_route(
+            "/sessions/{session_id}/history",
+            self._delete_session_history_route,
+            methods=["DELETE"],
+            response_class=JSONResponse,
+        )
+
+        # DLQ admin routes
+        self.app.add_api_route(
+            "/dlq",
+            self._list_dlq_route,
+            methods=["GET"],
+            response_class=JSONResponse,
+        )
+        self.app.add_api_route(
+            "/dlq/requeue/{task_id}",
+            self._requeue_dlq_route,
+            methods=["POST"],
+            response_class=JSONResponse,
+        )
+        self.app.add_api_route(
+            "/dlq/purge",
+            self._purge_dlq_route,
+            methods=["POST"],
+            response_class=JSONResponse,
+        )
+
+        # Memory namespace listing routes (returns all known IDs per scope)
+        for scope in ("users", "projects", "orgs"):
+            self.app.add_api_route(
+                f"/memory/{scope}",
+                self._make_list_namespaces_route(scope),
+                methods=["GET"],
+                response_class=JSONResponse,
+            )
+
+        # Memory CRUD routes (user / project / org scopes)
+        # All use {entity_id}/{key} path params — scope captured via closure
+        for scope in ("users", "projects", "orgs"):
+            self.app.add_api_route(
+                f"/memory/{scope}/{{entity_id}}",
+                self._make_list_memory_route(scope),
+                methods=["GET"],
+                response_class=JSONResponse,
+            )
+            self.app.add_api_route(
+                f"/memory/{scope}/{{entity_id}}/entries",
+                self._make_create_memory_route(scope),
+                methods=["POST"],
+                response_class=JSONResponse,
+            )
+            self.app.add_api_route(
+                f"/memory/{scope}/{{entity_id}}/entries/{{key}}",
+                self._make_get_memory_route(scope),
+                methods=["GET"],
+                response_class=JSONResponse,
+            )
+            self.app.add_api_route(
+                f"/memory/{scope}/{{entity_id}}/entries/{{key}}",
+                self._make_update_memory_route(scope),
+                methods=["PUT"],
+                response_class=JSONResponse,
+            )
+            self.app.add_api_route(
+                f"/memory/{scope}/{{entity_id}}/entries/{{key}}",
+                self._make_delete_memory_route(scope),
+                methods=["DELETE"],
+                response_class=JSONResponse,
+            )
 
     # ------------------------------------------------------------------
     # WebSocket endpoint
@@ -266,19 +360,31 @@ class MindtraceAgentGateway(Service if _SERVICES_AVAILABLE else object):  # type
                 except Exception:
                     continue
 
+                event_type = frame.get("__event_type__", "")
                 event_kind = frame.get("kind", "")
-                if event_kind == "result":
+
+                if event_type == "TaskComplete" or event_kind == "result":
+                    # Fetch actual result from Redis key result:{task_id}
+                    output: Any = frame.get("output")
+                    if output is None and client is not None:
+                        raw_result = await client.get(f"result:{task_id}")
+                        if raw_result is not None:
+                            try:
+                                result_data = json.loads(raw_result)
+                                output = result_data.get("result", "")
+                            except Exception:
+                                output = raw_result
                     response = AgentInvokeResponse(
                         task_id=task_id,
                         trace_id=trace_id,
                         span_id=frame.get("span_id", ""),
                         session_id=frame.get("session_id", ""),
-                        output=frame.get("output"),
+                        output=output,
                         usage=TokenUsage(**frame["usage"]) if frame.get("usage") else None,
                     )
                     await websocket.send_text(response.model_dump_json())
                     break
-                elif event_kind == "error":
+                elif event_type == "TaskError" or event_kind == "error":
                     error = AgentErrorMessage(
                         task_id=task_id,
                         trace_id=trace_id,
@@ -387,6 +493,238 @@ class MindtraceAgentGateway(Service if _SERVICES_AVAILABLE else object):  # type
             ).model_dump()
             for d in definitions
         ]
+
+    async def _redis_client(self) -> Any:
+        if not self.redis_pubsub_url:
+            return None
+        import redis.asyncio as aioredis
+        return aioredis.from_url(self.redis_pubsub_url, decode_responses=True)
+
+    async def _list_sessions_route(self, user_id: str | None = None) -> list[dict[str, Any]]:
+        client = await self._redis_client()
+        if client is None:
+            return []
+        try:
+            sessions = []
+            async for key in client.scan_iter("mindtrace:history:*"):
+                session_id = key[len("mindtrace:history:"):]
+                raw = await client.get(key)
+                message_count = 0
+                if raw:
+                    try:
+                        message_count = len(json.loads(raw))
+                    except Exception:
+                        pass
+                sessions.append({
+                    "session_id": session_id,
+                    "user_id": None,
+                    "message_count": message_count,
+                    "last_active": None,
+                })
+            return sessions
+        finally:
+            await client.aclose()
+
+    async def _get_session_history_route(self, session_id: str) -> list[dict[str, Any]]:
+        client = await self._redis_client()
+        if client is None:
+            return []
+        try:
+            raw = await client.get(f"mindtrace:history:{session_id}")
+            if raw is None:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=404, detail="Session not found")
+            messages = json.loads(raw)
+            return [self._normalize_message(m) for m in messages]
+        finally:
+            await client.aclose()
+
+    @staticmethod
+    def _normalize_message(msg: dict[str, Any]) -> dict[str, Any]:
+        """Convert any stored message format to {role, parts:[{content}]}."""
+        if "role" in msg:
+            return msg
+        # Fallback __data__ string format: ModelMessage(role='user', parts=[...])
+        data_str = msg.get("__data__", "")
+        import re
+        role_match = re.search(r"role='([^']+)'", data_str)
+        content_match = re.search(r"content='((?:[^'\\]|\\.)*)'", data_str)
+        role = role_match.group(1) if role_match else "unknown"
+        content = content_match.group(1).replace("\\'", "'") if content_match else data_str
+        return {"role": role, "parts": [{"type": "text", "content": content}]}
+
+    async def _delete_session_history_route(self, session_id: str) -> dict[str, Any]:
+        client = await self._redis_client()
+        if client is None:
+            return {"deleted": False}
+        try:
+            deleted = await client.delete(f"mindtrace:history:{session_id}")
+            return {"deleted": bool(deleted), "session_id": session_id}
+        finally:
+            await client.aclose()
+
+    async def _list_dlq_route(self, limit: int = 100) -> list[dict[str, Any]]:
+        try:
+            return await self.task_queue.list_dlq(limit=limit)
+        except Exception as exc:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    async def _requeue_dlq_route(self, task_id: str) -> dict[str, Any]:
+        try:
+            found = await self.task_queue.requeue_from_dlq(task_id)
+            return {"requeued": found, "task_id": task_id}
+        except Exception as exc:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    async def _purge_dlq_route(self) -> dict[str, Any]:
+        try:
+            purged = await self.task_queue.purge_dlq()
+            return {"purged": purged}
+        except Exception as exc:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    def _memory_store(self, namespace: str) -> Any:
+        """Return a MongoMemoryStore for the given namespace, or None if mongo not configured."""
+        if not self.mongo_url:
+            return None
+        from ..memory.mongo import MongoMemoryStore
+        return MongoMemoryStore(
+            mongo_url=self.mongo_url,
+            database="mindtrace_agents",
+            collection="agent_memory",
+            namespace=namespace,
+        )
+
+    def _make_list_namespaces_route(self, scope: str):
+        gateway = self
+
+        async def _route() -> list[str]:
+            store = gateway._memory_store(f"{scope}:__probe__")
+            if store is None:
+                return []
+            try:
+                col = store._get_collection()
+                prefix = f"{scope}:"
+                pipeline = [
+                    {"$match": {"namespace": {"$regex": f"^{prefix}"}}},
+                    {"$group": {"_id": "$namespace"}},
+                    {"$sort": {"_id": 1}},
+                ]
+                ids = []
+                async for doc in col.aggregate(pipeline):
+                    ns = doc["_id"]
+                    ids.append(ns[len(prefix):])
+                return ids
+            except Exception as exc:
+                logger.warning("Failed to list %s namespaces: %s", scope, exc)
+                return []
+        return _route
+
+    def _make_list_memory_route(self, scope: str):
+        gateway = self
+
+        async def _route(entity_id: str) -> list[dict[str, Any]]:
+            store = gateway._memory_store(f"{scope}:{entity_id}")
+            if store is None:
+                return []
+            keys = await store.list_keys()
+            entries = []
+            for k in keys:
+                entry = await store.get(k)
+                if entry:
+                    entries.append({
+                        "key": entry.key,
+                        "value": entry.value,
+                        "metadata": entry.metadata,
+                        "namespace": store.namespace,
+                        "created_at": entry.created_at.isoformat(),
+                        "updated_at": entry.updated_at.isoformat(),
+                    })
+            return entries
+        return _route
+
+    def _make_get_memory_route(self, scope: str):
+        gateway = self
+
+        async def _route(entity_id: str, key: str) -> dict[str, Any]:
+            store = gateway._memory_store(f"{scope}:{entity_id}")
+            if store is None:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=503, detail="Memory store not configured")
+            entry = await store.get(key)
+            if entry is None:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=404, detail="Entry not found")
+            return {
+                "key": entry.key,
+                "value": entry.value,
+                "metadata": entry.metadata,
+                "namespace": store.namespace,
+                "created_at": entry.created_at.isoformat(),
+                "updated_at": entry.updated_at.isoformat(),
+            }
+        return _route
+
+    def _make_create_memory_route(self, scope: str):
+        gateway = self
+
+        async def _route(entity_id: str, request: Request) -> dict[str, Any]:
+            from ..distributed.types import MemoryEntryRequest
+            data = await request.json()
+            body = MemoryEntryRequest(**data)
+            store = gateway._memory_store(f"{scope}:{entity_id}")
+            if store is None:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=503, detail="Memory store not configured")
+            await store.save(key=body.key, value=body.value, metadata=body.metadata)
+            entry = await store.get(body.key)
+            return {
+                "key": entry.key,
+                "value": entry.value,
+                "metadata": entry.metadata,
+                "namespace": store.namespace,
+                "created_at": entry.created_at.isoformat(),
+                "updated_at": entry.updated_at.isoformat(),
+            }
+        return _route
+
+    def _make_update_memory_route(self, scope: str):
+        gateway = self
+
+        async def _route(entity_id: str, key: str, request: Request) -> dict[str, Any]:
+            from ..distributed.types import MemoryEntryRequest
+            data = await request.json()
+            body = MemoryEntryRequest(**data)
+            store = gateway._memory_store(f"{scope}:{entity_id}")
+            if store is None:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=503, detail="Memory store not configured")
+            await store.save(key=body.key, value=body.value, metadata=body.metadata)
+            entry = await store.get(body.key)
+            return {
+                "key": entry.key,
+                "value": entry.value,
+                "metadata": entry.metadata,
+                "namespace": store.namespace,
+                "created_at": entry.created_at.isoformat(),
+                "updated_at": entry.updated_at.isoformat(),
+            }
+        return _route
+
+    def _make_delete_memory_route(self, scope: str):
+        gateway = self
+
+        async def _route(entity_id: str, key: str) -> dict[str, Any]:
+            store = gateway._memory_store(f"{scope}:{entity_id}")
+            if store is None:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=503, detail="Memory store not configured")
+            await store.delete(key)
+            return {"deleted": True, "key": key}
+        return _route
 
     async def _health(self) -> dict[str, Any]:
         return {
