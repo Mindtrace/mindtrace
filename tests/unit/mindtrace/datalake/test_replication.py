@@ -168,7 +168,7 @@ class TestReplicationManager:
         assert inserted_asset.metadata["origin"]["lake_id"] == "source-lake"
         assert inserted_asset.metadata["origin"]["asset_id"] == "asset_1"
         assert inserted_asset.metadata["replication"]["replication_mode"] == "metadata_first"
-        assert inserted_asset.metadata["replication"]["payload_status"] == "pending"
+        assert inserted_asset.metadata["replication"]["payload_status"] == "missing"
         assert inserted_asset.metadata["replication"]["payload_available"] is False
 
         inserted_datum = target_datalake.datum_database.insert.await_args.args[0]
@@ -219,7 +219,7 @@ class TestReplicationManager:
         assert result.updated_datums == 1
         target_datalake.asset_database.update.assert_awaited()
         assert existing_asset.storage_ref.mount == "remote"
-        assert existing_asset.metadata["replication"]["payload_status"] == "pending"
+        assert existing_asset.metadata["replication"]["payload_status"] == "missing"
 
     @pytest.mark.asyncio
     async def test_upsert_metadata_batch_preserves_verified_payload_for_unchanged_asset(
@@ -238,7 +238,7 @@ class TestReplicationManager:
                         "origin_lake_id": "source-lake",
                         "origin_asset_id": replication_objects.asset.asset_id,
                         "replication_mode": "metadata_first",
-                        "payload_status": "verified",
+                        "payload_status": "present",
                         "payload_available": True,
                         "payload_verified_at": verified_at,
                     },
@@ -265,7 +265,7 @@ class TestReplicationManager:
         )
 
         assert result.updated_assets == 1
-        assert existing_asset.metadata["replication"]["payload_status"] == "verified"
+        assert existing_asset.metadata["replication"]["payload_status"] == "present"
         assert existing_asset.metadata["replication"]["payload_available"] is True
         assert existing_asset.metadata["replication"]["payload_verified_at"] == "2026-01-01T00:00:00Z"
 
@@ -274,12 +274,13 @@ class TestReplicationManager:
         pending_asset = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
+                "payload_status": "missing",
                 "metadata": {
                     "replication": {
                         "origin_lake_id": "source-lake",
                         "origin_asset_id": replication_objects.asset.asset_id,
                         "replication_mode": "metadata_first",
-                        "payload_status": "pending",
+                        "payload_status": "missing",
                         "payload_available": False,
                     }
                 },
@@ -289,12 +290,13 @@ class TestReplicationManager:
             {
                 **replication_objects.asset.model_dump(),
                 "asset_id": "asset_2",
+                "payload_status": "corrupt",
                 "metadata": {
                     "replication": {
                         "origin_lake_id": "source-lake",
                         "origin_asset_id": "asset_2",
                         "replication_mode": "metadata_first",
-                        "payload_status": "failed",
+                        "payload_status": "corrupt",
                         "payload_available": False,
                     }
                 },
@@ -305,8 +307,8 @@ class TestReplicationManager:
         manager = ReplicationManager(source_datalake, target_datalake)
         status = await manager.status()
 
-        assert status.asset_counts_by_payload_status["pending"] == 1
-        assert status.asset_counts_by_payload_status["failed"] == 1
+        assert status.asset_counts_by_payload_status["missing"] == 1
+        assert status.asset_counts_by_payload_status["corrupt"] == 1
         assert status.pending_asset_ids == [pending_asset.asset_id]
         assert status.failed_asset_ids == [failed_asset.asset_id]
 
@@ -314,35 +316,21 @@ class TestReplicationManager:
     async def test_status_skips_non_replicated_and_unknown_payload_status(
         self, source_datalake, target_datalake, replication_objects
     ):
-        plain = Asset.model_validate({**replication_objects.asset.model_dump(), "metadata": {}})
-        weird = Asset.model_validate(
-            {
-                **replication_objects.asset.model_dump(),
-                "asset_id": "asset_weird",
-                "metadata": {"replication": {"payload_status": "not_a_real_status"}},
-            }
+        """Counts only :class:`Asset.payload_status` values in the canonical payload-status set."""
+        plain = replication_objects.asset.model_copy(update={"payload_status": "present"})
+        unknown = SimpleNamespace(asset_id="asset_weird", payload_status="not_in_counts_enum")
+        bad_type = SimpleNamespace(asset_id="asset_bad", payload_status=123)
+        uploading_asset = replication_objects.asset.model_copy(
+            update={"asset_id": "asset_xfer", "payload_status": "uploading"}
         )
-        bad_type = Asset.model_validate(
-            {
-                **replication_objects.asset.model_dump(),
-                "asset_id": "asset_bad",
-                "metadata": {"replication": "oops"},
-            }
-        )
-        transferring = Asset.model_validate(
-            {
-                **replication_objects.asset.model_dump(),
-                "asset_id": "asset_xfer",
-                "metadata": {"replication": {"payload_status": "transferring", "payload_available": False}},
-            }
-        )
-        target_datalake.asset_database.find = AsyncMock(return_value=[plain, weird, bad_type, transferring])
+        target_datalake.asset_database.find = AsyncMock(return_value=[plain, unknown, bad_type, uploading_asset])
 
         manager = ReplicationManager(source_datalake, target_datalake)
         status = await manager.status()
 
-        assert status.asset_counts_by_payload_status["transferring"] == 1
-        assert sum(status.asset_counts_by_payload_status.values()) == 1
+        assert status.asset_counts_by_payload_status["present"] == 1
+        assert status.asset_counts_by_payload_status["uploading"] == 1
+        assert sum(status.asset_counts_by_payload_status.values()) == 2
 
     @pytest.mark.asyncio
     async def test_update_asset_inserts_when_find_returns_empty(
@@ -356,7 +344,7 @@ class TestReplicationManager:
             {
                 **replication_objects.asset.model_dump(),
                 "storage_ref": replication_objects.storage_ref.model_dump(),
-                "metadata": {"replication": {"payload_status": "pending"}},
+                "metadata": {"replication": {"payload_status": "missing"}},
             }
         )
         await manager._update_asset(replicated)
@@ -414,32 +402,32 @@ class TestReplicationStaticHelpers:
         assert out is ref
 
     def test_get_payload_status_and_is_payload_available(self, replication_objects):
-        asset_no_meta = replication_objects.asset
-        assert ReplicationManager.get_payload_status(asset_no_meta) is None
-        assert ReplicationManager.is_payload_available(asset_no_meta) is False
+        assert ReplicationManager.get_payload_status(replication_objects.asset) == "present"
+        assert ReplicationManager.is_payload_available(replication_objects.asset) is True
 
-        asset_bad_rep = Asset.model_validate(
-            {**replication_objects.asset.model_dump(), "metadata": {"replication": []}}
-        )
-        assert ReplicationManager.get_payload_status(asset_bad_rep) is None
-        assert ReplicationManager.is_payload_available(asset_bad_rep) is False
+        missing_asset = replication_objects.asset.model_copy(update={"payload_status": "missing"})
+        assert ReplicationManager.get_payload_status(missing_asset) == "missing"
+        assert ReplicationManager.is_payload_available(missing_asset) is False
 
-        asset_bad_status = Asset.model_validate(
-            {
-                **replication_objects.asset.model_dump(),
-                "metadata": {"replication": {"payload_status": 123}},
-            }
-        )
-        assert ReplicationManager.get_payload_status(asset_bad_status) is None
+        weird = SimpleNamespace(asset_id="weird", payload_status="not_a_canonical_status")
+        assert ReplicationManager.get_payload_status(weird) == "not_a_canonical_status"
+        assert ReplicationManager.is_payload_available(weird) is False
 
-        asset_ok = Asset.model_validate(
-            {
-                **replication_objects.asset.model_dump(),
-                "metadata": {"replication": {"payload_status": "verified", "payload_available": True}},
-            }
-        )
-        assert ReplicationManager.get_payload_status(asset_ok) == "verified"
+        not_str = SimpleNamespace()
+        not_str.payload_status = 123  # type: ignore[attr-defined]
+        assert ReplicationManager.get_payload_status(not_str) is None
+
+        asset_ok = replication_objects.asset.model_copy(update={"payload_status": "present"})
+        assert ReplicationManager.get_payload_status(asset_ok) == "present"
         assert ReplicationManager.is_payload_available(asset_ok) is True
+
+    def test_should_preserve_verified_payload_requires_existing_present_payload(self, replication_objects):
+        mapped = replication_objects.storage_ref
+        existing_missing = replication_objects.asset.model_copy(
+            update={"payload_status": "missing", "checksum": "chk", "size_bytes": 42}
+        )
+        incoming = replication_objects.asset.model_copy(update={"checksum": "chk", "size_bytes": 42})
+        assert ReplicationManager._should_preserve_verified_payload(existing_missing, incoming, mapped) is False
 
     def test_build_asset_replication_metadata_coerces_origin_and_replication(self, replication_objects):
         manager = ReplicationManager(Mock(), Mock())
@@ -452,12 +440,12 @@ class TestReplicationStaticHelpers:
             origin_lake_id="L",
             origin_asset_id="A1",
             replication_mode="metadata_first",
-            payload_status="verified",
+            payload_status="present",
         )
         assert meta["keep"] == 1
         assert meta["origin"]["lake_id"] == "L"
         assert meta["origin"]["asset_id"] == "A1"
-        assert meta["replication"]["payload_status"] == "verified"
+        assert meta["replication"]["payload_status"] == "present"
         assert meta["replication"]["payload_available"] is True
 
     def test_build_asset_replication_metadata_preserves_replication_timestamps(self, replication_objects):
@@ -475,10 +463,10 @@ class TestReplicationStaticHelpers:
             origin_lake_id="L",
             origin_asset_id="A1",
             replication_mode="metadata_first",
-            payload_status="pending",
+            payload_status="missing",
         )
         assert meta["replication"]["payload_last_error"] == "boom"
-        assert meta["replication"]["payload_status"] == "pending"
+        assert meta["replication"]["payload_status"] == "missing"
         assert meta["replication"]["payload_available"] is False
 
 
@@ -512,7 +500,7 @@ async def test_asset_exists_returns_true_when_target_asset_is_present(
 def test_should_preserve_verified_payload_rejects_storage_ref_mismatch(replication_objects):
     existing_asset = replication_objects.asset.model_copy(
         update={
-            "metadata": {"replication": {"payload_status": "verified", "payload_available": True}},
+            "metadata": {"replication": {"payload_status": "present", "payload_available": True}},
             "checksum": "sha256:abc",
             "size_bytes": 12,
         }
@@ -575,7 +563,7 @@ class TestReplicationTransferAndVerify:
                 **replication_objects.asset.model_dump(),
                 "metadata": {
                     "origin": {"lake_id": "source-lake"},
-                    "replication": {"payload_status": "pending", "payload_available": False},
+                    "replication": {"payload_status": "missing", "payload_available": False},
                 },
             }
         )
@@ -600,7 +588,7 @@ class TestReplicationTransferAndVerify:
                         "origin_lake_id": "source-lake",
                         "origin_asset_id": replication_objects.asset.asset_id,
                         "replication_mode": "metadata_first",
-                        "payload_status": "pending",
+                        "payload_status": "missing",
                         "payload_available": False,
                     },
                 },
@@ -614,7 +602,7 @@ class TestReplicationTransferAndVerify:
         manager = ReplicationManager(source_datalake, target_datalake)
         result = await manager.hydrate_asset_payload(replication_objects.asset.asset_id, mount_map={"source": "remote"})
 
-        assert result.metadata["replication"]["payload_status"] == "verified"
+        assert result.metadata["replication"]["payload_status"] == "present"
         assert result.metadata["replication"]["payload_available"] is True
         target_datalake.create_object_upload_session.assert_awaited_once()
         target_datalake.complete_object_upload_session.assert_awaited_once_with(
@@ -638,7 +626,7 @@ class TestReplicationTransferAndVerify:
                 **replication_objects.asset.model_dump(),
                 "metadata": {
                     "origin": {"lake_id": "source-lake", "asset_id": source_asset.asset_id},
-                    "replication": {"payload_status": "pending", "payload_available": False},
+                    "replication": {"payload_status": "missing", "payload_available": False},
                 },
             }
         )
@@ -669,7 +657,7 @@ class TestReplicationTransferAndVerify:
                         "origin_lake_id": "source-lake",
                         "origin_asset_id": replication_objects.asset.asset_id,
                         "replication_mode": "metadata_first",
-                        "payload_status": "pending",
+                        "payload_status": "missing",
                         "payload_available": False,
                     },
                 },
@@ -684,7 +672,7 @@ class TestReplicationTransferAndVerify:
         with pytest.raises(RuntimeError, match="boom"):
             await manager.hydrate_asset_payload(replication_objects.asset.asset_id)
 
-        assert target_asset.metadata["replication"]["payload_status"] == "failed"
+        assert target_asset.metadata["replication"]["payload_status"] == "corrupt"
         assert target_asset.metadata["replication"]["payload_last_error"] == "boom"
 
     @pytest.mark.asyncio
@@ -696,7 +684,7 @@ class TestReplicationTransferAndVerify:
                 **replication_objects.asset.model_dump(),
                 "metadata": {
                     "origin": {"lake_id": "source-lake", "asset_id": replication_objects.asset.asset_id},
-                    "replication": {"payload_status": "pending", "payload_available": False},
+                    "replication": {"payload_status": "missing", "payload_available": False},
                 },
             }
         )
@@ -710,7 +698,7 @@ class TestReplicationTransferAndVerify:
         with pytest.raises(RuntimeError, match="Post-upload size mismatch"):
             await manager.hydrate_asset_payload(replication_objects.asset.asset_id)
 
-        assert target_asset.metadata["replication"]["payload_status"] == "failed"
+        assert target_asset.metadata["replication"]["payload_status"] == "corrupt"
 
     @pytest.mark.asyncio
     async def test_reconcile_pending_payloads_processes_pending_and_failed(
@@ -719,9 +707,10 @@ class TestReplicationTransferAndVerify:
         pending_asset = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
+                "payload_status": "missing",
                 "metadata": {
                     "origin": {"lake_id": "source-lake", "asset_id": replication_objects.asset.asset_id},
-                    "replication": {"payload_status": "pending", "payload_available": False},
+                    "replication": {"payload_status": "missing", "payload_available": False},
                 },
             }
         )
@@ -729,9 +718,10 @@ class TestReplicationTransferAndVerify:
             {
                 **replication_objects.asset.model_dump(),
                 "asset_id": "asset_failed",
+                "payload_status": "corrupt",
                 "metadata": {
                     "origin": {"lake_id": "source-lake", "asset_id": replication_objects.asset.asset_id},
-                    "replication": {"payload_status": "failed", "payload_available": False},
+                    "replication": {"payload_status": "corrupt", "payload_available": False},
                 },
             }
         )
@@ -739,9 +729,10 @@ class TestReplicationTransferAndVerify:
             {
                 **replication_objects.asset.model_dump(),
                 "asset_id": "asset_verified",
+                "payload_status": "present",
                 "metadata": {
                     "origin": {"lake_id": "source-lake", "asset_id": replication_objects.asset.asset_id},
-                    "replication": {"payload_status": "verified", "payload_available": True},
+                    "replication": {"payload_status": "present", "payload_available": True},
                 },
             }
         )
@@ -763,7 +754,8 @@ class TestReplicationTransferAndVerify:
         pending_asset = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
-                "metadata": {"replication": {"payload_status": "pending"}},
+                "payload_status": "missing",
+                "metadata": {"replication": {"payload_status": "missing"}},
             }
         )
         target_datalake.asset_database.find = AsyncMock(return_value=[pending_asset])
@@ -784,13 +776,15 @@ class TestReplicationTransferAndVerify:
             {
                 **replication_objects.asset.model_dump(),
                 "asset_id": "xfer1",
-                "metadata": {"replication": {"payload_status": "transferring"}},
+                "payload_status": "uploading",
+                "metadata": {"replication": {"payload_status": "uploading"}},
             }
         )
         pending_asset = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
-                "metadata": {"replication": {"payload_status": "pending"}},
+                "payload_status": "missing",
+                "metadata": {"replication": {"payload_status": "missing"}},
             }
         )
         target_datalake.asset_database.find = AsyncMock(return_value=[transferring, pending_asset])
@@ -808,14 +802,16 @@ class TestReplicationTransferAndVerify:
             {
                 **replication_objects.asset.model_dump(),
                 "asset_id": "a1",
-                "metadata": {"replication": {"payload_status": "pending"}},
+                "payload_status": "missing",
+                "metadata": {"replication": {"payload_status": "missing"}},
             }
         )
         pending_b = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
                 "asset_id": "b2",
-                "metadata": {"replication": {"payload_status": "pending"}},
+                "payload_status": "missing",
+                "metadata": {"replication": {"payload_status": "missing"}},
             }
         )
         target_datalake.asset_database.find = AsyncMock(return_value=[pending_a, pending_b])
@@ -836,7 +832,8 @@ class TestReplicationTransferAndVerify:
             {
                 **replication_objects.asset.model_dump(),
                 "asset_id": "failed1",
-                "metadata": {"replication": {"payload_status": "failed"}},
+                "payload_status": "corrupt",
+                "metadata": {"replication": {"payload_status": "corrupt"}},
             }
         )
         target_datalake.asset_database.find = AsyncMock(return_value=[failed])
@@ -856,7 +853,8 @@ class TestReplicationTransferAndVerify:
                 {
                     **replication_objects.asset.model_dump(),
                     "asset_id": f"id{i}",
-                    "metadata": {"replication": {"payload_status": "pending"}},
+                    "payload_status": "missing",
+                    "metadata": {"replication": {"payload_status": "missing"}},
                 }
             )
             for i in range(3)
@@ -881,7 +879,7 @@ class TestReplicationTransferAndVerify:
         )
         target_datalake.asset_database.find = AsyncMock(return_value=[asset])
         manager = ReplicationManager(source_datalake, target_datalake)
-        await manager._set_asset_replication_state(asset, payload_status="pending", payload_last_error=None)
+        await manager._set_asset_replication_state(asset, payload_status="missing", payload_last_error=None)
         assert isinstance(asset.metadata["origin"], dict)
         assert isinstance(asset.metadata["replication"], dict)
 
@@ -1082,7 +1080,7 @@ class TestReplicationTargetLookup:
                         "lake_id": source_datalake.mongo_db_name,
                         "asset_id": replication_objects.asset.asset_id,
                     },
-                    "replication": {"payload_status": "verified", "payload_available": True},
+                    "replication": {"payload_status": "present", "payload_available": True},
                 },
             }
         )
@@ -1130,7 +1128,7 @@ class TestReplicationTargetLookup:
                 "asset_id": "target_row",
                 "metadata": {
                     "origin": {"asset_id": replication_objects.asset.asset_id},
-                    "replication": {"payload_status": "verified"},
+                    "replication": {"payload_status": "present"},
                 },
             }
         )
@@ -1172,7 +1170,7 @@ class TestReplicationSourceReclaimMerge:
                         "origin_lake_id": "source_db",
                         "origin_asset_id": replication_objects.asset.asset_id,
                         "replication_mode": "metadata_first",
-                        "payload_status": "verified",
+                        "payload_status": "present",
                         "payload_available": True,
                     }
                 },
@@ -1183,7 +1181,7 @@ class TestReplicationSourceReclaimMerge:
         await manager._set_source_asset_reclaim_state(
             asset, local_delete_eligible_at=datetime(2026, 1, 1, tzinfo=timezone.utc)
         )
-        assert asset.metadata["replication"]["payload_status"] == "verified"
+        assert asset.metadata["replication"]["payload_status"] == "present"
         assert asset.metadata["replication"]["payload_available"] is True
         assert asset.metadata["replication"]["local_delete_eligible_at"] is not None
 
@@ -1214,9 +1212,10 @@ class TestReplicationReclaim:
         target_asset = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
+                "payload_status": "missing",
                 "metadata": {
                     "origin": {"asset_id": replication_objects.asset.asset_id},
-                    "replication": {"payload_status": "pending", "payload_available": False},
+                    "replication": {"payload_status": "missing", "payload_available": False},
                 },
             }
         )
@@ -1236,9 +1235,10 @@ class TestReplicationReclaim:
         target_asset = Asset.model_validate(
             {
                 **replication_objects.asset.model_dump(),
+                "payload_status": "present",
                 "metadata": {
                     "origin": {"asset_id": replication_objects.asset.asset_id},
-                    "replication": {"payload_status": "verified", "payload_available": True},
+                    "replication": {"payload_status": "present", "payload_available": True},
                 },
             }
         )
@@ -1333,7 +1333,7 @@ class TestReplicationReclaim:
                 **replication_objects.asset.model_dump(),
                 "metadata": {
                     "origin": {"asset_id": replication_objects.asset.asset_id},
-                    "replication": {"payload_status": "verified", "payload_available": True},
+                    "replication": {"payload_status": "present", "payload_available": True},
                 },
             }
         )
@@ -1388,7 +1388,7 @@ class TestReplicationReclaim:
                 "asset_id": "ta1",
                 "metadata": {
                     "origin": {"asset_id": "a1"},
-                    "replication": {"payload_status": "verified", "payload_available": True},
+                    "replication": {"payload_status": "present", "payload_available": True},
                 },
             }
         )
@@ -1398,7 +1398,7 @@ class TestReplicationReclaim:
                 "asset_id": "ta2",
                 "metadata": {
                     "origin": {"asset_id": "a2"},
-                    "replication": {"payload_status": "verified", "payload_available": True},
+                    "replication": {"payload_status": "present", "payload_available": True},
                 },
             }
         )
@@ -1445,7 +1445,7 @@ class TestReplicationCoverageCompleteness:
                 "metadata": {
                     "replication": {
                         "local_delete_eligible_at": "2026-01-01T00:00:00Z",
-                        "payload_status": "verified",
+                        "payload_status": "present",
                         "payload_available": True,
                     }
                 },
@@ -1457,7 +1457,7 @@ class TestReplicationCoverageCompleteness:
                 "asset_id": "ta1",
                 "metadata": {
                     "origin": {"asset_id": replication_objects.asset.asset_id},
-                    "replication": {"payload_status": "verified", "payload_available": True},
+                    "replication": {"payload_status": "present", "payload_available": True},
                 },
             }
         )
@@ -1484,7 +1484,7 @@ class TestReplicationCoverageCompleteness:
             {
                 **replication_objects.asset.model_dump(),
                 "metadata": {
-                    "replication": {"payload_status": "pending", "payload_available": False},
+                    "replication": {"payload_status": "missing", "payload_available": False},
                 },
             }
         )
@@ -1542,7 +1542,7 @@ class TestReplicationCoverageCompleteness:
                 "asset_id": "remote_row",
                 "metadata": {
                     "origin": {"asset_id": replication_objects.asset.asset_id},
-                    "replication": {"payload_status": "verified"},
+                    "replication": {"payload_status": "present"},
                 },
             }
         )
