@@ -437,6 +437,7 @@ async def test_async_data_vault_load_by_asset_id_materializes_bytes(tmp_path: Pa
     )
     backend = Mock()
     backend.get_asset = AsyncMock(return_value=asset)
+    backend.get_asset_payload = AsyncMock(return_value=b"by-asset-id-payload")
     backend.get_object = AsyncMock(return_value=b"by-asset-id-payload")
     vault = AsyncDataVault(backend, registry=reg)
     assert await vault.load_by_asset_id("by-id") == b"by-asset-id-payload"
@@ -454,6 +455,7 @@ async def test_async_data_vault_load_by_asset_id_skips_materialize_when_disabled
     )
     backend = Mock()
     backend.get_asset = AsyncMock(return_value=asset)
+    backend.get_asset_payload = AsyncMock(return_value=b"raw")
     backend.get_object = AsyncMock(return_value=b"raw")
     vault = AsyncDataVault(backend, registry=reg)
     assert await vault.load_by_asset_id("id-1", materialize=False) == b"raw"
@@ -470,6 +472,7 @@ async def test_async_data_vault_load_by_asset_id_skips_materialize_without_hints
     )
     backend = Mock()
     backend.get_asset = AsyncMock(return_value=asset)
+    backend.get_asset_payload = AsyncMock(return_value=b"nop")
     backend.get_object = AsyncMock(return_value=b"nop")
     vault = AsyncDataVault(backend, registry=reg)
     assert await vault.load_by_asset_id("id-2") == b"nop"
@@ -487,6 +490,7 @@ async def test_async_data_vault_load_image_by_asset_id():
     )
     backend = Mock()
     backend.get_asset = AsyncMock(return_value=asset)
+    backend.get_asset_payload = AsyncMock(return_value=png)
     backend.get_object = AsyncMock(return_value=png)
     vault = AsyncDataVault(backend)
     out = await vault.load_image_by_asset_id("img-async")
@@ -568,6 +572,7 @@ def test_sync_data_vault_load_image_by_asset_id():
     )
     backend = Mock()
     backend.get_asset = Mock(return_value=asset)
+    backend.get_asset_payload = Mock(return_value=png)
     backend.get_object = Mock(return_value=png)
     vault = DataVault(backend, slow_ops_policy=SlowOpsPolicy.ALLOW)
     out = vault.load_image_by_asset_id("img-1")
@@ -585,6 +590,7 @@ def test_sync_data_vault_load_by_asset_id_skips_materialize_when_disabled(tmp_pa
     )
     backend = Mock()
     backend.get_asset = Mock(return_value=asset)
+    backend.get_asset_payload = Mock(return_value=b"raw")
     backend.get_object = Mock(return_value=b"raw")
     vault = DataVault(backend, registry=reg)
     assert vault.load_by_asset_id("id-1", materialize=False) == b"raw"
@@ -600,6 +606,7 @@ def test_sync_data_vault_load_by_asset_id_skips_materialize_without_hints(tmp_pa
     )
     backend = Mock()
     backend.get_asset = Mock(return_value=asset)
+    backend.get_asset_payload = Mock(return_value=b"nop")
     backend.get_object = Mock(return_value=b"nop")
     vault = DataVault(backend, registry=reg)
     assert vault.load_by_asset_id("id-2") == b"nop"
@@ -616,6 +623,7 @@ def test_sync_data_vault_load_by_asset_id_materializes_bytes(tmp_path: Path):
     )
     backend = Mock()
     backend.get_asset = Mock(return_value=asset)
+    backend.get_asset_payload = Mock(return_value=b"sync-payload")
     backend.get_object = Mock(return_value=b"sync-payload")
     vault = DataVault(backend, registry=reg)
     assert vault.load_by_asset_id("by-id") == b"sync-payload"
@@ -2254,6 +2262,7 @@ def test_sync_data_vault_export_dataset_uses_service_backend(tmp_path: Path):
     )
     png_b64 = base64.b64encode(_pil_image_to_png_bytes(Image.new("RGB", (1, 1), color=(255, 0, 0)))).decode("ascii")
     cm = Mock()
+    cm.assets_get = Mock(return_value=SimpleNamespace(asset=asset))
     cm.objects_get = Mock(
         return_value=ObjectDataOutput(
             storage_ref=asset.storage_ref,

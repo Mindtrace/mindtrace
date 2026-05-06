@@ -46,6 +46,7 @@ from mindtrace.datalake.service_types import (
     GetAssetByAliasInput,
     GetByIdInput,
     GetDatasetVersionInput,
+    GetObjectInput,
     ListAnnotationRecordsForAssetInput,
     ListInput,
     ObjectDataOutput,
@@ -233,6 +234,14 @@ async def test_datalake_service_async_backend_get_asset_payload_rejects_missing_
     backend = DatalakeServiceAsyncDataVaultBackend(cm)
     with pytest.raises(FileNotFoundError, match="payload is not available"):
         await backend.get_asset_payload("a1")
+
+
+@pytest.mark.asyncio
+async def test_datalake_service_async_backend_get_asset_payload_rejects_kwargs():
+    backend = DatalakeServiceAsyncDataVaultBackend(Mock())
+
+    with pytest.raises(TypeError, match="does not support extra kwargs"):
+        await backend.get_asset_payload("a1", mmap=True)
 
 
 @pytest.mark.asyncio
@@ -424,6 +433,13 @@ def test_datalake_service_sync_backend_get_asset_payload_rejects_missing_payload
     backend = DatalakeServiceDataVaultBackend(cm)
     with pytest.raises(FileNotFoundError, match="payload is not available"):
         backend.get_asset_payload("a1")
+
+
+def test_datalake_service_sync_backend_get_asset_payload_rejects_kwargs():
+    backend = DatalakeServiceDataVaultBackend(Mock())
+
+    with pytest.raises(TypeError, match="does not support extra kwargs"):
+        backend.get_asset_payload("a1", mmap=True)
 
 
 def test_datalake_service_sync_backend_create_and_add_alias():
@@ -672,6 +688,16 @@ async def test_local_async_backend_delegates_list_and_get_asset():
 
 
 @pytest.mark.asyncio
+async def test_local_async_backend_get_object_forwards_optional_kwargs():
+    ref = StorageRef(mount="m", name="n", version="1")
+    dl = AsyncMock()
+    dl.get_object = AsyncMock(return_value=b"blob")
+    backend = LocalAsyncDataVaultBackend(dl)
+    assert await backend.get_object(ref, mmap=True) == b"blob"
+    dl.get_object.assert_awaited_once_with(ref, mmap=True)
+
+
+@pytest.mark.asyncio
 async def test_local_async_backend_delegates_page_and_iterator_methods():
     asset = Asset(
         kind="image",
@@ -719,6 +745,15 @@ def test_local_sync_backend_delegates_list_and_get_asset():
     dl.get_asset.assert_called_once_with("a1")
     assert backend.get_asset_payload("a1") == b"payload"
     dl.get_asset_payload.assert_called_once_with("a1")
+
+
+def test_local_sync_backend_get_object_forwards_optional_kwargs():
+    ref = StorageRef(mount="m", name="n", version="1")
+    dl = Mock()
+    dl.get_object = Mock(return_value=b"blob")
+    backend = LocalDataVaultBackend(dl)
+    assert backend.get_object(ref, version_hint="latest") == b"blob"
+    dl.get_object.assert_called_once_with(ref, version_hint="latest")
 
 
 def test_local_sync_backend_delegates_page_and_iterator_methods():

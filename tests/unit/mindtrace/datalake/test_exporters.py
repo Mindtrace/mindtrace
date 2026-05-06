@@ -174,7 +174,7 @@ def test_build_exportable_dataset_from_resolved_version_sync_collects_primary_as
         },
     )
     datalake = Mock()
-    datalake.get_object.return_value = _png_bytes()
+    datalake.get_asset_payload = Mock(return_value=_png_bytes())
 
     exportable = build_exportable_dataset_from_resolved_version_sync(datalake, resolved_dataset_version)
 
@@ -221,8 +221,12 @@ def test_build_exportable_dataset_sync_fallback_reads_payload_storage_ref():
     asset = _asset()
     asset.payload_storage_ref = StorageRef(mount="payloads", name="asset_img_payload", version="7")
     resolved_dataset_version = _resolved_dataset_version(asset=asset)
-    datalake = Mock()
-    datalake.get_object.return_value = _png_bytes()
+
+    class _LegacySyncLoader:
+        def __init__(self) -> None:
+            self.get_object = Mock(return_value=_png_bytes())
+
+    datalake = _LegacySyncLoader()
 
     build_exportable_dataset_from_resolved_version_sync(datalake, resolved_dataset_version)
 
@@ -234,8 +238,11 @@ async def test_build_exportable_dataset_async_fallback_reads_payload_storage_ref
     asset = _asset()
     asset.payload_storage_ref = StorageRef(mount="payloads", name="asset_img_payload", version="7")
     resolved_dataset_version = _resolved_dataset_version(asset=asset)
-    datalake = AsyncMock()
-    datalake.get_object = AsyncMock(return_value=_png_bytes())
+
+    class _LegacyAsyncLoader:
+        get_object = AsyncMock(return_value=_png_bytes())
+
+    datalake = _LegacyAsyncLoader()
 
     await build_exportable_dataset_from_resolved_version_async(datalake, resolved_dataset_version)
 
@@ -371,7 +378,7 @@ async def test_async_datalake_export_dataset_version_to_format_writes_coco(tmp_p
     resolved_dataset_version = _resolved_dataset_version()
     fake_datalake = SimpleNamespace(
         resolve_dataset_version=AsyncMock(return_value=resolved_dataset_version),
-        get_object=AsyncMock(return_value=_png_bytes()),
+        get_asset_payload=AsyncMock(return_value=_png_bytes()),
     )
 
     result = await AsyncDatalake.export_dataset_version_to_format(
@@ -436,7 +443,7 @@ def test_data_vault_export_dataset_writes_split_aware_coco(tmp_path: Path):
         AnnotationRecord(**classification, annotation_id="ann_cls"),
     ]
     backend.get_asset.return_value = asset
-    backend.get_object.return_value = _png_bytes()
+    backend.get_asset_payload = Mock(return_value=_png_bytes())
 
     result = DataVault(backend).export_dataset(
         "dataset-a",
@@ -551,7 +558,7 @@ async def test_async_data_vault_export_dataset_writes_huggingface_directory(tmp_
     backend.list_annotation_sets.return_value = [_annotation_set(asset.asset_id, ["ann_bbox"])]
     backend.get_annotation_record.return_value = AnnotationRecord(**annotation, annotation_id="ann_bbox")
     backend.get_asset.return_value = asset
-    backend.get_object.return_value = _png_bytes()
+    backend.get_asset_payload = AsyncMock(return_value=_png_bytes())
 
     result = await AsyncDataVault(backend).export_dataset(
         "dataset-a",
