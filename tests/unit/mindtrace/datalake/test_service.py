@@ -130,6 +130,16 @@ from mindtrace.datalake.service_types import (
     ReplicationReclaimResultOutput,
     ReplicationReconcileResultOutput,
     ReplicationStatusOutput,
+    ReplicationTaskClaimInput,
+    ReplicationTaskClaimOutput,
+    ReplicationTaskEnqueueInput,
+    ReplicationTaskEnqueueOutput,
+    ReplicationTaskFailInput,
+    ReplicationTaskIdInput,
+    ReplicationTaskListInput,
+    ReplicationTaskListOutput,
+    ReplicationTaskOutput,
+    ReplicationTaskStatusUpdateInput,
     ResolvedCollectionItemOutput,
     ResolvedDatasetVersionOutput,
     ResolvedDatumOutput,
@@ -168,6 +178,7 @@ from mindtrace.datalake.types import (
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
+    ReplicationTask,
     StorageRef,
     SubjectRef,
 )
@@ -2111,6 +2122,151 @@ async def test_service_replication_status_uses_replication_manager(service):
     assert isinstance(result, ReplicationStatusOutput)
     assert result.status == status_result
     manager.status.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_service_replication_task_enqueue_uses_queue_manager(service):
+    task = ReplicationTask(
+        target_lake_id="remote",
+        root_kind="asset",
+        root_id="asset_1",
+        dedupe_key="target:remote:root:asset:asset_1",
+    )
+    request = ReplicationTaskEnqueueInput(
+        target_lake_id="remote",
+        root_kind="asset",
+        root_id="asset_1",
+        hydrate_policy="async",
+        mount_map={"raw": "remote"},
+        metadata={"reason": "unit"},
+    )
+    with patch("mindtrace.datalake.service.ReplicationQueueManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.enqueue_task = AsyncMock(return_value=(task, True))
+
+        result = await service.replication_task_enqueue(request)
+
+    assert isinstance(result, ReplicationTaskEnqueueOutput)
+    assert result.task == task
+    assert result.created is True
+    manager.enqueue_task.assert_awaited_once_with(
+        target_lake_id="remote",
+        root_kind="asset",
+        root_id="asset_1",
+        rule_id=None,
+        dedupe_key=None,
+        source_version=None,
+        hydrate_policy="async",
+        mount_map={"raw": "remote"},
+        include_graph=True,
+        max_attempts=5,
+        metadata={"reason": "unit"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_service_replication_task_list_uses_queue_manager(service):
+    task = ReplicationTask(
+        target_lake_id="remote",
+        root_kind="annotation_record",
+        root_id="annotation_1",
+        dedupe_key="target:remote:root:annotation_record:annotation_1",
+    )
+    request = ReplicationTaskListInput(status="pending", target_lake_id="remote", root_kind="annotation_record")
+    with patch("mindtrace.datalake.service.ReplicationQueueManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.list_tasks = AsyncMock(return_value=[task])
+
+        result = await service.replication_task_list(request)
+
+    assert isinstance(result, ReplicationTaskListOutput)
+    assert result.tasks == [task]
+    manager.list_tasks.assert_awaited_once_with(
+        status="pending",
+        target_lake_id="remote",
+        root_kind="annotation_record",
+        rule_id=None,
+        limit=100,
+    )
+
+
+@pytest.mark.asyncio
+async def test_service_replication_task_get_maps_missing_to_404(service):
+    request = ReplicationTaskIdInput(task_id="missing")
+    with patch("mindtrace.datalake.service.ReplicationQueueManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.get_task = AsyncMock(side_effect=KeyError("missing"))
+
+        with pytest.raises(HTTPException) as exc_info:
+            await service.replication_task_get(request)
+
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_service_replication_task_claim_uses_queue_manager(service):
+    task = ReplicationTask(
+        target_lake_id="remote",
+        root_kind="datum",
+        root_id="datum_1",
+        dedupe_key="target:remote:root:datum:datum_1",
+    )
+    request = ReplicationTaskClaimInput(worker_id="worker-1", limit=2, lease_seconds=60)
+    with patch("mindtrace.datalake.service.ReplicationQueueManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.claim_due_tasks = AsyncMock(return_value=[task])
+
+        result = await service.replication_task_claim(request)
+
+    assert isinstance(result, ReplicationTaskClaimOutput)
+    assert result.tasks == [task]
+    manager.claim_due_tasks.assert_awaited_once_with(worker_id="worker-1", limit=2, lease_seconds=60)
+
+
+@pytest.mark.asyncio
+async def test_service_replication_task_update_status_maps_claim_conflict_to_409(service):
+    request = ReplicationTaskStatusUpdateInput(task_id="task_1", status="syncing_metadata", worker_id="worker-1")
+    with patch("mindtrace.datalake.service.ReplicationQueueManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.mark_status = AsyncMock(side_effect=RuntimeError("claimed by someone else"))
+
+        with pytest.raises(HTTPException) as exc_info:
+            await service.replication_task_update_status(request)
+
+    assert exc_info.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_service_replication_task_fail_and_retry_use_queue_manager(service):
+    failed = ReplicationTask(
+        target_lake_id="remote",
+        root_kind="dataset_version",
+        root_id="demo@1.0.0",
+        dedupe_key="target:remote:root:dataset_version:demo@1.0.0",
+        status="failed",
+    )
+    retried = failed.model_copy(update={"status": "pending"})
+    with patch("mindtrace.datalake.service.ReplicationQueueManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.fail_task = AsyncMock(return_value=failed)
+        manager.retry_task = AsyncMock(return_value=retried)
+
+        fail_result = await service.replication_task_fail(
+            ReplicationTaskFailInput(task_id=failed.task_id, worker_id="worker-1", error="boom")
+        )
+        retry_result = await service.replication_task_retry(ReplicationTaskIdInput(task_id=failed.task_id))
+
+    assert isinstance(fail_result, ReplicationTaskOutput)
+    assert fail_result.task == failed
+    assert isinstance(retry_result, ReplicationTaskOutput)
+    assert retry_result.task == retried
+    manager.fail_task.assert_awaited_once_with(
+        failed.task_id,
+        worker_id="worker-1",
+        error="boom",
+        retry_delay_seconds=60,
+    )
+    manager.retry_task.assert_awaited_once_with(failed.task_id)
 
 
 class TestDatalakeServiceModuleHelpers:
