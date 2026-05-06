@@ -45,6 +45,8 @@ from mindtrace.datalake.types import (
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
+    ReplicationRule,
+    ReplicationTask,
     StorageRef,
     SubjectRef,
 )
@@ -158,6 +160,8 @@ class AsyncDatalake(Mindtrace):
             model_cls=DatasetImportSession,
             **odm_kwargs,
         )
+        self.replication_rule_database = MongoMindtraceODM(model_cls=ReplicationRule, **odm_kwargs)
+        self.replication_task_database = MongoMindtraceODM(model_cls=ReplicationTask, **odm_kwargs)
         self.asset_alias_database = MongoMindtraceODM(model_cls=AssetAlias, **odm_kwargs)
 
     def _all_odms(self) -> list[MongoMindtraceODM]:
@@ -173,6 +177,8 @@ class AsyncDatalake(Mindtrace):
             self.dataset_version_database,
             self.direct_upload_session_database,
             self.dataset_import_session_database,
+            self.replication_rule_database,
+            self.replication_task_database,
             self.asset_alias_database,
         ]
 
@@ -216,6 +222,8 @@ class AsyncDatalake(Mindtrace):
             self.dataset_version_database,
             self.direct_upload_session_database,
             self.dataset_import_session_database,
+            self.replication_rule_database,
+            self.replication_task_database,
             self.asset_alias_database,
         )
 

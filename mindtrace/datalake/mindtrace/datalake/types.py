@@ -205,6 +205,114 @@ class AnnotationLabelDefinition(BaseModel):
 
 PayloadStatus = Literal["missing", "uploading", "present", "corrupt"]
 
+ReplicationEntityKind = Literal[
+    "asset",
+    "asset_alias",
+    "asset_retention",
+    "annotation_record",
+    "annotation_schema",
+    "annotation_set",
+    "collection",
+    "collection_item",
+    "datum",
+    "dataset_version",
+    "storage_object",
+]
+ReplicationTaskStatus = Literal[
+    "pending",
+    "claimed",
+    "syncing_metadata",
+    "hydrating_payloads",
+    "complete",
+    "failed",
+    "dead",
+    "cancelled",
+]
+ReplicationHydratePolicy = Literal["manual", "async", "immediate"]
+
+
+class ReplicationRule(DatalakeDocument):
+    """Persistent policy describing which datalake entities should be replicated.
+
+    A rule selects root entities and enqueues :class:`ReplicationTask` rows. Rules intentionally describe
+    metadata selection only; payload bytes are controlled separately by ``hydrate_policy`` so metadata can keep
+    syncing even when payload bandwidth is constrained.
+    """
+
+    rule_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("replication_rule"))
+    name: str
+    enabled: bool = True
+    target_lake_id: str
+    root_kinds: list[ReplicationEntityKind] = Field(default_factory=lambda: ["asset"])
+    selector: dict[str, Any] = Field(default_factory=dict)
+    include_graph: bool = True
+    hydrate_policy: ReplicationHydratePolicy = "async"
+    transfer_policy: Literal["metadata_first"] = "metadata_first"
+    mount_map: dict[str, str] = Field(default_factory=dict)
+    batch_size: int = 100
+    max_attempts: int = 5
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    class Settings:
+        name = "datalake_replication_rules"
+        indexes = [
+            "enabled",
+            "target_lake_id",
+            "root_kinds",
+            [("enabled", 1), ("target_lake_id", 1)],
+        ]
+
+
+class ReplicationTask(DatalakeDocument):
+    """Durable outbox item for one-way source -> target metadata/payload replication work."""
+
+    task_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("replication_task"))
+    rule_id: str | None = None
+    target_lake_id: str
+    root_kind: ReplicationEntityKind
+    root_id: str
+    dedupe_key: Annotated[str, Indexed(unique=True)]
+    status: ReplicationTaskStatus = "pending"
+    hydrate_policy: ReplicationHydratePolicy = "async"
+    mount_map: dict[str, str] = Field(default_factory=dict)
+    include_graph: bool = True
+    attempts: int = 0
+    max_attempts: int = 5
+    next_attempt_at: datetime = Field(default_factory=utc_now)
+    claimed_by: str | None = None
+    claimed_at: datetime | None = None
+    lease_expires_at: datetime | None = None
+    last_error: str | None = None
+    last_progress_phase: str | None = None
+    last_progress_message: str | None = None
+    last_progress_completed_items: int | None = None
+    last_progress_total_items: int | None = None
+    last_progress_bytes_completed: int | None = None
+    last_progress_bytes_total: int | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+    completed_at: datetime | None = None
+
+    class Settings:
+        name = "datalake_replication_tasks"
+        indexes = [
+            "status",
+            "next_attempt_at",
+            "target_lake_id",
+            "root_kind",
+            "root_id",
+            "rule_id",
+            "claimed_by",
+            "lease_expires_at",
+            [("status", 1), ("next_attempt_at", 1)],
+            [("claimed_by", 1), ("lease_expires_at", 1)],
+            [("target_lake_id", 1), ("root_kind", 1), ("root_id", 1)],
+            [("rule_id", 1), ("status", 1)],
+        ]
+
 
 class Asset(DatalakeDocument):
     """Canonical metadata row for a payload-bearing object."""
