@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from mindtrace.core import TaskSchema
 from mindtrace.datalake.pagination_types import (
@@ -30,6 +30,7 @@ from mindtrace.datalake.sync_types import (
     ObjectPayloadDescriptor,
 )
 from mindtrace.datalake.types import (
+    REPLICATION_TASK_PURGEABLE_STATUSES,
     AnnotationRecord,
     AnnotationSchema,
     AnnotationSet,
@@ -1052,6 +1053,46 @@ class ReplicationTaskIdInput(BaseModel):
     task_id: str
 
 
+class ReplicationTaskPurgeInput(BaseModel):
+    older_than_seconds: int = Field(
+        default=86_400,
+        ge=3600,
+        le=366 * 24 * 3600,
+        description="Only purge tasks whose completed_at is at least this many seconds before evaluation time.",
+    )
+    statuses: list[ReplicationTaskStatus] | None = Field(
+        default=None,
+        description="Archival statuses to remove; default complete, dead, cancelled.",
+    )
+    limit: int = Field(default=500, ge=1, le=5000)
+    dry_run: bool = Field(default=False, description="If true, report matches without deleting.")
+    purge_secret: str | None = Field(
+        default=None,
+        description="When the service is constructed with replication_task_purge_secret, this must match.",
+    )
+
+    @field_validator("statuses")
+    @classmethod
+    def _statuses_archival_only(cls, v: list[ReplicationTaskStatus] | None) -> list[ReplicationTaskStatus] | None:
+        if v is None:
+            return None
+        for s in v:
+            if s not in REPLICATION_TASK_PURGEABLE_STATUSES:
+                raise ValueError(
+                    f"Purge only supports archival statuses {sorted(REPLICATION_TASK_PURGEABLE_STATUSES)}; got {s!r}"
+                )
+        return v
+
+
+class ReplicationTaskPurgeOutput(BaseModel):
+    dry_run: bool
+    cutoff: datetime
+    total_candidates: int
+    selected_count: int
+    deleted_count: int
+    deleted_task_ids: list[str] = Field(default_factory=list)
+
+
 class ReplicationBatchResultOutput(BaseModel):
     result: ReplicationBatchResult
 
@@ -1248,4 +1289,10 @@ ReplicationTaskRetrySchema = TaskSchema(
     name="replication.tasks.retry",
     input_schema=ReplicationTaskIdInput,
     output_schema=ReplicationTaskOutput,
+)
+
+ReplicationTaskPurgeSchema = TaskSchema(
+    name="replication.tasks.purge",
+    input_schema=ReplicationTaskPurgeInput,
+    output_schema=ReplicationTaskPurgeOutput,
 )

@@ -230,6 +230,15 @@ ReplicationTaskStatus = Literal[
 ]
 ReplicationHydratePolicy = Literal["manual", "async", "immediate"]
 
+REPLICATION_TASK_PURGEABLE_STATUSES: frozenset[ReplicationTaskStatus] = frozenset(
+    ("complete", "dead", "cancelled"),
+)
+DEFAULT_REPLICATION_TASK_PURGE_STATUSES: tuple[ReplicationTaskStatus, ...] = (
+    "complete",
+    "dead",
+    "cancelled",
+)
+
 
 class ReplicationRule(DatalakeDocument):
     """Persistent policy describing which datalake entities should be replicated.
@@ -307,10 +316,12 @@ class ReplicationTask(DatalakeDocument):
             "rule_id",
             "claimed_by",
             "lease_expires_at",
+            "completed_at",
             [("status", 1), ("next_attempt_at", 1)],
             [("claimed_by", 1), ("lease_expires_at", 1)],
             [("target_lake_id", 1), ("root_kind", 1), ("root_id", 1)],
             [("rule_id", 1), ("status", 1)],
+            [("status", 1), ("completed_at", 1)],
         ]
 
 

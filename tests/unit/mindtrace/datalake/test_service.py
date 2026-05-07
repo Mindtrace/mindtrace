@@ -143,6 +143,8 @@ from mindtrace.datalake.service_types import (
     ReplicationTaskListInput,
     ReplicationTaskListOutput,
     ReplicationTaskOutput,
+    ReplicationTaskPurgeInput,
+    ReplicationTaskPurgeOutput,
     ReplicationTaskStatusUpdateInput,
     ResolvedCollectionItemOutput,
     ResolvedDatasetVersionOutput,
@@ -336,6 +338,92 @@ def mock_datalake():
 @pytest.fixture
 def service(mock_datalake):
     return DatalakeService(async_datalake=mock_datalake, live_service=False, initialize_on_startup=False)
+
+
+@pytest.fixture
+def service_with_replication_purge_secret(mock_datalake):
+    return DatalakeService(
+        async_datalake=mock_datalake,
+        live_service=False,
+        initialize_on_startup=False,
+        replication_task_purge_secret="unit-purge-secret",
+    )
+
+
+def test_replication_task_purge_input_rejects_non_archival_status():
+    with pytest.raises(ValidationError, match="archival statuses"):
+        ReplicationTaskPurgeInput(statuses=["failed"])
+
+
+@pytest.mark.asyncio
+async def test_service_replication_task_purge_maps_value_error_to_400(service, mock_datalake):
+    with patch("mindtrace.datalake.service.ReplicationQueueManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.purge_terminal_tasks = AsyncMock(side_effect=ValueError("bad statuses"))
+        with pytest.raises(HTTPException) as exc_info:
+            await service.replication_task_purge(ReplicationTaskPurgeInput(dry_run=True))
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_service_replication_task_purge_requires_matching_secret_when_configured(
+    service_with_replication_purge_secret,
+):
+    with pytest.raises(HTTPException) as exc_info:
+        await service_with_replication_purge_secret.replication_task_purge(
+            ReplicationTaskPurgeInput(dry_run=True, purge_secret="wrong"),
+        )
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_service_replication_task_purge_accepts_matching_secret_when_configured(
+    service_with_replication_purge_secret,
+):
+    cutoff = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    summary = SimpleNamespace(
+        dry_run=True,
+        cutoff=cutoff,
+        total_candidates=0,
+        selected_count=0,
+        deleted_count=0,
+        deleted_task_ids=(),
+    )
+    with patch("mindtrace.datalake.service.ReplicationQueueManager") as manager_cls:
+        manager = manager_cls.return_value
+        manager.purge_terminal_tasks = AsyncMock(return_value=summary)
+        out = await service_with_replication_purge_secret.replication_task_purge(
+            ReplicationTaskPurgeInput(dry_run=True, purge_secret="unit-purge-secret"),
+        )
+    assert isinstance(out, ReplicationTaskPurgeOutput)
+    assert out.dry_run is True
+    assert out.cutoff == cutoff
+
+
+@pytest.mark.asyncio
+async def test_service_replication_task_purge_dry_run_integration(mock_datalake):
+    stale = ReplicationTask(
+        task_id="stale",
+        target_lake_id="remote",
+        root_kind="asset",
+        root_id="a",
+        dedupe_key="dk-stale",
+        status="complete",
+        completed_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+    )
+    mock_datalake.replication_task_database = FakeReplicationTaskDatabase([stale])
+    svc = DatalakeService(async_datalake=mock_datalake, live_service=False, initialize_on_startup=False)
+    out = await svc.replication_task_purge(
+        ReplicationTaskPurgeInput(
+            older_than_seconds=3600,
+            dry_run=True,
+            statuses=["complete"],
+        ),
+    )
+    assert out.total_candidates == 1
+    assert out.deleted_count == 0
+    assert out.selected_count == 1
+    assert stale.task_id in mock_datalake.replication_task_database._tasks
 
 
 SERVICE_CASES = [

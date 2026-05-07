@@ -419,3 +419,72 @@ async def test_retry_task_resets_to_pending():
     assert out.completed_at is None
     assert out.claimed_by is None
     assert out.lease_expires_at is None
+
+
+@pytest.mark.asyncio
+async def test_purge_terminal_tasks_dry_run_counts_without_delete():
+    done = ReplicationTask(
+        task_id="old",
+        target_lake_id="r",
+        root_kind="asset",
+        root_id="a1",
+        dedupe_key="dk-old",
+        status="complete",
+        completed_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+    )
+    fresh = ReplicationTask(
+        task_id="fresh",
+        target_lake_id="r",
+        root_kind="asset",
+        root_id="a2",
+        dedupe_key="dk-new",
+        status="complete",
+        completed_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+    )
+    db = FakeReplicationTaskDatabase([done, fresh])
+    mgr = ReplicationQueueManager(SimpleNamespace(replication_task_database=db))
+    now = datetime(2025, 6, 1, tzinfo=timezone.utc)
+    r = await mgr.purge_terminal_tasks(older_than_seconds=3600, limit=50, dry_run=True, now=now)
+    assert r.dry_run is True
+    assert r.total_candidates == 1
+    assert r.deleted_task_ids == ("old",)
+    assert db._tasks["old"] is done
+    assert db._tasks["fresh"] is fresh
+
+
+@pytest.mark.asyncio
+async def test_purge_terminal_tasks_deletes_oldest_first_and_respects_limit():
+    a = ReplicationTask(
+        task_id="a",
+        target_lake_id="r",
+        root_kind="asset",
+        root_id="a1",
+        dedupe_key="dka",
+        status="dead",
+        completed_at=datetime(2019, 1, 1, tzinfo=timezone.utc),
+    )
+    b = ReplicationTask(
+        task_id="b",
+        target_lake_id="r",
+        root_kind="asset",
+        root_id="a2",
+        dedupe_key="dkb",
+        status="dead",
+        completed_at=datetime(2018, 1, 1, tzinfo=timezone.utc),
+    )
+    db = FakeReplicationTaskDatabase([a, b])
+    mgr = ReplicationQueueManager(SimpleNamespace(replication_task_database=db))
+    now = datetime(2025, 6, 1, tzinfo=timezone.utc)
+    r = await mgr.purge_terminal_tasks(older_than_seconds=3600, limit=1, dry_run=False, now=now)
+    assert r.deleted_count == 1
+    assert r.deleted_task_ids == ("b",)
+    assert "b" not in db._tasks
+    assert "a" in db._tasks
+
+
+@pytest.mark.asyncio
+async def test_purge_terminal_tasks_rejects_retryable_status_in_statuses_filter():
+    db = FakeReplicationTaskDatabase([])
+    mgr = ReplicationQueueManager(SimpleNamespace(replication_task_database=db))
+    with pytest.raises(ValueError, match="archival statuses"):
+        await mgr.purge_terminal_tasks(older_than_seconds=3600, statuses=("failed",))

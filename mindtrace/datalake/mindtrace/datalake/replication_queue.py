@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from mindtrace.database.core.exceptions import DuplicateInsertError
 from mindtrace.datalake.types import (
+    DEFAULT_REPLICATION_TASK_PURGE_STATUSES,
+    REPLICATION_TASK_PURGEABLE_STATUSES,
     ReplicationEntityKind,
     ReplicationHydratePolicy,
     ReplicationTask,
@@ -17,8 +21,6 @@ _RETRYABLE_TASK_STATUSES: set[ReplicationTaskStatus] = {"pending", "failed"}
 _RECLAIM_EXPIRED_LEASE_STATUSES: frozenset[ReplicationTaskStatus] = frozenset(
     {"claimed", "syncing_metadata", "hydrating_payloads"}
 )
-
-
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
@@ -36,6 +38,18 @@ def _task_is_claimable_at(task: ReplicationTask, current: datetime) -> bool:
     if task.status in _RECLAIM_EXPIRED_LEASE_STATUSES:
         return task.lease_expires_at is not None and _as_utc(task.lease_expires_at) <= current
     return False
+
+
+@dataclass(frozen=True)
+class ReplicationTaskPurgeResult:
+    """Structured result from ``ReplicationQueueManager.purge_terminal_tasks``."""
+
+    dry_run: bool
+    cutoff: datetime
+    total_candidates: int
+    selected_count: int
+    deleted_count: int
+    deleted_task_ids: tuple[str, ...]
 
 
 class ReplicationQueueManager:
@@ -279,3 +293,54 @@ class ReplicationQueueManager:
         task.completed_at = None
         task.updated_at = now
         return await self.database.update(task)
+
+    async def purge_terminal_tasks(
+        self,
+        *,
+        older_than_seconds: int,
+        statuses: Sequence[ReplicationTaskStatus] | None = None,
+        limit: int = 500,
+        dry_run: bool = False,
+        now: datetime | None = None,
+    ) -> ReplicationTaskPurgeResult:
+        """Purge archival terminal replication tasks with ``completed_at`` older than a cutoff.
+
+        Default statuses are ``complete``, ``dead``, and ``cancelled``. Rows are sorted by completion time,
+        oldest first; at most ``limit`` rows are selected per call. Retryable states such as ``failed``
+        cannot be removed through this helper.
+        """
+        sts_tuple = tuple(statuses) if statuses is not None else DEFAULT_REPLICATION_TASK_PURGE_STATUSES
+        if not sts_tuple:
+            raise ValueError("purge_terminal_tasks requires at least one status")
+        for s in sts_tuple:
+            if s not in REPLICATION_TASK_PURGEABLE_STATUSES:
+                allowed = sorted(REPLICATION_TASK_PURGEABLE_STATUSES)
+                raise ValueError(f"purge_terminal_tasks only supports archival statuses {allowed}; got {s!r}")
+
+        clock = _as_utc(now or utc_now())
+        cutoff = clock - timedelta(seconds=older_than_seconds)
+        rows = await self.database.find({"status": {"$in": sorted(sts_tuple)}, "completed_at": {"$lte": cutoff}})
+        ordered = sorted(
+            rows,
+            key=lambda t: (_as_utc(t.completed_at) if t.completed_at else clock, t.created_at),
+        )
+        total = len(ordered)
+        slice_rows = ordered[: max(0, limit)]
+        ids = tuple(row.task_id for row in slice_rows)
+        deleted = 0
+        if not dry_run:
+            for row in slice_rows:
+                oid = getattr(row, "id", None)
+                if oid is None:
+                    await self.database.delete(row.task_id)
+                else:
+                    await self.database.delete(str(oid))
+                deleted += 1
+        return ReplicationTaskPurgeResult(
+            dry_run=dry_run,
+            cutoff=cutoff,
+            total_candidates=total,
+            selected_count=len(slice_rows),
+            deleted_count=deleted,
+            deleted_task_ids=ids,
+        )
