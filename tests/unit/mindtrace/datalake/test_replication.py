@@ -395,6 +395,36 @@ class TestReplicationManager:
         target_datalake.datum_database.insert.assert_awaited_once()
 
 
+class TestReplicationTransferredPayloadVerification:
+    @pytest.mark.asyncio
+    async def test_verify_transferred_payload_reads_target_bytes_for_checksum_match(self):
+        """Wrong bytes already on the target (same length) must fail checksum even if source still matches."""
+        good = b"w" * 32
+        bad = b"x" * 32
+        assert len(good) == len(bad)
+        digest = f"sha256:{hashlib.sha256(good).hexdigest()}"
+        remote_ref = StorageRef(mount="remote", name="blob.bin", version="v9")
+        source_asset = Asset(
+            asset_id="payload-asset",
+            kind="artifact",
+            media_type="application/octet-stream",
+            storage_ref=remote_ref,
+            checksum=digest,
+            size_bytes=len(good),
+            payload_status="present",
+        )
+
+        source = Mock()
+        source.get_object = AsyncMock(return_value=good)
+        target = Mock()
+        target.head_object = AsyncMock(return_value={"size_bytes": len(bad)})
+        target.get_object = AsyncMock(return_value=bad)
+
+        manager = ReplicationManager(source, target)
+        with pytest.raises(RuntimeError, match="checksum|target"):
+            await manager._verify_transferred_payload(source_asset, remote_ref)
+
+
 class TestReplicationStaticHelpers:
     def test_map_storage_ref_for_target_noop_when_unmapped(self, replication_objects):
         ref = replication_objects.storage_ref
