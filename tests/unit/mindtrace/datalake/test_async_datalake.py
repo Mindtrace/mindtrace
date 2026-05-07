@@ -208,8 +208,9 @@ class TestAsyncDatalakeUnit:
 
     @pytest.mark.asyncio
     async def test_initialize_initializes_all_odms(self, async_datalake, mock_odm):
+        expected_inits = len(async_datalake._all_odms())
         await async_datalake.initialize()
-        assert mock_odm.initialize.await_count == 12
+        assert mock_odm.initialize.await_count == expected_inits
 
     @pytest.mark.asyncio
     async def test_create_classmethod_initializes_instance(self, mock_odm, mock_store):
@@ -217,7 +218,7 @@ class TestAsyncDatalakeUnit:
             created = await AsyncDatalake.create("mongodb://test:27017", "test_db", store=mock_store)
         assert isinstance(created, AsyncDatalake)
         assert created.store == mock_store
-        assert mock_odm.initialize.await_count == 12
+        assert mock_odm.initialize.await_count == len(created._all_odms())
 
     @pytest.mark.asyncio
     async def test_wipe_requires_payload_or_metadata_deletion(self, async_datalake):
@@ -227,6 +228,7 @@ class TestAsyncDatalakeUnit:
     @pytest.mark.asyncio
     async def test_wipe_clears_mounts_and_drops_database(self, async_datalake, mock_odm, mock_store):
         result = await async_datalake.wipe(clear_registry_metadata=True)
+        wipe_odm_count = len(async_datalake._all_odms())
 
         assert result == {
             "database": "test_db",
@@ -239,7 +241,7 @@ class TestAsyncDatalakeUnit:
             mock_store.get_mount(mount_name).registry.clear.assert_called_once_with(clear_registry_metadata=True)
         mock_store.clear_location_cache.assert_called_once_with()
         mock_odm.client.drop_database.assert_awaited_once_with("test_db")
-        assert mock_odm.initialize.await_count == 12
+        assert mock_odm.initialize.await_count == wipe_odm_count
         assert mock_odm._is_initialized is True
 
     @pytest.mark.asyncio
@@ -250,7 +252,7 @@ class TestAsyncDatalakeUnit:
         mock_store.get_mount.assert_not_called()
         mock_store.clear_location_cache.assert_not_called()
         mock_odm.client.drop_database.assert_awaited_once_with("test_db")
-        assert mock_odm.initialize.await_count == 12
+        assert mock_odm.initialize.await_count == len(async_datalake._all_odms())
 
     @pytest.mark.asyncio
     async def test_wipe_can_leave_metadata_intact(self, async_datalake, mock_odm, mock_store):
