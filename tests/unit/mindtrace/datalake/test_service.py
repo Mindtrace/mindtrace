@@ -175,10 +175,10 @@ from mindtrace.datalake.types import (
     DatasetVersion,
     Datum,
     DirectUploadSession,
+    ReplicationTask,
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
-    ReplicationTask,
     StorageRef,
     SubjectRef,
 )

@@ -91,23 +91,33 @@ from mindtrace.datalake.service_types import (
     DatasetImportSessionStatusOutput,
     DatasetImportSessionStatusSchema,
     DatasetImportSessionUploadInput,
-    DatasetStreamingImportFinalizeInput,
-    DatasetStreamingImportFinalizeSchema,
+    DatasetImportSessionUploadOutput,
+    DatasetImportSessionUploadSchema,
     DatasetIntegrityIssueSample,
     DatasetIntegrityVerifyInput,
     DatasetIntegrityVerifyOutput,
     DatasetIntegrityVerifySchema,
+    DatasetStreamingImportFinalizeInput,
+    DatasetStreamingImportFinalizeSchema,
     DatasetStreamingImportPushBatchInput,
     DatasetStreamingImportPushBatchOutput,
     DatasetStreamingImportPushBatchSchema,
     DatasetStreamingImportStartInput,
     DatasetStreamingImportStartOutput,
     DatasetStreamingImportStartSchema,
-    DatasetImportSessionUploadOutput,
-    DatasetImportSessionUploadSchema,
     DatasetSyncBundleOutput,
     DatasetSyncCommitResultOutput,
+    DatasetSyncFinalizeGraphInput,
+    DatasetSyncFinalizeGraphSchema,
+    DatasetSyncGraphExportOutput,
+    DatasetSyncGraphExportSchema,
+    DatasetSyncHydratePayloadsInput,
+    DatasetSyncHydratePayloadsOutput,
+    DatasetSyncHydratePayloadsSchema,
     DatasetSyncImportCommitSchema,
+    DatasetSyncImportGraphInput,
+    DatasetSyncImportGraphOutput,
+    DatasetSyncImportGraphSchema,
     DatasetSyncImportJobResultSchema,
     DatasetSyncImportJobStatusSchema,
     DatasetSyncImportPlanOutput,
@@ -120,6 +130,8 @@ from mindtrace.datalake.service_types import (
     DatasetSyncJobStartOutput,
     DatasetSyncJobStatusInput,
     DatasetSyncJobStatusOutput,
+    DatasetSyncPayloadManifestOutput,
+    DatasetSyncPayloadManifestSchema,
     DatasetVersionListOutput,
     DatasetVersionOutput,
     DatasetVersionPageOutput,
@@ -135,18 +147,6 @@ from mindtrace.datalake.service_types import (
     DeleteCollectionSchema,
     ExportDatasetVersionInput,
     ExportDatasetVersionSchema,
-    DatasetSyncGraphExportOutput,
-    DatasetSyncGraphExportSchema,
-    DatasetSyncPayloadManifestOutput,
-    DatasetSyncPayloadManifestSchema,
-    DatasetSyncImportGraphInput,
-    DatasetSyncImportGraphOutput,
-    DatasetSyncImportGraphSchema,
-    DatasetSyncHydratePayloadsInput,
-    DatasetSyncHydratePayloadsOutput,
-    DatasetSyncHydratePayloadsSchema,
-    DatasetSyncFinalizeGraphInput,
-    DatasetSyncFinalizeGraphSchema,
     GetAnnotationRecordSchema,
     GetAnnotationSchemaByNameVersionInput,
     GetAnnotationSchemaByNameVersionSchema,
@@ -264,7 +264,7 @@ from mindtrace.datalake.sync_types import (
     DatasetSyncProgress,
     ObjectPayloadDescriptor,
 )
-from mindtrace.datalake.types import Asset, DatasetImportSession, DatasetVersion, StorageRef, utc_now
+from mindtrace.datalake.types import Asset, DatasetImportSession, StorageRef, utc_now
 from mindtrace.registry import Mount
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.services import Service
@@ -621,15 +621,23 @@ class DatalakeService(Service):
             as_tool=True,
         )
         self.add_endpoint("dataset_versions.export", self.export_dataset_version, schema=ExportDatasetVersionSchema)
-        self.add_endpoint("dataset_versions.export_sync_graph", self.export_sync_graph, schema=DatasetSyncGraphExportSchema)
+        self.add_endpoint(
+            "dataset_versions.export_sync_graph", self.export_sync_graph, schema=DatasetSyncGraphExportSchema
+        )
         self.add_endpoint(
             "dataset_versions.export_sync_payload_manifest",
             self.export_sync_payload_manifest,
             schema=DatasetSyncPayloadManifestSchema,
         )
-        self.add_endpoint("dataset_sync.import_graph", self.dataset_sync_import_graph, schema=DatasetSyncImportGraphSchema)
-        self.add_endpoint("dataset_sync.hydrate_payload", self.dataset_sync_hydrate_payload, schema=DatasetSyncHydratePayloadsSchema)
-        self.add_endpoint("dataset_sync.finalize_graph", self.dataset_sync_finalize_graph, schema=DatasetSyncFinalizeGraphSchema)
+        self.add_endpoint(
+            "dataset_sync.import_graph", self.dataset_sync_import_graph, schema=DatasetSyncImportGraphSchema
+        )
+        self.add_endpoint(
+            "dataset_sync.hydrate_payload", self.dataset_sync_hydrate_payload, schema=DatasetSyncHydratePayloadsSchema
+        )
+        self.add_endpoint(
+            "dataset_sync.finalize_graph", self.dataset_sync_finalize_graph, schema=DatasetSyncFinalizeGraphSchema
+        )
         self.add_endpoint(
             "dataset_versions.import_prepare",
             self.import_dataset_version_prepare,
@@ -1304,9 +1312,7 @@ class DatalakeService(Service):
         datalake = await self._ensure_datalake()
         return ResolvedDatumOutput(resolved_datum=await datalake.resolve_datum(payload.id))
 
-    async def verify_dataset_integrity(
-        self, payload: DatasetIntegrityVerifyInput
-    ) -> DatasetIntegrityVerifyOutput:
+    async def verify_dataset_integrity(self, payload: DatasetIntegrityVerifyInput) -> DatasetIntegrityVerifyOutput:
         datalake = await self._ensure_datalake()
         dataset_version = await datalake.get_dataset_version(payload.dataset_name, payload.version)
         manifest_ids = [str(v) for v in dataset_version.manifest]
@@ -1337,7 +1343,7 @@ class DatalakeService(Service):
                 datums_by_id[datum_id] = datum
                 for asset_id in (datum.asset_refs or {}).values():
                     asset_ids.add(str(asset_id))
-                for annotation_set_id in (datum.annotation_set_ids or []):
+                for annotation_set_id in datum.annotation_set_ids or []:
                     annotation_set_ids.add(str(annotation_set_id))
             except Exception as exc:
                 missing_manifest_datum_count += 1
@@ -1397,9 +1403,7 @@ class DatalakeService(Service):
             mount_snapshot = datalake.get_mounts()
             mount_entries = mount_snapshot.get("mounts", []) if isinstance(mount_snapshot, dict) else []
             known_mounts = {
-                str(entry.get("name"))
-                for entry in mount_entries
-                if isinstance(entry, dict) and entry.get("name")
+                str(entry.get("name")) for entry in mount_entries if isinstance(entry, dict) and entry.get("name")
             }
             sample_asset_mounts: list[dict[str, Any]] = []
             for asset_id, asset in list(assets_by_id.items())[: min(5, len(assets_by_id))]:
@@ -1534,7 +1538,9 @@ class DatalakeService(Service):
         bundle = await manager.export_dataset_version(payload.dataset_name, payload.version)
         return DatasetSyncGraphExportOutput(bundle=bundle)
 
-    async def export_sync_payload_manifest(self, payload: ExportDatasetVersionInput) -> DatasetSyncPayloadManifestOutput:
+    async def export_sync_payload_manifest(
+        self, payload: ExportDatasetVersionInput
+    ) -> DatasetSyncPayloadManifestOutput:
         datalake = await self._ensure_datalake()
         manager = DatasetSyncManager(datalake)
         bundle = await manager.export_dataset_version(payload.dataset_name, payload.version)
@@ -1547,8 +1553,12 @@ class DatalakeService(Service):
         manager = DatasetSyncManager(datalake, datalake)
         progress_writer = _ImportSessionProgressWriter(datalake, session)
         default_commit_batch_size = DatasetSyncImportRequest.model_fields["commit_batch_size"].default
-        default_commit_progress_every_items = DatasetSyncImportRequest.model_fields["commit_progress_every_items"].default
-        default_commit_progress_every_seconds = DatasetSyncImportRequest.model_fields["commit_progress_every_seconds"].default
+        default_commit_progress_every_items = DatasetSyncImportRequest.model_fields[
+            "commit_progress_every_items"
+        ].default
+        default_commit_progress_every_seconds = DatasetSyncImportRequest.model_fields[
+            "commit_progress_every_seconds"
+        ].default
         try:
             result = await manager.fast_import_graph(
                 DatasetSyncImportRequest(
@@ -1603,11 +1613,17 @@ class DatalakeService(Service):
             payload_bytes=data,
         )
         session.verified_asset_ids = sorted(set(session.verified_asset_ids) | {payload.asset_id})
-        session.import_stage = "ready_to_finalize" if len(session.verified_asset_ids) >= len(session.required_asset_ids) else "hydrating_payloads"
+        session.import_stage = (
+            "ready_to_finalize"
+            if len(session.verified_asset_ids) >= len(session.required_asset_ids)
+            else "hydrating_payloads"
+        )
         await datalake.dataset_import_session_database.update(session)
         return DatasetSyncHydratePayloadsOutput(storage_ref=ref)
 
-    async def dataset_sync_finalize_graph(self, payload: DatasetSyncFinalizeGraphInput) -> DatasetSyncCommitResultOutput:
+    async def dataset_sync_finalize_graph(
+        self, payload: DatasetSyncFinalizeGraphInput
+    ) -> DatasetSyncCommitResultOutput:
         datalake = await self._ensure_datalake()
         session = await self._require_open_import_session(datalake, payload.session_id)
         bundle = await _load_import_session_bundle(datalake, session)
@@ -1747,7 +1763,9 @@ class DatalakeService(Service):
             asset_rows: list[Asset] = []
             for asset in item.assets:
                 mapped_storage_ref = _apply_mount_map_to_storage_ref(asset.storage_ref, session.mount_map)
-                mapped_payload_ref = _apply_mount_map_to_storage_ref(asset.payload_storage_ref or asset.storage_ref, session.mount_map)
+                mapped_payload_ref = _apply_mount_map_to_storage_ref(
+                    asset.payload_storage_ref or asset.storage_ref, session.mount_map
+                )
                 mapped_asset = Asset.model_validate(
                     {
                         **asset.model_dump(),
@@ -1790,8 +1808,16 @@ class DatalakeService(Service):
                 target_asset = await datalake.get_asset(asset.asset_id)
                 if (
                     target_asset.payload_status == "present"
-                    and (asset.payload_checksum is None or target_asset.payload_checksum == asset.payload_checksum or target_asset.checksum == asset.payload_checksum)
-                    and (asset.payload_size_bytes is None or target_asset.payload_size_bytes == asset.payload_size_bytes or target_asset.size_bytes == asset.payload_size_bytes)
+                    and (
+                        asset.payload_checksum is None
+                        or target_asset.payload_checksum == asset.payload_checksum
+                        or target_asset.checksum == asset.payload_checksum
+                    )
+                    and (
+                        asset.payload_size_bytes is None
+                        or target_asset.payload_size_bytes == asset.payload_size_bytes
+                        or target_asset.size_bytes == asset.payload_size_bytes
+                    )
                 ):
                     return asset.asset_id, 0, None
                 data = self._decode_base64(payload_entry.data_base64)
@@ -1856,7 +1882,9 @@ class DatalakeService(Service):
 
             annotation_set_started_at = time.time()
             for annotation_set in item.annotation_sets:
-                await self._streaming_upsert_model(datalake.annotation_set_database, "annotation_set_id", annotation_set)
+                await self._streaming_upsert_model(
+                    datalake.annotation_set_database, "annotation_set_id", annotation_set
+                )
             annotation_set_seconds += max(0.0, time.time() - annotation_set_started_at)
             last_progress = DatasetSyncProgress(
                 phase="committing",
@@ -2222,7 +2250,9 @@ class DatalakeService(Service):
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             verified = sorted(set(session.verified_asset_ids) | {payload.asset_id})
             session.verified_asset_ids = verified
-            session.import_stage = "ready_to_finalize" if len(verified) >= len(session.required_asset_ids) else "awaiting_payload_uploads"
+            session.import_stage = (
+                "ready_to_finalize" if len(verified) >= len(session.required_asset_ids) else "awaiting_payload_uploads"
+            )
         await datalake.dataset_import_session_database.update(session)
         return DatasetImportSessionUploadOutput(storage_ref=ref)
 
@@ -2476,9 +2506,7 @@ class DatalakeService(Service):
         )
         return ReplicationTaskClaimOutput(tasks=tasks)
 
-    async def replication_task_update_status(
-        self, payload: ReplicationTaskStatusUpdateInput
-    ) -> ReplicationTaskOutput:
+    async def replication_task_update_status(self, payload: ReplicationTaskStatusUpdateInput) -> ReplicationTaskOutput:
         datalake = await self._ensure_datalake()
         manager = ReplicationQueueManager(datalake)
         try:
