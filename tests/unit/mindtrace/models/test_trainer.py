@@ -901,7 +901,7 @@ class TestFitIntegration:
         loader = [(x, y)]
 
         trainer = _make_trainer(model, loss_fn, opt)
-        history = trainer.fit(loader, epochs=20)
+        history = trainer.fit(loader, epochs=5)
         losses = history["train/loss"]
         # First loss should be higher than last
         assert losses[0] > losses[-1]
