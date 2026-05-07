@@ -287,6 +287,33 @@ async def test_claim_due_tasks_skips_when_fresh_copy_not_retryable():
 
 
 @pytest.mark.asyncio
+async def test_claim_due_tasks_reclaims_expired_lease_while_hydrating_payloads():
+    """Stranded active-status tasks with lease_expires_at in the past must be claimable."""
+    now = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    expired_lease = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    stuck = ReplicationTask(
+        task_id="stuck-hydrate",
+        target_lake_id="lake",
+        root_kind="datum",
+        root_id="d1",
+        dedupe_key="dk-hydrate",
+        status="hydrating_payloads",
+        next_attempt_at=datetime(2020, 1, 2, tzinfo=timezone.utc),
+        lease_expires_at=expired_lease,
+        claimed_by="dead-worker",
+        claimed_at=datetime(2019, 1, 1, tzinfo=timezone.utc),
+    )
+    db = FakeReplicationTaskDatabase([stuck])
+    mgr = ReplicationQueueManager(SimpleNamespace(replication_task_database=db))
+    claimed = await mgr.claim_due_tasks(worker_id="worker-b", limit=5, lease_seconds=120, now=now)
+
+    assert len(claimed) == 1
+    assert claimed[0].task_id == "stuck-hydrate"
+    assert claimed[0].status == "claimed"
+    assert claimed[0].claimed_by == "worker-b"
+
+
+@pytest.mark.asyncio
 async def test_claim_due_tasks_skips_when_fresh_copy_has_active_lease():
     far = datetime(2035, 1, 1, tzinfo=timezone.utc)
     stale_view = _task(task_id="same", dedupe_key="dks", lease_expires_at=None)
