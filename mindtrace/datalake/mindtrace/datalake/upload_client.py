@@ -9,6 +9,8 @@ from typing import Any
 import httpx
 import requests
 
+from mindtrace.datalake.blocking_payload_io import mkdir_and_write_bytes
+
 
 class DatalakeDirectUploadClient:
     """Dedicated client flow for direct object uploads."""
@@ -89,8 +91,7 @@ class DatalakeDirectUploadClient:
             if not session.upload_path:
                 raise ValueError("local_path upload session is missing upload_path")
             upload_path = Path(session.upload_path)
-            upload_path.parent.mkdir(parents=True, exist_ok=True)
-            upload_path.write_bytes(data)
+            await asyncio.to_thread(mkdir_and_write_bytes, upload_path, data)
             return
 
         if session.upload_method == "presigned_url":
