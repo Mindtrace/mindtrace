@@ -158,8 +158,11 @@ def _set_minimal_env(monkeypatch):
     Service.config = CoreConfig()
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def datalake_objects():
+    # All values returned here are immutable Pydantic models or primitive
+    # bytes/strings, so a single instance can be shared across the 60+
+    # parametrized cases in this module without risk of cross-test mutation.
     storage_ref = StorageRef(mount="nas", name="images/cat.jpg", version="v1")
     source_storage_ref = StorageRef(mount="raw", name="images/source.jpg", version="v0")
     copied_storage_ref = StorageRef(mount="archive", name="images/cat-copy.jpg", version="v2")
