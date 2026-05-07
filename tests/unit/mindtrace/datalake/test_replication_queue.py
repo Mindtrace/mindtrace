@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from bson import ObjectId
 
 from mindtrace.database.core.exceptions import DuplicateInsertError
 from mindtrace.datalake.replication_queue import ReplicationQueueManager, _task_is_claimable_at
@@ -488,3 +489,59 @@ async def test_purge_terminal_tasks_rejects_retryable_status_in_statuses_filter(
     mgr = ReplicationQueueManager(SimpleNamespace(replication_task_database=db))
     with pytest.raises(ValueError, match="archival statuses"):
         await mgr.purge_terminal_tasks(older_than_seconds=3600, statuses=("failed",))
+
+
+@pytest.mark.asyncio
+async def test_purge_terminal_tasks_rejects_empty_status_sequence():
+    db = FakeReplicationTaskDatabase([])
+    mgr = ReplicationQueueManager(SimpleNamespace(replication_task_database=db))
+    with pytest.raises(ValueError, match="requires at least one status"):
+        await mgr.purge_terminal_tasks(older_than_seconds=3600, statuses=[])
+
+
+@pytest.mark.asyncio
+async def test_purge_terminal_tasks_delete_prefers_primary_key_when_id_is_set():
+    oid = ObjectId()
+    mongo_row = ReplicationTask.model_construct(
+        id=oid,
+        task_id="with-oid",
+        target_lake_id="r",
+        root_kind="asset",
+        root_id="a",
+        dedupe_key="dk-oid",
+        status="dead",
+        completed_at=datetime(2018, 1, 1, tzinfo=timezone.utc),
+    )
+    plain = ReplicationTask(
+        task_id="plain-id",
+        target_lake_id="r",
+        root_kind="asset",
+        root_id="b",
+        dedupe_key="dk-plain",
+        status="dead",
+        completed_at=datetime(2017, 6, 1, tzinfo=timezone.utc),
+    )
+    db = FakeReplicationTaskDatabase([mongo_row, plain])
+    mgr = ReplicationQueueManager(SimpleNamespace(replication_task_database=db))
+    now = datetime(2025, 6, 1, tzinfo=timezone.utc)
+
+    deletes: list[str] = []
+    raw_delete = db.delete
+
+    async def delete_audit(pk: str) -> None:
+        deletes.append(pk)
+        await raw_delete(pk)
+
+    db.delete = delete_audit  # type: ignore[method-assign]
+
+    await mgr.purge_terminal_tasks(
+        older_than_seconds=3600,
+        statuses=("dead",),
+        limit=2,
+        dry_run=False,
+        now=now,
+    )
+
+    assert set(deletes) == {str(oid), "plain-id"}
+    assert mongo_row.task_id not in db._tasks
+    assert plain.task_id not in db._tasks
