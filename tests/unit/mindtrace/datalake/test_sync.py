@@ -165,6 +165,7 @@ def target_datalake(sync_objects):
         return_value=SimpleNamespace(storage_ref=StorageRef(mount="target", name="images/cat.jpg", version="v2"))
     )
     datalake.head_object = AsyncMock(return_value={"size": len(b"payload-bytes")})
+    datalake.get_object = AsyncMock(return_value=b"payload-bytes")
     datalake.get_asset = AsyncMock(side_effect=DocumentNotFoundError("asset missing"))
     datalake.get_annotation_schema = AsyncMock(side_effect=DocumentNotFoundError("schema missing"))
     datalake.get_annotation_record = AsyncMock(side_effect=DocumentNotFoundError("record missing"))
