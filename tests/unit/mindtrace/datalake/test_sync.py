@@ -2044,6 +2044,33 @@ class TestSyncCommitGuardrails:
         await mgr.fast_import_graph(DatasetSyncImportRequest(bundle=bundle, transfer_policy="copy_if_missing"))
 
     @pytest.mark.asyncio
+    async def test_fast_import_graph_successful_schema_insert_calls_insert(self, target_datalake, sync_objects):
+        target_datalake.get_dataset_version = AsyncMock(return_value=sync_objects.dataset_version)
+        mgr = DatasetSyncManager(target_datalake, target_datalake)
+        bundle = DatasetSyncBundle(
+            dataset_version=sync_objects.dataset_version,
+            annotation_schemas=[sync_objects.schema],
+        )
+        await mgr.fast_import_graph(DatasetSyncImportRequest(bundle=bundle, transfer_policy="copy_if_missing"))
+        assert target_datalake.annotation_schema_database.insert.await_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_ingest_import_payload_bytes_returns_finalize_result(self, target_datalake, sync_objects):
+        mgr = DatasetSyncManager(target_datalake, target_datalake)
+        desc = ObjectPayloadDescriptor(
+            asset_id=sync_objects.asset.asset_id,
+            storage_ref=sync_objects.asset.storage_ref,
+            media_type="image/jpeg",
+            size_bytes=4,
+        )
+        data = b"1234"
+        expected_ref = StorageRef(mount="target", name="n.jpg", version="v1")
+        with patch.object(mgr, "_finalize_payload_write", new=AsyncMock(return_value=expected_ref)) as fin:
+            ref = await mgr.ingest_import_payload_bytes(desc, {}, data)
+        assert ref == expected_ref
+        fin.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_annotation_schema_exists_true_when_document_present(self, target_datalake, sync_objects):
         target_datalake.get_annotation_schema = AsyncMock(return_value=sync_objects.schema)
         mgr = DatasetSyncManager(target_datalake, target_datalake)
