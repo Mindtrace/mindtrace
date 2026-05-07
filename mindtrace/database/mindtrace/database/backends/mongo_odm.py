@@ -8,7 +8,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
-from pymongo import InsertOne, MongoClient
+from pymongo import MongoClient
 from pymongo.errors import BulkWriteError, DocumentTooLarge, DuplicateKeyError
 
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
@@ -491,7 +491,9 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
 
         try:
             result = await self._motor_collection().insert_many(raw_docs, ordered=ordered)
-            inserted = await self._motor_collection().find({"_id": {"$in": list(result.inserted_ids)}}).to_list(length=None)
+            inserted = (
+                await self._motor_collection().find({"_id": {"$in": list(result.inserted_ids)}}).to_list(length=None)
+            )
             inserted_by_id = {row["_id"]: row for row in inserted}
             out: list[T] = []
             for inserted_id in result.inserted_ids:

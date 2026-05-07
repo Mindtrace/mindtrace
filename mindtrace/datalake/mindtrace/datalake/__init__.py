@@ -83,11 +83,11 @@ from .types import (
     Datum,
     DirectUploadSession,
     DuplicateAliasError,
+    ReplicationRule,
+    ReplicationTask,
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
-    ReplicationRule,
-    ReplicationTask,
     StorageRef,
     SubjectRef,
 )

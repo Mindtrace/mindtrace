@@ -1257,6 +1257,7 @@ async def test_motor_insert_document_too_large_not_wrapped_as_duplicate():
         with pytest.raises(DocumentTooLargeError, match="BSON"):
             await backend.insert(UserCreate(name="A", age=1, email="x@y.com"))
 
+
 def test_motor_patch_fields_basemodel():
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 

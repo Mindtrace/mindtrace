@@ -12,7 +12,6 @@ from mindtrace.datalake.types import (
     utc_now,
 )
 
-
 _TERMINAL_TASK_STATUSES: set[ReplicationTaskStatus] = {"complete", "dead", "cancelled"}
 _RETRYABLE_TASK_STATUSES: set[ReplicationTaskStatus] = {"pending", "failed"}
 

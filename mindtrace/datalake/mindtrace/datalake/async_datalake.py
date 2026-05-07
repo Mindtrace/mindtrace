@@ -42,11 +42,11 @@ from mindtrace.datalake.types import (
     DirectUploadSession,
     DuplicateAliasError,
     PayloadStatus,
+    ReplicationRule,
+    ReplicationTask,
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
-    ReplicationRule,
-    ReplicationTask,
     StorageRef,
     SubjectRef,
 )
@@ -1103,7 +1103,9 @@ class AsyncDatalake(Mindtrace):
             payload_storage_ref=normalized_storage_ref,
             payload_checksum=checksum,
             payload_size_bytes=size_bytes,
-            payload_verified_at=payload_verified_at if payload_verified_at is not None else (now if payload_status == "present" else None),
+            payload_verified_at=payload_verified_at
+            if payload_verified_at is not None
+            else (now if payload_status == "present" else None),
             subject=subject,
             metadata=metadata or {},
             created_by=created_by,
@@ -1146,9 +1148,7 @@ class AsyncDatalake(Mindtrace):
         for row in existing:
             existing_by_alias[row.alias] = row
             if row.alias in asset_by_id and row.asset_id != row.alias:
-                raise DuplicateAliasError(
-                    f"Alias {row.alias!r} is already mapped to asset_id {row.asset_id!r}"
-                )
+                raise DuplicateAliasError(f"Alias {row.alias!r} is already mapped to asset_id {row.asset_id!r}")
             alias_rows.append(row)
 
         missing_docs: list[AssetAlias] = []
