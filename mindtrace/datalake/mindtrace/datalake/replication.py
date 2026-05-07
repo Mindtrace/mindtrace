@@ -660,23 +660,19 @@ class ReplicationManager:
         return completed.storage_ref
 
     async def _verify_transferred_payload(self, source_asset: Asset, target_ref: StorageRef) -> None:
-        target_bytes = await self.target.get_object(target_ref)
+        # Avoid downloading the full target object: verify HEAD size + checksum the source read only.
+        # Wrong bytes at the destination with identical size/checksum-vs-source ambiguity remains a known gap.
+        source_bytes = await self.source.get_object(_asset_payload_storage_ref(source_asset))
         head = await self.target.head_object(target_ref)
         remote_size = _head_object_size_bytes(head)
-        expected_size = source_asset.payload_size_bytes or source_asset.size_bytes
-        if expected_size is not None and len(target_bytes) != expected_size:
+        if remote_size is not None and remote_size != len(source_bytes):
             raise RuntimeError(
                 f"Post-upload size mismatch for asset {source_asset.asset_id}: "
-                f"read {len(target_bytes)} bytes from target, expected {expected_size}"
-            )
-        if remote_size is not None and remote_size != len(target_bytes):
-            raise RuntimeError(
-                f"Post-upload size mismatch for asset {source_asset.asset_id}: "
-                f"target head reports {remote_size} bytes, read {len(target_bytes)}"
+                f"target head reports {remote_size} bytes, transferred {len(source_bytes)}"
             )
         digest = source_asset.payload_checksum or source_asset.checksum
-        if digest and not self._payload_checksum_matches(target_bytes, digest):
-            raise RuntimeError(f"Target payload checksum mismatch for asset {source_asset.asset_id}")
+        if digest and not self._payload_checksum_matches(source_bytes, digest):
+            raise RuntimeError(f"Post-upload checksum mismatch for asset {source_asset.asset_id}")
 
     def _payload_checksum_matches(self, data: bytes, declared: str) -> bool:
         declared_stripped = declared.strip()

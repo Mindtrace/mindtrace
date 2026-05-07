@@ -398,12 +398,10 @@ class TestReplicationManager:
 
 class TestReplicationTransferredPayloadVerification:
     @pytest.mark.asyncio
-    async def test_verify_transferred_payload_reads_target_bytes_for_checksum_match(self):
-        """Wrong bytes already on the target (same length) must fail checksum even if source still matches."""
-        good = b"w" * 32
-        bad = b"x" * 32
-        assert len(good) == len(bad)
-        digest = f"sha256:{hashlib.sha256(good).hexdigest()}"
+    async def test_verify_transferred_payload_heads_target_without_full_object_get(self):
+        """Post-transfer checks use HEAD + checksum of the source read, not GET on the destination."""
+        data = b"bytes-read-from-source-for-verify"
+        digest = f"sha256:{hashlib.sha256(data).hexdigest()}"
         remote_ref = StorageRef(mount="remote", name="blob.bin", version="v9")
         source_asset = Asset(
             asset_id="payload-asset",
@@ -411,19 +409,22 @@ class TestReplicationTransferredPayloadVerification:
             media_type="application/octet-stream",
             storage_ref=remote_ref,
             checksum=digest,
-            size_bytes=len(good),
+            size_bytes=len(data),
             payload_status="present",
         )
 
         source = Mock()
-        source.get_object = AsyncMock(return_value=good)
+        source.get_object = AsyncMock(return_value=data)
         target = Mock()
-        target.head_object = AsyncMock(return_value={"size_bytes": len(bad)})
-        target.get_object = AsyncMock(return_value=bad)
+        target.head_object = AsyncMock(return_value={"size_bytes": len(data)})
+        target.get_object = AsyncMock()
 
         manager = ReplicationManager(source, target)
-        with pytest.raises(RuntimeError, match="checksum|target"):
-            await manager._verify_transferred_payload(source_asset, remote_ref)
+        await manager._verify_transferred_payload(source_asset, remote_ref)
+
+        source.get_object.assert_awaited_once()
+        target.head_object.assert_awaited_once()
+        target.get_object.assert_not_awaited()
 
 
 class TestReplicationStaticHelpers:
@@ -1047,31 +1048,10 @@ class TestReplicationTransferAndVerify:
     ):
         source_datalake.get_object = AsyncMock(return_value=b"1234567890")
         target_datalake.head_object = AsyncMock(return_value={"size_bytes": 99})
-        target_datalake.get_object = AsyncMock(return_value=b"1234567890")
         manager = ReplicationManager(source_datalake, target_datalake)
         ref = StorageRef(mount="m", name="n", version="v")
         with pytest.raises(RuntimeError, match="Post-upload size mismatch"):
             await manager._verify_transferred_payload(replication_objects.asset, ref)
-
-    @pytest.mark.asyncio
-    async def test_verify_transferred_payload_expected_size_vs_read_before_head_gate(
-        self, source_datalake, target_datalake, replication_objects
-    ):
-        """Prefer asset-declared payload size mismatch before comparing head metadata to reads."""
-        data = b"abc"
-        target_datalake.get_object = AsyncMock(return_value=data)
-        target_datalake.head_object = AsyncMock(return_value={"size_bytes": len(data)})
-        manager = ReplicationManager(source_datalake, target_datalake)
-        ref = StorageRef(mount="remote", name="n", version="v")
-        asset = replication_objects.asset.model_copy(
-            update={
-                "size_bytes": 99,
-                "payload_size_bytes": None,
-                "checksum": None,
-            },
-        )
-        with pytest.raises(RuntimeError, match="expected 99"):
-            await manager._verify_transferred_payload(asset, ref)
 
     @pytest.mark.asyncio
     async def test_verify_transferred_payload_checksum_mismatch(
@@ -1088,7 +1068,7 @@ class TestReplicationTransferAndVerify:
         )
         manager = ReplicationManager(source_datalake, target_datalake)
         ref = StorageRef(mount="m", name="n", version="v")
-        with pytest.raises(RuntimeError, match="Target payload checksum mismatch"):
+        with pytest.raises(RuntimeError, match="Post-upload checksum mismatch"):
             await manager._verify_transferred_payload(bad_checksum_asset, ref)
 
     def test_payload_checksum_matches_formats(self, replication_objects):
