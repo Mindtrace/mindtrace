@@ -15,9 +15,18 @@ from mindtrace.hardware.services.cameras.models.requests import (
 from mindtrace.hardware.services.cameras.service import CameraManagerService
 
 
+@pytest.fixture(scope="module")
+def _shared_camera_service():
+    return CameraManagerService(include_mocks=True)
+
+
 @pytest.fixture
-def service_and_manager():
-    service = CameraManagerService(include_mocks=True)
+def service_and_manager(_shared_camera_service):
+    service = _shared_camera_service
+    # The shared service is reused across tests in this module — reset any
+    # mutable state that individual tests poke at so we don't leak between them.
+    service._active_streams = {}
+    service._capabilities_cache = {}
     manager = Mock()
     manager.active_cameras = ["Basler:cam1"]
     manager.timeout_ms = 1000
