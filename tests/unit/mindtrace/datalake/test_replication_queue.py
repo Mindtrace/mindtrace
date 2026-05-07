@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from mindtrace.database.core.exceptions import DuplicateInsertError
-from mindtrace.datalake.replication_queue import ReplicationQueueManager
+from mindtrace.datalake.replication_queue import ReplicationQueueManager, _task_is_claimable_at
 from mindtrace.datalake.types import ReplicationTask, utc_now
 from tests.unit.mindtrace.datalake.fake_replication_task_database import FakeReplicationTaskDatabase
 
@@ -284,6 +284,24 @@ async def test_claim_due_tasks_skips_when_fresh_copy_not_retryable():
     mgr = ReplicationQueueManager(SimpleNamespace(replication_task_database=db))
     now = datetime(2030, 1, 1, tzinfo=timezone.utc)
     assert await mgr.claim_due_tasks(worker_id="w", limit=5, lease_seconds=10, now=now) == []
+
+
+def test_task_is_claimable_returns_false_for_unknown_status_values():
+    """Defensive fallback for rows with future or corrupted status literals (Mongo may store extra strings)."""
+    now = datetime(2027, 1, 1, tzinfo=timezone.utc)
+    odd = ReplicationTask.model_construct(
+        task_id="odd",
+        target_lake_id="lake",
+        root_kind="asset",
+        root_id="r",
+        dedupe_key="dk-odd",
+        status="not_a_registered_status_token",
+        next_attempt_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        lease_expires_at=None,
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    assert _task_is_claimable_at(odd, now) is False
 
 
 @pytest.mark.asyncio

@@ -1054,6 +1054,26 @@ class TestReplicationTransferAndVerify:
             await manager._verify_transferred_payload(replication_objects.asset, ref)
 
     @pytest.mark.asyncio
+    async def test_verify_transferred_payload_expected_size_vs_read_before_head_gate(
+        self, source_datalake, target_datalake, replication_objects
+    ):
+        """Prefer asset-declared payload size mismatch before comparing head metadata to reads."""
+        data = b"abc"
+        target_datalake.get_object = AsyncMock(return_value=data)
+        target_datalake.head_object = AsyncMock(return_value={"size_bytes": len(data)})
+        manager = ReplicationManager(source_datalake, target_datalake)
+        ref = StorageRef(mount="remote", name="n", version="v")
+        asset = replication_objects.asset.model_copy(
+            update={
+                "size_bytes": 99,
+                "payload_size_bytes": None,
+                "checksum": None,
+            },
+        )
+        with pytest.raises(RuntimeError, match="expected 99"):
+            await manager._verify_transferred_payload(asset, ref)
+
+    @pytest.mark.asyncio
     async def test_verify_transferred_payload_checksum_mismatch(
         self, source_datalake, target_datalake, replication_objects
     ):
