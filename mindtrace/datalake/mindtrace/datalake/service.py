@@ -2183,6 +2183,10 @@ class DatalakeService(Service):
     ) -> DatasetSyncCommitResultOutput:
         """Phase A on the target lake: persist dataset graph with pending payload replication state (caller push Phase B).
 
+        When callers uploaded bytes via ``import_session_upload_payload`` before metadata commit, staged
+        ``StorageRef`` values are finalized here (read + verify + ``payload_status=present``) alongside
+        Phase A so those early uploads are usable without a second upload.
+
         Subsequent ``import_session_upload_payload`` verifies each staged asset and transitions ``pending→verified``.
         Closing the session requires ``import_session_commit`` once all ``required_asset_ids`` are verified.
 
@@ -2226,9 +2230,45 @@ class DatalakeService(Service):
         except Exception as exc:
             await progress_writer.persist_failed(f"{type(exc).__name__}: {exc!s}")
             raise
+
+        payload_by_id = {p.asset_id: p for p in bundle.payloads}
+        preflight_verified: list[str] = []
+        for asset_id in sorted(session.required_asset_ids):
+            raw = session.staged_refs.get(asset_id)
+            if raw is None:
+                continue
+            desc = payload_by_id.get(asset_id)
+            if desc is None:
+                detail = f"Staged payload for asset {asset_id!r} has no matching bundle descriptor"
+                await progress_writer.persist_failed(detail)
+                raise HTTPException(status_code=400, detail=detail)
+            ref = StorageRef.model_validate(raw)
+            try:
+                payload_bytes = await datalake.get_object(ref)
+            except Exception as exc:
+                await progress_writer.persist_failed(f"read staged payload {asset_id}: {exc!s}")
+                raise HTTPException(
+                    status_code=400, detail=f"Failed to read staged payload for asset {asset_id!r}"
+                ) from exc
+            try:
+                await manager.finalize_pending_import_asset_payload(
+                    asset_id=asset_id,
+                    payload_descriptor=desc,
+                    staged_storage_ref=ref,
+                    payload_bytes=payload_bytes,
+                )
+            except (RuntimeError, ValueError) as exc:
+                await progress_writer.persist_failed(f"finalize {asset_id}: {exc!s}")
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            preflight_verified.append(asset_id)
+
         session.metadata_graph_committed = True
-        session.verified_asset_ids = []
-        session.import_stage = "awaiting_payload_uploads" if session.required_asset_ids else "ready_to_finalize"
+        session.verified_asset_ids = sorted(set(preflight_verified))
+        if session.required_asset_ids:
+            outstanding = len(session.required_asset_ids) - len(session.verified_asset_ids)
+            session.import_stage = "ready_to_finalize" if outstanding <= 0 else "awaiting_payload_uploads"
+        else:
+            session.import_stage = "ready_to_finalize"
         await datalake.dataset_import_session_database.update(session)
         return DatasetSyncCommitResultOutput(result=result)
 
