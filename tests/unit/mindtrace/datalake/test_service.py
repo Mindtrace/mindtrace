@@ -183,6 +183,7 @@ from mindtrace.datalake.types import (
     SubjectRef,
 )
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound
+from tests.unit.mindtrace.datalake.fake_replication_task_database import FakeReplicationTaskDatabase
 
 
 class _DatasetVersionRowForFinalize(DatasetVersion):
@@ -2207,6 +2208,22 @@ async def test_service_replication_task_get_maps_missing_to_404(service):
 
 
 @pytest.mark.asyncio
+async def test_service_replication_task_get_returns_task_when_present(service, mock_datalake):
+    task = ReplicationTask(
+        target_lake_id="remote",
+        root_kind="asset",
+        root_id="asset_1",
+        dedupe_key="target:remote:root:asset:asset_1",
+    )
+    mock_datalake.replication_task_database = FakeReplicationTaskDatabase([task])
+
+    result = await service.replication_task_get(ReplicationTaskIdInput(task_id=task.task_id))
+
+    assert isinstance(result, ReplicationTaskOutput)
+    assert result.task.task_id == task.task_id
+
+
+@pytest.mark.asyncio
 async def test_service_replication_task_claim_uses_queue_manager(service):
     task = ReplicationTask(
         target_lake_id="remote",
@@ -2235,6 +2252,61 @@ async def test_service_replication_task_update_status_maps_claim_conflict_to_409
 
         with pytest.raises(HTTPException) as exc_info:
             await service.replication_task_update_status(request)
+
+    assert exc_info.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_service_replication_task_update_status_maps_missing_to_404(service, mock_datalake):
+    mock_datalake.replication_task_database = FakeReplicationTaskDatabase([])
+    request = ReplicationTaskStatusUpdateInput(task_id="missing", status="syncing_metadata", worker_id="w")
+    with pytest.raises(HTTPException) as exc_info:
+        await service.replication_task_update_status(request)
+
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_service_replication_task_update_status_success_returns_task(service, mock_datalake):
+    task = ReplicationTask(
+        target_lake_id="remote",
+        root_kind="asset",
+        root_id="asset_1",
+        dedupe_key="target:remote:root:asset:asset_1",
+        status="claimed",
+        claimed_by="worker-1",
+    )
+    mock_datalake.replication_task_database = FakeReplicationTaskDatabase([task])
+    request = ReplicationTaskStatusUpdateInput(
+        task_id=task.task_id,
+        status="complete",
+        worker_id="worker-1",
+        progress_phase="finalize",
+        progress_message="done",
+    )
+
+    result = await service.replication_task_update_status(request)
+
+    assert isinstance(result, ReplicationTaskOutput)
+    assert result.task.status == "complete"
+    assert result.task.last_progress_phase == "finalize"
+
+
+@pytest.mark.asyncio
+async def test_service_replication_task_update_status_maps_claim_conflict_via_queue_to_409(service, mock_datalake):
+    task = ReplicationTask(
+        target_lake_id="remote",
+        root_kind="asset",
+        root_id="asset_1",
+        dedupe_key="target:remote:root:asset:asset_1",
+        status="claimed",
+        claimed_by="other-worker",
+    )
+    mock_datalake.replication_task_database = FakeReplicationTaskDatabase([task])
+    request = ReplicationTaskStatusUpdateInput(task_id=task.task_id, status="syncing_metadata", worker_id="worker-1")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.replication_task_update_status(request)
 
     assert exc_info.value.status_code == 409
 
@@ -2270,6 +2342,60 @@ async def test_service_replication_task_fail_and_retry_use_queue_manager(service
         retry_delay_seconds=60,
     )
     manager.retry_task.assert_awaited_once_with(failed.task_id)
+
+
+@pytest.mark.asyncio
+async def test_service_replication_task_fail_maps_missing_to_404(service, mock_datalake):
+    mock_datalake.replication_task_database = FakeReplicationTaskDatabase([])
+    with pytest.raises(HTTPException) as exc_info:
+        await service.replication_task_fail(ReplicationTaskFailInput(task_id="missing", error="boom"))
+
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_service_replication_task_fail_maps_claim_conflict_to_409(service, mock_datalake):
+    task = ReplicationTask(
+        target_lake_id="remote",
+        root_kind="asset",
+        root_id="asset_1",
+        dedupe_key="target:remote:root:asset:asset_1",
+        claimed_by="worker-a",
+    )
+    mock_datalake.replication_task_database = FakeReplicationTaskDatabase([task])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.replication_task_fail(
+            ReplicationTaskFailInput(task_id=task.task_id, worker_id="worker-b", error="boom")
+        )
+
+    assert exc_info.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_service_replication_task_retry_maps_missing_to_404(service, mock_datalake):
+    mock_datalake.replication_task_database = FakeReplicationTaskDatabase([])
+    with pytest.raises(HTTPException) as exc_info:
+        await service.replication_task_retry(ReplicationTaskIdInput(task_id="missing"))
+
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_service_replication_task_retry_maps_complete_to_409(service, mock_datalake):
+    task = ReplicationTask(
+        target_lake_id="remote",
+        root_kind="asset",
+        root_id="asset_1",
+        dedupe_key="target:remote:root:asset:asset_1",
+        status="complete",
+    )
+    mock_datalake.replication_task_database = FakeReplicationTaskDatabase([task])
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.replication_task_retry(ReplicationTaskIdInput(task_id=task.task_id))
+
+    assert exc_info.value.status_code == 409
 
 
 class TestDatalakeServiceModuleHelpers:
