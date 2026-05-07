@@ -1613,15 +1613,25 @@ class DatasetSyncManager:
         source_bytes: bytes,
         target_ref: StorageRef,
     ) -> None:
+        remote_bytes = await self.target.get_object(target_ref)
         head = await self.target.head_object(target_ref)
         remote_size = _head_object_size_bytes(head)
-        if remote_size is not None and remote_size != len(source_bytes):
+        if remote_size is not None and remote_size != len(remote_bytes):
             raise RuntimeError(
                 f"Post-upload size mismatch for asset {payload.asset_id}: "
-                f"target head reports {remote_size} bytes, transferred {len(source_bytes)}"
+                f"target head reports {remote_size} bytes, read {len(remote_bytes)}"
             )
-        if payload.checksum and not self._payload_checksum_matches(source_bytes, payload.checksum):
-            raise RuntimeError(f"Post-upload checksum mismatch for asset {payload.asset_id}")
+        if payload.size_bytes is not None and len(remote_bytes) != payload.size_bytes:
+            raise RuntimeError(
+                f"Post-upload size mismatch for asset {payload.asset_id}: "
+                f"read {len(remote_bytes)} bytes from target, expected {payload.size_bytes}"
+            )
+        if payload.checksum:
+            if not self._payload_checksum_matches(remote_bytes, payload.checksum):
+                raise RuntimeError(f"Target payload checksum mismatch for asset {payload.asset_id}")
+            # Ensure caller-supplied bytes are consistent with the declared digest (staging integrity).
+            if not self._payload_checksum_matches(source_bytes, payload.checksum):
+                raise RuntimeError(f"Staged payload checksum mismatch for asset {payload.asset_id}")
 
     def _payload_checksum_matches(self, data: bytes, declared: str) -> bool:
         declared_stripped = declared.strip()

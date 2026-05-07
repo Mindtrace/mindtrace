@@ -110,6 +110,7 @@ def target_datalake():
         return_value=SimpleNamespace(storage_ref=StorageRef(mount="remote", name="images/cat.jpg", version="v1"))
     )
     datalake.head_object = AsyncMock(return_value={"size_bytes": len(b"payload-bytes")})
+    datalake.get_object = AsyncMock(return_value=b"payload-bytes")
     datalake.asset_database = SimpleNamespace(
         insert=AsyncMock(side_effect=lambda obj: obj),
         update=AsyncMock(),
@@ -1046,6 +1047,7 @@ class TestReplicationTransferAndVerify:
     ):
         source_datalake.get_object = AsyncMock(return_value=b"1234567890")
         target_datalake.head_object = AsyncMock(return_value={"size_bytes": 99})
+        target_datalake.get_object = AsyncMock(return_value=b"1234567890")
         manager = ReplicationManager(source_datalake, target_datalake)
         ref = StorageRef(mount="m", name="n", version="v")
         with pytest.raises(RuntimeError, match="Post-upload size mismatch"):
@@ -1066,7 +1068,7 @@ class TestReplicationTransferAndVerify:
         )
         manager = ReplicationManager(source_datalake, target_datalake)
         ref = StorageRef(mount="m", name="n", version="v")
-        with pytest.raises(RuntimeError, match="Post-upload checksum mismatch"):
+        with pytest.raises(RuntimeError, match="Target payload checksum mismatch"):
             await manager._verify_transferred_payload(bad_checksum_asset, ref)
 
     def test_payload_checksum_matches_formats(self, replication_objects):
