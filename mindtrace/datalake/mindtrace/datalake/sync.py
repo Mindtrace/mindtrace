@@ -13,6 +13,7 @@ from urllib import request as urllib_request
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake.async_datalake import AsyncDatalake
+from mindtrace.datalake.blocking_payload_io import mkdir_and_write_bytes
 from mindtrace.datalake.replication import ReplicationManager
 from mindtrace.datalake.sync_types import (
     DatasetSyncBundle,
@@ -33,6 +34,14 @@ from mindtrace.datalake.types import (
     StorageRef,
     utc_now,
 )
+
+
+def _blocking_presigned_put(req: urllib_request.Request) -> None:
+    """Synchronous presigned PUT using :mod:`urllib.request` (run via :func:`asyncio.to_thread`)."""
+    with urllib_request.urlopen(req) as response:
+        if response.status >= 400:
+            raise RuntimeError(f"Presigned upload failed with status {response.status}")
+
 
 _METADATA_ONLY_CROSS_LAKE = (
     "transfer_policy='metadata_only' is only supported when source and target are the same AsyncDatalake instance. "
@@ -1477,17 +1486,14 @@ class DatasetSyncManager:
             if not session.upload_path:
                 raise ValueError(f"Upload session {session.upload_session_id} is missing upload_path")
             upload_path = Path(session.upload_path)
-            upload_path.parent.mkdir(parents=True, exist_ok=True)
-            upload_path.write_bytes(data)
+            await asyncio.to_thread(mkdir_and_write_bytes, upload_path, data)
         elif session.upload_method == "presigned_url":
             if not session.upload_url:
                 raise ValueError(f"Upload session {session.upload_session_id} is missing upload_url")
             req = urllib_request.Request(session.upload_url, data=data, method="PUT")
             for key, value in session.upload_headers.items():
                 req.add_header(key, value)
-            with urllib_request.urlopen(req) as response:
-                if response.status >= 400:
-                    raise RuntimeError(f"Presigned upload failed with status {response.status}")
+            await asyncio.to_thread(_blocking_presigned_put, req)
         else:
             raise ValueError(f"Unsupported upload method: {session.upload_method}")
         completed = await self.target.complete_object_upload_session(
