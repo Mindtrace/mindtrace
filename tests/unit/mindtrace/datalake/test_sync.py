@@ -904,11 +904,10 @@ class TestDatasetSyncManager:
     async def test_verify_transferred_payload_descriptor_size_mismatch(
         self, source_datalake, target_datalake, sync_objects
     ):
-        """Descriptor-declared ``size_bytes`` must match bytes read back from target storage."""
+        """Descriptor ``size_bytes`` must match staged byte length (HEAD only on target, no object GET)."""
         manager = DatasetSyncManager(source_datalake, target_datalake)
         landed = b"short"
         ref = StorageRef(mount="target", name="blob.bin", version="v9")
-        target_datalake.get_object = AsyncMock(return_value=landed)
         target_datalake.head_object = AsyncMock(return_value={"size_bytes": len(landed)})
         payload = ObjectPayloadDescriptor(
             asset_id="size-mismatch-asset",
@@ -917,30 +916,31 @@ class TestDatasetSyncManager:
             size_bytes=999,
             checksum=None,
         )
-        with pytest.raises(RuntimeError, match="expected 999"):
+        with pytest.raises(RuntimeError, match="staged payload is .* expected 999"):
             await manager._verify_transferred_payload(payload, landed, ref)
+        target_datalake.get_object.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_verify_transferred_payload_staging_checksum_integrity_branch(
+    async def test_verify_transferred_payload_checksum_mismatch_on_inline_bytes(
         self, source_datalake, target_datalake, sync_objects
     ):
-        """Declared digest must hold for both staged ``source_bytes`` and bytes read from the target."""
+        """Checksum is evaluated on caller ``source_bytes`` without reading the target object body."""
         manager = DatasetSyncManager(source_datalake, target_datalake)
-        staged_ok = b"content-on-target"
-        wrong_inline = b"content-not-staged------"
-        digest = f"sha256:{hashlib.sha256(staged_ok).hexdigest()}"
+        good = b"w" * 32
+        bad = b"x" * 32
+        digest = f"sha256:{hashlib.sha256(good).hexdigest()}"
         ref = StorageRef(mount="target", name="verified.bin", version="v7")
-        target_datalake.get_object = AsyncMock(return_value=staged_ok)
-        target_datalake.head_object = AsyncMock(return_value={"size_bytes": len(staged_ok)})
+        target_datalake.head_object = AsyncMock(return_value={"size_bytes": len(bad)})
         payload = ObjectPayloadDescriptor(
-            asset_id="staged-branch-asset",
+            asset_id="inline-digest-asset",
             storage_ref=sync_objects.asset.storage_ref,
             media_type="application/octet-stream",
-            size_bytes=len(staged_ok),
+            size_bytes=len(bad),
             checksum=digest,
         )
-        with pytest.raises(RuntimeError, match="Staged payload checksum mismatch"):
-            await manager._verify_transferred_payload(payload, wrong_inline, ref)
+        with pytest.raises(RuntimeError, match="Post-upload checksum mismatch"):
+            await manager._verify_transferred_payload(payload, bad, ref)
+        target_datalake.get_object.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_plan_import_copy_policy_always_requires_transfer(self, source_datalake, target_datalake):

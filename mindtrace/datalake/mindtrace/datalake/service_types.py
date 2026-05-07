@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from mindtrace.core import TaskSchema
 from mindtrace.datalake.pagination_types import (
@@ -845,6 +845,16 @@ class DatasetStreamingImportStartInput(BaseModel):
     mount_map: dict[str, str] = Field(default_factory=dict)
     preserve_ids: bool = True
     origin_lake_id: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_preserve_ids(self) -> DatasetStreamingImportStartInput:
+        """Match :class:`~mindtrace.datalake.sync_types.DatasetSyncImportRequest` until ID remapping exists."""
+        if not self.preserve_ids:
+            raise ValueError(
+                "preserve_ids=False is not supported yet; streaming imports preserve source identifiers. "
+                "Omit preserve_ids or set it to True."
+            )
+        return self
 
 
 class DatasetStreamingImportStartOutput(BaseModel):

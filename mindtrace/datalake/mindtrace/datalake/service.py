@@ -1759,6 +1759,21 @@ class DatalakeService(Service):
             )
             await writer.persist(last_progress, force=True)
 
+            def _batch_payload_satisfied(batch_asset: Asset, target_asset: Asset) -> bool:
+                return bool(
+                    target_asset.payload_status == "present"
+                    and (
+                        batch_asset.payload_checksum is None
+                        or target_asset.payload_checksum == batch_asset.payload_checksum
+                        or target_asset.checksum == batch_asset.payload_checksum
+                    )
+                    and (
+                        batch_asset.payload_size_bytes is None
+                        or target_asset.payload_size_bytes == batch_asset.payload_size_bytes
+                        or target_asset.size_bytes == batch_asset.payload_size_bytes
+                    )
+                )
+
             asset_started_at = time.time()
             asset_rows: list[Asset] = []
             for asset in item.assets:
@@ -1766,14 +1781,36 @@ class DatalakeService(Service):
                 mapped_payload_ref = _apply_mount_map_to_storage_ref(
                     asset.payload_storage_ref or asset.storage_ref, session.mount_map
                 )
+                rows_existing = await datalake.asset_database.find({"asset_id": asset.asset_id})
+                existing_asset = rows_existing[0] if rows_existing else None
+
+                resolved_payload_updates: dict[str, Any]
+                if existing_asset is not None and _batch_payload_satisfied(asset, existing_asset):
+                    resolved_payload_updates = {
+                        "payload_status": existing_asset.payload_status,
+                        "payload_status_reason": existing_asset.payload_status_reason,
+                        "payload_verified_at": existing_asset.payload_verified_at,
+                        "payload_checksum": existing_asset.payload_checksum,
+                        "payload_size_bytes": existing_asset.payload_size_bytes,
+                        "payload_storage_ref": (
+                            existing_asset.payload_storage_ref.model_dump(mode="python")
+                            if existing_asset.payload_storage_ref is not None
+                            else mapped_payload_ref.model_dump(mode="python")
+                        ),
+                    }
+                else:
+                    resolved_payload_updates = {
+                        "payload_status": "missing",
+                        "payload_status_reason": "streaming_import_pending_payload",
+                        "payload_verified_at": None,
+                    }
+
                 mapped_asset = Asset.model_validate(
                     {
                         **asset.model_dump(),
                         "storage_ref": mapped_storage_ref.model_dump(),
                         "payload_storage_ref": mapped_payload_ref.model_dump(),
-                        "payload_status": "missing",
-                        "payload_status_reason": "streaming_import_pending_payload",
-                        "payload_verified_at": None,
+                        **resolved_payload_updates,
                         "updated_at": utc_now(),
                     }
                 )
@@ -1800,21 +1837,6 @@ class DatalakeService(Service):
 
             payload_started_at = time.time()
             payloads_by_asset = {entry.asset_id: entry for entry in item.payloads}
-
-            def _batch_payload_satisfied(batch_asset: Asset, target_asset: Asset) -> bool:
-                return bool(
-                    target_asset.payload_status == "present"
-                    and (
-                        batch_asset.payload_checksum is None
-                        or target_asset.payload_checksum == batch_asset.payload_checksum
-                        or target_asset.checksum == batch_asset.payload_checksum
-                    )
-                    and (
-                        batch_asset.payload_size_bytes is None
-                        or target_asset.payload_size_bytes == batch_asset.payload_size_bytes
-                        or target_asset.size_bytes == batch_asset.payload_size_bytes
-                    )
-                )
 
             async def process_payload(asset: Asset) -> tuple[str, int, dict[str, Any] | None, bool]:
                 payload_entry = payloads_by_asset.get(asset.asset_id)

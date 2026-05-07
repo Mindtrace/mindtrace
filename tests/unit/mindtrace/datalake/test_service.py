@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DocumentTooLargeError
 from mindtrace.datalake.async_datalake import AsyncDatalake, SlowOperationDisabledError, SlowOpsPolicy
@@ -1846,6 +1847,12 @@ async def test_service_streaming_import_start_inserts_dataset_import_session(ser
     mock_datalake.dataset_import_session_database.insert.assert_awaited_once()
 
 
+def test_service_streaming_import_start_rejects_preserve_ids_false():
+    """``preserve_ids=False`` is invalid for streaming (same restriction as DatasetSyncImportRequest)."""
+    with pytest.raises(ValidationError, match="preserve_ids=False is not supported yet"):
+        DatasetStreamingImportStartInput(dataset_name="s", version="1.0.0", preserve_ids=False)
+
+
 @pytest.mark.asyncio
 async def test_service_import_dataset_version_prepare_uses_sync_manager(service, datalake_objects):
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
@@ -3240,6 +3247,105 @@ async def test_streaming_import_push_skips_reingest_when_target_payload_already_
         )
 
     assert ingest.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_streaming_import_push_preserves_present_payload_when_repush_without_inline_payload(
+    service, datalake_objects, mock_datalake
+):
+    """Re-sending manifest rows without inline bytes must not clobber payload_status before the satisfied check."""
+    sess = DatasetImportSession(
+        expires_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+        expected_manifest_total=2,
+    )
+    imp_db = _import_session_db(mock_datalake)
+    imp_db.find = AsyncMock(return_value=[sess])
+    imp_db.update = AsyncMock(return_value=sess)
+    mock_datalake.annotation_schema_database = _minimal_streaming_database_mocks()
+    mock_datalake.annotation_record_database = _minimal_streaming_database_mocks()
+    mock_datalake.annotation_set_database = _minimal_streaming_database_mocks()
+    mock_datalake.datum_database = _minimal_streaming_database_mocks()
+    ingest = AsyncMock(return_value=datalake_objects.storage_ref)
+
+    bucket: list = []
+
+    async def find_assets(_q):
+        return list(bucket)
+
+    async def insert_asset(a):
+        bucket.clear()
+        bucket.append(a)
+        return a
+
+    async def update_asset(a):
+        bucket.clear()
+        bucket.append(a)
+        return a
+
+    mock_datalake.asset_database = SimpleNamespace(
+        find=AsyncMock(side_effect=find_assets),
+        insert=AsyncMock(side_effect=insert_asset),
+        update=AsyncMock(side_effect=update_asset),
+    )
+    mock_datalake.ensure_primary_asset_aliases = AsyncMock()
+
+    asset = datalake_objects.asset
+    payload = b"bytes-once"
+    digest = f"sha256:{hashlib.sha256(payload).hexdigest()}"
+    rich_asset = asset.model_copy(
+        update={
+            "checksum": digest,
+            "size_bytes": len(payload),
+            "payload_checksum": digest,
+            "payload_size_bytes": len(payload),
+        },
+    )
+
+    def payload_batch(manifest_index: int):
+        entry = DatasetStreamingAssetPayloadInput(
+            asset_id=asset.asset_id,
+            data_base64=base64.b64encode(payload).decode("ascii"),
+        )
+        return DatasetStreamingImportDatumBatchItem(
+            manifest_index=manifest_index,
+            datum=datalake_objects.datum,
+            assets=[rich_asset],
+            payloads=[entry],
+        )
+
+    bare_batch = DatasetStreamingImportDatumBatchItem(
+        manifest_index=1,
+        datum=datalake_objects.datum,
+        assets=[rich_asset],
+        payloads=[],
+    )
+
+    mock_datalake.get_asset = AsyncMock(side_effect=lambda _aid: bucket[0])
+    service._ensure_datalake = AsyncMock(return_value=mock_datalake)
+
+    with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+        mgr_cls.return_value.ingest_import_payload_bytes = ingest
+        mgr_cls.return_value.finalize_pending_import_asset_payload = AsyncMock()
+        sid = sess.import_session_id
+        await service.streaming_import_push_batch(
+            DatasetStreamingImportPushBatchInput(session_id=sid, items=[payload_batch(0)]),
+        )
+        bucket[0] = rich_asset.model_copy(
+            update={
+                "payload_status": "present",
+                "payload_checksum": digest,
+                "payload_size_bytes": len(payload),
+                "checksum": digest,
+                "size_bytes": len(payload),
+            },
+        )
+
+        await service.streaming_import_push_batch(
+            DatasetStreamingImportPushBatchInput(session_id=sid, items=[bare_batch]),
+        )
+
+    assert ingest.await_count == 1
+    assert bucket[0].payload_status == "present"
 
 
 @pytest.mark.asyncio
