@@ -14,12 +14,28 @@ from mindtrace.datalake.types import (
 
 _TERMINAL_TASK_STATUSES: set[ReplicationTaskStatus] = {"complete", "dead", "cancelled"}
 _RETRYABLE_TASK_STATUSES: set[ReplicationTaskStatus] = {"pending", "failed"}
+_RECLAIM_EXPIRED_LEASE_STATUSES: frozenset[ReplicationTaskStatus] = frozenset(
+    {"claimed", "syncing_metadata", "hydrating_payloads"}
+)
 
 
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
+
+
+def _task_is_claimable_at(task: ReplicationTask, current: datetime) -> bool:
+    """Return True when a worker may steal/assign a fresh lease without manual repair."""
+    if task.status in _TERMINAL_TASK_STATUSES:
+        return False
+    if task.lease_expires_at is not None and _as_utc(task.lease_expires_at) > current:
+        return False
+    if task.status in _RETRYABLE_TASK_STATUSES:
+        return _as_utc(task.next_attempt_at) <= current
+    if task.status in _RECLAIM_EXPIRED_LEASE_STATUSES:
+        return task.lease_expires_at is not None and _as_utc(task.lease_expires_at) <= current
+    return False
 
 
 class ReplicationQueueManager:
@@ -135,7 +151,13 @@ class ReplicationQueueManager:
         lease_seconds: int = 300,
         now: datetime | None = None,
     ) -> list[ReplicationTask]:
-        """Claim due pending/failed tasks with an expiring lease.
+        """Claim due tasks with an expiring lease.
+
+        Eligible rows include:
+
+        - ``pending`` / ``failed`` with ``next_attempt_at`` in the past and no active lease, and
+        - ``claimed`` / ``syncing_metadata`` / ``hydrating_payloads`` whose ``lease_expires_at`` has passed,
+          allowing recovery after worker crashes without manual database repair.
 
         The ODM abstraction does not currently expose a portable find-one-and-update primitive, so this
         first-pass implementation uses a re-read before update and keeps work idempotent via task status,
@@ -147,23 +169,29 @@ class ReplicationQueueManager:
         claimed: list[ReplicationTask] = []
         rows = await self.database.find(
             {
-                "status": {"$in": sorted(_RETRYABLE_TASK_STATUSES)},
-                "next_attempt_at": {"$lte": current},
+                "$or": [
+                    {
+                        "status": {"$in": sorted(_RETRYABLE_TASK_STATUSES)},
+                        "next_attempt_at": {"$lte": current},
+                    },
+                    {
+                        "status": {"$in": sorted(_RECLAIM_EXPIRED_LEASE_STATUSES)},
+                        "lease_expires_at": {"$lte": current},
+                    },
+                ]
             }
         )
         rows.sort(key=lambda row: (row.next_attempt_at, row.created_at))
         for candidate in rows:
             if len(claimed) >= limit:
                 break
-            if candidate.lease_expires_at is not None and _as_utc(candidate.lease_expires_at) > current:
+            if not _task_is_claimable_at(candidate, current):
                 continue
             try:
                 fresh = await self.get_task(candidate.task_id)
             except KeyError:
                 continue
-            if fresh.status not in _RETRYABLE_TASK_STATUSES:
-                continue
-            if fresh.lease_expires_at is not None and _as_utc(fresh.lease_expires_at) > current:
+            if not _task_is_claimable_at(fresh, current):
                 continue
             fresh.status = "claimed"
             fresh.claimed_by = worker_id

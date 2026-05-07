@@ -24,6 +24,23 @@ class FakeReplicationTaskDatabase:
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
 
+    def _matches_due_branch(self, branch: dict, task: ReplicationTask) -> bool:
+        allowed = set(branch["status"]["$in"])
+        if task.status not in allowed:
+            return False
+        if "next_attempt_at" in branch:
+            lte = self._normalize_utc(branch["next_attempt_at"]["$lte"])
+            return self._normalize_utc(task.next_attempt_at) <= lte
+        if "lease_expires_at" in branch:
+            lte = self._normalize_utc(branch["lease_expires_at"]["$lte"])
+            if task.lease_expires_at is None:
+                return False
+            return self._normalize_utc(task.lease_expires_at) <= lte
+        return True
+
+    def _matches_or_query(self, query: dict, task: ReplicationTask) -> bool:
+        return any(self._matches_due_branch(br, task) for br in query["$or"])
+
     def _matches_due_query(self, query: dict, task: ReplicationTask) -> bool:
         allowed = set(query["status"]["$in"])
         if task.status not in allowed:
@@ -38,6 +55,19 @@ class FakeReplicationTaskDatabase:
         if "dedupe_key" in query:
             dk = query["dedupe_key"]
             return [t for t in self._tasks.values() if t.dedupe_key == dk]
+        if isinstance(query.get("$or"), list):
+            rows = [
+                task
+                for task in sorted(self._tasks.values(), key=lambda t: (t.next_attempt_at, t.created_at))
+                if self._matches_or_query(query, task)
+            ]
+            extras = [
+                task
+                for task in sorted(self._extra_due, key=lambda t: (t.next_attempt_at, t.created_at))
+                if self._matches_or_query(query, task)
+            ]
+            merged = sorted(rows + extras, key=lambda t: (t.next_attempt_at, t.created_at))
+            return merged
         if isinstance(query.get("status"), dict) and "$in" in query["status"]:
             base = [t for t in self._tasks.values() if self._matches_due_query(query, t)]
             extra = [t for t in self._extra_due if self._matches_due_query(query, t)]
