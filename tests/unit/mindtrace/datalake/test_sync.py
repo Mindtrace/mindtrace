@@ -901,6 +901,48 @@ class TestDatasetSyncManager:
             manager._payload_checksum_matches(b"x", "not-a-valid-checksum")
 
     @pytest.mark.asyncio
+    async def test_verify_transferred_payload_descriptor_size_mismatch(
+        self, source_datalake, target_datalake, sync_objects
+    ):
+        """Descriptor-declared ``size_bytes`` must match bytes read back from target storage."""
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        landed = b"short"
+        ref = StorageRef(mount="target", name="blob.bin", version="v9")
+        target_datalake.get_object = AsyncMock(return_value=landed)
+        target_datalake.head_object = AsyncMock(return_value={"size_bytes": len(landed)})
+        payload = ObjectPayloadDescriptor(
+            asset_id="size-mismatch-asset",
+            storage_ref=sync_objects.asset.storage_ref,
+            media_type="image/jpeg",
+            size_bytes=999,
+            checksum=None,
+        )
+        with pytest.raises(RuntimeError, match="expected 999"):
+            await manager._verify_transferred_payload(payload, landed, ref)
+
+    @pytest.mark.asyncio
+    async def test_verify_transferred_payload_staging_checksum_integrity_branch(
+        self, source_datalake, target_datalake, sync_objects
+    ):
+        """Declared digest must hold for both staged ``source_bytes`` and bytes read from the target."""
+        manager = DatasetSyncManager(source_datalake, target_datalake)
+        staged_ok = b"content-on-target"
+        wrong_inline = b"content-not-staged------"
+        digest = f"sha256:{hashlib.sha256(staged_ok).hexdigest()}"
+        ref = StorageRef(mount="target", name="verified.bin", version="v7")
+        target_datalake.get_object = AsyncMock(return_value=staged_ok)
+        target_datalake.head_object = AsyncMock(return_value={"size_bytes": len(staged_ok)})
+        payload = ObjectPayloadDescriptor(
+            asset_id="staged-branch-asset",
+            storage_ref=sync_objects.asset.storage_ref,
+            media_type="application/octet-stream",
+            size_bytes=len(staged_ok),
+            checksum=digest,
+        )
+        with pytest.raises(RuntimeError, match="Staged payload checksum mismatch"):
+            await manager._verify_transferred_payload(payload, wrong_inline, ref)
+
+    @pytest.mark.asyncio
     async def test_plan_import_copy_policy_always_requires_transfer(self, source_datalake, target_datalake):
         manager = DatasetSyncManager(source_datalake, target_datalake)
         target_datalake.object_exists = AsyncMock(return_value=True)
