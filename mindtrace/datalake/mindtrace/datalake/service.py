@@ -228,6 +228,9 @@ from mindtrace.datalake.service_types import (
     ReplicationTaskListOutput,
     ReplicationTaskListSchema,
     ReplicationTaskOutput,
+    ReplicationTaskPurgeInput,
+    ReplicationTaskPurgeOutput,
+    ReplicationTaskPurgeSchema,
     ReplicationTaskRetrySchema,
     ReplicationTaskStatusUpdateInput,
     ReplicationTaskUpdateStatusSchema,
@@ -455,6 +458,7 @@ class DatalakeService(Service):
         initialize_on_startup: bool = True,
         live_service: bool = True,
         upload_reconcile_interval_seconds: float = 30.0,
+        replication_task_purge_secret: str | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(live_service=live_service, **kwargs)
@@ -474,6 +478,7 @@ class DatalakeService(Service):
         self.upload_reconcile_interval_seconds = upload_reconcile_interval_seconds
         self._upload_reconciler_task: asyncio.Task[None] | None = None
         self._dataset_sync_jobs: dict[str, _DatasetSyncJobState] = {}
+        self._replication_task_purge_secret: str | None = replication_task_purge_secret
 
         if live_service and initialize_on_startup:
             self.app.router.on_startup.append(self._startup_initialize)
@@ -753,6 +758,7 @@ class DatalakeService(Service):
         )
         self.add_endpoint("replication.tasks.fail", self.replication_task_fail, schema=ReplicationTaskFailSchema)
         self.add_endpoint("replication.tasks.retry", self.replication_task_retry, schema=ReplicationTaskRetrySchema)
+        self.add_endpoint("replication.tasks.purge", self.replication_task_purge, schema=ReplicationTaskPurgeSchema)
 
     async def _startup_initialize(self) -> None:
         await self._ensure_datalake()
@@ -2645,3 +2651,27 @@ class DatalakeService(Service):
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return ReplicationTaskOutput(task=task)
+
+    async def replication_task_purge(self, payload: ReplicationTaskPurgeInput) -> ReplicationTaskPurgeOutput:
+        if self._replication_task_purge_secret is not None:
+            if payload.purge_secret != self._replication_task_purge_secret:
+                raise HTTPException(status_code=403, detail="Replication task purge is not authorized")
+        datalake = await self._ensure_datalake()
+        manager = ReplicationQueueManager(datalake)
+        try:
+            result = await manager.purge_terminal_tasks(
+                older_than_seconds=payload.older_than_seconds,
+                statuses=payload.statuses,
+                limit=payload.limit,
+                dry_run=payload.dry_run,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return ReplicationTaskPurgeOutput(
+            dry_run=result.dry_run,
+            cutoff=result.cutoff,
+            total_candidates=result.total_candidates,
+            selected_count=result.selected_count,
+            deleted_count=result.deleted_count,
+            deleted_task_ids=list(result.deleted_task_ids),
+        )

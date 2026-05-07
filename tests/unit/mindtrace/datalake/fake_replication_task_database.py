@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.types import ReplicationTask
 
 
@@ -69,6 +70,22 @@ class FakeReplicationTaskDatabase:
             merged = sorted(rows + extras, key=lambda t: (t.next_attempt_at, t.created_at))
             return merged
         if isinstance(query.get("status"), dict) and "$in" in query["status"]:
+            if (
+                "completed_at" in query
+                and isinstance(query["completed_at"], dict)
+                and "$lte" in query["completed_at"]
+                and "next_attempt_at" not in query
+            ):
+                allowed = set(query["status"]["$in"])
+                cutoff = self._normalize_utc(query["completed_at"]["$lte"])
+                rows = [
+                    t
+                    for t in self._tasks.values()
+                    if t.status in allowed
+                    and t.completed_at is not None
+                    and self._normalize_utc(t.completed_at) <= cutoff
+                ]
+                return sorted(rows, key=lambda t: (self._normalize_utc(t.completed_at), t.created_at))
             base = [t for t in self._tasks.values() if self._matches_due_query(query, t)]
             extra = [t for t in self._extra_due if self._matches_due_query(query, t)]
             return base + extra
@@ -84,3 +101,11 @@ class FakeReplicationTaskDatabase:
     async def update(self, task: ReplicationTask) -> ReplicationTask:
         self._tasks[task.task_id] = task
         return task
+
+    async def delete(self, pk: str) -> None:
+        for tid, task in list(self._tasks.items()):
+            oid = getattr(task, "id", None)
+            if tid == pk or (oid is not None and str(oid) == pk):
+                del self._tasks[tid]
+                return
+        raise DocumentNotFoundError(f"replication task primary key {pk!r} not found")
