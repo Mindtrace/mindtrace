@@ -1062,6 +1062,7 @@ class ReplicationTaskPurgeInput(BaseModel):
     )
     statuses: list[ReplicationTaskStatus] | None = Field(
         default=None,
+        validate_default=True,
         description="Archival statuses to remove; default complete, dead, cancelled.",
     )
     limit: int = Field(default=500, ge=1, le=5000)

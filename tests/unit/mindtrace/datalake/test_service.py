@@ -355,6 +355,11 @@ def test_replication_task_purge_input_rejects_non_archival_status():
         ReplicationTaskPurgeInput(statuses=["failed"])
 
 
+def test_replication_task_purge_input_default_statuses_passes_validator():
+    m = ReplicationTaskPurgeInput()
+    assert m.statuses is None
+
+
 @pytest.mark.asyncio
 async def test_service_replication_task_purge_maps_value_error_to_400(service, mock_datalake):
     with patch("mindtrace.datalake.service.ReplicationQueueManager") as manager_cls:
