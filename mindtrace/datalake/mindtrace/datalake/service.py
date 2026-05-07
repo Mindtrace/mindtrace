@@ -1801,25 +1801,31 @@ class DatalakeService(Service):
             payload_started_at = time.time()
             payloads_by_asset = {entry.asset_id: entry for entry in item.payloads}
 
-            async def process_payload(asset: Asset) -> tuple[str, int, dict[str, Any] | None]:
-                payload_entry = payloads_by_asset.get(asset.asset_id)
-                if payload_entry is None:
-                    return asset.asset_id, 0, None
-                target_asset = await datalake.get_asset(asset.asset_id)
-                if (
+            def _batch_payload_satisfied(batch_asset: Asset, target_asset: Asset) -> bool:
+                return bool(
                     target_asset.payload_status == "present"
                     and (
-                        asset.payload_checksum is None
-                        or target_asset.payload_checksum == asset.payload_checksum
-                        or target_asset.checksum == asset.payload_checksum
+                        batch_asset.payload_checksum is None
+                        or target_asset.payload_checksum == batch_asset.payload_checksum
+                        or target_asset.checksum == batch_asset.payload_checksum
                     )
                     and (
-                        asset.payload_size_bytes is None
-                        or target_asset.payload_size_bytes == asset.payload_size_bytes
-                        or target_asset.size_bytes == asset.payload_size_bytes
+                        batch_asset.payload_size_bytes is None
+                        or target_asset.payload_size_bytes == batch_asset.payload_size_bytes
+                        or target_asset.size_bytes == batch_asset.payload_size_bytes
                     )
-                ):
-                    return asset.asset_id, 0, None
+                )
+
+            async def process_payload(asset: Asset) -> tuple[str, int, dict[str, Any] | None, bool]:
+                payload_entry = payloads_by_asset.get(asset.asset_id)
+                if payload_entry is None:
+                    target_asset = await datalake.get_asset(asset.asset_id)
+                    if _batch_payload_satisfied(asset, target_asset):
+                        return asset.asset_id, 0, None, True
+                    return asset.asset_id, 0, None, False
+                target_asset = await datalake.get_asset(asset.asset_id)
+                if _batch_payload_satisfied(asset, target_asset):
+                    return asset.asset_id, 0, None, True
                 data = self._decode_base64(payload_entry.data_base64)
                 payload_descriptor = ObjectPayloadDescriptor(
                     asset_id=asset.asset_id,
@@ -1837,11 +1843,12 @@ class DatalakeService(Service):
                     staged_storage_ref=ref,
                     payload_bytes=data,
                 )
-                return asset.asset_id, len(data), ref.model_dump(mode="json")
+                return asset.asset_id, len(data), ref.model_dump(mode="json"), True
 
             payload_results = await asyncio.gather(*(process_payload(asset) for asset in item.assets))
-            for asset_id, added_bytes, staged_ref in payload_results:
-                verified_asset_ids.add(asset_id)
+            for asset_id, added_bytes, staged_ref, verified in payload_results:
+                if verified:
+                    verified_asset_ids.add(asset_id)
                 bytes_completed += added_bytes
                 if staged_ref is not None:
                     session.staged_refs[asset_id] = staged_ref
@@ -1963,6 +1970,21 @@ class DatalakeService(Service):
                 ),
             )
 
+        if session.required_asset_ids and session.transfer_policy != "metadata_only":
+            missing_payload_assets: list[str] = []
+            for asset_id in sorted(set(session.required_asset_ids)):
+                row = await datalake.get_asset(asset_id)
+                if row.payload_status != "present":
+                    missing_payload_assets.append(asset_id)
+            if missing_payload_assets:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Streaming import cannot finalize while required assets lack verified payloads: "
+                        f"{missing_payload_assets}"
+                    ),
+                )
+
         writer = _ImportSessionProgressWriter(datalake, session)
         await writer.persist(
             DatasetSyncProgress(
@@ -2017,6 +2039,13 @@ class DatalakeService(Service):
         session.import_stage = "committed"
         session.metadata_graph_committed = True
         await datalake.dataset_import_session_database.update(session)
+        required_n = len(session.required_asset_ids)
+        if session.transfer_policy == "metadata_only":
+            transferred_payloads = len(session.verified_asset_ids)
+            skipped_payloads = max(required_n - transferred_payloads, 0)
+        else:
+            transferred_payloads = required_n
+            skipped_payloads = 0
         return DatasetSyncCommitResultOutput(
             result=DatasetSyncCommitResult(
                 dataset_version=dataset_version,
@@ -2025,8 +2054,8 @@ class DatalakeService(Service):
                 created_annotation_records=0,
                 created_annotation_sets=0,
                 created_datums=len(session.ordered_manifest_ids),
-                transferred_payloads=len(session.verified_asset_ids),
-                skipped_payloads=max(len(session.required_asset_ids) - len(session.verified_asset_ids), 0),
+                transferred_payloads=transferred_payloads,
+                skipped_payloads=skipped_payloads,
             )
         )
 
