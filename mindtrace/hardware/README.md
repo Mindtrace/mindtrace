@@ -27,7 +27,7 @@ The Mindtrace Hardware module provides a unified interface for managing industri
 
 The hardware module consists of five main subsystems:
 
-- **Camera System**: Multi-backend camera management (Basler, GenICam, OpenCV) with bandwidth control and liquid lens autofocus
+- **Camera System**: Multi-backend camera management (Basler, GenICam, OpenCV, Daheng) with bandwidth control and liquid lens autofocus
 - **Stereo Camera System**: 3D vision with depth measurement and point cloud generation (Basler Stereo ace)
 - **3D Scanner System**: Industrial 3D scanning with multi-component capture (Photoneo)
 - **PLC System**: Industrial PLC integration (Allen-Bradley) with tag-based operations
@@ -45,7 +45,7 @@ Each subsystem provides:
 mindtrace/hardware/
 ├── cameras/                  # 2D camera subsystem
 │   ├── core/                 # Camera, AsyncCamera, CameraManager
-│   ├── backends/             # Basler, GenICam, OpenCV, Mock
+│   ├── backends/             # Basler, GenICam, OpenCV, Daheng, Mock
 │   └── homography/           # Planar measurement system
 ├── stereo_cameras/           # 3D stereo camera subsystem
 │   ├── core/                 # StereoCamera, StereoCameraManager
@@ -78,6 +78,7 @@ pip install mindtrace-hardware
 # With specific backend support
 pip install mindtrace-hardware[cameras-basler]      # Basler cameras
 pip install mindtrace-hardware[cameras-genicam]     # GenICam cameras
+pip install mindtrace-hardware[cameras-daheng]      # Daheng cameras (Galaxy SDK)
 pip install mindtrace-hardware[cameras-all]         # All camera backends
 pip install mindtrace-hardware[stereo-all]          # Stereo cameras
 pip install mindtrace-hardware[scanners-3d]         # 3D scanners (Photoneo)
@@ -90,6 +91,7 @@ pip install mindtrace-hardware[plcs-all]            # PLC support
 |---------------|---------------|--------------|
 | Basler 2D | `pypylon` | Optional (Viewer/IP Configurator only) |
 | GenICam | `harvesters` | Required (GenTL Producer) |
+| Daheng | `iai-gxipy` | Required (Galaxy SDK — manual download, EULA) |
 | Stereo ace | `pypylon` | Required (Supplementary Package) |
 | Photoneo | `harvesters` | Required (Matrix Vision mvGenTL Producer) |
 
@@ -97,6 +99,7 @@ SDK setup commands:
 ```bash
 mindtrace-camera-basler install        # Basler Pylon tools (optional)
 mindtrace-camera-genicam install       # GenICam CTI files (required)
+mindtrace-camera-daheng install        # Daheng Galaxy SDK (required, EULA)
 mindtrace-stereo-basler install        # Stereo supplementary package (required)
 mindtrace-scanner-photoneo install     # Matrix Vision mvGenTL Producer (required)
 ```
