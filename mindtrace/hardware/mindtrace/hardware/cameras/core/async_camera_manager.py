@@ -63,6 +63,7 @@ class AsyncCameraManager(Mindtrace):
         "basler": {"checked": False, "available": False, "class": None},
         "opencv": {"checked": False, "available": False, "class": None},
         "genicam": {"checked": False, "available": False, "class": None},
+        "daheng": {"checked": False, "available": False, "class": None},
     }
 
     def __init__(self, include_mocks: bool = False, max_concurrent_captures: int | None = None, **kwargs):
@@ -127,11 +128,12 @@ class AsyncCameraManager(Mindtrace):
     def backend_info(self) -> Dict[str, Dict[str, Any]]:
         """Detailed information about all backends."""
         info: Dict[str, Dict[str, Any]] = {}
-        for backend in ["Basler", "OpenCV", "GenICam"]:
+        for backend in ["Basler", "OpenCV", "GenICam", "Daheng"]:
             available, _ = self._discover_backend(backend.lower())
             info[backend] = {"available": available, "type": "hardware", "sdk_required": True}
         if self._include_mocks:
             info["MockBasler"] = {"available": True, "type": "mock", "sdk_required": False}
+            info["MockDaheng"] = {"available": True, "type": "mock", "sdk_required": False}
         return info
 
     # ------------------------------------------------------------------ #
@@ -151,7 +153,7 @@ class AsyncCameraManager(Mindtrace):
         # --- normalise input ---
         if backends is None:
             candidates = []
-            for key, name in [("opencv", "OpenCV"), ("basler", "Basler"), ("genicam", "GenICam")]:
+            for key, name in [("opencv", "OpenCV"), ("basler", "Basler"), ("genicam", "GenICam"), ("daheng", "Daheng")]:
                 try:
                     available, _ = cls._discover_backend(key)
                     if available:
@@ -160,6 +162,7 @@ class AsyncCameraManager(Mindtrace):
                     pass
             if include_mocks:
                 candidates.append("MockBasler")
+                candidates.append("MockDaheng")
         elif isinstance(backends, str):
             candidates = [backends]
         elif isinstance(backends, list):
@@ -168,9 +171,10 @@ class AsyncCameraManager(Mindtrace):
             raise ValueError(f"Invalid backends parameter: {backends}. Must be None, str, or List[str]")
 
         # --- filter to available ---
-        valid_names = {"OpenCV", "Basler", "GenICam"}
+        valid_names = {"OpenCV", "Basler", "GenICam", "Daheng"}
         if include_mocks:
             valid_names.add("MockBasler")
+            valid_names.add("MockDaheng")
 
         resolved = []
         for name in candidates:
@@ -180,7 +184,7 @@ class AsyncCameraManager(Mindtrace):
                 except Exception:
                     pass
                 continue
-            if name == "MockBasler":
+            if name in ("MockBasler", "MockDaheng"):
                 resolved.append(name)
             else:
                 try:
@@ -309,6 +313,9 @@ class AsyncCameraManager(Mindtrace):
                 elif backend == "MockBasler":
                     mock_class = cls._get_mock_camera("basler")
                     result = mock_class.get_available_cameras()
+                elif backend == "MockDaheng":
+                    mock_class = cls._get_mock_camera("daheng")
+                    result = mock_class.get_available_cameras()
                 else:
                     available, camera_class = cls._discover_backend(backend.lower())
                     if not (available and camera_class):
@@ -362,7 +369,10 @@ class AsyncCameraManager(Mindtrace):
             if name == "MockBasler":
                 mock_class = cls._get_mock_camera("basler")
                 return name, await asyncio.to_thread(mock_class.get_available_cameras)
-            # Basler / GenICam
+            if name == "MockDaheng":
+                mock_class = cls._get_mock_camera("daheng")
+                return name, await asyncio.to_thread(mock_class.get_available_cameras)
+            # Basler / GenICam / Daheng
             available, camera_class = cls._discover_backend(name.lower())
             if available and camera_class:
                 return name, await camera_class.discover_async(include_details=details)
@@ -962,7 +972,7 @@ class AsyncCameraManager(Mindtrace):
     def _discover_all_backends(self) -> List[str]:
         """Discover all available camera backends."""
         backends = []
-        for backend_name in ["Basler", "OpenCV", "GenICam"]:
+        for backend_name in ["Basler", "OpenCV", "GenICam", "Daheng"]:
             self.logger.debug(f"Checking availability for backend '{backend_name}'")
             available, _ = self._discover_backend(backend_name)
             if available:
@@ -971,8 +981,8 @@ class AsyncCameraManager(Mindtrace):
             else:
                 self.logger.debug(f"Backend '{backend_name}' not available")
         if self._include_mocks:
-            backends.extend(["MockBasler"])
-            self.logger.debug("Including mock backends: ['MockBasler']")
+            backends.extend(["MockBasler", "MockDaheng"])
+            self.logger.debug("Including mock backends: ['MockBasler', 'MockDaheng']")
         return backends
 
     def _parse_camera_name(self, camera_name: str) -> Tuple[str, str]:
@@ -998,7 +1008,7 @@ class AsyncCameraManager(Mindtrace):
             kwargs["retrieve_retry_count"] = self._retrieve_retry_count
 
         try:
-            if backend in ["Basler", "OpenCV", "GenICam"]:
+            if backend in ["Basler", "OpenCV", "GenICam", "Daheng"]:
                 available, camera_class = self._discover_backend(backend.lower())
                 if not available or not camera_class:
                     self.logger.error(f"Requested backend '{backend}' is not available or has no class")
@@ -1030,6 +1040,26 @@ class AsyncCameraManager(Mindtrace):
                         if fixture_paths:
                             kwargs["mock_image_paths"] = fixture_paths
                     w, h = cam_cfg.mock_basler_width, cam_cfg.mock_basler_height
+                    if w > 0 and h > 0:
+                        kwargs.setdefault("synthetic_width", w)
+                        kwargs.setdefault("synthetic_height", h)
+                elif backend_name == "daheng":
+                    cam_cfg = self._hardware_config.cameras
+                    if "mock_image_paths" not in kwargs:
+                        fixture_paths: list[str] = []
+                        mapped = cam_cfg.mock_daheng_image_map.get(device_name)
+                        if mapped:
+                            fixture_paths = [mapped]
+                        elif cam_cfg.mock_daheng_image_dir:
+                            base = Path(cam_cfg.mock_daheng_image_dir)
+                            for ext in (".png", ".jpg", ".jpeg"):
+                                candidate = str(base / f"{device_name}{ext}")
+                                if Path(candidate).exists():
+                                    fixture_paths = [candidate]
+                                    break
+                        if fixture_paths:
+                            kwargs["mock_image_paths"] = fixture_paths
+                    w, h = cam_cfg.mock_daheng_width, cam_cfg.mock_daheng_height
                     if w > 0 and h > 0:
                         kwargs.setdefault("synthetic_width", w)
                         kwargs.setdefault("synthetic_height", h)
@@ -1074,6 +1104,12 @@ class AsyncCameraManager(Mindtrace):
                 cache["available"] = GENICAM_AVAILABLE
                 cache["class"] = GenICamCameraBackend if GENICAM_AVAILABLE else None
 
+            elif cache_key == "daheng":
+                from mindtrace.hardware.cameras.backends.daheng import DAHENG_AVAILABLE, DahengCameraBackend
+
+                cache["available"] = DAHENG_AVAILABLE
+                cache["class"] = DahengCameraBackend if DAHENG_AVAILABLE else None
+
             if cache["available"]:
                 try:
                     cls.logger.debug(f"{backend_name} backend loaded successfully")
@@ -1103,6 +1139,12 @@ class AsyncCameraManager(Mindtrace):
                 )
 
                 return MockBaslerCameraBackend
+            elif backend_name.lower() == "daheng":
+                from mindtrace.hardware.cameras.backends.daheng.mock_daheng_camera_backend import (
+                    MockDahengCameraBackend,
+                )
+
+                return MockDahengCameraBackend
             else:
                 raise CameraInitializationError(f"Mock backend not available for {backend_name}")
         except ImportError as e:

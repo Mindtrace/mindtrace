@@ -132,6 +132,19 @@ class MockDahengCameraBackend(CameraBackend):
         self.synthetic_pattern: str = str(backend_kwargs.get("synthetic_pattern", "auto")).lower()
         self.synthetic_overlay_text: bool = bool(backend_kwargs.get("synthetic_overlay_text", True))
 
+        # Optional file-backed fixtures for deterministic mock frames (mirrors
+        # MockBasler). Populated by the manager from
+        # ``cam_cfg.mock_daheng_image_dir`` / ``mock_daheng_image_map`` so the
+        # docker-compose ``MINDTRACE_HW_CAMERA_MOCK_DAHENG_IMAGE_DIR`` env var
+        # produces the same per-device deterministic frames here as it does
+        # for the Basler mock.
+        raw_paths = backend_kwargs.get("mock_image_paths")
+        fixture_paths: List[str] = []
+        if isinstance(raw_paths, list):
+            fixture_paths.extend([p for p in raw_paths if isinstance(p, str) and p])
+        self._fixture_image_paths: List[str] = fixture_paths
+        self._fixture_images: Optional[List[np.ndarray]] = None
+
         syn_w = backend_kwargs.get("synthetic_width")
         syn_h = backend_kwargs.get("synthetic_height")
         self.synthetic_width = self.roi["width"]
@@ -521,6 +534,44 @@ class MockDahengCameraBackend(CameraBackend):
         except Exception as e:
             self.logger.error(f"Error closing mock camera '{self.camera_name}': {str(e)}")
 
+    def _get_fixture_image(self, *, width: int, height: int) -> Optional[np.ndarray]:
+        """Return a resized fixture image if configured; otherwise None."""
+        if not self._fixture_image_paths:
+            return None
+
+        if self._fixture_images is None:
+            images: List[np.ndarray] = []
+            for path in self._fixture_image_paths:
+                try:
+                    if not os.path.exists(path):
+                        self.logger.warning(
+                            f"Mock Daheng fixture image not found for '{self.camera_name}': {path}. Falling back to synthetic."
+                        )
+                        continue
+                    with open(path, "rb") as f:
+                        encoded = np.frombuffer(f.read(), dtype=np.uint8)
+                    img = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
+                    if img is None or img.size == 0:
+                        self.logger.warning(
+                            f"Mock Daheng fixture image unreadable for '{self.camera_name}': {path}. Falling back to synthetic."
+                        )
+                        continue
+                    images.append(img)
+                except Exception as e:
+                    self.logger.warning(
+                        f"Mock Daheng fixture image failed to load for '{self.camera_name}': {path}. Error: {e}. Falling back to synthetic."
+                    )
+            self._fixture_images = images
+
+        if not self._fixture_images:
+            return None
+
+        idx = self.image_counter % len(self._fixture_images)
+        base = self._fixture_images[idx]
+        if base.shape[1] != width or base.shape[0] != height:
+            return cv2.resize(base, (width, height), interpolation=cv2.INTER_AREA)
+        return base.copy()
+
     def _generate_synthetic_image(self) -> np.ndarray:
         """Generate synthetic test image.
 
@@ -530,6 +581,10 @@ class MockDahengCameraBackend(CameraBackend):
         width = self.roi["width"]
         height = self.roi["height"]
         try:
+            fixture = self._get_fixture_image(width=width, height=height)
+            if fixture is not None:
+                return fixture
+
             x_coords = np.arange(width)
             y_coords = np.arange(height)
             X, Y = np.meshgrid(x_coords, y_coords)
