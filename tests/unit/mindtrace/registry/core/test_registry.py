@@ -2823,6 +2823,135 @@ def test_cache_initialization_remote_backend(temp_registry_dir):
     assert registry._cache is not None
     assert isinstance(registry._cache.backend, LocalRegistryBackend)
     assert registry._cache.version_objects == registry.version_objects
+    assert registry._cache_max_entries == 1024
+
+
+def test_cache_lru_prunes_to_max_entries(temp_registry_dir):
+    """Registry cache LRU pruning keeps only the configured number of entries."""
+    mock_backend = Mock(spec=RegistryBackend)
+    mock_backend.uri = Path(temp_registry_dir) / "remote"
+    mock_backend.registered_materializers = Mock(return_value={})
+    mock_backend.fetch_registry_metadata = Mock(return_value={})
+
+    registry = Registry(backend=mock_backend, version_objects=True, cache_max_entries=2)
+    registry._cache.save("test:a", "a", version="1.0.0")
+    registry._cache.save("test:b", "b", version="1.0.0")
+    registry._cache.save("test:c", "c", version="1.0.0")
+
+    with patch("mindtrace.registry.core.registry.time.time", side_effect=[1.0, 2.0, 3.0]):
+        registry._touch_cache_entry("test:a", "1.0.0")
+        registry._touch_cache_entry("test:b", "1.0.0")
+        registry._touch_cache_entry("test:c", "1.0.0")
+
+    registry._prune_cache_lru()
+
+    assert not registry._cache.has_object("test:a", "1.0.0")
+    assert registry._cache.has_object("test:b", "1.0.0")
+    assert registry._cache.has_object("test:c", "1.0.0")
+
+
+def test_cache_lru_recency_update_preserves_cache_hit(temp_registry_dir):
+    """Touching an existing cache entry moves it to the most-recently-used position."""
+    mock_backend = Mock(spec=RegistryBackend)
+    mock_backend.uri = Path(temp_registry_dir) / "remote"
+    mock_backend.registered_materializers = Mock(return_value={})
+    mock_backend.fetch_registry_metadata = Mock(return_value={})
+
+    registry = Registry(backend=mock_backend, version_objects=True, cache_max_entries=2)
+    registry._cache.save("test:a", "a", version="1.0.0")
+    registry._cache.save("test:b", "b", version="1.0.0")
+    registry._cache.save("test:c", "c", version="1.0.0")
+
+    with patch("mindtrace.registry.core.registry.time.time", side_effect=[1.0, 2.0, 3.0, 4.0]):
+        registry._touch_cache_entry("test:a", "1.0.0")
+        registry._touch_cache_entry("test:b", "1.0.0")
+        registry._touch_cache_entry("test:a", "1.0.0")
+        registry._touch_cache_entry("test:c", "1.0.0")
+
+    registry._prune_cache_lru()
+
+    assert registry._cache.has_object("test:a", "1.0.0")
+    assert not registry._cache.has_object("test:b", "1.0.0")
+    assert registry._cache.has_object("test:c", "1.0.0")
+
+
+def test_cache_lru_versions_are_independent_entries(temp_registry_dir):
+    """Different versions of the same object count as distinct LRU entries."""
+    mock_backend = Mock(spec=RegistryBackend)
+    mock_backend.uri = Path(temp_registry_dir) / "remote"
+    mock_backend.registered_materializers = Mock(return_value={})
+    mock_backend.fetch_registry_metadata = Mock(return_value={})
+
+    registry = Registry(backend=mock_backend, version_objects=True, cache_max_entries=2)
+    registry._cache.save("test:obj", "v1", version="1.0.0")
+    registry._cache.save("test:obj", "v2", version="2.0.0")
+    registry._cache.save("test:other", "v1", version="1.0.0")
+
+    with patch("mindtrace.registry.core.registry.time.time", side_effect=[1.0, 2.0, 3.0]):
+        registry._touch_cache_entry("test:obj", "1.0.0")
+        registry._touch_cache_entry("test:obj", "2.0.0")
+        registry._touch_cache_entry("test:other", "1.0.0")
+
+    registry._prune_cache_lru()
+
+    assert not registry._cache.has_object("test:obj", "1.0.0")
+    assert registry._cache.has_object("test:obj", "2.0.0")
+    assert registry._cache.has_object("test:other", "1.0.0")
+
+
+def test_clear_cache_removes_lru_index(temp_registry_dir):
+    """clear_cache removes cached objects and the LRU sidecar."""
+    mock_backend = Mock(spec=RegistryBackend)
+    mock_backend.uri = Path(temp_registry_dir) / "remote"
+    mock_backend.registered_materializers = Mock(return_value={})
+    mock_backend.fetch_registry_metadata = Mock(return_value={})
+
+    registry = Registry(backend=mock_backend, version_objects=True, cache_max_entries=2)
+    registry._cache.save("test:obj", "value", version="1.0.0")
+    registry._touch_cache_entry("test:obj", "1.0.0")
+    assert registry._cache_lru_index_path().exists()
+
+    registry.clear_cache()
+
+    assert not registry._cache.has_object("test:obj", "1.0.0")
+    assert not registry._cache_lru_index_path().exists()
+
+
+def test_cache_lru_ignored_for_uncached_registries(temp_registry_dir):
+    """cache_max_entries does not enable caching for local or explicitly uncached registries."""
+    local_registry = Registry(backend=temp_registry_dir, cache_max_entries=1)
+    assert local_registry._cached is False
+    assert local_registry._cache_max_entries == 1
+
+    mock_backend = Mock(spec=RegistryBackend)
+    mock_backend.uri = Path(temp_registry_dir) / "remote"
+    mock_backend.registered_materializers = Mock(return_value={})
+    mock_backend.fetch_registry_metadata = Mock(return_value={})
+
+    uncached_remote = Registry(backend=mock_backend, use_cache=False, cache_max_entries=1)
+    assert uncached_remote._cached is False
+    assert uncached_remote._cache_max_entries == 1
+
+
+def test_cache_lru_corrupt_index_does_not_break_pruning(temp_registry_dir):
+    """A corrupt LRU sidecar is ignored and rebuilt from cache contents."""
+    mock_backend = Mock(spec=RegistryBackend)
+    mock_backend.uri = Path(temp_registry_dir) / "remote"
+    mock_backend.registered_materializers = Mock(return_value={})
+    mock_backend.fetch_registry_metadata = Mock(return_value={})
+
+    registry = Registry(backend=mock_backend, version_objects=True, cache_max_entries=1)
+    registry._cache.save("test:a", "a", version="1.0.0")
+    registry._cache.save("test:b", "b", version="1.0.0")
+    registry._cache_lru_index_path().write_text("not json")
+
+    registry._prune_cache_lru()
+
+    remaining = [
+        registry._cache.has_object("test:a", "1.0.0"),
+        registry._cache.has_object("test:b", "1.0.0"),
+    ]
+    assert remaining.count(True) == 1
 
 
 def _make_op_results(*results: OpResult) -> OpResults:
