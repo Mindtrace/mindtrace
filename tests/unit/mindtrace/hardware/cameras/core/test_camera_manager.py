@@ -101,6 +101,18 @@ def test_open_default_no_cameras_raises(monkeypatch):
     except Exception:
         pass
 
+    try:
+        from mindtrace.hardware.cameras.backends.daheng.daheng_camera_backend import DahengCameraBackend
+
+        monkeypatch.setattr(
+            DahengCameraBackend,
+            "get_available_cameras",
+            staticmethod(lambda include_details=False: {} if include_details else []),
+            raising=False,
+        )
+    except Exception:
+        pass
+
     # Use include_mocks=True but mock the mock backend to return empty too
     mgr = CameraManager(include_mocks=True)
 
