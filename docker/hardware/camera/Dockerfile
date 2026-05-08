@@ -279,6 +279,17 @@ RUN ldconfig
 # Copy virtual environment with all dependencies
 COPY --from=application /workspace/.venv /workspace/.venv
 
+# Daheng's published ``iai-gxipy`` wheel (current 2.0.x) imports
+# ``numpy.compat.long``, which numpy >= 2.0 removed. The symbol is only used
+# at module top-level for ``INT_TYPE = (int, long)`` — replace with a no-op
+# shim so import succeeds. Keep the patch idempotent so it's safe on every
+# rebuild and a no-op when ``iai-gxipy`` isn't installed (no Daheng build).
+RUN if [ -f /workspace/.venv/lib/python3.12/site-packages/gxipy/DeviceManager.py ]; then \
+        sed -i 's/^from numpy.compat import long$/long = int  # py3+numpy>=2 compat shim/' \
+            /workspace/.venv/lib/python3.12/site-packages/gxipy/DeviceManager.py && \
+        echo "==> patched gxipy/DeviceManager.py for numpy>=2"; \
+    fi
+
 # Copy application code
 COPY --from=application /workspace/mindtrace /workspace/mindtrace
 
