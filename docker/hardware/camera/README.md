@@ -26,6 +26,7 @@ curl http://localhost:8002/health
 |----------|---------|-------------|
 | `INSTALL_BASLER` | `false` | Include Basler Pylon SDK 8.1.0 |
 | `INSTALL_GENICAM` | `false` | Include GenICam/Harvesters support |
+| `INSTALL_DAHENG` | `false` | Include Daheng `iai-gxipy` Python wheel. Native Galaxy SDK is **not** bundled (EULA); install at runtime via `mindtrace-camera-daheng install` or mount pre-installed libs into `/usr/lib/`. |
 
 ## Run Examples
 
