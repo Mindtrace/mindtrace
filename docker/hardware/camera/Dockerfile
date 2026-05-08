@@ -125,13 +125,27 @@ RUN if [ "$INSTALL_GENICAM" = "true" ]; then \
     fi
 
 # Install Daheng Galaxy SDK (native libraries required by gxipy Python package)
-# Note: Galaxy SDK requires manual download from Daheng website due to EULA.
-# Pre-download the Galaxy SDK .run installer and place it in docker/hardware/camera/
-# or install at runtime via: mindtrace-camera-daheng install
+# Mirror Daheng's release on a Mindtrace-controlled URL — same pattern as Basler
+# (basler-sdk on github.com/Mindtrace/basler-sdk/releases). Override the URL via
+# ``--build-arg GALAXY_SDK_URL=...`` for local builds; default below assumes a
+# ``Mindtrace/daheng-sdk`` release once that mirror is set up.
+ARG GALAXY_SDK_URL="https://github.com/Mindtrace/daheng-sdk/releases/download/galaxy_sdk_linux/Galaxy_Linux-x86_Gige-U3_32bits-64bits_2.4.2507.9231.zip"
 RUN if [ "$INSTALL_DAHENG" = "true" ]; then \
-        echo "==> Daheng Galaxy SDK will be configured at runtime via setup script"; \
-        echo "==> Run 'mindtrace-camera-daheng install' after container start, or"; \
-        echo "==> mount pre-installed Galaxy SDK libs into /usr/lib/"; \
+        echo "==> Installing Daheng Galaxy SDK from $GALAXY_SDK_URL"; \
+        DEBIAN_FRONTEND=noninteractive apt-get update && \
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends unzip && \
+        rm -rf /var/lib/apt/lists/* && \
+        mkdir -p /tmp/galaxy && cd /tmp/galaxy && \
+        wget -q -O galaxy.zip "$GALAXY_SDK_URL" && \
+        unzip -q galaxy.zip && rm galaxy.zip && \
+        EXTRACTED=$(ls -d */ | head -1) && cd "$EXTRACTED" && \
+        chmod +x Galaxy_camera.run && \
+        # The Galaxy installer prompts Y/n for each step and defaults to Yes
+        # on empty input — pipe blank lines to drive it unattended.
+        yes '' | bash Galaxy_camera.run && \
+        ldconfig && \
+        cd / && rm -rf /tmp/galaxy && \
+        echo "==> Daheng Galaxy SDK installed successfully"; \
     fi
 
 # =============================================================================
