@@ -109,6 +109,80 @@ def test_integration_batch_load_miss_repops_cache(cached_registry_large):
     assert reg._cache.has_object("integration:batch:miss", "1.0.0")
 
 
+def test_integration_batch_load_misses_prune_to_buffered_target(s3_backend: S3RegistryBackend):
+    """Read-populated caches prune after batch misses, not just explicit saves."""
+    reg = Registry(
+        backend=s3_backend,
+        version_objects=True,
+        mutable=True,
+        use_cache=True,
+        cache_max_entries=4,
+        cache_prune_buffer=2,
+    )
+    names = [f"integration:batch-prune:{idx}" for idx in range(6)]
+    for name in names:
+        reg.save(name, {"name": name}, version="1.0.0")
+
+    reg.clear_cache()
+    out = reg.load(names, version=["1.0.0"] * len(names), verify=VerifyLevel.INTEGRITY)
+
+    assert isinstance(out, BatchResult)
+    assert out.failure_count == 0
+    assert out.results == [{"name": name} for name in names]
+    assert len(_cached_name_versions(reg)) == 2
+
+
+def test_integration_single_load_misses_amortize_pruning_with_buffer(s3_backend: S3RegistryBackend):
+    """Bursts of single-object read misses prune below max, leaving buffer for later misses."""
+    reg = Registry(
+        backend=s3_backend,
+        version_objects=True,
+        mutable=True,
+        use_cache=True,
+        cache_max_entries=4,
+        cache_prune_buffer=2,
+    )
+    names = [f"integration:single-prune:{idx}" for idx in range(5)]
+    for name in names:
+        reg.save(name, {"name": name}, version="1.0.0")
+
+    reg.clear_cache()
+    for name in names:
+        assert reg.load(name, version="1.0.0", verify=VerifyLevel.INTEGRITY) == {"name": name}
+
+    cached = _cached_name_versions(reg)
+    assert len(cached) == 2
+    assert (names[-1], "1.0.0") in cached
+
+
+def test_integration_process_cache_scope_uses_independent_local_cache(s3_backend: S3RegistryBackend):
+    """Process-scoped registries do not share the default backend cache directory."""
+    shared = Registry(
+        backend=s3_backend,
+        version_objects=True,
+        mutable=True,
+        use_cache=True,
+        cache_scope="shared",
+    )
+    process = Registry(
+        backend=s3_backend,
+        version_objects=True,
+        mutable=True,
+        use_cache=True,
+        cache_scope="process",
+    )
+    name = "integration:scope:process"
+    shared.save(name, {"scope": "shared"}, version="1.0.0")
+
+    shared.clear_cache()
+    process.clear_cache()
+    assert shared._cache.backend.uri != process._cache.backend.uri
+
+    assert process.load(name, version="1.0.0", verify=VerifyLevel.INTEGRITY) == {"scope": "shared"}
+    assert process._cache.has_object(name, "1.0.0")
+    assert not shared._cache.has_object(name, "1.0.0")
+
+
 def test_integration_clear_cache_removes_sidecar_and_artifacts(cached_registry_large):
     """``clear_cache`` drops cached blobs and removes the LRU index file."""
     reg = cached_registry_large
