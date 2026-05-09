@@ -2922,6 +2922,22 @@ class TestRegistryCacheLRU:
         with pytest.raises(ValueError, match="cache_scope"):
             self.make_remote_registry(temp_registry_dir, cache_scope="worker")
 
+    def test_shared_cache_file_lock_degrades_when_platform_locking_unavailable(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_scope="shared")
+
+        with patch("mindtrace.registry.core.registry._fcntl", None):
+            with patch("mindtrace.registry.core.registry._msvcrt", None):
+                with registry._cache_lru_file_lock():
+                    assert registry._cache_lru_lock_path().exists()
+
+    def test_process_cache_scope_skips_file_lock_creation(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_scope="process")
+
+        with registry._cache_lru_file_lock():
+            pass
+
+        assert not registry._cache_lru_lock_path().exists()
+
     def test_none_cache_max_entries_disables_lru_sidecar_and_pruning(self, temp_registry_dir):
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=None)
         entries = [("test:a", "1.0.0"), ("test:b", "1.0.0"), ("test:c", "1.0.0")]
