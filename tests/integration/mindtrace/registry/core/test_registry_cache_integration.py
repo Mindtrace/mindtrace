@@ -46,6 +46,7 @@ def cached_registry_lru_two(s3_backend: S3RegistryBackend) -> Registry:
         mutable=True,
         use_cache=True,
         cache_max_entries=2,
+        cache_prune_buffer=0,
     )
 
 
