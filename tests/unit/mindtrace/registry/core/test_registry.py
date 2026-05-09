@@ -3163,6 +3163,81 @@ class TestRegistryCacheLRU:
 
         pruner.assert_not_called()
 
+    def test_maybe_prune_invokes_prune_when_estimate_exceeds_max(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=4)
+        registry._cache_lru_estimated_entries = 5
+
+        with patch.object(registry, "_prune_cache_lru") as pruner:
+            registry._maybe_prune_cache_lru()
+
+        pruner.assert_called_once_with()
+
+    def test_single_load_miss_updates_estimate_without_pruning_under_max(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=4)
+        registry._cache_lru_estimated_entries = 1
+        registry._remote.load = Mock(return_value="fresh")
+
+        with patch.object(registry, "_prune_cache_lru") as pruner:
+            out = registry._load_single_cached("test:miss", "1.0.0", verify=VerifyLevel.INTEGRITY)
+
+        assert out == "fresh"
+        assert registry._cache.load("test:miss", "1.0.0") == "fresh"
+        assert registry._cache_lru_estimated_entries == 2
+        pruner.assert_not_called()
+
+    def test_single_load_miss_prunes_when_estimate_exceeds_max(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
+        registry._cache_lru_estimated_entries = 2
+        registry._remote.load = Mock(return_value="fresh")
+
+        with patch.object(registry, "_prune_cache_lru") as pruner:
+            out = registry._load_single_cached("test:miss", "1.0.0", verify=VerifyLevel.INTEGRITY)
+
+        assert out == "fresh"
+        assert registry._cache_lru_estimated_entries == 3
+        pruner.assert_called_once_with()
+
+    def test_batch_load_misses_note_entries_and_prune_once(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=3)
+        registry._cache_lru_estimated_entries = 2
+        registry._remote._resolve_load_version = Mock(side_effect=lambda name, version: version)
+        remote_result = BatchResult()
+        remote_result.results = ["fresh-a", "fresh-b"]
+        remote_result.succeeded = [("test:a", "1.0.0"), ("test:b", "1.0.0")]
+        registry._remote.load = Mock(return_value=remote_result)
+
+        with patch.object(registry, "_prune_cache_lru") as pruner:
+            out = registry._load_batch_cached(["test:a", "test:b"], ["1.0.0", "1.0.0"], verify=VerifyLevel.INTEGRITY)
+
+        assert out.results == ["fresh-a", "fresh-b"]
+        assert registry._cache_lru_estimated_entries == 4
+        pruner.assert_called_once_with()
+
+    def test_prune_noops_below_max_but_flushes_dirty_touches(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=4)
+        entries = [("test:a", "1.0.0"), ("test:b", "1.0.0")]
+        self.save_cache_entries(registry, entries)
+        with patch("mindtrace.registry.core.registry.time.time", side_effect=_patch_registry_time_sequence(10.0, 20.0)):
+            for name, version in entries:
+                registry._touch_cache_entry(name, version)
+
+        registry._prune_cache_lru()
+
+        assert self.cache_names(registry) == set(entries)
+        assert registry._cache_lru_dirty == {}
+        assert registry._cache_lru_estimated_entries == 2
+        index = registry._load_cache_lru_index()
+        assert index["entries"][Registry._cache_lru_key("test:a", "1.0.0")]["last_accessed"] == 10.0
+        assert index["entries"][Registry._cache_lru_key("test:b", "1.0.0")]["last_accessed"] == 20.0
+
+    def test_remove_cache_lru_entries_clears_dirty_without_sidecar_row(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
+        registry._touch_cache_entry("test:dirty", "1.0.0")
+
+        registry._remove_cache_lru_entries([("test:dirty", "1.0.0")])
+
+        assert registry._cache_lru_dirty == {}
+
     def test_prune_reduces_to_max_minus_buffer_and_updates_estimate(self, temp_registry_dir):
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=4, cache_prune_buffer=2)
         entries = [(f"test:{idx}", "1.0.0") for idx in range(6)]
