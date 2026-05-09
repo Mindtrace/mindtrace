@@ -7,9 +7,15 @@ and transparently adds local caching when a remote backend is used.
 
 import hashlib
 import json
+import os
+import threading
 import time
+import uuid
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Type, overload
+from typing import Any, Dict, List, Literal, Type, overload
+
+import fcntl
 
 from zenml.materializers.base_materializer import BaseMaterializer
 
@@ -97,6 +103,8 @@ class Registry(Mindtrace):
         versions_cache_ttl: float = 60.0,
         use_cache: bool = True,
         cache_max_entries: int | None = 1024,
+        cache_prune_buffer: int | None = None,
+        cache_scope: Literal["shared", "process"] = "shared",
         **kwargs,
     ):
         """Initialize the registry.
@@ -116,6 +124,12 @@ class Registry(Mindtrace):
             cache_max_entries: Maximum number of concrete object versions to keep
                 in the local cache for remote backends. Defaults to ``1024``.
                 Set to ``None`` to disable automatic LRU pruning.
+            cache_prune_buffer: Number of entries below ``cache_max_entries`` to
+                prune back to when the cache exceeds its maximum. Defaults to
+                ``min(max(cache_max_entries // 4, 1), 1024)``.
+            cache_scope: ``"shared"`` reuses one cache directory per remote backend
+                URI across processes. ``"process"`` uses a process-specific cache
+                directory to avoid cross-process cache/index contention.
             **kwargs: Additional arguments forwarded to the backend.
         """
         # Registry is a library-facing API; avoid leaking debug records into
@@ -124,9 +138,26 @@ class Registry(Mindtrace):
 
         super().__init__(**kwargs)
 
-        if cache_max_entries is not None and cache_max_entries < 0:
-            raise ValueError("cache_max_entries must be >= 0 or None")
+        if cache_max_entries is not None and cache_max_entries <= 0:
+            raise ValueError("cache_max_entries must be > 0 or None")
+        if cache_scope not in ("shared", "process"):
+            raise ValueError("cache_scope must be 'shared' or 'process'")
         self._cache_max_entries = cache_max_entries
+        self._cache_scope = cache_scope
+        if cache_max_entries is None:
+            self._cache_prune_buffer = 0
+        else:
+            resolved_buffer = (
+                min(max(cache_max_entries // 4, 1), 1024)
+                if cache_prune_buffer is None
+                else cache_prune_buffer
+            )
+            if resolved_buffer < 0:
+                raise ValueError("cache_prune_buffer must be >= 0")
+            self._cache_prune_buffer = min(resolved_buffer, cache_max_entries - 1)
+        self._cache_lru_lock = threading.RLock()
+        self._cache_lru_dirty: dict[str, dict[str, Any]] = {}
+        self._cache_lru_estimated_entries: int | None = None
 
         is_remote = backend is not None and not isinstance(backend, (str, Path, LocalRegistryBackend))
 
@@ -140,7 +171,7 @@ class Registry(Mindtrace):
                 versions_cache_ttl=versions_cache_ttl,
                 **kwargs,
             )
-            cache_dir = self._get_cache_dir(self._remote.backend.uri)
+            cache_dir = self._get_cache_dir(self._remote.backend.uri, cache_scope=cache_scope)
             self._cache: _RegistryCore = _RegistryCore(
                 backend=LocalRegistryBackend(uri=cache_dir),
                 version_objects=self._remote.version_objects,
@@ -273,20 +304,31 @@ class Registry(Mindtrace):
     # ─────────────────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _get_cache_dir(backend_uri: str | Path, config: Dict[str, Any] | None = None) -> Path:
+    def _get_cache_dir(
+        backend_uri: str | Path,
+        config: Dict[str, Any] | None = None,
+        cache_scope: Literal["shared", "process"] = "shared",
+    ) -> Path:
         """Generate a deterministic cache directory path based on backend URI hash.
 
         Args:
             backend_uri: URI of the remote backend.
             config: Optional config dict. If ``None``, uses the class-level config.
+            cache_scope: ``"shared"`` uses one cache per backend URI. ``"process"``
+                adds the current process id to avoid cross-process sharing.
         """
+        if cache_scope not in ("shared", "process"):
+            raise ValueError("cache_scope must be 'shared' or 'process'")
         uri_hash = hashlib.sha256(str(backend_uri).encode()).hexdigest()[:16]
         if config is None:
             from mindtrace.core.config import CoreConfig
 
             config = CoreConfig()
         temp_dir = Path(config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve()
-        return temp_dir / f"registry_cache_{uri_hash}"
+        cache_dir = temp_dir / f"registry_cache_{uri_hash}"
+        if cache_scope == "process":
+            cache_dir = cache_dir.with_name(f"{cache_dir.name}_pid_{os.getpid()}")
+        return cache_dir
 
     def _is_cache_stale(self, name: str, version: str | None) -> bool:
         """Check if a cached item is stale by comparing hashes with remote."""
@@ -350,11 +392,34 @@ class Registry(Mindtrace):
         if self._cached:
             self._cache.clear()
             self._clear_cache_lru_index()
+            with self._cache_lru_lock:
+                self._cache_lru_dirty.clear()
+                self._cache_lru_estimated_entries = 0
             self.logger.debug("Cleared local cache.")
 
     def _cache_lru_index_path(self) -> Path:
         """Return the sidecar path used to persist cache LRU recency."""
         return Path(self._cache.backend.uri) / ".registry_cache_lru.json"
+
+    def _cache_lru_lock_path(self) -> Path:
+        """Return the lock file path used for shared cache LRU maintenance."""
+        return self._cache_lru_index_path().with_suffix(".lock")
+
+    @contextmanager
+    def _cache_lru_file_lock(self):
+        """Serialize sidecar/prune maintenance across processes for shared caches."""
+        if not self._cached or self._cache_scope != "shared":
+            yield
+            return
+
+        lock_path = self._cache_lru_lock_path()
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(lock_path, "a+") as lock_file:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
 
     @staticmethod
     def _cache_lru_key(name: str, version: str) -> str:
@@ -386,14 +451,22 @@ class Registry(Mindtrace):
             return
 
         index_path = self._cache_lru_index_path()
+        tmp_path: Path | None = None
         try:
             index_path.parent.mkdir(parents=True, exist_ok=True)
-            tmp_path = index_path.with_suffix(f"{index_path.suffix}.tmp")
-            with open(tmp_path, "w") as f:
+            tmp_path = index_path.with_name(
+                f"{index_path.name}.{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex}.tmp"
+            )
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump({"version": 1, "entries": index.get("entries", {})}, f, sort_keys=True)
             tmp_path.replace(index_path)
         except Exception as e:
             self.logger.debug(f"Could not save cache LRU index {index_path}: {e}")
+            if tmp_path is not None:
+                try:
+                    tmp_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
 
     def _clear_cache_lru_index(self) -> None:
         """Remove the cache LRU sidecar if it exists."""
@@ -429,66 +502,101 @@ class Registry(Mindtrace):
         return index
 
     def _touch_cache_entry(self, name: str, version: str) -> None:
-        """Mark a concrete cached object version as recently used."""
+        """Mark a concrete cached object version as recently used in memory."""
         if not self._cached or self._cache_max_entries is None:
             return
 
-        index = self._load_cache_lru_index()
-        index["entries"][self._cache_lru_key(name, version)] = {
-            "name": name,
-            "version": version,
-            "last_accessed": time.time(),
-        }
-        self._save_cache_lru_index(index)
+        with self._cache_lru_lock:
+            self._cache_lru_dirty[self._cache_lru_key(name, version)] = {
+                "name": name,
+                "version": version,
+                "last_accessed": time.time(),
+            }
+
+    def _note_cache_entries_added(self, count: int) -> None:
+        """Update the approximate cache entry count after successful cache writes."""
+        if not self._cached or self._cache_max_entries is None or count <= 0:
+            return
+        with self._cache_lru_lock:
+            if self._cache_lru_estimated_entries is not None:
+                self._cache_lru_estimated_entries += count
+
+    def _maybe_prune_cache_lru(self) -> None:
+        """Prune only when the estimated cache size exceeds the configured maximum."""
+        if not self._cached or self._cache_max_entries is None:
+            return
+        with self._cache_lru_lock:
+            if (
+                self._cache_lru_estimated_entries is not None
+                and self._cache_lru_estimated_entries <= self._cache_max_entries
+            ):
+                return
+        self._prune_cache_lru()
 
     def _remove_cache_lru_entries(self, entries: List[tuple[str, str]]) -> None:
         """Remove concrete object versions from the cache LRU index."""
         if not self._cached or self._cache_max_entries is None or not entries:
             return
 
-        index = self._load_cache_lru_index()
-        for name, version in entries:
-            index["entries"].pop(self._cache_lru_key(name, version), None)
-        self._save_cache_lru_index(index)
+        with self._cache_lru_lock:
+            with self._cache_lru_file_lock():
+                index = self._load_cache_lru_index()
+                removed = 0
+                for name, version in entries:
+                    key = self._cache_lru_key(name, version)
+                    if index["entries"].pop(key, None) is not None:
+                        removed += 1
+                    self._cache_lru_dirty.pop(key, None)
+                self._save_cache_lru_index(index)
+                if self._cache_lru_estimated_entries is not None and removed:
+                    self._cache_lru_estimated_entries = max(0, self._cache_lru_estimated_entries - removed)
 
     def _prune_cache_lru(self) -> None:
         """Evict least-recently-used cache entries until max entry count is satisfied."""
         if not self._cached or self._cache_max_entries is None:
             return
 
-        index = self._load_cache_lru_index()
-        if not index["entries"]:
-            index = self._rebuild_cache_lru_index()
+        with self._cache_lru_lock:
+            with self._cache_lru_file_lock():
+                sidecar_index = self._load_cache_lru_index()
+                rebuilt_index = self._rebuild_cache_lru_index()
+                dirty_entries = dict(self._cache_lru_dirty)
 
-        live_entries: dict[str, dict[str, Any]] = {}
-        for key, entry in index["entries"].items():
-            name = entry.get("name")
-            version = entry.get("version")
-            if not isinstance(name, str) or not isinstance(version, str):
-                continue
-            try:
-                if self._cache.has_object(name, version):
+                live_entries: dict[str, dict[str, Any]] = {}
+                for key, rebuilt_entry in rebuilt_index["entries"].items():
+                    entry = dict(rebuilt_entry)
+                    sidecar_entry = sidecar_index["entries"].get(key)
+                    if isinstance(sidecar_entry, dict) and isinstance(sidecar_entry.get("last_accessed"), (int, float)):
+                        entry["last_accessed"] = sidecar_entry["last_accessed"]
+                    dirty_entry = dirty_entries.get(key)
+                    if isinstance(dirty_entry, dict) and isinstance(dirty_entry.get("last_accessed"), (int, float)):
+                        entry["last_accessed"] = dirty_entry["last_accessed"]
                     live_entries[key] = entry
-            except Exception:
-                continue
 
-        pruned = 0
-        sorted_entries = sorted(live_entries.items(), key=lambda item: item[1].get("last_accessed", 0.0))
-        while len(sorted_entries) > self._cache_max_entries:
-            key, entry = sorted_entries.pop(0)
-            name = entry["name"]
-            version = entry["version"]
-            try:
-                self._cache.delete(name, version)
-                live_entries.pop(key, None)
-                pruned += 1
-            except Exception as e:
-                self.logger.warning(f"Error pruning cached object {name}@{version}: {e}")
-                live_entries.pop(key, None)
+                pruned = 0
+                target_entries = self._cache_max_entries
+                if len(live_entries) > self._cache_max_entries:
+                    target_entries = max(self._cache_max_entries - self._cache_prune_buffer, 0)
 
-        self._save_cache_lru_index({"version": 1, "entries": live_entries})
-        if pruned:
-            self.logger.debug(f"Pruned {pruned} registry cache entr{'y' if pruned == 1 else 'ies'}.")
+                sorted_entries = sorted(live_entries.items(), key=lambda item: item[1].get("last_accessed", 0.0))
+                while len(sorted_entries) > target_entries:
+                    key, entry = sorted_entries.pop(0)
+                    name = entry["name"]
+                    version = entry["version"]
+                    try:
+                        self._cache.delete(name, version)
+                        live_entries.pop(key, None)
+                        pruned += 1
+                    except Exception as e:
+                        self.logger.warning(f"Error pruning cached object {name}@{version}: {e}")
+                        live_entries.pop(key, None)
+
+                self._save_cache_lru_index({"version": 1, "entries": live_entries})
+                for key in dirty_entries:
+                    self._cache_lru_dirty.pop(key, None)
+                self._cache_lru_estimated_entries = len(live_entries)
+                if pruned:
+                    self.logger.debug(f"Pruned {pruned} registry cache entr{'y' if pruned == 1 else 'ies'}.")
 
     # ─────────────────────────────────────────────────────────────────────────
     # Core operations (cache-aware when _cached is True)
@@ -574,7 +682,8 @@ class Registry(Mindtrace):
         for cache_name, cache_version in touched_cache_entries:
             self._touch_cache_entry(cache_name, cache_version)
         if touched_cache_entries:
-            self._prune_cache_lru()
+            self._note_cache_entries_added(len(touched_cache_entries))
+            self._maybe_prune_cache_lru()
 
         return result
 
@@ -774,7 +883,8 @@ class Registry(Mindtrace):
             try:
                 self._cache.save(name, obj, version=cache_v, on_conflict=OnConflict.OVERWRITE)
                 self._touch_cache_entry(name, cache_v)
-                self._prune_cache_lru()
+                self._note_cache_entries_added(1)
+                self._maybe_prune_cache_lru()
             except Exception as e:
                 self.logger.warning(f"Error caching {name}: {e}")
 
@@ -864,7 +974,8 @@ class Registry(Mindtrace):
                     )
                     for cache_name, cache_version, _ in to_cache:
                         self._touch_cache_entry(cache_name, cache_version)
-                    self._prune_cache_lru()
+                    self._note_cache_entries_added(len(to_cache))
+                    self._maybe_prune_cache_lru()
                 except Exception as e:
                     self.logger.warning(f"Error updating cache: {e}")
 
@@ -951,6 +1062,9 @@ class Registry(Mindtrace):
             self._remote.clear(clear_registry_metadata)
             self._cache.clear()
             self._clear_cache_lru_index()
+            with self._cache_lru_lock:
+                self._cache_lru_dirty.clear()
+                self._cache_lru_estimated_entries = 0
         else:
             self._core.clear(clear_registry_metadata)
 
