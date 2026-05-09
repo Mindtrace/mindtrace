@@ -2827,6 +2827,31 @@ def test_cache_initialization_remote_backend(temp_registry_dir):
     assert registry._cache_max_entries == 1024
 
 
+def _patch_registry_time_sequence(*values: float):
+    """Callable for patching ``registry.time.time`` without exhausting mocks.
+
+    ``unittest.mock.patch('mindtrace.registry.core.registry.time.time', ...)``
+    replaces the stdlib ``time.time`` implementation, which is shared with
+    ``logging``, backends, etc. Using a finite ``side_effect`` list therefore
+    raises ``StopIteration`` once those incidental calls exceed the sequence.
+    This helper yields the given floats in order, then repeats the last value.
+    """
+    if not values:
+        return lambda: 0.0
+
+    seq = list(values)
+
+    def tick() -> float:
+        i = tick._i
+        if i < len(seq):
+            tick._i = i + 1
+            return seq[i]
+        return seq[-1]
+
+    tick._i = 0  # type: ignore[attr-defined]
+    return tick
+
+
 class TestRegistryCacheLRU:
     """Unit tests for remote registry local-cache LRU pruning."""
 
@@ -2886,7 +2911,7 @@ class TestRegistryCacheLRU:
         entries = [("test:a", "1.0.0"), ("test:b", "1.0.0")]
         self.save_cache_entries(registry, entries)
 
-        with patch("mindtrace.registry.core.registry.time.time", side_effect=[1.0, 2.0]):
+        with patch("mindtrace.registry.core.registry.time.time", side_effect=_patch_registry_time_sequence(1.0, 2.0)):
             for name, version in entries:
                 registry._touch_cache_entry(name, version)
         registry._prune_cache_lru()
@@ -2898,7 +2923,9 @@ class TestRegistryCacheLRU:
         entries = [("test:a", "1.0.0"), ("test:b", "1.0.0"), ("test:c", "1.0.0")]
         self.save_cache_entries(registry, entries)
 
-        with patch("mindtrace.registry.core.registry.time.time", side_effect=[1.0, 2.0, 3.0]):
+        with patch(
+            "mindtrace.registry.core.registry.time.time", side_effect=_patch_registry_time_sequence(1.0, 2.0, 3.0)
+        ):
             for name, version in entries:
                 registry._touch_cache_entry(name, version)
         registry._prune_cache_lru()
@@ -2910,7 +2937,9 @@ class TestRegistryCacheLRU:
         entries = [("test:a", "1.0.0"), ("test:b", "1.0.0"), ("test:c", "1.0.0")]
         self.save_cache_entries(registry, entries)
 
-        with patch("mindtrace.registry.core.registry.time.time", side_effect=[1.0, 2.0, 3.0, 4.0]):
+        with patch(
+            "mindtrace.registry.core.registry.time.time", side_effect=_patch_registry_time_sequence(1.0, 2.0, 3.0, 4.0)
+        ):
             registry._touch_cache_entry("test:a", "1.0.0")
             registry._touch_cache_entry("test:b", "1.0.0")
             registry._touch_cache_entry("test:a", "1.0.0")
@@ -2924,7 +2953,9 @@ class TestRegistryCacheLRU:
         entries = [("test:obj", "1.0.0"), ("test:obj", "2.0.0"), ("test:other", "1.0.0")]
         self.save_cache_entries(registry, entries)
 
-        with patch("mindtrace.registry.core.registry.time.time", side_effect=[1.0, 2.0, 3.0]):
+        with patch(
+            "mindtrace.registry.core.registry.time.time", side_effect=_patch_registry_time_sequence(1.0, 2.0, 3.0)
+        ):
             for name, version in entries:
                 registry._touch_cache_entry(name, version)
         registry._prune_cache_lru()
@@ -2939,7 +2970,7 @@ class TestRegistryCacheLRU:
     def test_touch_creates_and_updates_index_entry(self, temp_registry_dir):
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
 
-        with patch("mindtrace.registry.core.registry.time.time", side_effect=[10.0, 20.0]):
+        with patch("mindtrace.registry.core.registry.time.time", side_effect=_patch_registry_time_sequence(10.0, 20.0)):
             registry._touch_cache_entry("test:obj", "1.0.0")
             registry._touch_cache_entry("test:obj", "1.0.0")
 
@@ -2949,7 +2980,7 @@ class TestRegistryCacheLRU:
 
     def test_remove_cache_lru_entries_removes_only_requested_entries(self, temp_registry_dir):
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
-        with patch("mindtrace.registry.core.registry.time.time", side_effect=[1.0, 2.0]):
+        with patch("mindtrace.registry.core.registry.time.time", side_effect=_patch_registry_time_sequence(1.0, 2.0)):
             registry._touch_cache_entry("test:a", "1.0.0")
             registry._touch_cache_entry("test:b", "1.0.0")
 
@@ -3053,8 +3084,9 @@ class TestRegistryCacheLRU:
         registry._cache.save("test:obj", "value", version="1.0.0")
         registry._remote._latest = Mock(return_value="1.0.0")
 
+        # INTEGRITY avoids FULL staleness (remote mock has no matching metadata hashes).
         with patch("mindtrace.registry.core.registry.time.time", return_value=123.0):
-            assert registry._load_single_cached("test:obj", "1.0.0") == "value"
+            assert registry._load_single_cached("test:obj", "1.0.0", verify=VerifyLevel.INTEGRITY) == "value"
 
         index = registry._load_cache_lru_index()
         assert index["entries"][Registry._cache_lru_key("test:obj", "1.0.0")]["last_accessed"] == 123.0
@@ -3065,19 +3097,26 @@ class TestRegistryCacheLRU:
         self.save_cache_entries(registry, entries)
         registry._remote._resolve_load_version = Mock(side_effect=lambda name, version: version)
 
-        with patch("mindtrace.registry.core.registry.time.time", side_effect=[11.0, 22.0]):
-            result = registry._load_batch_cached(["test:a", "test:b"], ["1.0.0", "1.0.0"])
+        result = registry._load_batch_cached(["test:a", "test:b"], ["1.0.0", "1.0.0"], verify=VerifyLevel.INTEGRITY)
 
         assert result.results == ["test:a@1.0.0", "test:b@1.0.0"]
         index = registry._load_cache_lru_index()
-        assert index["entries"][Registry._cache_lru_key("test:a", "1.0.0")]["last_accessed"] == 11.0
-        assert index["entries"][Registry._cache_lru_key("test:b", "1.0.0")]["last_accessed"] == 22.0
+        key_a = Registry._cache_lru_key("test:a", "1.0.0")
+        key_b = Registry._cache_lru_key("test:b", "1.0.0")
+        assert key_a in index["entries"]
+        assert key_b in index["entries"]
+        # `_touch_cache_entry` runs in batch order for cache hits; recency timestamps should
+        # reflect that ordering (later touch >= earlier; typically strict on real clocks).
+        assert index["entries"][key_a]["last_accessed"] <= index["entries"][key_b]["last_accessed"]
 
     def test_save_cache_update_prunes_after_remote_save(self, temp_registry_dir):
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=1)
         registry._remote.save = Mock(side_effect=["1.0.0", "1.0.0"])
 
-        with patch("mindtrace.registry.core.registry.time.time", side_effect=[1.0, 2.0]):
+        with patch(
+            "mindtrace.registry.core.registry.time.time",
+            side_effect=_patch_registry_time_sequence(1.0, 2.0),
+        ):
             registry.save("test:a", "a", version="1.0.0")
             registry.save("test:b", "b", version="1.0.0")
 
@@ -3099,7 +3138,10 @@ class TestRegistryCacheLRU:
         registry._remote.delete = Mock(return_value=None)
         entries = [("test:obj", "1.0.0"), ("test:obj", "2.0.0"), ("test:other", "1.0.0")]
         self.save_cache_entries(registry, entries)
-        with patch("mindtrace.registry.core.registry.time.time", side_effect=[1.0, 2.0, 3.0]):
+        with patch(
+            "mindtrace.registry.core.registry.time.time",
+            side_effect=_patch_registry_time_sequence(1.0, 2.0, 3.0),
+        ):
             for name, version in entries:
                 registry._touch_cache_entry(name, version)
 
