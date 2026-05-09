@@ -390,11 +390,12 @@ class Registry(Mindtrace):
     def clear_cache(self) -> None:
         """Clear the local cache. No-op if caching is not enabled."""
         if self._cached:
-            self._cache.clear()
-            self._clear_cache_lru_index()
             with self._cache_lru_lock:
-                self._cache_lru_dirty.clear()
-                self._cache_lru_estimated_entries = 0
+                with self._cache_lru_file_lock():
+                    self._cache.clear()
+                    self._clear_cache_lru_index()
+                    self._cache_lru_dirty.clear()
+                    self._cache_lru_estimated_entries = 0
             self.logger.debug("Cleared local cache.")
 
     def _cache_lru_index_path(self) -> Path:
@@ -1060,11 +1061,12 @@ class Registry(Mindtrace):
         """
         if self._cached:
             self._remote.clear(clear_registry_metadata)
-            self._cache.clear()
-            self._clear_cache_lru_index()
             with self._cache_lru_lock:
-                self._cache_lru_dirty.clear()
-                self._cache_lru_estimated_entries = 0
+                with self._cache_lru_file_lock():
+                    self._cache.clear()
+                    self._clear_cache_lru_index()
+                    self._cache_lru_dirty.clear()
+                    self._cache_lru_estimated_entries = 0
         else:
             self._core.clear(clear_registry_metadata)
 
