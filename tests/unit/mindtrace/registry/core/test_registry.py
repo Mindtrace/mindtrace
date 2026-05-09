@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 from pydantic import BaseModel
@@ -3150,6 +3150,134 @@ class TestRegistryCacheLRU:
         assert self.cache_names(registry) == {("test:other", "1.0.0")}
         index = registry._load_cache_lru_index()
         assert set(index["entries"]) == {Registry._cache_lru_key("test:other", "1.0.0")}
+
+    def test_save_cache_lru_index_swallows_dump_failure(self, temp_registry_dir):
+        """``_save_cache_lru_index`` logs and ignores IO errors from ``json.dump``."""
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
+        with patch("mindtrace.registry.core.registry.json.dump", side_effect=OSError("disk full")):
+            registry._save_cache_lru_index({"version": 1, "entries": {}})
+
+    def test_clear_cache_lru_index_swallows_unlink_failure(self, temp_registry_dir):
+        """``_clear_cache_lru_index`` tolerates ``unlink`` raising."""
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
+        mock_path = MagicMock()
+        mock_path.unlink.side_effect = OSError("permission denied")
+        with patch.object(registry, "_cache_lru_index_path", return_value=mock_path):
+            registry._clear_cache_lru_index()
+        mock_path.unlink.assert_called_once_with(missing_ok=True)
+
+    def test_rebuild_cache_lru_index_empty_when_registry_not_cached(self, temp_registry_dir):
+        """Uncached registries return an empty index without touching ``_cache``."""
+        uncached = self.make_remote_registry(temp_registry_dir, use_cache=False, cache_max_entries=2)
+        assert uncached._rebuild_cache_lru_index() == {"version": 1, "entries": {}}
+
+    def test_rebuild_cache_lru_index_uses_mtime_or_falls_back_when_stat_fails(self, temp_registry_dir):
+        """If metadata ``stat`` fails, rebuild still records the object using ``time.time()``."""
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=8)
+        registry._cache.save("test:stat", "x", version="1.0.0")
+        bad_meta = MagicMock()
+        bad_meta.stat.side_effect = OSError("no stat")
+        with patch.object(registry._cache.backend, "_object_metadata_path", return_value=bad_meta):
+            with patch("mindtrace.registry.core.registry.time.time", return_value=999.0):
+                idx = registry._rebuild_cache_lru_index()
+
+        entry = idx["entries"][Registry._cache_lru_key("test:stat", "1.0.0")]
+        assert entry["name"] == "test:stat"
+        assert entry["version"] == "1.0.0"
+        assert entry["last_accessed"] == 999.0
+
+    def test_rebuild_cache_lru_index_swallows_list_objects_failure(self, temp_registry_dir):
+        """Rebuild returns the default shell if enumerating cached objects blows up."""
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=8)
+        with patch.object(registry._cache, "list_objects", side_effect=RuntimeError("boom")):
+            assert registry._rebuild_cache_lru_index() == {"version": 1, "entries": {}}
+
+    def test_prune_skips_malformed_lru_index_entries(self, temp_registry_dir):
+        """Non-string ``name``/``version`` in the sidecar are ignored during pruning."""
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=1)
+        registry._cache.save("test:x", "x", version="1.0.0")
+        registry._cache.save("test:y", "y", version="1.0.0")
+        registry._save_cache_lru_index(
+            {
+                "version": 1,
+                "entries": {
+                    "not-a-valid-key-shape": {
+                        "name": 123,
+                        "version": "1.0.0",
+                        "last_accessed": 0.0,
+                    },
+                    Registry._cache_lru_key("test:x", "1.0.0"): {
+                        "name": "test:x",
+                        "version": "1.0.0",
+                        "last_accessed": 1.0,
+                    },
+                    Registry._cache_lru_key("test:y", "1.0.0"): {
+                        "name": "test:y",
+                        "version": "1.0.0",
+                        "last_accessed": 2.0,
+                    },
+                },
+            }
+        )
+        registry._prune_cache_lru()
+        assert len(self.cache_names(registry)) == 1
+        assert ("test:y", "1.0.0") in self.cache_names(registry)
+
+    def test_prune_warns_and_continues_when_cache_delete_raises(self, temp_registry_dir):
+        """If eviction ``delete`` fails, prune logs and drops the row from the sidecar."""
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
+        entries = [("test:a", "1.0.0"), ("test:b", "1.0.0"), ("test:c", "1.0.0")]
+        self.save_cache_entries(registry, entries)
+        with patch(
+            "mindtrace.registry.core.registry.time.time",
+            side_effect=_patch_registry_time_sequence(1.0, 2.0, 3.0),
+        ):
+            for name, version in entries:
+                registry._touch_cache_entry(name, version)
+
+        real_delete = registry._cache.delete
+
+        def delete_side_effect(name, version):
+            if name == "test:a":
+                raise RuntimeError("simulated delete failure")
+            return real_delete(name, version)
+
+        with patch.object(registry._cache, "delete", side_effect=delete_side_effect):
+            registry._prune_cache_lru()
+
+        # Oldest (test:a) delete failed; object may still exist on disk, but index no longer tracks it.
+        index = registry._load_cache_lru_index()
+        assert Registry._cache_lru_key("test:a", "1.0.0") not in index["entries"]
+
+    def test_load_single_cached_valueerror_invokes_lru_removal(self, temp_registry_dir):
+        """Corrupt cache materialization removes artifacts and LRU keys before remote load."""
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=8)
+        registry._cache.save("test:corrupt", "cached", version="1.0.0")
+        registry._touch_cache_entry("test:corrupt", "1.0.0")
+        registry._remote._latest = Mock(return_value="1.0.0")
+        registry._remote.load = Mock(return_value="fresh")
+
+        with patch.object(registry, "_remove_cache_lru_entries") as remover:
+            with patch.object(registry._cache, "load", side_effect=ValueError("corrupt")):
+                out = registry._load_single_cached("test:corrupt", "1.0.0", verify=VerifyLevel.INTEGRITY)
+
+        assert out == "fresh"
+        remover.assert_called_once_with([("test:corrupt", "1.0.0")])
+        registry._remote.load.assert_called_once()
+
+    def test_load_single_cached_valueerror_swallows_delete_cleanup_failure(self, temp_registry_dir):
+        """If cleanup after corrupt cache fails, load still proceeds from remote."""
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=8)
+        registry._cache.save("test:corrupt", "cached", version="1.0.0")
+        registry._remote._latest = Mock(return_value="1.0.0")
+        registry._remote.load = Mock(return_value="fresh")
+
+        with patch.object(registry._cache, "load", side_effect=ValueError("corrupt")):
+            with patch.object(registry._cache, "delete", side_effect=OSError("delete failed")):
+                out = registry._load_single_cached("test:corrupt", "1.0.0", verify=VerifyLevel.INTEGRITY)
+
+        assert out == "fresh"
+        registry._remote.load.assert_called_once()
 
 
 def _make_op_results(*results: OpResult) -> OpResults:
