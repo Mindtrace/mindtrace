@@ -15,7 +15,15 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Type, overload
 
-import fcntl
+try:  # POSIX file locking.
+    import fcntl as _fcntl
+except ImportError:  # pragma: no cover - exercised on non-POSIX platforms.
+    _fcntl = None  # type: ignore[assignment]
+
+try:  # Windows file locking.
+    import msvcrt as _msvcrt
+except ImportError:  # pragma: no cover - exercised on non-Windows platforms.
+    _msvcrt = None  # type: ignore[assignment]
 
 from zenml.materializers.base_materializer import BaseMaterializer
 
@@ -415,12 +423,33 @@ class Registry(Mindtrace):
 
         lock_path = self._cache_lru_lock_path()
         lock_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(lock_path, "a+") as lock_file:
-            fcntl.flock(lock_file, fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(lock_file, fcntl.LOCK_UN)
+        with open(lock_path, "a+b") as lock_file:
+            if _fcntl is not None:
+                _fcntl.flock(lock_file, _fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    _fcntl.flock(lock_file, _fcntl.LOCK_UN)
+                return
+
+            if _msvcrt is not None:
+                lock_file.seek(0, os.SEEK_END)
+                if lock_file.tell() == 0:
+                    lock_file.write(b"\0")
+                    lock_file.flush()
+                lock_file.seek(0)
+                _msvcrt.locking(lock_file.fileno(), _msvcrt.LK_LOCK, 1)
+                try:
+                    yield
+                finally:
+                    lock_file.seek(0)
+                    _msvcrt.locking(lock_file.fileno(), _msvcrt.LK_UNLCK, 1)
+                return
+
+            # Last-resort portability fallback for uncommon platforms without a
+            # stdlib file-locking primitive. In-process locking still applies.
+            self.logger.debug("No stdlib file-locking primitive available for shared registry cache LRU lock.")
+            yield
 
     @staticmethod
     def _cache_lru_key(name: str, version: str) -> str:
