@@ -28,6 +28,9 @@ suites.
 - In a TTY, `ds test --stress` opens a simple numbered selector.
 - Without a TTY, explicit selection is required so automation never hangs and
   never accidentally runs everything.
+- Suite/library debug logging is suppressed by default so the runner-owned
+  progress bars and final summary stay readable. Use `--verbose-suite-output`
+  when diagnosing a noisy or failing suite.
 
 ## Profiles and duration
 

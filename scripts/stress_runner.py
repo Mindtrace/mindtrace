@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 import importlib
 import json
+import logging
 import sys
 import time
 from datetime import UTC, datetime
@@ -39,6 +42,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-menu", action="store_true", help="Disable the interactive selector")
     parser.add_argument("--dry-run", action="store_true", help="Print the resolved execution plan without running suites")
     parser.add_argument("--keep-resources", action="store_true", help="Preserve generated resources for debugging")
+    parser.add_argument(
+        "--verbose-suite-output",
+        action="store_true",
+        help="Allow suite/library debug output while benchmarks run",
+    )
     parser.add_argument("--fail-fast", action="store_true", help="Stop after the first failed suite")
     parser.add_argument(
         "--continue-on-error",
@@ -205,7 +213,61 @@ def run_phase(seconds: float, description: str) -> None:
         progress.close()
 
 
-def run_suite(suite: SuiteDefinition, config: StressSuiteConfig, output_dir: Path) -> dict[str, Any]:
+@contextmanager
+def suppress_suite_logging(enabled: bool):
+    """Temporarily silence library loggers that can overwhelm benchmark progress output."""
+
+    if not enabled:
+        yield
+        return
+
+    previous_disable_level = logging.root.manager.disable
+    logger_names = ("mindtrace", "zenml", "urllib3", "botocore", "boto3", "pymongo", "motor")
+    previous_levels: dict[str, int] = {}
+    previous_propagate: dict[str, bool] = {}
+    try:
+        logging.disable(logging.CRITICAL)
+        for name in logger_names:
+            logger = logging.getLogger(name)
+            previous_levels[name] = logger.level
+            previous_propagate[name] = logger.propagate
+            logger.setLevel(logging.CRITICAL + 1)
+            logger.propagate = False
+        yield
+    finally:
+        logging.disable(previous_disable_level)
+        for name in logger_names:
+            logger = logging.getLogger(name)
+            logger.setLevel(previous_levels[name])
+            logger.propagate = previous_propagate[name]
+
+
+def run_suite_with_progress(suite: SuiteDefinition, config: StressSuiteConfig, reporter: StressReporter, quiet: bool):
+    """Run a suite while the runner owns the console progress bar."""
+
+    def target():
+        with suppress_suite_logging(quiet):
+            module = importlib.import_module(suite.module)
+            return module.run(config, reporter)
+
+    progress = maybe_progress(config.duration_seconds, f"{config.suite_id} measure")
+    last = time.monotonic()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(target)
+        while not future.done():
+            now = time.monotonic()
+            if progress is not None:
+                progress.update(max(0.0, now - last))
+            last = now
+            time.sleep(0.25)
+        if progress is not None:
+            now = time.monotonic()
+            progress.update(max(0.0, now - last))
+            progress.close()
+        return future.result()
+
+
+def run_suite(suite: SuiteDefinition, config: StressSuiteConfig, output_dir: Path, quiet: bool) -> dict[str, Any]:
     suite_dir = output_dir / "suites"
     suite_dir.mkdir(parents=True, exist_ok=True)
     summary_path = suite_dir / f"{config.suite_id}.json"
@@ -219,8 +281,7 @@ def run_suite(suite: SuiteDefinition, config: StressSuiteConfig, output_dir: Pat
         status = "passed"
         try:
             run_phase(config.warmup_seconds, f"{config.suite_id} warmup")
-            module = importlib.import_module(suite.module)
-            result = module.run(config, reporter)
+            result = run_suite_with_progress(suite, config, reporter, quiet)
             run_phase(config.cooldown_seconds, f"{config.suite_id} cooldown")
         except Exception as exc:  # noqa: BLE001 - runner should capture suite failures in reports
             status = "failed"
@@ -356,7 +417,7 @@ def main(argv: list[str] | None = None) -> int:
     started = utc_now_iso()
     suite_results = []
     for suite, config in zip(selected, configs, strict=True):
-        result = run_suite(suite, config, output_dir)
+        result = run_suite(suite, config, output_dir, quiet=not args.verbose_suite_output)
         suite_results.append(result)
         if result["status"] != "passed" and args.fail_fast:
             break
