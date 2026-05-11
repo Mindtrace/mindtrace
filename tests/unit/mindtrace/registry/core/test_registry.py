@@ -3236,9 +3236,7 @@ class TestRegistryCacheLRU:
     def test_prune_warns_and_continues_when_cache_delete_raises(self, temp_registry_dir):
         # buffer=0 so prune target is exactly cache_max_entries (default buffer would
         # target max - buffer and over-evict after a failed delete on the LRU entry).
-        registry = self.make_remote_registry(
-            temp_registry_dir, cache_max_entries=2, cache_prune_buffer=0
-        )
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2, cache_prune_buffer=0)
         entries = [("test:a", "1.0.0"), ("test:b", "1.0.0"), ("test:c", "1.0.0")]
         self.save_cache_entries(registry, entries)
         for timestamp, (name, version) in enumerate(entries, start=1):
