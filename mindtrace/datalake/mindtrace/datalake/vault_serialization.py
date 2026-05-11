@@ -3,7 +3,7 @@
 These hints let a :class:`~mindtrace.datalake.DataVault` client that only receives **bytes** from a
 remote ``objects.get``-style API reconstruct a Python value using the same ZenML materializers as
 :class:`~mindtrace.registry.Registry`, provided the payload matches a **single-file** staged layout
-(see :meth:`~mindtrace.registry.core._registry_core._RegistryCore.materialize_from_bytes`).
+(see :meth:`~mindtrace.registry.Registry.materialize_from_bytes`).
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ def serialization_block_for_save(
             "Storing a non-bytes object through DataVault requires ``registry=...`` on the vault (or pass "
             "``asset_metadata`` with a pre-filled ``mindtrace.serialization`` block)."
         )
-    hints = registry._core.serialization_hints_for_object(obj, materializer=materializer)
+    hints = registry.serialization_hints_for_object(obj, materializer=materializer)
     return {**hints, "init_params": {}}
 
 
@@ -90,9 +90,7 @@ def materialize_payload_with_hints(
     serialization: dict[str, Any],
     **materializer_kwargs: Any,
 ) -> Any:
-    """Decode *raw* using *serialization* hints and the registry core's materializer path.
-
-    See :meth:`~mindtrace.registry.core._registry_core._RegistryCore.materialize_from_bytes`.
+    """Decode *raw* using *serialization* hints and :meth:`~mindtrace.registry.Registry.materialize_from_bytes`.
 
     Only **single-file** ZenML layouts are supported here; multi-file artifacts require an in-process
     :meth:`~mindtrace.registry.Registry.load` against the backing registry.
@@ -112,7 +110,7 @@ def materialize_payload_with_hints(
     if not isinstance(init_params, dict):
         init_params = {}
 
-    return registry._core.materialize_from_bytes(
+    return registry.materialize_from_bytes(
         raw,
         object_class=serialization["class"],
         materializer=serialization["materializer"],
