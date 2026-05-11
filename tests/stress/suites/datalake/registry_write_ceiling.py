@@ -20,7 +20,6 @@ from mindtrace.registry import (
     S3AccessKeyAuth,
     S3MountConfig,
 )
-
 from tests.stress.lib.benchmark import StressReporter, StressResult, StressSuiteConfig, utc_now_iso
 from tests.stress.lib.workloads import deterministic_payload, parse_size_bytes, run_threaded_until_deadline
 
@@ -91,7 +90,9 @@ def run(config: StressSuiteConfig, reporter: StressReporter) -> StressResult:
     )
 
 
-def build_mount(config: StressSuiteConfig, backend: str, prefix: str) -> tuple[Mount, Callable[[], None], dict[str, object]]:
+def build_mount(
+    config: StressSuiteConfig, backend: str, prefix: str
+) -> tuple[Mount, Callable[[], None], dict[str, object]]:
     """Create a Datalake mount for the requested backend."""
 
     registry_options = {"mutable": True, "version_objects": True, "use_cache": False}

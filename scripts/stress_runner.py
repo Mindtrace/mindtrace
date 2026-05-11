@@ -4,9 +4,6 @@
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
-from itertools import product
 import importlib
 import json
 import logging
@@ -15,7 +12,10 @@ import re
 import sys
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import UTC, datetime
+from itertools import product
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -24,9 +24,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tests.stress.lib.benchmark import StressReporter, StressResult, StressSuiteConfig, utc_now_iso
-from tests.stress.lib.durations import parse_duration_seconds
-from tests.stress.lib.manifest import SuiteDefinition, load_manifest, suite_definitions
+from tests.stress.lib.benchmark import StressReporter, StressResult, StressSuiteConfig, utc_now_iso  # noqa: E402
+from tests.stress.lib.durations import parse_duration_seconds  # noqa: E402
+from tests.stress.lib.manifest import SuiteDefinition, load_manifest, suite_definitions  # noqa: E402
 
 DEFAULT_MANIFEST = PROJECT_ROOT / "tests" / "stress" / "manifest.yaml"
 DEFAULT_RESULTS_ROOT = PROJECT_ROOT / ".stress-results"
@@ -61,7 +61,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--output-dir", type=Path, help="Output directory for this run")
     parser.add_argument("--no-menu", action="store_true", help="Disable the interactive selector")
-    parser.add_argument("--dry-run", action="store_true", help="Print the resolved execution plan without running suites")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print the resolved execution plan without running suites"
+    )
     parser.add_argument("--keep-resources", action="store_true", help="Preserve generated resources for debugging")
     parser.add_argument(
         "--verbose-suite-output",
@@ -401,11 +403,19 @@ def resolve_suite_config(
     if not global_profile and not suite_profile:
         raise SystemExit(f"Suite {suite.suite_id!r} does not define profile {args.profile!r}")
 
-    duration = parse_duration_seconds(args.duration or suite_profile.pop("duration", None) or global_profile.get("duration"), default=10.0)
-    warmup = parse_duration_seconds(args.warmup or suite_profile.pop("warmup", None) or global_profile.get("warmup"), default=0.0)
-    cooldown = parse_duration_seconds(suite_profile.pop("cooldown", None) or global_profile.get("cooldown"), default=0.0)
+    duration = parse_duration_seconds(
+        args.duration or suite_profile.pop("duration", None) or global_profile.get("duration"), default=10.0
+    )
+    warmup = parse_duration_seconds(
+        args.warmup or suite_profile.pop("warmup", None) or global_profile.get("warmup"), default=0.0
+    )
+    cooldown = parse_duration_seconds(
+        suite_profile.pop("cooldown", None) or global_profile.get("cooldown"), default=0.0
+    )
     parameters = manifest_parameter_defaults(suite)
-    parameters.update({key: value for key, value in suite_profile.items() if key not in {"duration", "warmup", "cooldown"}})
+    parameters.update(
+        {key: value for key, value in suite_profile.items() if key not in {"duration", "warmup", "cooldown"}}
+    )
     parameters.update(parameter_overrides)
     validate_parameter_values(suite, parameters)
     suite_resources = dict(resources.get("resources", {}))
@@ -557,7 +567,9 @@ def run_suite(suite: SuiteDefinition, config: StressSuiteConfig, output_dir: Pat
             error_traceback = traceback.format_exc()
             reporter.record_operation(success=False, latency_seconds=0.0, error=exc, traceback=error_traceback)
             result = None
-            reporter.event("suite_failed", error_type=type(exc).__name__, error_message=str(exc), traceback=error_traceback)
+            reporter.event(
+                "suite_failed", error_type=type(exc).__name__, error_message=str(exc), traceback=error_traceback
+            )
 
     ended = utc_now_iso()
     elapsed = time.monotonic() - monotonic_start
@@ -722,7 +734,9 @@ def main(argv: list[str] | None = None) -> int:
         "output_dir": str(output_dir),
         "suites": suite_results,
     }
-    (output_dir / "run.json").write_text(json.dumps(run_payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
+    (output_dir / "run.json").write_text(
+        json.dumps(run_payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8"
+    )
     write_summary_markdown(output_dir, run_payload)
     print_run_summary(output_dir, run_payload)
     return 1 if any(suite["status"] != "passed" for suite in suite_results) else 0
