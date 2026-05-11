@@ -104,7 +104,7 @@ def build_registry(
             prefix=backend_prefix,
         )
         return (
-            Registry(backend=backend_obj, version_objects=True, mutable=True),
+            Registry(backend=backend_obj, version_objects=True, mutable=True, use_cache=False),
             lambda: None,
             {"backend": "minio", "bucket": bucket, "prefix": backend_prefix},
         )
@@ -120,7 +120,7 @@ def build_registry(
             prefix=backend_prefix,
         )
         return (
-            Registry(backend=backend_obj, version_objects=True, mutable=True),
+            Registry(backend=backend_obj, version_objects=True, mutable=True, use_cache=False),
             lambda: None,
             {"backend": "gcs", "bucket": bucket_name, "project_id": project_id, "prefix": backend_prefix},
         )

@@ -116,8 +116,10 @@ suites:
 ## Resource configuration
 
 For local development, stress runs use the integration Docker stack by default.
-When `--config` is not provided, `scripts/run_tests.sh` starts `tests/docker-compose.yml`
-and the runner uses these default resources:
+When `--config` is not provided, `scripts/run_tests.sh` starts `tests/docker-compose.yml`.
+The runner resolves defaults the same way as `ds test: registry --integration`:
+local Docker-provided MinIO settings come from the environment, while GCS comes
+from `CoreConfig` (`MINDTRACE_GCP*` env vars first, then `config.ini`):
 
 ```yaml
 resources:
@@ -129,6 +131,10 @@ resources:
   minio_secret_key: minioadmin
   minio_secure: false
   minio_bucket: stress-registry
+  # included when configured via CoreConfig:
+  gcs_project_id: datalake-426010
+  gcs_bucket_name: mindtrace-datalake-test-bucket
+  gcs_credentials_path: ~/.config/gcloud/datalake_credentials.json
 ```
 
 For production-like or externally managed resources, provide `--config`. When a
