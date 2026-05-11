@@ -8,8 +8,8 @@ and transparently adds local caching when a remote backend is used.
 import hashlib
 import os
 import threading
-from pathlib import Path
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Type, overload
 
 from zenml.materializers.base_materializer import BaseMaterializer
