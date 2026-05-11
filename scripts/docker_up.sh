@@ -34,6 +34,11 @@ done
 echo "Flushing Redis test database..."
 $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml exec -T redis redis-cli -p 6380 FLUSHALL > /dev/null
 
+echo "Waiting for NATS to be ready..."
+until curl -s http://localhost:8223/healthz > /dev/null; do
+    sleep 1
+done
+
 export MINDTRACE_MINIO__MINIO_ENDPOINT=localhost:9100
 export MINDTRACE_MINIO__MINIO_ACCESS_KEY=minioadmin
 export MINDTRACE_MINIO__MINIO_SECRET_KEY=minioadmin
@@ -49,6 +54,8 @@ export MINDTRACE_CLUSTER__RABBITMQ_PORT=5673
 export MINDTRACE_CLUSTER__WORKER_PORTS_RANGE=8200-8202
 
 export REDIS_OM_URL=redis://localhost:6380
+
+export MINDTRACE_NATS__URLS=nats://localhost:4223
 
 # Do not export MINDTRACE_GCP_* or MINDTRACE_GCP_REGISTRY_* here: integration tests
 # resolve GCP via CoreConfig (env vars already set by the user or CI, else config.ini).

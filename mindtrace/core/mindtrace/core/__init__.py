@@ -1,6 +1,20 @@
 from mindtrace.core.base import Mindtrace, MindtraceABC, MindtraceMeta
 from mindtrace.core.config import Config, CoreConfig
 from mindtrace.core.logging.logger import setup_logger
+from mindtrace.core.messaging.nats.client import (
+    NatsClient,
+    NatsClientClosed,
+    NatsMessage,
+    Subscription,
+    SubscriptionHandle,
+)
+from mindtrace.core.messaging.nats.jetstream import (
+    JetStreamContext,
+    KeyValueHandle,
+    ObjectStoreHandle,
+    PushSubscription,
+)
+from mindtrace.core.messaging.nats.settings import NatsSettings
 from mindtrace.core.observables.context_listener import ContextListener
 from mindtrace.core.observables.event_bus import EventBus
 from mindtrace.core.observables.observable_context import ObservableContext
@@ -50,16 +64,26 @@ __all__ = [
     "ifnone_url",
     "instantiate_target",
     "is_port_available",
+    "JetStreamContext",
+    "KeyValueHandle",
     "LocalIPError",
     "Mindtrace",
     "MindtraceABC",
     "MindtraceMeta",
     "named_lambda",
+    "NatsClient",
+    "NatsClientClosed",
+    "NatsMessage",
+    "NatsSettings",
     "NetworkError",
     "NoFreePortError",
+    "ObjectStoreHandle",
     "ObservableContext",
     "PortInUseError",
+    "PushSubscription",
     "ServiceTimeoutError",
+    "Subscription",
+    "SubscriptionHandle",
     "TaskSchema",
     "Timer",
     "TimerCollection",
