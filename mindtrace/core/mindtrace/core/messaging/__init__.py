@@ -3,23 +3,26 @@
 Holds the public surface: `NatsClient`, JetStream wrappers, KV / Object
 Store handles, and codecs.
 
-Recommended usage pattern — one connection per process, shared via DI:
+Recommended usage — open one connection at your application root and pass
+it (via DI) to anything that needs to publish or subscribe:
 
-    # app startup
-    nats_cm = NatsClient.connect(urls=settings.nats.urls)
-    nc = await nats_cm.__aenter__()
+    async def main():
+        async with NatsClient.connect(urls=settings.nats.urls) as nc:
+            component = MyComponent(nats=nc)
+            await component.run()
+            # drain + close happen automatically on exit
 
-    # pass `nc` to your components
-    component = MyComponent(nats=nc)
-    ...
+For applications composing multiple async resources, use
+`contextlib.AsyncExitStack` so they tear down together:
 
-    # app shutdown
-    await nats_cm.__aexit__(None, None, None)
+    from contextlib import AsyncExitStack
 
-In a long-running async application you typically place the
-`async with NatsClient.connect(...) as nc:` at the outermost scope of
-your runtime and inject `nc` everywhere a publisher / subscriber is
-needed; that way drain semantics work correctly on shutdown.
+    async def main():
+        async with AsyncExitStack() as stack:
+            nc = await stack.enter_async_context(NatsClient.connect(urls=...))
+            db = await stack.enter_async_context(Database.connect(...))
+            component = MyComponent(nats=nc, db=db)
+            await component.run()
 """
 
 from mindtrace.core.messaging.nats.client import (

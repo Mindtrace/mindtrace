@@ -12,11 +12,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import ssl
+import time
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, Optional, Type, TypeVar, Union, overload
 
 import nats
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from mindtrace.core.base import Mindtrace
 from mindtrace.core.messaging.nats.serde import (
@@ -97,9 +98,9 @@ class NatsHealth(BaseModel):
 
     is_connected: bool
     connected_url: Optional[str] = None
-    servers: list[str] = []
+    servers: list[str] = Field(default_factory=list)
     last_error: Optional[str] = None
-    stats: NatsStats = NatsStats()
+    stats: NatsStats = Field(default_factory=NatsStats)
 
 
 T = TypeVar("T", bound=BaseModel)
@@ -320,12 +321,11 @@ class NatsClient(Mindtrace):
 
         if on_disconnected is not None:
             connect_kwargs.setdefault("disconnected_cb", on_disconnected)
-        if on_reconnected is not None:
-            connect_kwargs.setdefault("reconnected_cb", on_reconnected)
         if on_closed is not None:
             connect_kwargs.setdefault("closed_cb", on_closed)
 
-        # Construct the client up-front so the error callback can capture into it.
+        # Construct the client up-front so the error / reconnect callbacks can
+        # write into it.
         client = cls(nc=None, settings=s, codec=codec)
 
         async def _capture_error(exc):
@@ -333,7 +333,15 @@ class NatsClient(Mindtrace):
             if on_error is not None:
                 await on_error(exc)
 
+        async def _clear_on_reconnect():
+            # A successful reconnect means whatever caused the last error is
+            # behind us; don't leave stale state in `health()`.
+            client._last_error = None
+            if on_reconnected is not None:
+                await on_reconnected()
+
         connect_kwargs.setdefault("error_cb", _capture_error)
+        connect_kwargs.setdefault("reconnected_cb", _clear_on_reconnect)
 
         nc = await nats.connect(
             servers=servers,
@@ -448,6 +456,29 @@ class NatsClient(Mindtrace):
         )
         await self._nc.publish(subject, body, reply=reply, headers=eff_headers)
 
+    @overload
+    async def request(
+        self,
+        subject: str,
+        payload: Payload,
+        *,
+        timeout: float = 1.0,
+        headers: Optional[dict] = None,
+        codec: Optional[Codec] = None,
+    ) -> bytes: ...
+
+    @overload
+    async def request(
+        self,
+        subject: str,
+        payload: Payload,
+        *,
+        model: Type[T],
+        timeout: float = 1.0,
+        headers: Optional[dict] = None,
+        codec: Optional[Codec] = None,
+    ) -> T: ...
+
     async def request(
         self,
         subject: str,
@@ -462,8 +493,10 @@ class NatsClient(Mindtrace):
 
         Model resolution: per-call `model=` wins; otherwise the subject's
         registered model (`nc.register(subject, Model)`) is used; otherwise
-        raw bytes are returned. `model=Optional[T]` makes empty replies
-        return `None` instead of raising.
+        raw bytes are returned. `model=Optional[T]` is supported at runtime
+        (empty replies map to `None`), but the static type signature only
+        distinguishes the `bytes` and `T` cases — type checkers see `T` even
+        when `Optional[T]` is passed.
 
         Headers behave the same way as `publish` — pass `traceparent` to
         propagate trace context.
@@ -472,9 +505,9 @@ class NatsClient(Mindtrace):
         active = codec or self._codec
         body = encode_payload(payload, codec=active)
         eff_headers = _apply_content_type(payload, headers, codec=active)
-        started = asyncio.get_event_loop().time()
+        started = time.monotonic()
         msg = await self._nc.request(subject, body, timeout=timeout, headers=eff_headers)
-        elapsed_ms = (asyncio.get_event_loop().time() - started) * 1000.0
+        elapsed_ms = (time.monotonic() - started) * 1000.0
         response_size = len(msg.data) if msg.data else 0
         self.logger.debug(
             "nats.request subject=%s size=%d response_size=%d duration_ms=%.3f",
