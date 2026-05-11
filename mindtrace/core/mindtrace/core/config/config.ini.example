@@ -1,0 +1,81 @@
+; ------------------------------------------------------------------------------
+; Mindtrace CoreSettings template (no secrets — safe to commit).
+;
+; On first import of ``CoreSettings``, if ``config.ini`` is missing alongside
+; this file, it is copied from this example so local development and CI
+; runners get the usual defaults. Override with ``MINDTRACE_*__*`` env vars as
+; needed (they take precedence over this file).
+;
+; The materialized ``config.ini`` remains Git-ignored. To skip auto-copy entirely
+; (rare): ``MINDTRACE_SKIP_CONFIG_INI_BOOTSTRAP=1``.
+; ------------------------------------------------------------------------------
+
+[MINDTRACE_API_KEYS]
+OPENAI = replace-me-openai-api-key
+DISCORD = replace-me-discord-bot-token
+ROBOFLOW = replace-me-roboflow-key
+
+[MINDTRACE_TESTING_API_KEYS]
+DISCORD = replace-me-testing-discord-token
+
+[MINDTRACE_DIR_PATHS]
+ROOT = ~/.cache/mindtrace
+TEMP_DIR = ${MINDTRACE_DIR_PATHS:ROOT}/temp
+REGISTRY_DIR = ${MINDTRACE_DIR_PATHS:ROOT}/registry
+STORE_DIR = ${MINDTRACE_DIR_PATHS:ROOT}/store
+LOGGER_DIR = ${MINDTRACE_DIR_PATHS:ROOT}/logs
+STRUCT_LOGGER_DIR = ${MINDTRACE_DIR_PATHS:ROOT}/structlogs
+CLUSTER_REGISTRY_DIR = ${MINDTRACE_DIR_PATHS:ROOT}/cluster/registry
+SERVER_PIDS_DIR = ${MINDTRACE_DIR_PATHS:ROOT}/pids
+ORCHESTRATOR_LOCAL_CLIENT_DIR = ${MINDTRACE_DIR_PATHS:ROOT}/orchestrator/local_client
+
+[MINDTRACE_LOGGER]
+USE_STRUCTLOG = False
+
+[MINDTRACE_MINIO]
+MINIO_REGISTRY_URI = ${MINDTRACE_DIR_PATHS:ROOT}/minio-registry
+MINIO_ENDPOINT = localhost:9000
+MINIO_ACCESS_KEY = minioadmin
+MINIO_SECRET_KEY = minioadmin
+
+[MINDTRACE_GCP]
+GCP_PROJECT_ID = mindtrace-test
+GCP_BUCKET_NAME = mindtrace-test-bucket
+GCP_CREDENTIALS_PATH = ~/.config/gcloud/application_default_credentials.json
+GCP_LOCATION = US
+GCP_STORAGE_CLASS = STANDARD
+
+[MINDTRACE_GCP_REGISTRY]
+GCP_REGISTRY_URI = gs://mindtrace-test-bucket
+GCP_BUCKET_NAME = registry-test-bucket
+
+[MINDTRACE_DEFAULT_HOST_URLS]
+SERVICE = http://localhost:8000
+CLUSTER_MANAGER = http://localhost:8090
+
+[MINDTRACE_DATALAKE]
+DEFAULT_PAGE_LIMIT = 100
+MAX_PAGE_LIMIT = 500
+REMOTE_MONGO_DB_URI =
+REMOTE_MONGO_DB_NAME = mindtrace_local_metadata
+
+[MINDTRACE_CLUSTER]
+DEFAULT_REDIS_URL = redis://localhost:6379
+MINIO_REGISTRY_URI = ${MINDTRACE_DIR_PATHS:ROOT}/cluster-minio-registry
+MINIO_HOST = localhost
+MINIO_PORT = 9000
+MINIO_ACCESS_KEY = minioadmin
+MINIO_SECRET_KEY = minioadmin
+MINIO_BUCKET = minio-registry
+RABBITMQ_PORT = 5672
+RABBITMQ_HOST = localhost
+RABBITMQ_USERNAME = user
+RABBITMQ_PASSWORD = password
+WORKER_PORTS_RANGE = 8092-8111
+
+[MINDTRACE_WORKER]
+DEFAULT_REDIS_URL = redis://localhost:6379
+
+[MINDTRACE_MCP]
+MOUNT_PATH = /mcp-server
+HTTP_APP_PATH = /mcp
