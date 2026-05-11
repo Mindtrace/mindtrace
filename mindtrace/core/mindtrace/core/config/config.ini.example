@@ -1,5 +1,5 @@
 ; ------------------------------------------------------------------------------
-; Mindtrace CoreSettings template (no secrets — safe to commit).
+; Mindtrace CoreSettings template
 ;
 ; On first import of ``CoreSettings``, if ``config.ini`` is missing alongside
 ; this file, it is copied from this example so local development and CI

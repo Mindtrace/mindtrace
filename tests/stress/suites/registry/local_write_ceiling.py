@@ -10,7 +10,6 @@ from tempfile import mkdtemp
 from uuid import uuid4
 
 from mindtrace.registry import GCPRegistryBackend, MinioRegistryBackend, Registry
-
 from tests.stress.lib.benchmark import StressReporter, StressResult, StressSuiteConfig, utc_now_iso
 from tests.stress.lib.workloads import deterministic_payload, parse_size_bytes, run_threaded_until_deadline
 
