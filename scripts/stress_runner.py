@@ -10,6 +10,7 @@ from itertools import product
 import importlib
 import json
 import logging
+import os
 import re
 import sys
 import time
@@ -85,26 +86,58 @@ def load_optional_config(path: Path | None) -> dict[str, Any]:
 
 
 def default_integration_resources(run_id: str) -> dict[str, Any]:
-    """Default local resources provided by ``tests/docker-compose.yml``.
+    """Default resources resolved like ``ds test: registry --integration``.
 
-    ``scripts/run_tests.sh`` starts the integration Docker stack for stress runs
-    unless the user passes ``--config``. Keep these defaults aligned with
-    ``scripts/docker_up.sh`` and ``tests/docker-compose.yml``.
+    ``scripts/run_tests.sh`` starts the integration Docker stack for default
+    stress runs. ``scripts/docker_up.sh`` exports local MinIO env vars but
+    intentionally leaves GCP/GCS env vars alone, so reading ``CoreConfig`` here
+    mirrors integration fixtures: environment first, then config.ini.
     """
 
     safe_run_id = run_id.replace("-", "_").replace(":", "_")
-    return {
-        "resources": {
-            "mongo_uri": INTEGRATION_MONGO_URI,
-            "mongo_secondary_uri": INTEGRATION_SECONDARY_MONGO_URI,
-            "mongo_db_name": f"mindtrace_stress_{safe_run_id}",
-            "minio_endpoint": INTEGRATION_MINIO_ENDPOINT,
-            "minio_access_key": "minioadmin",
-            "minio_secret_key": "minioadmin",
-            "minio_bucket": "stress-registry",
-            "minio_secure": False,
-        }
+    minio_endpoint = INTEGRATION_MINIO_ENDPOINT
+    minio_access_key = "minioadmin"
+    minio_secret_key = "minioadmin"
+    gcs_project_id = None
+    gcs_bucket_name = None
+    gcs_credentials_path = None
+
+    try:
+        from mindtrace.core import CoreConfig
+
+        core_config = CoreConfig()
+        minio_cfg = core_config.get("MINDTRACE_MINIO", {})
+        gcp_cfg = core_config.get("MINDTRACE_GCP", {})
+        gcp_registry_cfg = core_config.get("MINDTRACE_GCP_REGISTRY", {})
+
+        minio_endpoint = minio_cfg.get("MINIO_ENDPOINT") or minio_endpoint
+        minio_access_key = minio_cfg.get("MINIO_ACCESS_KEY") or minio_access_key
+        minio_secret_key = core_config.get_secret("MINDTRACE_MINIO", "MINIO_SECRET_KEY") or minio_secret_key
+        gcs_project_id = gcp_cfg.get("GCP_PROJECT_ID")
+        gcs_bucket_name = gcp_registry_cfg.get("GCP_BUCKET_NAME") or gcp_cfg.get("GCP_BUCKET_NAME")
+        gcs_credentials_path = gcp_cfg.get("GCP_CREDENTIALS_PATH")
+    except Exception:
+        pass
+
+    resources = {
+        "mongo_uri": INTEGRATION_MONGO_URI,
+        "mongo_secondary_uri": INTEGRATION_SECONDARY_MONGO_URI,
+        "mongo_db_name": f"mindtrace_stress_{safe_run_id}",
+        "minio_endpoint": minio_endpoint,
+        "minio_access_key": minio_access_key,
+        "minio_secret_key": minio_secret_key,
+        "minio_bucket": "stress-registry",
+        "minio_secure": os.environ.get("MINIO_SECURE", "0") == "1",
     }
+
+    if gcs_project_id:
+        resources["gcs_project_id"] = gcs_project_id
+    if gcs_bucket_name:
+        resources["gcs_bucket_name"] = gcs_bucket_name
+    if gcs_credentials_path:
+        resources["gcs_credentials_path"] = gcs_credentials_path
+
+    return {"resources": resources}
 
 
 def redact(value: Any) -> Any:
