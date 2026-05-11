@@ -2905,7 +2905,12 @@ class TestRegistryCacheLRU:
         assert self.make_remote_registry(temp_registry_dir, cache_max_entries=10)._cache_prune_buffer == 2
         assert self.make_remote_registry(temp_registry_dir, cache_max_entries=1000)._cache_prune_buffer == 250
         assert self.make_remote_registry(temp_registry_dir, cache_max_entries=10000)._cache_prune_buffer == 1024
-        assert self.make_remote_registry(temp_registry_dir, cache_max_entries=10, cache_prune_buffer=99)._cache_prune_buffer == 9
+        assert (
+            self.make_remote_registry(
+                temp_registry_dir, cache_max_entries=10, cache_prune_buffer=99
+            )._cache_prune_buffer
+            == 9
+        )
         with pytest.raises(ValueError, match="cache_prune_buffer"):
             self.make_remote_registry(temp_registry_dir, cache_max_entries=10, cache_prune_buffer=-1)
 
@@ -3272,9 +3277,16 @@ class TestRegistryCacheLRU:
         assert registry._cache_lru_dirty == {}
 
     def test_prune_counts_cache_entries_missing_from_partial_sidecar(self, temp_registry_dir):
+        """Rebuild sees all on-disk objects; a partial sidecar must not drop unknown keys from disk.
+
+        Sidecar ``last_accessed`` must be comparable to rebuild's mtime-based timestamps
+        (both are wall-clock style floats); a small constant like ``3.0`` is incorrectly
+        interpreted as ancient next to ``st_mtime``.
+        """
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2, cache_prune_buffer=0)
         entries = [("test:a", "1.0.0"), ("test:b", "1.0.0"), ("test:c", "1.0.0")]
         self.save_cache_entries(registry, entries)
+        mtime_floor = max(registry._cache.backend._object_metadata_path(n, v).stat().st_mtime for n, v in entries)
         registry._save_cache_lru_index(
             {
                 "version": 1,
@@ -3282,7 +3294,7 @@ class TestRegistryCacheLRU:
                     Registry._cache_lru_key("test:c", "1.0.0"): {
                         "name": "test:c",
                         "version": "1.0.0",
-                        "last_accessed": 3.0,
+                        "last_accessed": mtime_floor + 3600.0,
                     }
                 },
             }
