@@ -97,6 +97,11 @@ suites:
       backend: [local, minio, gcs]
       payload_size: [1KiB, 1MiB, 10MiB]
       concurrency: [1]
+  datalake.payload-write-ceiling:
+    sweep:
+      backend: [local, minio, gcs]
+      payload_size: [1KiB, 1MiB, 10MiB]
+      concurrency: [1]
 ```
 
 Use explicit cases when combinations need distinct resource settings or names:
@@ -166,8 +171,9 @@ contain credentials.
 
 - `registry.write-ceiling` measures sustained `Registry.save` write throughput
   for `local`, `minio`, and `gcs` backends with configurable payload sizes.
-- `datalake.registry-write-ceiling` measures Datalake object writes through the
-  configured Store/Registry path without metadata insertion.
+- `datalake.payload-write-ceiling` measures Datalake object writes through the
+  configured Store/Registry path without asset metadata insertion. It supports
+  `local`, `minio`, and `gcs` backends with configurable payload sizes.
 - `datalake.mongo-insert-ceiling` measures Asset + primary AssetAlias metadata
   insertion throughput using Mongo ODM bulk inserts.
 - `datalake.create-asset-from-object` measures the composed payload + metadata

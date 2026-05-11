@@ -35,18 +35,29 @@ suites:
         payload_size: 1MiB
         concurrency: 4
 
-  datalake.registry-write-ceiling:
-    label: Datalake / Registry payload write ceiling
+  datalake.payload-write-ceiling:
+    label: Datalake / payload write ceiling
     module: tests.stress.suites.datalake.registry_write_ceiling
     tags: [datalake, registry, write]
     requires: [local_disk]
     default_selected: true
-    safety: Uses Datalake object storage only; does not insert asset metadata.
+    safety: Uses Datalake object storage only; does not insert asset metadata. Local backend uses temporary disk; MinIO/GCS backends require configured resources.
+    parameters:
+      backend:
+        default: local
+        choices: [local, minio, gcs]
+      payload_size:
+        default: 64KiB
+        aliases: [object_size]
+      concurrency:
+        default: 1
     profiles:
       smoke:
+        backend: local
         payload_size: 64KiB
         concurrency: 1
       standard:
+        backend: local
         payload_size: 1MiB
         concurrency: 4
 
