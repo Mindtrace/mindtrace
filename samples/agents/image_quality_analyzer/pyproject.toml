@@ -1,0 +1,13 @@
+[project]
+name = "image-quality-analyzer"
+version = "0.1.0"
+description = "Standalone image quality analyzer — detects blur and darkness via deterministic checks + VLM."
+requires-python = ">=3.12"
+dependencies = [
+    "mindtrace-agents>=0.11.0",
+    "opencv-python-headless>=4.9",
+    "numpy>=1.26",
+    "Pillow>=10.0",
+    "pyyaml>=6.0",
+    "tqdm>=4.66",
+]

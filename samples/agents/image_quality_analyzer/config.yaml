@@ -1,0 +1,29 @@
+# ── Image Quality Analyzer Config ─────────────────────────────────────────────
+
+# Path to folder containing images (recursive scan, supports subfolders)
+folder_path: "/path/to/your/images"
+
+# Ollama instance URLs — two instances for parallel VLM analysis
+ollama_urls:
+  - "http://localhost:11436"
+  - "http://localhost:11435"
+
+# Vision model to use (must be pulled into both Ollama instances)
+model: "gemma4:latest"
+
+# Blur detection — Laplacian variance below this value triggers VLM check
+# Lower = more tolerant of blur, higher = stricter
+blur_threshold: 100.0
+
+# Darkness detection — mean pixel luma (0-255) below this value triggers VLM check
+# Lower = more tolerant of darkness, higher = stricter
+darkness_threshold: 50.0
+
+# Number of parallel workers (should match number of Ollama instances)
+workers: 2
+
+# File to persist analysis progress (enables resume on interruption)
+state_file: "analysis_state.json"
+
+# Output file listing flagged images
+output_file: "flagged_images.json"
