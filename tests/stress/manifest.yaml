@@ -69,12 +69,17 @@ suites:
     default_selected: false
     safety: Requires explicit Mongo configuration and writes generated Asset/AssetAlias-style metadata.
     parameters:
+      mongo_backend:
+        default: local
+        choices: [local, atlas]
       batch_size:
         default: 100
     profiles:
       smoke:
+        mongo_backend: local
         batch_size: 100
       standard:
+        mongo_backend: local
         batch_size: 1000
 
   datalake.create-asset-from-object:
@@ -88,6 +93,9 @@ suites:
       backend:
         default: local
         choices: [local, minio, gcs]
+      mongo_backend:
+        default: local
+        choices: [local, atlas]
       payload_size:
         default: 64KiB
         aliases: [object_size]
@@ -96,9 +104,11 @@ suites:
     profiles:
       smoke:
         backend: local
+        mongo_backend: local
         payload_size: 64KiB
         concurrency: 1
       standard:
         backend: local
+        mongo_backend: local
         payload_size: 1MiB
         concurrency: 4

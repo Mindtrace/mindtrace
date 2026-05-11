@@ -21,8 +21,7 @@ def run(config: StressSuiteConfig, reporter: StressReporter) -> StressResult:
 async def _run_async(config: StressSuiteConfig, reporter: StressReporter) -> StressResult:
     started = utc_now_iso()
     monotonic_start = time.perf_counter()
-    mongo_uri = require_resource(config, "mongo_uri")
-    mongo_db_name = config.resources.get("mongo_db_name", f"mindtrace_stress_{config.run_id.replace('-', '_')}")
+    mongo_backend, mongo_uri, mongo_db_name = resolve_mongo(config)
     batch_size = int(config.parameters.get("batch_size", 100))
     asset_db = MongoMindtraceODM(model_cls=Asset, db_uri=mongo_uri, db_name=mongo_db_name)
     alias_db = MongoMindtraceODM(model_cls=AssetAlias, db_uri=mongo_uri, db_name=mongo_db_name)
@@ -65,7 +64,12 @@ async def _run_async(config: StressSuiteConfig, reporter: StressReporter) -> Str
         bytes_processed=reporter.bytes_processed,
         latency_seconds=reporter.latency_seconds,
         error_counts=reporter.error_counts,
-        metrics={**reporter.metrics, "batch_size": batch_size, "mongo_db_name": mongo_db_name},
+        metrics={
+            **reporter.metrics,
+            "batch_size": batch_size,
+            "mongo_backend": mongo_backend,
+            "mongo_db_name": mongo_db_name,
+        },
     )
 
 
@@ -85,3 +89,24 @@ def require_resource(config: StressSuiteConfig, key: str) -> str:
     if not value:
         raise ValueError(f"Suite {config.suite_id} requires resource config key {key!r}")
     return str(value)
+
+
+def resolve_mongo(config: StressSuiteConfig) -> tuple[str, str, str]:
+    backend = str(config.parameters.get("mongo_backend", "local")).lower()
+    default_db_name = f"mindtrace_stress_{config.run_id.replace('-', '_')}"
+
+    if backend == "local":
+        return (
+            "local",
+            require_resource(config, "mongo_uri"),
+            str(config.resources.get("mongo_db_name", default_db_name)),
+        )
+
+    if backend == "atlas":
+        return (
+            "atlas",
+            require_resource(config, "mongo_atlas_uri"),
+            str(config.resources.get("mongo_atlas_db_name") or config.resources.get("mongo_db_name", default_db_name)),
+        )
+
+    raise ValueError(f"Unsupported Mongo stress backend {backend!r}; expected local or atlas")

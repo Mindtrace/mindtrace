@@ -31,8 +31,7 @@ def run(config: StressSuiteConfig, reporter: StressReporter) -> StressResult:
     started = utc_now_iso()
     monotonic_start = time.perf_counter()
     backend = str(config.parameters.get("backend", "local")).lower()
-    mongo_uri = require_resource(config, "mongo_uri")
-    mongo_db_name = config.resources.get("mongo_db_name", f"mindtrace_stress_{config.run_id.replace('-', '_')}")
+    mongo_backend, mongo_uri, mongo_db_name = resolve_mongo(config)
     payload_size = parse_size_bytes(
         config.parameters.get("payload_size", config.parameters.get("object_size")),
         default=64 * 1024,
@@ -95,6 +94,7 @@ def run(config: StressSuiteConfig, reporter: StressReporter) -> StressResult:
             **backend_metrics,
             "payload_size_bytes": payload_size,
             "concurrency": concurrency,
+            "mongo_backend": mongo_backend,
             "mongo_db_name": mongo_db_name,
             "mount": "stress",
             "object_prefix": prefix,
@@ -182,6 +182,27 @@ def require_resource(config: StressSuiteConfig, key: str) -> str:
     if not value:
         raise ValueError(f"Suite {config.suite_id} requires resource config key {key!r}")
     return str(value)
+
+
+def resolve_mongo(config: StressSuiteConfig) -> tuple[str, str, str]:
+    backend = str(config.parameters.get("mongo_backend", "local")).lower()
+    default_db_name = f"mindtrace_stress_{config.run_id.replace('-', '_')}"
+
+    if backend == "local":
+        return (
+            "local",
+            require_resource(config, "mongo_uri"),
+            str(config.resources.get("mongo_db_name", default_db_name)),
+        )
+
+    if backend == "atlas":
+        return (
+            "atlas",
+            require_resource(config, "mongo_atlas_uri"),
+            str(config.resources.get("mongo_atlas_db_name") or config.resources.get("mongo_db_name", default_db_name)),
+        )
+
+    raise ValueError(f"Unsupported Mongo stress backend {backend!r}; expected local or atlas")
 
 
 def as_bool(value: object) -> bool:
