@@ -20,8 +20,8 @@ from mindtrace.registry import (
     S3AccessKeyAuth,
     S3MountConfig,
 )
-
 from tests.stress.lib.benchmark import StressReporter, StressResult, StressSuiteConfig, utc_now_iso
+from tests.stress.lib.remote_mongo import resolve_stress_atlas_mongo
 from tests.stress.lib.workloads import deterministic_payload, parse_size_bytes, run_threaded_until_deadline
 
 
@@ -102,7 +102,9 @@ def run(config: StressSuiteConfig, reporter: StressReporter) -> StressResult:
     )
 
 
-def build_mount(config: StressSuiteConfig, backend: str, prefix: str) -> tuple[Mount, Callable[[], None], dict[str, object]]:
+def build_mount(
+    config: StressSuiteConfig, backend: str, prefix: str
+) -> tuple[Mount, Callable[[], None], dict[str, object]]:
     """Create a Datalake mount for the requested backend."""
 
     registry_options = {"mutable": True, "version_objects": True, "use_cache": False}
@@ -196,11 +198,8 @@ def resolve_mongo(config: StressSuiteConfig) -> tuple[str, str, str]:
         )
 
     if backend == "atlas":
-        return (
-            "atlas",
-            require_resource(config, "mongo_atlas_uri"),
-            str(config.resources.get("mongo_atlas_db_name") or config.resources.get("mongo_db_name", default_db_name)),
-        )
+        atlas_uri, atlas_db_name = resolve_stress_atlas_mongo(config.resources, default_db_name)
+        return ("atlas", atlas_uri, atlas_db_name)
 
     raise ValueError(f"Unsupported Mongo stress backend {backend!r}; expected local or atlas")
 

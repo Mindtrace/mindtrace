@@ -129,8 +129,9 @@ export MINDTRACE_DATALAKE__REMOTE_MONGO_DB_NAME='mindtrace_stress_atlas'
 ```
 
 Atlas variants use `mongo_backend: atlas`; local variants use the default
-integration Mongo. You can also override per run with `resources.mongo_atlas_uri`
-and `resources.mongo_atlas_db_name` in a local, uncommitted config file.
+integration Mongo. You can also override per run with `resources.REMOTE_MONGO_DB_URI`
+and `resources.REMOTE_MONGO_DB_NAME` (matching `MINDTRACE_DATALAKE` field names).
+Legacy aliases `mongo_atlas_uri` and `mongo_atlas_db_name` are still accepted.
 
 Use explicit cases when combinations need distinct resource settings or names:
 
@@ -159,9 +160,12 @@ resources:
   mongo_uri: mongodb://localhost:27018
   mongo_secondary_uri: mongodb://localhost:27019
   mongo_db_name: mindtrace_stress_<run-id>
-  # included when configured via MINDTRACE_DATALAKE / CoreConfig:
-  mongo_atlas_uri: mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?appName=<app>
-  mongo_atlas_db_name: mindtrace_stress_atlas
+  # Included when REMOTE_* are configured via MINDTRACE_DATALAKE / CoreConfig:
+  REMOTE_MONGO_DB_URI: mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?appName=<app>
+  REMOTE_MONGO_DB_NAME: mindtrace_stress_atlas
+  # Deprecated aliases mirrored for compatibility:
+  # mongo_atlas_uri: ...
+  # mongo_atlas_db_name: ...
   minio_endpoint: localhost:9100
   minio_access_key: minioadmin
   minio_secret_key: minioadmin

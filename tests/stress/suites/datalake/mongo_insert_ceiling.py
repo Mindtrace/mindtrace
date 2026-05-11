@@ -8,8 +8,8 @@ from uuid import uuid4
 
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.datalake.types import Asset, AssetAlias, StorageRef
-
 from tests.stress.lib.benchmark import StressReporter, StressResult, StressSuiteConfig, utc_now_iso
+from tests.stress.lib.remote_mongo import resolve_stress_atlas_mongo
 
 
 def run(config: StressSuiteConfig, reporter: StressReporter) -> StressResult:
@@ -36,7 +36,10 @@ async def _run_async(config: StressSuiteConfig, reporter: StressReporter) -> Str
             op_start = time.perf_counter()
             try:
                 inserted_assets = await asset_db.insert_many(assets, ordered=False)
-                aliases = [AssetAlias(alias=asset.asset_id, asset_id=asset.asset_id, is_primary=True) for asset in inserted_assets]
+                aliases = [
+                    AssetAlias(alias=asset.asset_id, asset_id=asset.asset_id, is_primary=True)
+                    for asset in inserted_assets
+                ]
                 await alias_db.insert_many(aliases, ordered=False)
             except Exception as exc:  # noqa: BLE001 - benchmark records backend failures
                 reporter.record_operation(success=False, latency_seconds=time.perf_counter() - op_start, error=exc)
@@ -103,10 +106,7 @@ def resolve_mongo(config: StressSuiteConfig) -> tuple[str, str, str]:
         )
 
     if backend == "atlas":
-        return (
-            "atlas",
-            require_resource(config, "mongo_atlas_uri"),
-            str(config.resources.get("mongo_atlas_db_name") or config.resources.get("mongo_db_name", default_db_name)),
-        )
+        atlas_uri, atlas_db_name = resolve_stress_atlas_mongo(config.resources, default_db_name)
+        return ("atlas", atlas_uri, atlas_db_name)
 
     raise ValueError(f"Unsupported Mongo stress backend {backend!r}; expected local or atlas")
