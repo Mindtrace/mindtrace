@@ -6,7 +6,6 @@ from mindtrace.core.messaging.nats.client import (
     Subscription,
     SubscriptionHandle,
 )
-from mindtrace.core.messaging.nats.fakes import FakeBroker, FakeNatsClient
 from mindtrace.core.messaging.nats.jetstream import (
     JetStreamContext,
     KeyValueHandle,
@@ -18,8 +17,6 @@ from mindtrace.core.messaging.nats.settings import NatsSettings
 
 __all__ = [
     "Codec",
-    "FakeBroker",
-    "FakeNatsClient",
     "JetStreamContext",
     "JsonCodec",
     "KeyValueHandle",

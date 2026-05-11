@@ -1,11 +1,11 @@
 ## Mindtrace NATS Messaging Samples
 
 Runnable demos for the async-native NATS substrate exposed via
-`mindtrace.core.NatsClient` (and the in-memory `FakeNatsClient` for tests).
+`mindtrace.core.NatsClient`.
 
 ### Prerequisites
 
-The broker-backed samples expect a NATS server reachable at `nats://localhost:4222`
+These samples expect a NATS server reachable at `nats://localhost:4222`
 (the default for `NatsSettings`). Override with the `MINDTRACE_NATS__URLS`
 env var if you need to.
 
@@ -19,19 +19,15 @@ docker run --rm -p 4222:4222 nats:latest
 docker run --rm -p 4222:4222 nats:latest -js
 ```
 
-The `using_fake_nats_for_tests.py` sample needs no broker — it uses the
-in-memory `FakeNatsClient`.
-
 ### Files
 
-| Sample | What it shows | Broker? |
+| Sample | What it shows | Broker |
 |---|---|---|
 | [using_nats_pubsub.py](using_nats_pubsub.py) | Async pub/sub with a Pydantic-typed payload. | core NATS |
 | [using_nats_request_reply.py](using_nats_request_reply.py) | Request/reply with typed question and answer models. | core NATS |
 | [using_nats_worker.py](using_nats_worker.py) | Callback-style subscribe — managed worker task, auto-ack/nak. | core NATS |
 | [using_nats_jetstream.py](using_nats_jetstream.py) | JetStream durable pull subscribe with `scoped_stream`. | JetStream |
 | [using_nats_kv_and_object_store.py](using_nats_kv_and_object_store.py) | KV bucket + Object Store roundtrip with `scoped_*` helpers. | JetStream |
-| [using_fake_nats_for_tests.py](using_fake_nats_for_tests.py) | `FakeNatsClient` as a drop-in for unit tests. | none |
 
 Run any sample with:
 

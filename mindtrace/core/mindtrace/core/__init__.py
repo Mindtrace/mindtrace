@@ -9,7 +9,6 @@ from mindtrace.core.messaging.nats.client import (
     Subscription,
     SubscriptionHandle,
 )
-from mindtrace.core.messaging.nats.fakes import FakeBroker, FakeNatsClient
 from mindtrace.core.messaging.nats.jetstream import (
     JetStreamContext,
     KeyValueHandle,
@@ -57,8 +56,6 @@ __all__ = [
     "EchoOutput",
     "echo_task",
     "EventBus",
-    "FakeBroker",
-    "FakeNatsClient",
     "first_not_none",
     "get_class",
     "get_free_port",
