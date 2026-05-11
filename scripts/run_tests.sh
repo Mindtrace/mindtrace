@@ -17,6 +17,10 @@ RUN_STRESS=false
 RUN_UTILS=false
 RUN_ALL=true
 STRESS_CONFIG_PROVIDED=false
+STRESS_OUTPUT_DIR_PROVIDED=false
+STRESS_RUN_ID_PROVIDED=false
+STRESS_OUTPUT_DIR=""
+STRESS_RUN_ID=""
 MODULES=()
 REPORT_INCLUDE_PATTERNS=()
 
@@ -27,16 +31,30 @@ PROJECT_ROOT=$(pwd)
 COVERAGE_CONFIG="$PROJECT_ROOT/.coveragerc"
 
 finalize_coverage() {
+    local report_output="${1:-}"
     if [ -f "$PROJECT_ROOT/.coverage" ] || (cd "$PROJECT_ROOT" && compgen -G ".coverage.*" > /dev/null); then
         echo "Combining coverage data..."
         (cd "$PROJECT_ROOT" && coverage combine)
-        echo "Reporting coverage..."
+        if [ -n "$report_output" ]; then
+            echo "Writing coverage report to $report_output"
+            mkdir -p "$(dirname "$report_output")"
+        else
+            echo "Reporting coverage..."
+        fi
         if [ ${#REPORT_INCLUDE_PATTERNS[@]} -gt 0 ]; then
             local include_arg
             include_arg=$(IFS=,; echo "${REPORT_INCLUDE_PATTERNS[*]}")
-            (cd "$PROJECT_ROOT" && coverage report -m --include="$include_arg")
+            if [ -n "$report_output" ]; then
+                (cd "$PROJECT_ROOT" && coverage report -m --include="$include_arg" > "$report_output")
+            else
+                (cd "$PROJECT_ROOT" && coverage report -m --include="$include_arg")
+            fi
         else
-            (cd "$PROJECT_ROOT" && coverage report -m)
+            if [ -n "$report_output" ]; then
+                (cd "$PROJECT_ROOT" && coverage report -m > "$report_output")
+            else
+                (cd "$PROJECT_ROOT" && coverage report -m)
+            fi
         fi
     fi
 }
@@ -95,6 +113,38 @@ while [[ $# -gt 0 ]]; do
             ;;
         --config=*)
             STRESS_CONFIG_PROVIDED=true
+            PYTEST_ARGS+=("$1")
+            shift
+            ;;
+        --output-dir)
+            STRESS_OUTPUT_DIR_PROVIDED=true
+            PYTEST_ARGS+=("$1")
+            shift
+            if [[ $# -gt 0 ]]; then
+                STRESS_OUTPUT_DIR="$1"
+                PYTEST_ARGS+=("$1")
+                shift
+            fi
+            ;;
+        --output-dir=*)
+            STRESS_OUTPUT_DIR_PROVIDED=true
+            STRESS_OUTPUT_DIR="${1#--output-dir=}"
+            PYTEST_ARGS+=("$1")
+            shift
+            ;;
+        --run-id)
+            STRESS_RUN_ID_PROVIDED=true
+            PYTEST_ARGS+=("$1")
+            shift
+            if [[ $# -gt 0 ]]; then
+                STRESS_RUN_ID="$1"
+                PYTEST_ARGS+=("$1")
+                shift
+            fi
+            ;;
+        --run-id=*)
+            STRESS_RUN_ID_PROVIDED=true
+            STRESS_RUN_ID="${1#--run-id=}"
             PYTEST_ARGS+=("$1")
             shift
             ;;
@@ -271,6 +321,16 @@ fi
 if [ "$RUN_STRESS" = true ]; then
     echo "Running stress suites with scripts/stress_runner.py..."
 
+    if [ "$STRESS_RUN_ID_PROVIDED" = false ]; then
+        STRESS_RUN_ID=$(date -u +"%Y-%m-%dT%H-%M-%SZ")
+        PYTEST_ARGS+=("--run-id" "$STRESS_RUN_ID")
+    fi
+
+    if [ "$STRESS_OUTPUT_DIR_PROVIDED" = false ]; then
+        STRESS_OUTPUT_DIR="$PROJECT_ROOT/.stress-results/${STRESS_RUN_ID}"
+        PYTEST_ARGS+=("--output-dir" "$STRESS_OUTPUT_DIR")
+    fi
+
     # Stress tests are benchmark-style runs, so they are delegated to the
     # manifest-driven stress runner instead of pytest. Arguments following
     # --stress are forwarded through PYTEST_ARGS by the parser above.
@@ -281,7 +341,11 @@ if [ "$RUN_STRESS" = true ]; then
     if [ $STRESS_EXIT_CODE -ne 0 ]; then
         echo "Stress tests failed. Stopping test execution."
         OVERALL_EXIT_CODE=1
-        finalize_coverage
+        if [ -n "$STRESS_OUTPUT_DIR" ]; then
+            finalize_coverage "$STRESS_OUTPUT_DIR/coverage.txt"
+        else
+            finalize_coverage
+        fi
         # Stop docker containers if they were started
         if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
             echo "Stopping docker containers..."
@@ -292,7 +356,11 @@ if [ "$RUN_STRESS" = true ]; then
 fi
 
 if [ "$RUN_UNIT" = true ] || [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ]; then
-    finalize_coverage
+    if [ "$RUN_STRESS" = true ] && [ -n "${STRESS_OUTPUT_DIR:-}" ]; then
+        finalize_coverage "$STRESS_OUTPUT_DIR/coverage.txt"
+    else
+        finalize_coverage
+    fi
 fi
 
 # Stop docker containers if they were started
