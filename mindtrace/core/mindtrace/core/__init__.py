@@ -4,16 +4,19 @@ from mindtrace.core.logging.logger import setup_logger
 from mindtrace.core.messaging.nats.client import (
     NatsClient,
     NatsClientClosed,
-    NatsMessage,
+    NatsHealth,
+    NatsStats,
     Subscription,
     SubscriptionHandle,
 )
+from mindtrace.core.messaging.nats.fakes import FakeBroker, FakeNatsClient
 from mindtrace.core.messaging.nats.jetstream import (
     JetStreamContext,
     KeyValueHandle,
     ObjectStoreHandle,
     PushSubscription,
 )
+from mindtrace.core.messaging.nats.serde import Codec, JsonCodec, NatsMessage
 from mindtrace.core.messaging.nats.settings import NatsSettings
 from mindtrace.core.observables.context_listener import ContextListener
 from mindtrace.core.observables.event_bus import EventBus
@@ -54,17 +57,21 @@ __all__ = [
     "EchoOutput",
     "echo_task",
     "EventBus",
+    "FakeBroker",
+    "FakeNatsClient",
     "first_not_none",
     "get_class",
     "get_free_port",
     "get_free_ports",
     "get_local_ip",
     "get_local_ip_safe",
+    "Codec",
     "ifnone",
     "ifnone_url",
     "instantiate_target",
     "is_port_available",
     "JetStreamContext",
+    "JsonCodec",
     "KeyValueHandle",
     "LocalIPError",
     "Mindtrace",
@@ -73,8 +80,10 @@ __all__ = [
     "named_lambda",
     "NatsClient",
     "NatsClientClosed",
+    "NatsHealth",
     "NatsMessage",
     "NatsSettings",
+    "NatsStats",
     "NetworkError",
     "NoFreePortError",
     "ObjectStoreHandle",

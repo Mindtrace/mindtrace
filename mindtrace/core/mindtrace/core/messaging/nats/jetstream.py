@@ -21,11 +21,16 @@ from pydantic import BaseModel
 from mindtrace.core.messaging.nats.client import (
     Handler,
     HandlerErrorCallback,
+    SubscriptionHandle,
+)
+from mindtrace.core.messaging.nats.serde import (
+    Codec,
     NatsMessage,
     Payload,
-    SubscriptionHandle,
+    _apply_content_type,
     decode_payload,
     encode_payload,
+    get_default_codec,
 )
 
 T = TypeVar("T", bound=BaseModel)
@@ -136,8 +141,9 @@ class PushSubscription:
 class JetStreamContext:
     """Wrapper around `nats.aio.client.JetStreamContext` with Pydantic-aware publish."""
 
-    def __init__(self, js):
+    def __init__(self, js, *, codec: Optional[Codec] = None):
         self._js = js
+        self._codec: Codec = codec or get_default_codec()
 
     @property
     def raw(self):
@@ -182,11 +188,17 @@ class JetStreamContext:
         stream: Optional[str] = None,
         timeout: Optional[float] = None,
     ):
-        """Durable publish. Returns the `PubAck` from the server."""
+        """Durable publish. Returns the `PubAck` from the server.
+
+        For codec-serialized payloads (`dict`, `BaseModel`), the codec's
+        `content_type` is set on headers automatically unless you provided
+        your own `Content-Type`. Headers are forwarded verbatim — pass
+        `traceparent` for OpenTelemetry context.
+        """
         return await self._js.publish(
             subject,
-            encode_payload(payload),
-            headers=headers,
+            encode_payload(payload, codec=self._codec),
+            headers=_apply_content_type(payload, headers, codec=self._codec),
             stream=stream,
             timeout=timeout,
         )

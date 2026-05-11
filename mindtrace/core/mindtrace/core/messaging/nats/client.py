@@ -16,10 +16,18 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, Optional, Type, TypeVar, Union, overload
 
 import nats
-from nats.aio.msg import Msg as _RawMsg
 from pydantic import BaseModel
 
 from mindtrace.core.base import Mindtrace
+from mindtrace.core.messaging.nats.serde import (
+    Codec,
+    NatsMessage,
+    Payload,
+    _apply_content_type,
+    decode_payload,
+    encode_payload,
+    get_default_codec,
+)
 from mindtrace.core.messaging.nats.settings import NatsSettings
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -73,105 +81,28 @@ def _collect_auth_kwargs(s: NatsSettings) -> dict:
     return out
 
 
+class NatsStats(BaseModel):
+    """Mirror of `nats.aio.client.Client.stats` — counters maintained by nats-py."""
+
+    in_msgs: int = 0
+    out_msgs: int = 0
+    in_bytes: int = 0
+    out_bytes: int = 0
+    reconnects: int = 0
+    errors_received: int = 0
+
+
+class NatsHealth(BaseModel):
+    """Snapshot of `NatsClient` connection state. Returned by `NatsClient.health()`."""
+
+    is_connected: bool
+    connected_url: Optional[str] = None
+    servers: list[str] = []
+    last_error: Optional[str] = None
+    stats: NatsStats = NatsStats()
+
+
 T = TypeVar("T", bound=BaseModel)
-
-Payload = Union[bytes, str, BaseModel]
-
-
-def encode_payload(payload: Payload) -> bytes:
-    """Normalize a publish/request payload to `bytes`."""
-    if isinstance(payload, bytes):
-        return payload
-    if isinstance(payload, str):
-        return payload.encode("utf-8")
-    if isinstance(payload, BaseModel):
-        return payload.model_dump_json().encode("utf-8")
-    raise TypeError(f"Unsupported payload type: {type(payload).__name__}. Expected bytes, str, or pydantic.BaseModel.")
-
-
-def decode_payload(data: bytes, model: Optional[Type[T]] = None) -> Union[bytes, T]:
-    """Decode a received payload. Returns raw bytes unless `model` is supplied."""
-    if model is None:
-        return data
-    return model.model_validate_json(data)
-
-
-class NatsMessage:
-    """Thin wrapper around a `nats.aio.msg.Msg` with decoded data and convenience methods.
-
-    `data` lazily decodes against the optional Pydantic `model` provided at subscribe time.
-    `ack` / `nak` / `term` apply to JetStream messages only; on a core NATS subscription
-    the underlying client raises if you call them, which is the right behavior.
-    """
-
-    __slots__ = ("_raw", "_model", "_cache")
-
-    def __init__(self, raw: _RawMsg, model: Optional[Type[BaseModel]] = None):
-        self._raw = raw
-        self._model = model
-        self._cache: Any = _UNSET
-
-    @property
-    def subject(self) -> str:
-        return self._raw.subject
-
-    @property
-    def reply(self) -> str:
-        return self._raw.reply
-
-    @property
-    def headers(self) -> Optional[dict]:
-        return self._raw.headers
-
-    @property
-    def raw_data(self) -> bytes:
-        return self._raw.data
-
-    @property
-    def data(self) -> Any:
-        if self._cache is _UNSET:
-            self._cache = decode_payload(self._raw.data, self._model)
-        return self._cache
-
-    async def respond(self, payload: Payload) -> None:
-        """Send a reply on the message's reply subject. Raises if no reply subject is set."""
-        if not self._raw.reply:
-            raise RuntimeError(
-                f"Cannot respond to message on subject '{self._raw.subject}': no reply subject set "
-                "(this is a fire-and-forget message, not a request-reply)."
-            )
-        await self._raw.respond(encode_payload(payload))
-
-    async def ack(self) -> None:
-        await self._raw.ack()
-
-    async def nak(self, *, delay: Optional[float] = None) -> None:
-        if delay is None:
-            await self._raw.nak()
-        else:
-            await self._raw.nak(delay=delay)
-
-    async def term(self) -> None:
-        await self._raw.term()
-
-    async def in_progress(self) -> None:
-        """Extend the JetStream ack-wait window — useful inside long-running handlers."""
-        await self._raw.in_progress()
-
-    @property
-    def metadata(self):
-        """JetStream message metadata (stream/consumer seq, num_delivered, timestamp).
-
-        Returns the nats-py `Metadata` instance for JS messages, or `None` for
-        core NATS messages where the concept does not apply.
-        """
-        try:
-            return self._raw.metadata
-        except Exception:
-            return None
-
-
-_UNSET: Any = object()
 
 
 class Subscription:
@@ -335,11 +266,14 @@ class NatsClient(Mindtrace):
             await nc.publish("greet", b"hello")
     """
 
-    def __init__(self, nc, settings: NatsSettings):
+    def __init__(self, nc, settings: NatsSettings, codec: Optional[Codec] = None):
         super().__init__()
         self._nc = nc
         self._settings = settings
         self._js_wrapper = None
+        self._last_error: Optional[Exception] = None
+        self._codec: Codec = codec or get_default_codec()
+        self._subject_models: dict[str, Type[BaseModel]] = {}
 
     @classmethod
     @asynccontextmanager
@@ -350,6 +284,7 @@ class NatsClient(Mindtrace):
         urls: Optional[list[str]] = None,
         name: Optional[str] = None,
         settings: Optional[NatsSettings] = None,
+        codec: Optional[Codec] = None,
         on_disconnected: Optional[CallbackNoArgs] = None,
         on_reconnected: Optional[CallbackNoArgs] = None,
         on_error: Optional[CallbackOneArg] = None,
@@ -387,10 +322,18 @@ class NatsClient(Mindtrace):
             connect_kwargs.setdefault("disconnected_cb", on_disconnected)
         if on_reconnected is not None:
             connect_kwargs.setdefault("reconnected_cb", on_reconnected)
-        if on_error is not None:
-            connect_kwargs.setdefault("error_cb", on_error)
         if on_closed is not None:
             connect_kwargs.setdefault("closed_cb", on_closed)
+
+        # Construct the client up-front so the error callback can capture into it.
+        client = cls(nc=None, settings=s, codec=codec)
+
+        async def _capture_error(exc):
+            client._last_error = exc
+            if on_error is not None:
+                await on_error(exc)
+
+        connect_kwargs.setdefault("error_cb", _capture_error)
 
         nc = await nats.connect(
             servers=servers,
@@ -400,7 +343,7 @@ class NatsClient(Mindtrace):
             reconnect_time_wait=s.reconnect_time_wait,
             **connect_kwargs,
         )
-        client = cls(nc=nc, settings=s)
+        client._nc = nc
         try:
             yield client
         finally:
@@ -419,20 +362,55 @@ class NatsClient(Mindtrace):
     def settings(self) -> NatsSettings:
         return self._settings
 
-    def health(self) -> dict:
-        """Connection health snapshot.
+    @property
+    def codec(self) -> Codec:
+        return self._codec
 
-        Returns a plain dict for now; Chunk 4 will promote this to a structured
-        type with `stats`, `last_error`, and `reconnects`.
+    # -- Subject → model registry -----------------------------------------------------
+
+    def register(self, subject: str, model: Type[BaseModel]) -> None:
+        """Register a default Pydantic model for a subject.
+
+        Subsequent `subscribe(subject)` / `request(subject)` calls that omit
+        `model=` will resolve to this registration. A per-call `model=` argument
+        always wins.
+        """
+        self._subject_models[subject] = model
+
+    def unregister(self, subject: str) -> Optional[Type[BaseModel]]:
+        """Remove a subject's model registration. Returns the old model, if any."""
+        return self._subject_models.pop(subject, None)
+
+    def registered_model(self, subject: str) -> Optional[Type[BaseModel]]:
+        """Return the registered model for `subject` (or `None`)."""
+        return self._subject_models.get(subject)
+
+    def _resolve_model(self, subject: str, model: Any) -> Any:
+        return model if model is not None else self._subject_models.get(subject)
+
+    def health(self) -> NatsHealth:
+        """Connection health snapshot as a `NatsHealth` Pydantic model.
+
+        Includes the live `nc.stats` counters (in_msgs / out_msgs / in_bytes /
+        out_bytes / reconnects / errors_received), the last error captured by
+        the wrapped `error_cb`, and the current `connected_url` / `servers`.
         """
         if self._nc is None:
-            return {"is_connected": False, "connected_url": None, "servers": []}
-        connected_url = self._nc.connected_url
-        return {
-            "is_connected": bool(self._nc.is_connected),
-            "connected_url": str(connected_url) if connected_url else None,
-            "servers": [str(srv) for srv in (self._nc.servers or [])],
-        }
+            return NatsHealth(
+                is_connected=False,
+                connected_url=None,
+                servers=[],
+                last_error=(repr(self._last_error) if self._last_error else None),
+                stats=NatsStats(),
+            )
+        raw_stats = getattr(self._nc, "stats", {}) or {}
+        return NatsHealth(
+            is_connected=bool(self._nc.is_connected),
+            connected_url=(str(self._nc.connected_url) if self._nc.connected_url else None),
+            servers=[str(srv) for srv in (self._nc.servers or [])],
+            last_error=(repr(self._last_error) if self._last_error else None),
+            stats=NatsStats(**{k: v for k, v in raw_stats.items() if k in NatsStats.model_fields}),
+        )
 
     async def publish(
         self,
@@ -441,10 +419,34 @@ class NatsClient(Mindtrace):
         *,
         headers: Optional[dict] = None,
         reply: str = "",
+        codec: Optional[Codec] = None,
     ) -> None:
-        """Publish to a subject. Use `reply` to indicate where responders should reply."""
+        """Publish to a subject.
+
+        Args:
+            subject: NATS subject to publish to.
+            payload: `bytes`, `str`, `dict`, or `pydantic.BaseModel`. Codec-serialized
+                types (`dict`, `BaseModel`) are encoded with the active codec.
+            headers: Optional NATS headers. For codec-serialized payloads, the
+                codec's `content_type` is set automatically unless you provided
+                your own `Content-Type`. To propagate OpenTelemetry trace
+                context, pass `headers={"traceparent": "00-..."}` — anything
+                you set here is forwarded verbatim to the server and consumers.
+            reply: Optional reply subject for fire-and-forget request-style patterns.
+            codec: Optional codec override for this call (defaults to `self.codec`).
+        """
         self._check_open()
-        await self._nc.publish(subject, encode_payload(payload), reply=reply, headers=headers)
+        active = codec or self._codec
+        body = encode_payload(payload, codec=active)
+        eff_headers = _apply_content_type(payload, headers, codec=active)
+        self.logger.debug(
+            "nats.publish subject=%s size=%d has_headers=%s",
+            subject,
+            len(body),
+            bool(eff_headers),
+            extra={"subject": subject, "size": len(body), "has_headers": bool(eff_headers)},
+        )
+        await self._nc.publish(subject, body, reply=reply, headers=eff_headers)
 
     async def request(
         self,
@@ -454,16 +456,40 @@ class NatsClient(Mindtrace):
         timeout: float = 1.0,
         headers: Optional[dict] = None,
         model: Optional[Type[T]] = None,
-    ) -> Union[bytes, T]:
-        """Request-reply. Returns raw bytes, or a `model` instance if supplied."""
+        codec: Optional[Codec] = None,
+    ) -> Any:
+        """Request-reply. Returns raw bytes, or a `model` instance if supplied.
+
+        Model resolution: per-call `model=` wins; otherwise the subject's
+        registered model (`nc.register(subject, Model)`) is used; otherwise
+        raw bytes are returned. `model=Optional[T]` makes empty replies
+        return `None` instead of raising.
+
+        Headers behave the same way as `publish` — pass `traceparent` to
+        propagate trace context.
+        """
         self._check_open()
-        msg = await self._nc.request(
+        active = codec or self._codec
+        body = encode_payload(payload, codec=active)
+        eff_headers = _apply_content_type(payload, headers, codec=active)
+        started = asyncio.get_event_loop().time()
+        msg = await self._nc.request(subject, body, timeout=timeout, headers=eff_headers)
+        elapsed_ms = (asyncio.get_event_loop().time() - started) * 1000.0
+        response_size = len(msg.data) if msg.data else 0
+        self.logger.debug(
+            "nats.request subject=%s size=%d response_size=%d duration_ms=%.3f",
             subject,
-            encode_payload(payload),
-            timeout=timeout,
-            headers=headers,
+            len(body),
+            response_size,
+            elapsed_ms,
+            extra={
+                "subject": subject,
+                "size": len(body),
+                "response_size": response_size,
+                "duration_ms": round(elapsed_ms, 3),
+            },
         )
-        return decode_payload(msg.data, model)
+        return decode_payload(msg.data, self._resolve_model(subject, model), codec=active)
 
     @overload
     def subscribe(
@@ -516,8 +542,9 @@ class NatsClient(Mindtrace):
                 fired after the handler raises.
         """
         self._check_open()
+        eff_model = self._resolve_model(subject, model)
         if handler is None:
-            return Subscription(self._nc, subject, queue, model)
+            return Subscription(self._nc, subject, queue, eff_model)
         nc = self._nc
 
         async def _subscribe():
@@ -526,7 +553,7 @@ class NatsClient(Mindtrace):
         return SubscriptionHandle(
             _subscribe,
             subject=subject,
-            model=model,
+            model=eff_model,
             handler=handler,
             auto_ack=auto_ack,
             on_error=on_error,
@@ -538,7 +565,7 @@ class NatsClient(Mindtrace):
         if self._js_wrapper is None:
             from mindtrace.core.messaging.nats.jetstream import JetStreamContext
 
-            self._js_wrapper = JetStreamContext(self._nc.jetstream())
+            self._js_wrapper = JetStreamContext(self._nc.jetstream(), codec=self._codec)
         return self._js_wrapper
 
     async def kv(self, bucket: str) -> "KeyValueHandle":

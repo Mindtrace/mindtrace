@@ -257,22 +257,40 @@ async def test_multi_url_failover(nats_url):
         assert nc.is_connected is True
         # connected_url should be the working one — server normalizes to host:port form,
         # so do a substring match rather than equality.
-        assert nc.health()["connected_url"] is not None
+        assert nc.health().connected_url is not None
 
 
 async def test_health_shape_when_connected(nats_url):
     async with NatsClient.connect(urls=[nats_url]) as nc:
         h = nc.health()
-        assert h["is_connected"] is True
-        assert h["connected_url"] is not None
-        assert isinstance(h["servers"], list) and len(h["servers"]) >= 1
+        assert h.is_connected is True
+        assert h.connected_url is not None
+        assert isinstance(h.servers, list) and len(h.servers) >= 1
+        # Stats are populated from nats-py.
+        assert h.stats.in_msgs >= 0
+        assert h.stats.out_msgs >= 0
+        assert h.last_error is None
 
 
 async def test_health_shape_after_shutdown(nats_url):
     async with NatsClient.connect(urls=[nats_url]) as nc:
         captured = nc
     h = captured.health()
-    assert h == {"is_connected": False, "connected_url": None, "servers": []}
+    assert h.is_connected is False
+    assert h.connected_url is None
+    assert h.servers == []
+    assert h.stats.in_msgs == 0
+
+
+async def test_health_stats_count_publishes(nats_url, subject_prefix):
+    """`nc.stats` is propagated; out_msgs grows after publishing."""
+    async with NatsClient.connect(urls=[nats_url]) as nc:
+        before = nc.health().stats.out_msgs
+        for i in range(3):
+            await nc.publish(f"{subject_prefix}.stats", f"m{i}".encode())
+        await nc.flush()
+        after = nc.health().stats.out_msgs
+        assert after - before >= 3
 
 
 async def test_methods_raise_natsclientclosed_after_shutdown(nats_url):
@@ -460,3 +478,154 @@ async def test_message_metadata_none_on_core_nats(nats_client, subject_prefix):
         await nats_client.publish(subject, b"x")
         msg = await asyncio.wait_for(sub.__anext__(), timeout=2.0)
         assert msg.metadata is None
+
+
+# -- Chunk 4: observability ------------------------------------------------------------
+
+
+async def test_content_type_auto_set_for_pydantic_publish(nats_client, subject_prefix):
+    """Pydantic publishes carry `Content-Type: application/json` for downstream consumers."""
+    subject = f"{subject_prefix}.ct-auto"
+    async with nats_client.subscribe(subject) as sub:
+        await nats_client.publish(subject, _Payload(name="a", count=1))
+        msg = await asyncio.wait_for(sub.__anext__(), timeout=2.0)
+        assert msg.headers is not None
+        assert msg.headers.get("Content-Type") == "application/json"
+
+
+async def test_content_type_not_set_for_bytes_publish(nats_client, subject_prefix):
+    """Raw bytes/str publishes don't get an auto Content-Type."""
+    subject = f"{subject_prefix}.ct-none"
+    async with nats_client.subscribe(subject) as sub:
+        await nats_client.publish(subject, b"raw")
+        msg = await asyncio.wait_for(sub.__anext__(), timeout=2.0)
+        assert msg.headers is None or "Content-Type" not in msg.headers
+
+
+async def test_caller_provided_content_type_wins(nats_client, subject_prefix):
+    """Caller-supplied Content-Type is not overwritten."""
+    subject = f"{subject_prefix}.ct-custom"
+    async with nats_client.subscribe(subject) as sub:
+        await nats_client.publish(
+            subject,
+            _Payload(name="x", count=1),
+            headers={"Content-Type": "application/vnd.mt.custom"},
+        )
+        msg = await asyncio.wait_for(sub.__anext__(), timeout=2.0)
+        assert msg.headers["Content-Type"] == "application/vnd.mt.custom"
+
+
+async def test_content_type_propagates_on_jetstream_publish(nats_client, subject_prefix, stream_name):
+    """`Content-Type` is also set on JetStream-published Pydantic payloads."""
+    js = nats_client.jetstream()
+    subject_root = f"{subject_prefix}.js-ct"
+
+    async with js.scoped_stream(stream_name, subjects=[f"{subject_root}.>"]):
+        await js.publish(f"{subject_root}.evt", _Payload(name="j", count=1))
+
+        async with js.push_subscribe(
+            f"{subject_root}.evt",
+            durable=f"ct-{stream_name[-6:]}",
+            stream=stream_name,
+        ) as psub:
+            msg = await asyncio.wait_for(psub.__anext__(), timeout=2.0)
+            assert msg.headers is not None
+            assert msg.headers.get("Content-Type") == "application/json"
+            await msg.ack()
+
+
+# -- Chunk 5: codec, dict, Optional[T], registry --------------------------------------
+
+
+async def test_dict_payload_roundtrip_through_default_codec(nats_client, subject_prefix):
+    """A `dict` payload is JSON-encoded by the default codec and decoded back as bytes."""
+    import json
+
+    subject = f"{subject_prefix}.dict"
+    async with nats_client.subscribe(subject) as sub:
+        await nats_client.publish(subject, {"x": 1, "y": "two"})
+        msg = await asyncio.wait_for(sub.__anext__(), timeout=2.0)
+        assert json.loads(msg.raw_data) == {"x": 1, "y": "two"}
+        # Codec stamps Content-Type for dict payloads too.
+        assert msg.headers.get("Content-Type") == "application/json"
+
+
+async def test_registry_resolves_model_for_subscribe(nats_client, subject_prefix):
+    """`nc.register(subject, Model)` is used when `subscribe` is called without `model=`."""
+    subject = f"{subject_prefix}.reg-sub"
+    nats_client.register(subject, _Payload)
+    try:
+        async with nats_client.subscribe(subject) as sub:  # no model=
+            await nats_client.publish(subject, _Payload(name="r", count=9))
+            msg = await asyncio.wait_for(sub.__anext__(), timeout=2.0)
+            assert isinstance(msg.data, _Payload)
+            assert msg.data == _Payload(name="r", count=9)
+    finally:
+        nats_client.unregister(subject)
+
+
+async def test_registry_per_call_model_wins(nats_client, subject_prefix):
+    """A per-call `model=` on subscribe overrides the registered model."""
+
+    class _Other(BaseModel):
+        name: str
+
+    subject = f"{subject_prefix}.reg-override"
+    nats_client.register(subject, _Payload)
+    try:
+        async with nats_client.subscribe(subject, model=_Other) as sub:
+            await nats_client.publish(subject, _Other(name="z"))
+            msg = await asyncio.wait_for(sub.__anext__(), timeout=2.0)
+            assert isinstance(msg.data, _Other)
+    finally:
+        nats_client.unregister(subject)
+
+
+async def test_registry_resolves_model_for_request(nats_client, subject_prefix):
+    """`nc.register(subject, Model)` is used when `request` is called without `model=`."""
+    subject = f"{subject_prefix}.reg-rr"
+    nats_client.register(subject, _Payload)
+
+    async def responder():
+        async with nats_client.subscribe(subject, model=_Payload) as sub:
+            req = await asyncio.wait_for(sub.__anext__(), timeout=2.0)
+            await req.respond(_Payload(name=req.data.name.upper(), count=req.data.count + 1))
+
+    try:
+        responder_task = asyncio.create_task(responder())
+        await asyncio.sleep(0.05)
+
+        reply = await nats_client.request(subject, _Payload(name="x", count=1), timeout=2.0)
+        assert isinstance(reply, _Payload)
+        assert reply == _Payload(name="X", count=2)
+        await responder_task
+    finally:
+        nats_client.unregister(subject)
+
+
+async def test_unregister_returns_old_model(nats_client, subject_prefix):
+    subject = f"{subject_prefix}.unreg"
+    assert nats_client.unregister(subject) is None
+    nats_client.register(subject, _Payload)
+    assert nats_client.registered_model(subject) is _Payload
+    assert nats_client.unregister(subject) is _Payload
+    assert nats_client.registered_model(subject) is None
+
+
+async def test_optional_model_allows_empty_request_reply(nats_client, subject_prefix):
+    """A responder that publishes nothing -> request with `model=Optional[_Payload]` returns None."""
+    from typing import Optional
+
+    subject = f"{subject_prefix}.opt"
+
+    async def responder():
+        async with nats_client.subscribe(subject) as sub:
+            req = await asyncio.wait_for(sub.__anext__(), timeout=2.0)
+            await req.respond(b"")  # empty reply
+
+    responder_task = asyncio.create_task(responder())
+    await asyncio.sleep(0.05)
+
+    reply = await nats_client.request(subject, b"ping", timeout=2.0, model=Optional[_Payload])
+    assert reply is None
+    await responder_task
