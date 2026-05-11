@@ -16,6 +16,7 @@ RUN_INTEGRATION=false
 RUN_STRESS=false
 RUN_UTILS=false
 RUN_ALL=true
+STRESS_CONFIG_PROVIDED=false
 MODULES=()
 REPORT_INCLUDE_PATTERNS=()
 
@@ -83,8 +84,22 @@ while [[ $# -gt 0 ]]; do
             fi
             shift
             ;;
+        --config)
+            STRESS_CONFIG_PROVIDED=true
+            PYTEST_ARGS+=("$1")
+            shift
+            if [[ $# -gt 0 ]]; then
+                PYTEST_ARGS+=("$1")
+                shift
+            fi
+            ;;
+        --config=*)
+            STRESS_CONFIG_PROVIDED=true
+            PYTEST_ARGS+=("$1")
+            shift
+            ;;
         *)
-            # Pass all other arguments to pytest
+            # Pass all other arguments to pytest/stress runner
             PYTEST_ARGS+=("$1")
             shift
             ;;
@@ -138,7 +153,15 @@ if [ "$RUN_ALL" = true ]; then
     # RUN_STRESS and RUN_UTILS remain false - only run when explicitly requested
 fi
 
-# Start Docker containers if running integration, utils tests, or specific docker-requiring paths
+# Stress runs use the integration Docker stack by default for local development.
+# Providing --config means the caller supplied explicit external resources, so
+# do not launch local integration containers for stress-only runs.
+if [ "$RUN_STRESS" = true ] && [ "$STRESS_CONFIG_PROVIDED" = false ]; then
+    NEEDS_DOCKER=true
+fi
+
+# Start Docker containers if running integration, utils tests, stress tests with
+# default local resources, or specific docker-requiring paths.
 if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
     echo "Starting docker containers..."
     . scripts/docker_up.sh

@@ -25,6 +25,9 @@ from tests.stress.lib.manifest import SuiteDefinition, load_manifest, suite_defi
 
 DEFAULT_MANIFEST = PROJECT_ROOT / "tests" / "stress" / "manifest.yaml"
 DEFAULT_RESULTS_ROOT = PROJECT_ROOT / ".stress-results"
+INTEGRATION_MONGO_URI = "mongodb://localhost:27018"
+INTEGRATION_SECONDARY_MONGO_URI = "mongodb://localhost:27019"
+INTEGRATION_MINIO_ENDPOINT = "localhost:9100"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -68,6 +71,28 @@ def load_optional_config(path: Path | None) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise SystemExit(f"Stress config must contain a mapping: {path}")
     return payload
+
+
+def default_integration_resources(run_id: str) -> dict[str, Any]:
+    """Default local resources provided by ``tests/docker-compose.yml``.
+
+    ``scripts/run_tests.sh`` starts the integration Docker stack for stress runs
+    unless the user passes ``--config``. Keep these defaults aligned with
+    ``scripts/docker_up.sh`` and ``tests/docker-compose.yml``.
+    """
+
+    safe_run_id = run_id.replace("-", "_").replace(":", "_")
+    return {
+        "resources": {
+            "mongo_uri": INTEGRATION_MONGO_URI,
+            "mongo_secondary_uri": INTEGRATION_SECONDARY_MONGO_URI,
+            "mongo_db_name": f"mindtrace_stress_{safe_run_id}",
+            "minio_endpoint": INTEGRATION_MINIO_ENDPOINT,
+            "minio_access_key": "minioadmin",
+            "minio_secret_key": "minioadmin",
+            "minio_secure": False,
+        }
+    }
 
 
 def redact(value: Any) -> Any:
@@ -393,9 +418,9 @@ def main(argv: list[str] | None = None) -> int:
         list_suites(suites)
         return 0
 
-    resources = load_optional_config(args.config)
     selected = select_suites(args, suites)
     run_id = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
+    resources = load_optional_config(args.config) if args.config else default_integration_resources(run_id)
     output_dir = args.output_dir or (DEFAULT_RESULTS_ROOT / run_id)
     configs = [
         resolve_suite_config(
