@@ -117,7 +117,7 @@ def test_registry_initialization(registry, temp_registry_dir):
 
 
 def test_registry_serialization_hints_for_object_uses_core_materializer_lookup(registry, test_bytes):
-    hints = registry.serialization_hints_for_object(test_bytes)
+    hints = registry._core.serialization_hints_for_object(test_bytes)
 
     assert hints == {
         "class": "builtins.bytes",
@@ -125,10 +125,10 @@ def test_registry_serialization_hints_for_object_uses_core_materializer_lookup(r
     }
 
 
-def test_registry_materialize_from_bytes_delegates_to_core(registry):
+def test_registry_core_materialize_from_bytes_with_bytes_materializer(registry):
     raw = b"hello-bytes"
 
-    out = registry.materialize_from_bytes(
+    out = registry._core.materialize_from_bytes(
         raw,
         object_class="builtins.bytes",
         materializer="zenml.materializers.BytesMaterializer",
@@ -3258,6 +3258,67 @@ class TestRegistryCacheLRU:
         registry._remove_cache_lru_entries([("test:dirty", "1.0.0")])
 
         assert registry._cache_lru_dirty == {}
+
+    def test_registry_get_cache_dir_rejects_invalid_cache_scope(self):
+        """Defense-in-depth: callers must pass ``cache_scope='shared'`` or ``'process'``."""
+        with pytest.raises(ValueError, match="cache_scope"):
+            Registry._get_cache_dir("mock://backend", cache_scope="invalid-scope")
+
+    def test_save_cache_lru_index_best_effort_unlink_after_failed_replace(self, temp_registry_dir):
+        """If rename fails after writing the temporary sidecar, cleanup unlink errors are swallowed."""
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
+
+        def synthetic_replace(self_inner: Path, target: Path, **_kwargs):  # type: ignore[misc]
+            raise OSError("simulated rename failure")
+
+        unlink_attempts_on_tmp = []
+
+        original_unlink = Path.unlink
+
+        def unlink_maybe_fail(self_inner: Path, missing_ok: bool = False):
+            stem = self_inner.name
+            if stem.endswith(".tmp") and ".registry_cache_lru.json." in stem:
+                unlink_attempts_on_tmp.append(self_inner.name)
+                if len(unlink_attempts_on_tmp) == 1:
+                    raise RuntimeError("simulated unlink failure")
+            return original_unlink(self_inner, missing_ok=missing_ok)
+
+        with patch.object(Path, "replace", synthetic_replace):
+            with patch.object(Path, "unlink", unlink_maybe_fail):
+                registry._save_cache_lru_index({"version": 1, "entries": {}})
+        assert len(unlink_attempts_on_tmp) == 1
+
+    def test_note_cache_entries_added_noop_when_count_not_positive(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=10)
+        registry._cache_lru_estimated_entries = 7
+
+        registry._note_cache_entries_added(0)
+        registry._note_cache_entries_added(-5)
+
+        assert registry._cache_lru_estimated_entries == 7
+
+    def test_note_cache_entries_added_noop_when_pruning_disabled(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=None)
+
+        registry._note_cache_entries_added(3)
+
+        assert registry._cache_lru_estimated_entries is None
+
+    def test_maybe_prune_noops_when_uncached(self, temp_registry_dir):
+        uncached = self.make_remote_registry(temp_registry_dir, use_cache=False)
+
+        with patch.object(uncached, "_prune_cache_lru") as pruner:
+            uncached._maybe_prune_cache_lru()
+
+        pruner.assert_not_called()
+
+    def test_maybe_prune_noops_when_lru_disabled(self, temp_registry_dir):
+        no_cap = self.make_remote_registry(temp_registry_dir, cache_max_entries=None)
+
+        with patch.object(no_cap, "_prune_cache_lru") as pruner:
+            no_cap._maybe_prune_cache_lru()
+
+        pruner.assert_not_called()
 
     def test_prune_reduces_to_max_minus_buffer_and_updates_estimate(self, temp_registry_dir):
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=4, cache_prune_buffer=2)
