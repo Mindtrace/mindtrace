@@ -97,6 +97,8 @@ In practice:
 - use `Config` for generic application or component configuration
 - use `CoreConfig` when you want the normal Mindtrace core sections already present, such as `MINDTRACE_DIR_PATHS`, `MINDTRACE_DEFAULT_HOST_URLS`, and `MINDTRACE_MCP`
 
+`CoreSettings` loads `mindtrace/core/mindtrace/core/config/config.ini` when present. If that file is missing, the first load copies `config.ini.example` next to it (including CI checkouts — the generated file stays on the ephemeral runner workspace and remains Git-ignored). Set `MINDTRACE_SKIP_CONFIG_INI_BOOTSTRAP=1` to opt out when you deliberately run without defaults. Override values with env vars (`MINDTRACE_*__*`); edit `config.ini` for local secrets.
+
 Example with `Config`:
 
 ```python

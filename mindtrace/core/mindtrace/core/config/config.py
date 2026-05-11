@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union, get_args, get_origin
@@ -92,8 +93,45 @@ class MINDTRACE_GCP_REGISTRY(BaseModel):
     GCP_BUCKET_NAME: str
 
 
+_PACKAGE_CONFIG_DIR = Path(__file__).resolve().parent
+
+
+def bootstrap_config_ini_from_example(*, package_dir: Path | None = None) -> bool:
+    """Copy ``config.ini.example`` → ``config.ini`` when the latter is missing.
+
+    Used by :func:`load_ini_settings`. GitHub Actions and other CI need this too:
+    ``mindtrace.core`` imports construct :class:`CoreSettings` before tests run, so
+    an absent ``config.ini`` would otherwise fail validation immediately.
+
+    Set ``MINDTRACE_SKIP_CONFIG_INI_BOOTSTRAP=1`` to disable (narrow cases only).
+
+    Args:
+        package_dir: Override config package directory (for tests).
+
+    Returns:
+        True if ``config.ini`` existed after this call or a copy succeeded.
+    """
+
+    cfg_dir = package_dir or _PACKAGE_CONFIG_DIR
+    ini_path = cfg_dir / "config.ini"
+    example_path = cfg_dir / "config.ini.example"
+
+    if ini_path.exists():
+        return True
+    if os.environ.get("MINDTRACE_SKIP_CONFIG_INI_BOOTSTRAP", "").strip().lower() in {"1", "true", "yes"}:
+        return False
+    if not example_path.exists():
+        return False
+    try:
+        shutil.copyfile(example_path, ini_path)
+    except OSError:
+        return False
+    return ini_path.exists()
+
+
 def load_ini_settings() -> Dict[str, Any]:
-    ini_path = Path(__file__).parent / "config.ini"
+    bootstrap_config_ini_from_example()
+    ini_path = _PACKAGE_CONFIG_DIR / "config.ini"
     return load_ini_as_dict(ini_path)
 
 
