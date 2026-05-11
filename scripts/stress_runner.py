@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
-import os
 import sys
 import time
 from datetime import UTC, datetime
@@ -272,6 +271,58 @@ def write_summary_markdown(output_dir: Path, run_payload: dict[str, Any]) -> Non
     (output_dir / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def print_run_summary(output_dir: Path, run_payload: dict[str, Any]) -> None:
+    """Print a concise console summary after a completed stress run."""
+
+    suites = run_payload["suites"]
+    failed = [suite for suite in suites if suite["status"] != "passed"]
+    total_operations = sum(int(suite.get("operations", 0)) for suite in suites)
+    total_failures = sum(int(suite.get("failures", 0)) for suite in suites)
+    total_bytes = sum(int(suite.get("bytes_processed", 0)) for suite in suites)
+
+    print("\nStress run complete")
+    print(f"Run ID: {run_payload['run_id']}")
+    print(f"Profile: {run_payload['profile']}")
+    print(f"Suites completed: {len(suites)}")
+    print(f"Suites passed: {len(suites) - len(failed)}")
+    print(f"Suites failed: {len(failed)}")
+    print(f"Total operations: {total_operations}")
+    print(f"Total failures: {total_failures}")
+    if total_bytes:
+        print(f"Total bytes processed: {format_bytes(total_bytes)}")
+
+    if suites:
+        print("\nSuite results:")
+        for suite in suites:
+            line = (
+                f"- {suite['suite_id']}: {suite['status']} | "
+                f"ops={suite['operations']} | failures={suite['failures']} | "
+                f"ops/s={suite['throughput_ops_per_second']:.2f}"
+            )
+            if suite.get("throughput_bytes_per_second"):
+                line += f" | throughput={format_bytes(suite['throughput_bytes_per_second'])}/s"
+            p95 = suite.get("latency_p95_seconds")
+            if p95 is not None:
+                line += f" | p95={p95 * 1000:.1f}ms"
+            print(line)
+
+    print("\nResults written to:")
+    print(f"- Directory: {output_dir}")
+    print(f"- Run JSON: {output_dir / 'run.json'}")
+    print(f"- Summary: {output_dir / 'summary.md'}")
+    print(f"- Suite details: {output_dir / 'suites'}")
+
+
+def format_bytes(value: int | float) -> str:
+    """Format a byte count or byte rate for console output."""
+
+    amount = float(value)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if abs(amount) < 1024.0 or unit == "TiB":
+            return f"{amount:.1f} {unit}"
+        amount /= 1024.0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     manifest = load_manifest(args.manifest)
@@ -323,6 +374,7 @@ def main(argv: list[str] | None = None) -> int:
     }
     (output_dir / "run.json").write_text(json.dumps(run_payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
     write_summary_markdown(output_dir, run_payload)
+    print_run_summary(output_dir, run_payload)
     return 1 if any(suite["status"] != "passed" for suite in suite_results) else 0
 
 
