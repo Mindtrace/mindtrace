@@ -14,6 +14,7 @@ class SuiteDefinition:
     module: str
     tags: list[str] = field(default_factory=list)
     requires: list[str] = field(default_factory=list)
+    parameters: dict[str, Any] = field(default_factory=dict)
     profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
     default_selected: bool = False
     safety: str | None = None
@@ -54,6 +55,7 @@ def suite_definitions(manifest: dict[str, Any]) -> dict[str, SuiteDefinition]:
             module=str(raw["module"]),
             tags=list(raw.get("tags", [])),
             requires=list(raw.get("requires", [])),
+            parameters=dict(raw.get("parameters", {})),
             profiles=dict(raw.get("profiles", {})),
             default_selected=bool(raw.get("default_selected", False)),
             safety=raw.get("safety"),

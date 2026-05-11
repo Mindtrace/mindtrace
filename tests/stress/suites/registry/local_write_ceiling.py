@@ -1,30 +1,36 @@
-"""Registry local backend write-ceiling stress suite."""
+"""Registry write-ceiling stress suite for local, MinIO/S3, and GCS backends."""
 
 from __future__ import annotations
 
 import time
-from tempfile import TemporaryDirectory
+from collections.abc import Callable
+from pathlib import Path
+from shutil import rmtree
+from tempfile import mkdtemp
 from uuid import uuid4
 
-from mindtrace.registry import Registry
+from mindtrace.registry import GCPRegistryBackend, MinioRegistryBackend, Registry
 
 from tests.stress.lib.benchmark import StressReporter, StressResult, StressSuiteConfig, utc_now_iso
 from tests.stress.lib.workloads import deterministic_payload, parse_size_bytes, run_threaded_until_deadline
 
 
 def run(config: StressSuiteConfig, reporter: StressReporter) -> StressResult:
-    """Measure sustained local ``Registry.save`` payload throughput."""
+    """Measure sustained ``Registry.save`` payload throughput for a selected backend."""
 
     started = utc_now_iso()
     monotonic_start = time.perf_counter()
-    payload_size = parse_size_bytes(config.parameters.get("payload_size"), default=64 * 1024)
+    backend = str(config.parameters.get("backend", "local")).lower()
+    payload_size = parse_size_bytes(
+        config.parameters.get("payload_size", config.parameters.get("object_size")),
+        default=64 * 1024,
+    )
     concurrency = int(config.parameters.get("concurrency", 1))
     payload = deterministic_payload(payload_size)
     prefix = f"stress/{config.run_id}/{config.suite_id}/{uuid4().hex}"
 
-    temp_context = TemporaryDirectory(prefix="mindtrace-registry-stress-")
+    registry, cleanup, backend_metrics = build_registry(config, backend, prefix)
     try:
-        registry = Registry(backend=temp_context.name, version_objects=True, mutable=True)
         deadline = reporter.deadline(config.duration_seconds)
 
         def operation() -> None:
@@ -43,10 +49,7 @@ def run(config: StressSuiteConfig, reporter: StressReporter) -> StressResult:
 
         run_threaded_until_deadline(concurrency, deadline, operation)
     finally:
-        if config.keep_resources:
-            reporter.set_metric("preserved_registry_path", temp_context.name)
-        else:
-            temp_context.cleanup()
+        cleanup()
 
     elapsed = time.perf_counter() - monotonic_start
     return StressResult(
@@ -63,8 +66,78 @@ def run(config: StressSuiteConfig, reporter: StressReporter) -> StressResult:
         error_counts=reporter.error_counts,
         metrics={
             **reporter.metrics,
+            **backend_metrics,
             "payload_size_bytes": payload_size,
             "concurrency": concurrency,
-            "backend": "local",
+            "object_prefix": prefix,
         },
     )
+
+
+def build_registry(
+    config: StressSuiteConfig,
+    backend: str,
+    prefix: str,
+) -> tuple[Registry, Callable[[], None], dict[str, object]]:
+    """Create the requested Registry backend for the suite run."""
+
+    if backend == "local":
+        registry_path = Path(mkdtemp(prefix="mindtrace-registry-stress-"))
+        registry = Registry(backend=registry_path, version_objects=True, mutable=True)
+
+        def cleanup() -> None:
+            if config.keep_resources:
+                return
+            rmtree(registry_path, ignore_errors=True)
+
+        return registry, cleanup, {"backend": "local", "local_path": str(registry_path)}
+
+    if backend == "minio":
+        bucket = str(config.resources.get("minio_bucket", "stress-registry"))
+        backend_prefix = str(config.resources.get("minio_prefix") or prefix)
+        backend_obj = MinioRegistryBackend(
+            endpoint=str(config.resources.get("minio_endpoint", "localhost:9100")),
+            access_key=str(config.resources.get("minio_access_key", "minioadmin")),
+            secret_key=str(config.resources.get("minio_secret_key", "minioadmin")),
+            bucket=bucket,
+            secure=as_bool(config.resources.get("minio_secure", False)),
+            prefix=backend_prefix,
+        )
+        return (
+            Registry(backend=backend_obj, version_objects=True, mutable=True),
+            lambda: None,
+            {"backend": "minio", "bucket": bucket, "prefix": backend_prefix},
+        )
+
+    if backend in {"gcs", "gcp"}:
+        bucket_name = required_resource(config, "gcs_bucket_name")
+        project_id = required_resource(config, "gcs_project_id")
+        backend_prefix = str(config.resources.get("gcs_prefix") or prefix)
+        backend_obj = GCPRegistryBackend(
+            project_id=project_id,
+            bucket_name=bucket_name,
+            credentials_path=config.resources.get("gcs_credentials_path"),
+            prefix=backend_prefix,
+        )
+        return (
+            Registry(backend=backend_obj, version_objects=True, mutable=True),
+            lambda: None,
+            {"backend": "gcs", "bucket": bucket_name, "project_id": project_id, "prefix": backend_prefix},
+        )
+
+    raise ValueError(f"Unsupported registry stress backend {backend!r}; expected local, minio, or gcs")
+
+
+def required_resource(config: StressSuiteConfig, key: str) -> str:
+    value = config.resources.get(key)
+    if value is None or value == "":
+        raise ValueError(f"Suite {config.suite_id} requires resource config key {key!r}")
+    return str(value)
+
+
+def as_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
