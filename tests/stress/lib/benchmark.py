@@ -101,9 +101,10 @@ def latency_summary(samples: list[float]) -> dict[str, float | None]:
 class StressReporter:
     """Record suite events and metrics as JSONL-compatible dictionaries."""
 
-    def __init__(self, suite_id: str, events_file: TextIO | None = None):
+    def __init__(self, suite_id: str, events_file: TextIO | None = None, error_file: TextIO | None = None):
         self.suite_id = suite_id
         self.events_file = events_file
+        self.error_file = error_file
         self.operations = 0
         self.successes = 0
         self.failures = 0
@@ -122,6 +123,23 @@ class StressReporter:
         payload = {"timestamp": utc_now_iso(), "suite_id": self.suite_id, "event": event_type, **fields}
         self.events_file.write(json.dumps(payload, default=str) + "\n")
         self.events_file.flush()
+
+    def error(self, error: BaseException, **fields: Any) -> None:
+        """Write a failure event to the dedicated run-level error log."""
+
+        if self.error_file is None:
+            return
+        import json
+
+        payload = {
+            "timestamp": utc_now_iso(),
+            "suite_id": self.suite_id,
+            "error_type": type(error).__name__,
+            "error_message": str(error),
+            **fields,
+        }
+        self.error_file.write(json.dumps(payload, default=str) + "\n")
+        self.error_file.flush()
 
     def record_operation(
         self,
@@ -145,6 +163,7 @@ class StressReporter:
             if error is not None:
                 key = type(error).__name__
                 self.error_counts[key] = self.error_counts.get(key, 0) + 1
+                self.error(error, latency_seconds=latency_seconds, bytes_processed=bytes_processed, metrics=metrics)
         self.event(
             "operation",
             success=success,
