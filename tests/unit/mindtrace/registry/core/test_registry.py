@@ -117,7 +117,7 @@ def test_registry_initialization(registry, temp_registry_dir):
 
 
 def test_registry_serialization_hints_for_object_uses_core_materializer_lookup(registry, test_bytes):
-    hints = registry._core.serialization_hints_for_object(test_bytes)
+    hints = registry.serialization_hints_for_object(test_bytes)
 
     assert hints == {
         "class": "builtins.bytes",
@@ -125,10 +125,10 @@ def test_registry_serialization_hints_for_object_uses_core_materializer_lookup(r
     }
 
 
-def test_registry_core_materialize_from_bytes_with_bytes_materializer(registry):
+def test_registry_materialize_from_bytes_delegates_to_core(registry):
     raw = b"hello-bytes"
 
-    out = registry._core.materialize_from_bytes(
+    out = registry.materialize_from_bytes(
         raw,
         object_class="builtins.bytes",
         materializer="zenml.materializers.BytesMaterializer",
