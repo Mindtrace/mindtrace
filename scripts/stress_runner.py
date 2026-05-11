@@ -33,6 +33,7 @@ INTEGRATION_MINIO_ENDPOINT = "localhost:9100"
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run fixed-duration Mindtrace stress suites")
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST, help="Path to stress manifest YAML")
+    parser.add_argument("--run-id", help="Explicit run ID for result artifacts")
     parser.add_argument("--list", action="store_true", help="List available stress suites and exit")
     parser.add_argument("--suite", action="append", default=[], help="Suite ID to run; repeatable")
     parser.add_argument("--tag", action="append", default=[], help="Run suites with this tag; repeatable")
@@ -419,7 +420,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     selected = select_suites(args, suites)
-    run_id = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
+    run_id = args.run_id or datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
     resources = load_optional_config(args.config) if args.config else default_integration_resources(run_id)
     output_dir = args.output_dir or (DEFAULT_RESULTS_ROOT / run_id)
     configs = [

@@ -63,6 +63,9 @@ Each run writes artifacts under `.stress-results/<run-id>/` by default:
 - each suite JSON file contains final metrics.
 - each suite JSONL file contains operation/event records.
 - `summary.md` is a short human-readable summary.
+- `coverage.txt` is written when a stress run is combined with coverage-producing
+  unit/integration/utils tests, or when coverage data exists during a failing
+  stress command. Coverage is not printed to the console for stress runs.
 
 ## Resource configuration
 
