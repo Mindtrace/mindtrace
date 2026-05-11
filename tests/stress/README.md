@@ -66,12 +66,29 @@ Each run writes artifacts under `.stress-results/<run-id>/` by default:
 
 ## Resource configuration
 
-Suites that require external resources read them from `--config`:
+For local development, stress runs use the integration Docker stack by default.
+When `--config` is not provided, `scripts/run_tests.sh` starts `tests/docker-compose.yml`
+and the runner uses these default resources:
 
 ```yaml
 resources:
-  mongo_uri: mongodb://mindtrace:mindtrace@localhost:27017
-  mongo_db_name: mindtrace_stress_local
+  mongo_uri: mongodb://localhost:27018
+  mongo_secondary_uri: mongodb://localhost:27019
+  mongo_db_name: mindtrace_stress_<run-id>
+  minio_endpoint: localhost:9100
+  minio_access_key: minioadmin
+  minio_secret_key: minioadmin
+  minio_secure: false
+```
+
+For production-like or externally managed resources, provide `--config`. When a
+config file is provided, local integration containers are not launched for
+stress-only runs:
+
+```yaml
+resources:
+  mongo_uri: mongodb://mindtrace:mindtrace@stress-mongo.example:27017
+  mongo_db_name: mindtrace_stress_remote
 ```
 
 Suite-specific resource overrides are supported:
