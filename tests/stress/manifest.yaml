@@ -1,0 +1,68 @@
+profiles:
+  smoke:
+    duration: 10s
+    warmup: 0s
+    cooldown: 0s
+  standard:
+    duration: 60s
+    warmup: 5s
+    cooldown: 0s
+
+suites:
+  registry.local-write-ceiling:
+    label: Registry / Local write ceiling
+    module: tests.stress.suites.registry.local_write_ceiling
+    tags: [registry, write, local]
+    requires: [local_disk]
+    default_selected: true
+    safety: Uses a temporary local Registry backend and cleans it up unless --keep-resources is set.
+    profiles:
+      smoke:
+        payload_size: 64KiB
+        concurrency: 1
+      standard:
+        payload_size: 1MiB
+        concurrency: 4
+
+  datalake.registry-write-ceiling:
+    label: Datalake / Registry payload write ceiling
+    module: tests.stress.suites.datalake.registry_write_ceiling
+    tags: [datalake, registry, write]
+    requires: [local_disk]
+    default_selected: true
+    safety: Uses Datalake object storage only; does not insert asset metadata.
+    profiles:
+      smoke:
+        payload_size: 64KiB
+        concurrency: 1
+      standard:
+        payload_size: 1MiB
+        concurrency: 4
+
+  datalake.mongo-insert-ceiling:
+    label: Datalake / Mongo metadata insert ceiling
+    module: tests.stress.suites.datalake.mongo_insert_ceiling
+    tags: [datalake, mongo, metadata, write]
+    requires: [mongo]
+    default_selected: false
+    safety: Requires explicit Mongo configuration and writes generated Asset/AssetAlias-style metadata.
+    profiles:
+      smoke:
+        batch_size: 100
+      standard:
+        batch_size: 1000
+
+  datalake.create-asset-from-object:
+    label: Datalake / create_asset_from_object throughput
+    module: tests.stress.suites.datalake.create_asset_from_object
+    tags: [datalake, registry, mongo, write, e2e]
+    requires: [mongo, local_disk]
+    default_selected: false
+    safety: Requires explicit Datalake resource configuration and exercises the composed payload + metadata write path.
+    profiles:
+      smoke:
+        payload_size: 64KiB
+        concurrency: 1
+      standard:
+        payload_size: 1MiB
+        concurrency: 4

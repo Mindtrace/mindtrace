@@ -246,38 +246,15 @@ fi
 
 # Run stress tests if requested
 if [ "$RUN_STRESS" = true ]; then
-    echo "Running stress tests from mindtrace directory for proper imports..."
-    
-    # Get absolute path for stress tests
-    PROJECT_ROOT=$(pwd)
-    STRESS_TEST_PATH="$PROJECT_ROOT/tests/stress"
-    
-    # For stress tests, use coverage only if other tests are also running
-    if [ "$RUN_UNIT" = true ] || [ "$RUN_INTEGRATION" = true ]; then
-        # Copy coverage data to mindtrace directory for proper combining
-        if [ -f .coverage ]; then
-            cp .coverage mindtrace/
-        fi
-        
-        cd mindtrace
-        
-        # Include coverage to combine with other test results
-        coverage run --rcfile="$COVERAGE_CONFIG" --parallel-mode -m pytest -rs -s --rootdir="$PROJECT_ROOT" -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" "$STRESS_TEST_PATH"
-        
-        # Copy the combined coverage data back to project root
-        if [ -f .coverage ]; then
-            cp .coverage ../
-        fi
-    else
-        cd mindtrace
-        
-        # Stress tests only - skip coverage for performance testing
-        pytest -rs -s --rootdir="$PROJECT_ROOT" -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" "$STRESS_TEST_PATH"
-    fi
-    
+    echo "Running stress suites with scripts/stress_runner.py..."
+
+    # Stress tests are benchmark-style runs, so they are delegated to the
+    # manifest-driven stress runner instead of pytest. Arguments following
+    # --stress are forwarded through PYTEST_ARGS by the parser above.
+    PYTHON_CMD="${PYTHON:-python3}"
+    "$PYTHON_CMD" scripts/stress_runner.py "${PYTEST_ARGS[@]}"
     STRESS_EXIT_CODE=$?
-    cd ..
-    
+
     if [ $STRESS_EXIT_CODE -ne 0 ]; then
         echo "Stress tests failed. Stopping test execution."
         OVERALL_EXIT_CODE=1
