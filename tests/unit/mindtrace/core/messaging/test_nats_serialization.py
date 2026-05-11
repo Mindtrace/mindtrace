@@ -135,7 +135,7 @@ def test_nats_settings_resolved_name_uses_explicit_when_set():
     assert s.resolved_name() == "my-app"
 
 
-# -- Chunk 4: observability ------------------------------------------------------------
+# -- Observability ---------------------------------------------------------------------
 
 
 def test_nats_health_default_construction():
@@ -198,7 +198,7 @@ def test_apply_content_type_bytes_payload_is_untouched():
     assert _apply_content_type("hi", {"x": "y"}) == {"x": "y"}
 
 
-# -- Chunk 5: codec, dict, Optional[T], registry ---------------------------------------
+# -- Codec, dict payloads, Optional[T], subject registry ------------------------------
 
 
 def test_json_codec_encodes_dict():

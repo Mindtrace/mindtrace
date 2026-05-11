@@ -247,7 +247,7 @@ async def test_scoped_stream_via_jetstream(nats_client, subject_prefix, stream_n
         await js.raw.stream_info(stream_name)
 
 
-# -- Chunk 2: connection reliability ---------------------------------------------------
+# -- Connection reliability ------------------------------------------------------------
 
 
 async def test_multi_url_failover(nats_url):
@@ -330,7 +330,7 @@ async def test_resolved_name_appears_in_default(nats_url):
         assert nc._nc.options.get("name", "").startswith("mindtrace-")
 
 
-# -- Chunk 3: subscription model -------------------------------------------------------
+# -- Subscription model ----------------------------------------------------------------
 
 
 async def test_respond_on_message_without_reply_raises(nats_client, subject_prefix):
@@ -480,7 +480,7 @@ async def test_message_metadata_none_on_core_nats(nats_client, subject_prefix):
         assert msg.metadata is None
 
 
-# -- Chunk 4: observability ------------------------------------------------------------
+# -- Observability ---------------------------------------------------------------------
 
 
 async def test_content_type_auto_set_for_pydantic_publish(nats_client, subject_prefix):
@@ -534,7 +534,7 @@ async def test_content_type_propagates_on_jetstream_publish(nats_client, subject
             await msg.ack()
 
 
-# -- Chunk 5: codec, dict, Optional[T], registry --------------------------------------
+# -- Codec, dict payloads, Optional[T], subject registry ------------------------------
 
 
 async def test_dict_payload_roundtrip_through_default_codec(nats_client, subject_prefix):
