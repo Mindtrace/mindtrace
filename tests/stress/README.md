@@ -102,11 +102,6 @@ The config file contains:
 
 ```yaml
 suites:
-  registry.write-ceiling:
-    sweep:
-      backend: [local, minio, gcs]
-      payload_size: [1KiB, 1MiB, 10MiB]
-      concurrency: [1]
   datalake.payload-write-ceiling:
     sweep:
       backend: [local, minio, gcs]
@@ -114,13 +109,21 @@ suites:
       concurrency: [1]
   datalake.mongo-insert-ceiling:
     sweep:
+      mongo_backend: [local]
       batch_size: [100]
   datalake.create-asset-from-object:
     sweep:
       backend: [local, minio, gcs]
+      mongo_backend: [local]
       payload_size: [1KiB, 1MiB, 10MiB]
       concurrency: [1]
 ```
+
+To compare local Mongo with MongoDB Atlas, copy
+`tests/stress/configs/datalake_compare_atlas.example.yaml`, set
+`resources.mongo_atlas_uri`, and run the same command with that config. Atlas
+variants use `mongo_backend: atlas`; local variants use the default integration
+Mongo.
 
 Use explicit cases when combinations need distinct resource settings or names:
 
@@ -149,6 +152,9 @@ resources:
   mongo_uri: mongodb://localhost:27018
   mongo_secondary_uri: mongodb://localhost:27019
   mongo_db_name: mindtrace_stress_<run-id>
+  # optional, required only for mongo_backend: atlas sweeps:
+  mongo_atlas_uri: mongodb+srv://<user>:<password>@<cluster>/<database>
+  mongo_atlas_db_name: mindtrace_stress_atlas
   minio_endpoint: localhost:9100
   minio_access_key: minioadmin
   minio_secret_key: minioadmin
@@ -196,10 +202,11 @@ contain credentials.
   configured Store/Registry path without asset metadata insertion. It supports
   `local`, `minio`, and `gcs` backends with configurable payload sizes.
 - `datalake.mongo-insert-ceiling` measures Asset + primary AssetAlias metadata
-  insertion throughput using Mongo ODM bulk inserts.
+  insertion throughput using Mongo ODM bulk inserts. It supports `local` and
+  `atlas` Mongo backends.
 - `datalake.create-asset-from-object` measures the composed payload + metadata
   Datalake write path. It supports `local`, `minio`, and `gcs` backends with
-  configurable payload sizes.
+  configurable payload sizes, and `local`/`atlas` Mongo backends.
 
 ## Safety defaults
 

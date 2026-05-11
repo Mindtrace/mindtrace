@@ -18,6 +18,7 @@ import traceback
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -159,7 +160,10 @@ def default_integration_resources(run_id: str) -> dict[str, Any]:
 
 def redact(value: Any) -> Any:
     if isinstance(value, dict):
-        return {key: ("<redacted>" if is_secret_key(key) else redact(item)) for key, item in value.items()}
+        return {
+            key: ("<redacted>" if is_secret_key(key) else redact_uri(item) if is_uri_key(key) else redact(item))
+            for key, item in value.items()
+        }
     if isinstance(value, list):
         return [redact(item) for item in value]
     return value
@@ -168,6 +172,25 @@ def redact(value: Any) -> Any:
 def is_secret_key(key: str) -> bool:
     lowered = key.lower()
     return any(token in lowered for token in ("secret", "token", "password", "access_key", "private_key"))
+
+
+def is_uri_key(key: str) -> bool:
+    return "uri" in key.lower() or "url" in key.lower()
+
+
+def redact_uri(value: Any) -> Any:
+    if not isinstance(value, str):
+        return redact(value)
+    if "@" not in value:
+        return value
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return "<redacted-uri>"
+    if "@" not in parsed.netloc:
+        return value
+    host = parsed.netloc.rsplit("@", 1)[1]
+    return urlunsplit((parsed.scheme, f"<redacted>@{host}", parsed.path, parsed.query, parsed.fragment))
 
 
 def parse_param_assignments(assignments: list[str]) -> dict[str, list[str]]:

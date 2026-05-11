@@ -11,10 +11,12 @@ suites:
 
   datalake.mongo-insert-ceiling:
     sweep:
+      mongo_backend: [local]
       batch_size: [100]
 
   datalake.create-asset-from-object:
     sweep:
       backend: [local, minio, gcs]
+      mongo_backend: [local]
       payload_size: [1KiB, 1MiB, 10MiB]
       concurrency: [1]

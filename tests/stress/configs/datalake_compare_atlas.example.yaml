@@ -1,0 +1,26 @@
+# Example Datalake comparison config that compares local integration Mongo with
+# MongoDB Atlas. Copy this file outside source control or inject mongo_atlas_uri
+# from your local secrets before running.
+
+resources:
+  mongo_atlas_uri: mongodb+srv://<user>:<password>@<cluster>/<database>?retryWrites=true&w=majority
+  mongo_atlas_db_name: mindtrace_stress_atlas
+
+suites:
+  datalake.payload-write-ceiling:
+    sweep:
+      backend: [local, minio, gcs]
+      payload_size: [1KiB, 1MiB, 10MiB]
+      concurrency: [1]
+
+  datalake.mongo-insert-ceiling:
+    sweep:
+      mongo_backend: [local, atlas]
+      batch_size: [100]
+
+  datalake.create-asset-from-object:
+    sweep:
+      backend: [local, minio, gcs]
+      mongo_backend: [local, atlas]
+      payload_size: [1KiB, 1MiB, 10MiB]
+      concurrency: [1]
