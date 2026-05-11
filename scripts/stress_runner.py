@@ -53,6 +53,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Suite parameter override or sweep, e.g. backend=local,gcs or payload_size=1KiB,1MiB",
     )
     parser.add_argument("--config", type=Path, help="Optional resource/config YAML file for suites")
+    parser.add_argument(
+        "--external-resources",
+        action="store_true",
+        help="Treat --config resources as externally managed and do not merge default integration resources",
+    )
     parser.add_argument("--output-dir", type=Path, help="Output directory for this run")
     parser.add_argument("--no-menu", action="store_true", help="Disable the interactive selector")
     parser.add_argument("--dry-run", action="store_true", help="Print the resolved execution plan without running suites")
@@ -83,6 +88,18 @@ def load_optional_config(path: Path | None) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise SystemExit(f"Stress config must contain a mapping: {path}")
     return payload
+
+
+def merge_config(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge stress config mappings."""
+
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = merge_config(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
 
 
 def default_integration_resources(run_id: str) -> dict[str, Any]:
@@ -621,7 +638,11 @@ def main(argv: list[str] | None = None) -> int:
 
     selected = select_suites(args, suites)
     run_id = args.run_id or datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
-    resources = load_optional_config(args.config) if args.config else default_integration_resources(run_id)
+    file_config = load_optional_config(args.config) if args.config else {}
+    if args.external_resources:
+        resources = file_config
+    else:
+        resources = merge_config(default_integration_resources(run_id), file_config)
     output_dir = args.output_dir or (DEFAULT_RESULTS_ROOT / run_id)
     cli_sweep = parse_param_assignments(args.param)
     suite_runs = []

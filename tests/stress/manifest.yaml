@@ -68,6 +68,9 @@ suites:
     requires: [mongo]
     default_selected: false
     safety: Requires explicit Mongo configuration and writes generated Asset/AssetAlias-style metadata.
+    parameters:
+      batch_size:
+        default: 100
     profiles:
       smoke:
         batch_size: 100
@@ -80,11 +83,22 @@ suites:
     tags: [datalake, registry, mongo, write, e2e]
     requires: [mongo, local_disk]
     default_selected: false
-    safety: Requires explicit Datalake resource configuration and exercises the composed payload + metadata write path.
+    safety: Requires Datalake resource configuration and exercises the composed payload + metadata write path. Local backend uses temporary disk; MinIO/GCS backends require configured resources.
+    parameters:
+      backend:
+        default: local
+        choices: [local, minio, gcs]
+      payload_size:
+        default: 64KiB
+        aliases: [object_size]
+      concurrency:
+        default: 1
     profiles:
       smoke:
+        backend: local
         payload_size: 64KiB
         concurrency: 1
       standard:
+        backend: local
         payload_size: 1MiB
         concurrency: 4

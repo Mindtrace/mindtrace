@@ -1,0 +1,20 @@
+# Compare Datalake payload-only, metadata-only, and composed payload+metadata write ceilings.
+# This file intentionally contains suite sweeps only; default integration resources
+# are merged in by the stress runner unless --external-resources is provided.
+
+suites:
+  datalake.payload-write-ceiling:
+    sweep:
+      backend: [local, minio, gcs]
+      payload_size: [1KiB, 1MiB, 10MiB]
+      concurrency: [1]
+
+  datalake.mongo-insert-ceiling:
+    sweep:
+      batch_size: [100]
+
+  datalake.create-asset-from-object:
+    sweep:
+      backend: [local, minio, gcs]
+      payload_size: [1KiB, 1MiB, 10MiB]
+      concurrency: [1]

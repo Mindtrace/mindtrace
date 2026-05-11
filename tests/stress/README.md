@@ -88,7 +88,17 @@ ds test --stress \
 This expands to the Cartesian product of backends and payload sizes. Each variant
 gets its own suite result file and appears separately in the console summary.
 
-Use YAML for repeatable sweeps:
+Use YAML for repeatable sweeps. For the Datalake comparison suite set, use:
+
+```bash
+ds test --stress \
+  --suite datalake.payload-write-ceiling \
+  --suite datalake.mongo-insert-ceiling \
+  --suite datalake.create-asset-from-object \
+  --config tests/stress/configs/datalake_compare.yaml
+```
+
+The config file contains:
 
 ```yaml
 suites:
@@ -98,6 +108,14 @@ suites:
       payload_size: [1KiB, 1MiB, 10MiB]
       concurrency: [1]
   datalake.payload-write-ceiling:
+    sweep:
+      backend: [local, minio, gcs]
+      payload_size: [1KiB, 1MiB, 10MiB]
+      concurrency: [1]
+  datalake.mongo-insert-ceiling:
+    sweep:
+      batch_size: [100]
+  datalake.create-asset-from-object:
     sweep:
       backend: [local, minio, gcs]
       payload_size: [1KiB, 1MiB, 10MiB]
@@ -142,9 +160,12 @@ resources:
   gcs_credentials_path: ~/.config/gcloud/datalake_credentials.json
 ```
 
-For production-like or externally managed resources, provide `--config`. When a
-config file is provided, local integration containers are not launched for
-stress-only runs:
+Config files are merged over these defaults, so a config containing only suite
+`sweep`/`cases` still uses the local integration stack.
+
+For production-like or externally managed resources, provide `--config` with
+`--external-resources`. In that mode local integration containers are not
+launched for stress-only runs and the config resources are used as-is:
 
 ```yaml
 resources:
@@ -177,7 +198,8 @@ contain credentials.
 - `datalake.mongo-insert-ceiling` measures Asset + primary AssetAlias metadata
   insertion throughput using Mongo ODM bulk inserts.
 - `datalake.create-asset-from-object` measures the composed payload + metadata
-  Datalake write path.
+  Datalake write path. It supports `local`, `minio`, and `gcs` backends with
+  configurable payload sizes.
 
 ## Safety defaults
 

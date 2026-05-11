@@ -16,7 +16,7 @@ RUN_INTEGRATION=false
 RUN_STRESS=false
 RUN_UTILS=false
 RUN_ALL=true
-STRESS_CONFIG_PROVIDED=false
+STRESS_EXTERNAL_RESOURCES=false
 STRESS_OUTPUT_DIR_PROVIDED=false
 STRESS_RUN_ID_PROVIDED=false
 STRESS_OUTPUT_DIR=""
@@ -103,7 +103,6 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --config)
-            STRESS_CONFIG_PROVIDED=true
             PYTEST_ARGS+=("$1")
             shift
             if [[ $# -gt 0 ]]; then
@@ -112,7 +111,11 @@ while [[ $# -gt 0 ]]; do
             fi
             ;;
         --config=*)
-            STRESS_CONFIG_PROVIDED=true
+            PYTEST_ARGS+=("$1")
+            shift
+            ;;
+        --external-resources)
+            STRESS_EXTERNAL_RESOURCES=true
             PYTEST_ARGS+=("$1")
             shift
             ;;
@@ -204,9 +207,10 @@ if [ "$RUN_ALL" = true ]; then
 fi
 
 # Stress runs use the integration Docker stack by default for local development.
-# Providing --config means the caller supplied explicit external resources, so
-# do not launch local integration containers for stress-only runs.
-if [ "$RUN_STRESS" = true ] && [ "$STRESS_CONFIG_PROVIDED" = false ]; then
+# Config files may contain only suite sweeps/cases and are merged over default
+# integration resources. Use --external-resources when the config points at
+# externally managed services and local containers should not be launched.
+if [ "$RUN_STRESS" = true ] && [ "$STRESS_EXTERNAL_RESOURCES" = false ]; then
     NEEDS_DOCKER=true
 fi
 
