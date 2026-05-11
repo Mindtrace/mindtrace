@@ -21,6 +21,8 @@ _RETRYABLE_TASK_STATUSES: set[ReplicationTaskStatus] = {"pending", "failed"}
 _RECLAIM_EXPIRED_LEASE_STATUSES: frozenset[ReplicationTaskStatus] = frozenset(
     {"claimed", "syncing_metadata", "hydrating_payloads"}
 )
+
+
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
