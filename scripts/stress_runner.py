@@ -13,6 +13,7 @@ import logging
 import re
 import sys
 import time
+import traceback
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -452,11 +453,15 @@ def run_suite(suite: SuiteDefinition, config: StressSuiteConfig, output_dir: Pat
     suite_artifact_id = artifact_id(config.suite_id)
     summary_path = suite_dir / f"{suite_artifact_id}.json"
     events_path = suite_dir / f"{suite_artifact_id}.jsonl"
+    errors_path = output_dir / "errors.log"
     started = utc_now_iso()
     monotonic_start = time.monotonic()
 
-    with events_path.open("w", encoding="utf-8") as events_handle:
-        reporter = StressReporter(config.suite_id, events_file=events_handle)
+    with (
+        events_path.open("w", encoding="utf-8") as events_handle,
+        errors_path.open("a", encoding="utf-8") as errors_handle,
+    ):
+        reporter = StressReporter(config.suite_id, events_file=events_handle, error_file=errors_handle)
         reporter.event("suite_started", profile=config.profile, parameters=config.parameters)
         status = "passed"
         try:
@@ -465,9 +470,10 @@ def run_suite(suite: SuiteDefinition, config: StressSuiteConfig, output_dir: Pat
             run_phase(config.cooldown_seconds, f"{config.suite_id} cooldown")
         except Exception as exc:  # noqa: BLE001 - runner should capture suite failures in reports
             status = "failed"
-            reporter.record_operation(success=False, latency_seconds=0.0, error=exc)
+            error_traceback = traceback.format_exc()
+            reporter.record_operation(success=False, latency_seconds=0.0, error=exc, traceback=error_traceback)
             result = None
-            reporter.event("suite_failed", error_type=type(exc).__name__, error_message=str(exc))
+            reporter.event("suite_failed", error_type=type(exc).__name__, error_message=str(exc), traceback=error_traceback)
 
     ended = utc_now_iso()
     elapsed = time.monotonic() - monotonic_start
@@ -487,9 +493,11 @@ def run_suite(suite: SuiteDefinition, config: StressSuiteConfig, output_dir: Pat
             latency_seconds=reporter.latency_seconds,
             error_counts=reporter.error_counts,
             metrics=reporter.metrics,
-            artifacts={"events": str(events_path)},
+            artifacts={"events": str(events_path), "errors": str(errors_path)},
         ).to_dict()
     payload["artifacts"]["events"] = str(events_path)
+    if reporter.failures:
+        payload["artifacts"]["errors"] = str(errors_path)
     summary_path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
     return payload
 
@@ -545,6 +553,9 @@ def print_run_summary(output_dir: Path, run_payload: dict[str, Any]) -> None:
             p95 = suite.get("latency_p95_seconds")
             if p95 is not None:
                 line += f" | p95={p95 * 1000:.1f}ms"
+            if suite["status"] != "passed" and suite.get("error_counts"):
+                errors = ", ".join(f"{name}={count}" for name, count in suite["error_counts"].items())
+                line += f" | errors={errors}"
             print(line)
 
     print("\nResults written to:")
@@ -552,6 +563,8 @@ def print_run_summary(output_dir: Path, run_payload: dict[str, Any]) -> None:
     print(f"- Run JSON: {output_dir / 'run.json'}")
     print(f"- Summary: {output_dir / 'summary.md'}")
     print(f"- Suite details: {output_dir / 'suites'}")
+    if failed:
+        print(f"- Error log: {output_dir / 'errors.log'}")
 
 
 def format_bytes(value: int | float) -> str:

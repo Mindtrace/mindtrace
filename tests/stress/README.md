@@ -55,6 +55,7 @@ Each run writes artifacts under `.stress-results/<run-id>/` by default:
 .stress-results/<run-id>/
   run.json
   summary.md
+  errors.log          # only populated when suite errors occur
   suites/
     <suite-id>.json
     <suite-id>.jsonl
@@ -63,7 +64,10 @@ Each run writes artifacts under `.stress-results/<run-id>/` by default:
 - `run.json` records selected suites, profile, Git metadata, Python version,
   resource config with secrets redacted, and per-suite summaries.
 - each suite JSON file contains final metrics.
-- each suite JSONL file contains operation/event records.
+- each suite JSONL file contains operation/event records, including per-operation
+  `error_type` and `error_message` fields.
+- `errors.log` contains run-level JSONL error records for failed operations and
+  suite setup failures.
 - `summary.md` is a short human-readable summary.
 - `coverage.txt` is written when a stress run is combined with coverage-producing
   unit/integration/utils tests, or when coverage data exists during a failing
