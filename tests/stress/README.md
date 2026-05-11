@@ -120,10 +120,17 @@ suites:
 ```
 
 To compare local Mongo with MongoDB Atlas, copy
-`tests/stress/configs/datalake_compare_atlas.example.yaml`, set
-`resources.mongo_atlas_uri`, and run the same command with that config. Atlas
-variants use `mongo_backend: atlas`; local variants use the default integration
-Mongo.
+`tests/stress/configs/datalake_compare_atlas.example.yaml` and configure Atlas
+through standard Mindtrace config/env:
+
+```bash
+export MINDTRACE_DATALAKE__REMOTE_MONGO_DB_URI='mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?appName=<app>'
+export MINDTRACE_DATALAKE__REMOTE_MONGO_DB_NAME='mindtrace_stress_atlas'
+```
+
+Atlas variants use `mongo_backend: atlas`; local variants use the default
+integration Mongo. You can also override per run with `resources.mongo_atlas_uri`
+and `resources.mongo_atlas_db_name` in a local, uncommitted config file.
 
 Use explicit cases when combinations need distinct resource settings or names:
 
@@ -152,8 +159,8 @@ resources:
   mongo_uri: mongodb://localhost:27018
   mongo_secondary_uri: mongodb://localhost:27019
   mongo_db_name: mindtrace_stress_<run-id>
-  # optional, required only for mongo_backend: atlas sweeps:
-  mongo_atlas_uri: mongodb+srv://<user>:<password>@<cluster>/<database>
+  # included when configured via MINDTRACE_DATALAKE / CoreConfig:
+  mongo_atlas_uri: mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?appName=<app>
   mongo_atlas_db_name: mindtrace_stress_atlas
   minio_endpoint: localhost:9100
   minio_access_key: minioadmin

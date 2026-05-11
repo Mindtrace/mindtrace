@@ -44,6 +44,8 @@ class MINDTRACE_DEFAULT_HOST_URLS(BaseModel):
 class MINDTRACE_DATALAKE(BaseModel):
     DEFAULT_PAGE_LIMIT: int
     MAX_PAGE_LIMIT: int
+    REMOTE_MONGO_DB_URI: SecretStr
+    REMOTE_MONGO_DB_NAME: str
 
 
 class MINDTRACE_MINIO(BaseModel):
