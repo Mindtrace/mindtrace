@@ -77,7 +77,7 @@ class JsonCodec:
         if isinstance(obj, BaseModel):
             return obj.model_dump_json().encode("utf-8")
         if isinstance(obj, dict):
-            return json.dumps(obj).encode("utf-8")
+            return json.dumps(obj, separators=(",", ":")).encode("utf-8")
         raise TypeError(
             f"Unsupported payload type for JsonCodec: {type(obj).__name__}. "
             "Expected bytes, str, dict, or pydantic.BaseModel."
@@ -200,6 +200,14 @@ class NatsMessage:
     async def in_progress(self) -> None:
         """Extend the JetStream ack-wait window — useful inside long-running handlers."""
         await self._raw.in_progress()
+
+    def as_model(self, model: Type[T], *, codec: Optional[Codec] = None) -> T:
+        """Decode `raw_data` into `model` without touching the cached `data`.
+
+        Use when the subscription was opened without a model (so `.data`
+        returns bytes) and a caller in a different layer wants a typed view.
+        """
+        return decode_payload(self._raw.data, model, codec=codec or self._codec)
 
     @property
     def metadata(self):

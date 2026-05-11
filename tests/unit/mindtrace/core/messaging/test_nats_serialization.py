@@ -80,6 +80,17 @@ def test_nats_message_decodes_with_model_and_caches():
     assert first is second  # cached
 
 
+def test_nats_message_as_model_does_not_poison_cache():
+    """A subscribe without a model returns bytes from .data; .as_model(T) is the
+    on-demand typed view and must not change .data's behavior."""
+    raw = _FakeMsg(b'{"name":"x","count":3}')
+    msg = NatsMessage(raw)  # no model
+    typed = msg.as_model(_Sample)
+    assert typed == _Sample(name="x", count=3)
+    # .data still reflects the no-model contract.
+    assert msg.data == b'{"name":"x","count":3}'
+
+
 def test_nats_settings_defaults():
     s = NatsSettings(_env_file=None)  # ensure no .env interference
     assert isinstance(s.urls, list)
@@ -146,8 +157,16 @@ def test_nats_health_default_construction():
     assert h.connected_url is None
     assert h.servers == []
     assert h.last_error is None
+    assert h.last_error_at is None
     assert isinstance(h.stats, NatsStats)
     assert h.stats.in_msgs == 0
+
+
+def test_nats_settings_new_operational_knobs_have_defaults():
+    """`ping_interval` and `max_outstanding_pings` round-trip as their declared types."""
+    s = NatsSettings(_env_file=None)
+    assert s.ping_interval > 0
+    assert s.max_outstanding_pings >= 1
 
 
 def test_nats_health_roundtrips_through_model_dump():
@@ -202,11 +221,12 @@ def test_apply_content_type_bytes_payload_is_untouched():
 
 
 def test_json_codec_encodes_dict():
+    """Dict payloads use compact separators to match `BaseModel.model_dump_json()` on the wire."""
     from mindtrace.core.messaging.nats.serde import JsonCodec
 
     codec = JsonCodec()
     out = codec.encode({"a": 1, "b": "two"})
-    assert out == b'{"a": 1, "b": "two"}'
+    assert out == b'{"a":1,"b":"two"}'
 
 
 def test_apply_content_type_for_dict_uses_codec_value():
@@ -239,6 +259,111 @@ def test_required_model_raises_on_empty_payload():
 
     with pytest.raises(ValueError, match="Empty payload"):
         decode_payload(b"", _Sample)
+
+
+async def test_subscription_handle_surfaces_fatal_loop_exception():
+    """When the message source itself raises, the SubscriptionHandle captures
+    the exception and re-raises it from `_stop(raise_on_error=True)`.
+
+    This is the key promise of the worker form: fatal failures cannot disappear
+    into a debug log. Verified with a fake nats-py subscription whose async
+    iterator raises immediately.
+    """
+    import asyncio
+
+    import pytest as _pytest
+
+    from mindtrace.core.messaging.nats.client import SubscriptionHandle
+
+    class _BadMessages:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise RuntimeError("simulated broker crash")
+
+    class _BadSub:
+        messages = _BadMessages()
+
+        async def unsubscribe(self):
+            return None
+
+    async def handler(msg):
+        pass
+
+    handle = SubscriptionHandle(_BadSub(), subject="test.fatal", model=None, handler=handler)
+    handle._start()
+    # Give the loop a tick to run and capture the exception.
+    await asyncio.sleep(0.05)
+    await handle.wait_done()
+
+    assert handle.is_done is True
+    assert isinstance(handle.exception, RuntimeError)
+    assert "simulated broker crash" in str(handle.exception)
+
+    # raise_on_error=True re-raises; raise_on_error=False does not.
+    with _pytest.raises(RuntimeError, match="simulated broker crash"):
+        await handle._stop(raise_on_error=True)
+
+
+async def test_subscription_handle_handler_exception_does_not_kill_loop():
+    """Per-handler exceptions are caught, naked, and forwarded — the loop keeps running."""
+
+    from mindtrace.core.messaging.nats.client import SubscriptionHandle
+
+    delivered = [b"a", b"b", b"c"]
+    seen: list[bytes] = []
+    failures: list[Exception] = []
+
+    class _Msg:
+        def __init__(self, data):
+            self.data = data
+            self.subject = "t"
+            self.reply = ""
+            self.headers = None
+
+        async def ack(self):
+            pass
+
+        async def nak(self, *args, **kwargs):
+            pass
+
+    class _Messages:
+        def __init__(self, items):
+            self._items = list(items)
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if not self._items:
+                # End the iterator cleanly so the loop exits.
+                raise StopAsyncIteration
+            return _Msg(self._items.pop(0))
+
+    class _Sub:
+        def __init__(self, items):
+            self.messages = _Messages(items)
+
+        async def unsubscribe(self):
+            pass
+
+    async def handler(msg):
+        seen.append(msg.raw_data)
+        if msg.raw_data == b"b":
+            raise ValueError("intentional")
+
+    async def on_error(msg, exc):
+        failures.append(exc)
+
+    handle = SubscriptionHandle(_Sub(delivered), subject="t", model=None, handler=handler, on_error=on_error)
+    handle._start()
+    await handle.wait_done()
+    await handle._stop(raise_on_error=True)
+
+    assert seen == [b"a", b"b", b"c"]
+    assert any(isinstance(e, ValueError) for e in failures)
+    assert handle.exception is None  # fatal=False; handler exceptions don't terminate
 
 
 def test_custom_codec_via_protocol():

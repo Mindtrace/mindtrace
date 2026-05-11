@@ -13,14 +13,18 @@ to reach through to the underlying nats-py client to clean up.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, List, Optional, Type, TypeVar, Union, overload
+import asyncio
+import contextlib
+import weakref
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from typing import TYPE_CHECKING, Any, AsyncIterator, List, Optional, Type, TypeVar, Union, overload
 
 from pydantic import BaseModel
 
 from mindtrace.core.messaging.nats.client import (
     Handler,
     HandlerErrorCallback,
+    Subscription,
     SubscriptionHandle,
 )
 from mindtrace.core.messaging.nats.serde import (
@@ -33,7 +37,17 @@ from mindtrace.core.messaging.nats.serde import (
     get_default_codec,
 )
 
+if TYPE_CHECKING:  # pragma: no cover
+    from mindtrace.core.messaging.nats.client import NatsClient
+
 T = TypeVar("T", bound=BaseModel)
+
+_UNSET: Any = object()
+
+# PushSubscription is just an iterator over a started JetStream push subscription;
+# the lifecycle now lives in the `push_subscribe()` async context manager. The
+# alias keeps the name in the public surface for typing and import stability.
+PushSubscription = Subscription
 
 
 def _build_consumer_config(
@@ -62,7 +76,11 @@ def _build_consumer_config(
 
 
 class _PullSubscription:
-    """Wrapper around a JetStream pull subscription. Yields `NatsMessage` from `fetch`."""
+    """Iterator-style wrapper around a JetStream pull subscription.
+
+    Yielded by the no-handler form of `JetStreamContext.pull_subscribe()`.
+    Callers drive consumption explicitly via `fetch(batch, timeout)`.
+    """
 
     def __init__(self, psub, model: Optional[Type[BaseModel]]):
         self._psub = psub
@@ -72,83 +90,59 @@ class _PullSubscription:
         msgs = await self._psub.fetch(batch, timeout=timeout)
         return [NatsMessage(m, self._model) for m in msgs]
 
-    async def unsubscribe(self) -> None:
-        await self._psub.unsubscribe()
 
+def _pull_message_source(psub, batch: int, fetch_timeout: float):
+    """Async generator that yields raw nats-py messages from a pull subscription.
 
-class PushSubscription:
-    """Async-context-manager + iterator over a JetStream push subscription.
-
-    Mirrors `Subscription` but for `JetStreamContext.push_subscribe` callers.
-    Always uses `manual_ack=True` so callers control ack/nak; the worker form
-    (`SubscriptionHandle` via `push_subscribe(handler=...)`) handles acks for you.
+    `fetch` raises `asyncio.TimeoutError` (and equivalently `nats.errors.TimeoutError`)
+    when no messages arrive in the window — we treat that as "no work yet" and
+    keep polling so the worker loop sees a continuous stream and can honor its
+    `_stopping` flag between iterations. Cancellation of the surrounding task
+    interrupts a blocked `fetch` cleanly.
     """
+    from nats.errors import TimeoutError as NatsTimeoutError
 
-    def __init__(
-        self,
-        js,
-        subject: str,
-        *,
-        durable: str,
-        stream: Optional[str],
-        queue: Optional[str],
-        model: Optional[Type[BaseModel]],
-        config,
-    ):
-        self._js = js
-        self._subject = subject
-        self._durable = durable
-        self._stream = stream
-        self._queue = queue
-        self._model = model
-        self._config = config
-        self._sub = None
-
-    async def __aenter__(self) -> "PushSubscription":
-        self._sub = await self._js.subscribe(
-            self._subject,
-            durable=self._durable,
-            stream=self._stream,
-            queue=self._queue,
-            manual_ack=True,
-            config=self._config,
-        )
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb) -> None:
-        if self._sub is not None:
+    async def _gen():
+        while True:
             try:
-                await self._sub.unsubscribe()
-            finally:
-                self._sub = None
+                msgs = await psub.fetch(batch, timeout=fetch_timeout)
+            except (asyncio.TimeoutError, NatsTimeoutError):
+                continue
+            for m in msgs:
+                yield m
 
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self) -> NatsMessage:
-        if self._sub is None:
-            raise RuntimeError("PushSubscription is not active. Use 'async with ... as sub:'.")
-        raw = await self._sub.messages.__anext__()
-        return NatsMessage(raw, self._model)
-
-    async def next(self, *, timeout: Optional[float] = None) -> NatsMessage:
-        if self._sub is None:
-            raise RuntimeError("PushSubscription is not active. Use 'async with ... as sub:'.")
-        raw = await self._sub.next_msg(timeout=timeout) if timeout is not None else await self._sub.next_msg()
-        return NatsMessage(raw, self._model)
+    return _gen
 
 
 class JetStreamContext:
     """Wrapper around `nats.aio.client.JetStreamContext` with Pydantic-aware publish."""
 
-    def __init__(self, js, *, codec: Optional[Codec] = None):
+    def __init__(
+        self,
+        js,
+        *,
+        codec: Optional[Codec] = None,
+        owner: Optional["NatsClient"] = None,
+    ):
         self._js = js
         self._codec: Codec = codec or get_default_codec()
+        # weakref so JetStreamContext doesn't pin its owner's lifetime.
+        self._owner_ref = weakref.ref(owner) if owner is not None else None
 
     @property
     def raw(self):
         """Escape hatch: the underlying nats-py JetStreamContext."""
         return self._js
+
+    def _register_worker(self, worker: SubscriptionHandle) -> None:
+        owner = self._owner_ref() if self._owner_ref is not None else None
+        if owner is not None:
+            owner._register_worker(worker)
+
+    def _unregister_worker(self, worker: SubscriptionHandle) -> None:
+        owner = self._owner_ref() if self._owner_ref is not None else None
+        if owner is not None:
+            owner._unregister_worker(worker)
 
     async def add_stream(self, *, name: str, subjects: List[str], **kwargs):
         return await self._js.add_stream(name=name, subjects=subjects, **kwargs)
@@ -203,8 +197,8 @@ class JetStreamContext:
             timeout=timeout,
         )
 
-    @asynccontextmanager
-    async def pull_subscribe(
+    @overload
+    def pull_subscribe(
         self,
         subject: str,
         *,
@@ -216,8 +210,57 @@ class JetStreamContext:
         max_deliver: Optional[int] = None,
         deliver_policy: Optional[Any] = None,
         filter_subject: Optional[str] = None,
-    ) -> AsyncIterator[_PullSubscription]:
+    ) -> "AbstractAsyncContextManager[_PullSubscription]": ...
+
+    @overload
+    def pull_subscribe(
+        self,
+        subject: str,
+        *,
+        handler: Handler,
+        durable: str,
+        stream: Optional[str] = None,
+        model: Optional[Type[BaseModel]] = None,
+        auto_ack: bool = True,
+        on_error: Optional[HandlerErrorCallback] = None,
+        batch: int = 1,
+        fetch_timeout: float = 1.0,
+        ack_wait: Optional[float] = None,
+        max_ack_pending: Optional[int] = None,
+        max_deliver: Optional[int] = None,
+        deliver_policy: Optional[Any] = None,
+        filter_subject: Optional[str] = None,
+    ) -> "AbstractAsyncContextManager[SubscriptionHandle]": ...
+
+    @asynccontextmanager
+    async def pull_subscribe(
+        self,
+        subject: str,
+        *,
+        durable: str,
+        stream: Optional[str] = None,
+        model: Optional[Type[BaseModel]] = None,
+        handler: Optional[Handler] = None,
+        auto_ack: bool = True,
+        on_error: Optional[HandlerErrorCallback] = None,
+        batch: int = 1,
+        fetch_timeout: float = 1.0,
+        ack_wait: Optional[float] = None,
+        max_ack_pending: Optional[int] = None,
+        max_deliver: Optional[int] = None,
+        deliver_policy: Optional[Any] = None,
+        filter_subject: Optional[str] = None,
+    ) -> AsyncIterator[Union[_PullSubscription, SubscriptionHandle]]:
         """Pull-based durable consumer. Unsubscribes on exit.
+
+        Two shapes, parallel to `subscribe` / `push_subscribe`:
+        - **Iterator form** (`handler=None`): yields a `_PullSubscription`
+          whose `fetch(batch, timeout)` returns a list of `NatsMessage`.
+        - **Worker form** (`handler=<async fn>`): yields a `SubscriptionHandle`
+          driving a fetch loop in a managed task with auto-ack/nak.
+          `batch` and `fetch_timeout` control the polling cadence; a fetch
+          that times out (no messages) is silently retried so the loop
+          checks for stop signals between polls.
 
         Consumer-config knobs (`ack_wait`, `max_ack_pending`, `max_deliver`,
         `deliver_policy`, `filter_subject`) are forwarded as a `ConsumerConfig`.
@@ -233,14 +276,39 @@ class JetStreamContext:
         if config is not None:
             psub_kwargs["config"] = config
         psub = await self._js.pull_subscribe(subject, **psub_kwargs)
-        wrapper = _PullSubscription(psub, model)
-        try:
-            yield wrapper
-        finally:
+
+        if handler is None:
             try:
-                await psub.unsubscribe()
-            except Exception:
-                pass
+                yield _PullSubscription(psub, model)
+            finally:
+                try:
+                    await psub.unsubscribe()
+                except Exception:
+                    pass
+            return
+
+        worker = SubscriptionHandle(
+            psub,
+            subject=subject,
+            model=model,
+            handler=handler,
+            auto_ack=auto_ack,
+            on_error=on_error,
+            message_source=_pull_message_source(psub, batch, fetch_timeout),
+        )
+        self._register_worker(worker)
+        worker._start()
+        try:
+            yield worker
+        except BaseException:
+            with contextlib.suppress(Exception):
+                await worker._stop(raise_on_error=False)
+            self._unregister_worker(worker)
+            raise
+        try:
+            await worker._stop(raise_on_error=True)
+        finally:
+            self._unregister_worker(worker)
 
     @overload
     def push_subscribe(
@@ -256,7 +324,7 @@ class JetStreamContext:
         max_deliver: Optional[int] = None,
         deliver_policy: Optional[Any] = None,
         filter_subject: Optional[str] = None,
-    ) -> "PushSubscription": ...
+    ) -> "AbstractAsyncContextManager[Subscription]": ...
 
     @overload
     def push_subscribe(
@@ -275,9 +343,10 @@ class JetStreamContext:
         max_deliver: Optional[int] = None,
         deliver_policy: Optional[Any] = None,
         filter_subject: Optional[str] = None,
-    ) -> SubscriptionHandle: ...
+    ) -> "AbstractAsyncContextManager[SubscriptionHandle]": ...
 
-    def push_subscribe(
+    @asynccontextmanager
+    async def push_subscribe(
         self,
         subject: str,
         *,
@@ -293,13 +362,18 @@ class JetStreamContext:
         max_deliver: Optional[int] = None,
         deliver_policy: Optional[Any] = None,
         filter_subject: Optional[str] = None,
-    ) -> Union["PushSubscription", SubscriptionHandle]:
+    ) -> AsyncIterator[Union[Subscription, SubscriptionHandle]]:
         """Push-based JetStream subscribe.
 
         Two shapes, parallel to `NatsClient.subscribe`:
-        - Iterator form (`handler=None`): returns a `PushSubscription`.
-        - Worker form (`handler=<async fn>`): returns a `SubscriptionHandle`
-          driving the handler with auto-ack/nak.
+        - Iterator form (`handler=None`): yields a `Subscription`.
+        - Worker form (`handler=<async fn>`): yields a `SubscriptionHandle`
+          driving the handler with auto-ack/nak. Fatal loop errors are
+          re-raised on context-manager exit.
+
+        Both forms always use `manual_ack=True` under the hood — the iterator
+        form lets you control ack/nak per-message; the worker form does it
+        for you.
         """
         config = _build_consumer_config(
             ack_wait=ack_wait,
@@ -308,37 +382,46 @@ class JetStreamContext:
             deliver_policy=deliver_policy,
             filter_subject=filter_subject,
         )
+        sub = await self._js.subscribe(
+            subject,
+            durable=durable,
+            stream=stream,
+            queue=queue,
+            manual_ack=True,
+            config=config,
+        )
+
         if handler is None:
-            return PushSubscription(
-                self._js,
-                subject,
-                durable=durable,
-                stream=stream,
-                queue=queue,
-                model=model,
-                config=config,
-            )
+            try:
+                yield Subscription(sub, model)
+            finally:
+                try:
+                    await sub.unsubscribe()
+                except Exception:
+                    pass
+            return
 
-        js = self._js
-
-        async def _subscribe():
-            return await js.subscribe(
-                subject,
-                durable=durable,
-                stream=stream,
-                queue=queue,
-                manual_ack=True,
-                config=config,
-            )
-
-        return SubscriptionHandle(
-            _subscribe,
+        worker = SubscriptionHandle(
+            sub,
             subject=subject,
             model=model,
             handler=handler,
             auto_ack=auto_ack,
             on_error=on_error,
         )
+        self._register_worker(worker)
+        worker._start()
+        try:
+            yield worker
+        except BaseException:
+            with contextlib.suppress(Exception):
+                await worker._stop(raise_on_error=False)
+            self._unregister_worker(worker)
+            raise
+        try:
+            await worker._stop(raise_on_error=True)
+        finally:
+            self._unregister_worker(worker)
 
     async def kv(self, bucket: str) -> "KeyValueHandle":
         kv = await self._js.key_value(bucket)
@@ -388,8 +471,29 @@ class KeyValueHandle:
     async def put(self, key: str, value: Payload) -> int:
         return await self._kv.put(key, encode_payload(value))
 
-    async def get(self, key: str, *, model: Optional[Type[T]] = None) -> Union[bytes, T]:
-        entry = await self._kv.get(key)
+    async def get(
+        self,
+        key: str,
+        *,
+        model: Optional[Type[T]] = None,
+        default: Any = _UNSET,
+    ) -> Union[bytes, T, Any]:
+        """Fetch and decode a value.
+
+        Raises `nats.js.errors.KeyNotFoundError` when the key is missing, unless
+        `default=` is supplied — in which case the default is returned and no
+        exception is raised. The default is returned verbatim, *not* fed through
+        the codec; this lets callers express intent like `default=None` or
+        `default=MyModel(...)` without surprises.
+        """
+        from nats.js.errors import KeyNotFoundError
+
+        try:
+            entry = await self._kv.get(key)
+        except KeyNotFoundError:
+            if default is _UNSET:
+                raise
+            return default
         return decode_payload(entry.value, model)
 
     async def get_entry(self, key: str):
@@ -397,10 +501,10 @@ class KeyValueHandle:
         return await self._kv.get(key)
 
     async def delete(self, key: str) -> bool:
-        return await self._kv.delete(key)
+        return bool(await self._kv.delete(key))
 
     async def purge(self, key: str) -> bool:
-        return await self._kv.purge(key)
+        return bool(await self._kv.purge(key))
 
     async def keys(self) -> List[str]:
         return await self._kv.keys()
@@ -429,10 +533,10 @@ class ObjectStoreHandle:
     async def put(self, name: str, data: Union[bytes, str, BaseModel], **kwargs):
         return await self._obs.put(name, encode_payload(data), **kwargs)
 
-    async def get(self, name: str) -> bytes:
-        """Fetch an object's full bytes payload."""
+    async def get(self, name: str, *, model: Optional[Type[T]] = None) -> Union[bytes, T]:
+        """Fetch an object's full bytes payload, optionally decoded into `model`."""
         result = await self._obs.get(name)
-        return result.data
+        return decode_payload(result.data, model)
 
     async def get_object_info(self, name: str) -> Any:
         """Fetch the raw nats-py `ObjectResult` (includes info, headers, etc.)."""

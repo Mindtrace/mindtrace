@@ -13,7 +13,8 @@ import asyncio
 import contextlib
 import ssl
 import time
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, Optional, Type, TypeVar, Union, overload
 
 import nats
@@ -49,6 +50,7 @@ CallbackNoArgs = Callable[[], Awaitable[None]]
 CallbackOneArg = Callable[[Exception], Awaitable[None]]
 Handler = Callable[["NatsMessage"], Awaitable[None]]
 HandlerErrorCallback = Callable[["NatsMessage", Exception], Awaitable[None]]
+MessageSource = Callable[[], AsyncIterator[Any]]
 
 
 def _build_tls_context(s: NatsSettings) -> Optional[ssl.SSLContext]:
@@ -100,6 +102,7 @@ class NatsHealth(BaseModel):
     connected_url: Optional[str] = None
     servers: list[str] = Field(default_factory=list)
     last_error: Optional[str] = None
+    last_error_at: Optional[datetime] = None
     stats: NatsStats = Field(default_factory=NatsStats)
 
 
@@ -107,42 +110,26 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class Subscription:
-    """Async-context-manager + async-iterator wrapper around a NATS subscription.
+    """Async iterator over messages from a live nats-py subscription.
 
-    Yields `NatsMessage` instances. Unsubscribes on exit.
+    Yielded by `NatsClient.subscribe()` (iterator form) and
+    `JetStreamContext.push_subscribe()`. The owning context manager is
+    responsible for `unsubscribe()` on exit — this class only iterates.
     """
 
-    def __init__(self, nc, subject: str, queue: str, model: Optional[Type[BaseModel]]):
-        self._nc = nc
-        self._subject = subject
-        self._queue = queue
+    def __init__(self, sub, model: Optional[Type[BaseModel]]):
+        self._sub = sub
         self._model = model
-        self._sub = None
-
-    async def __aenter__(self) -> "Subscription":
-        self._sub = await self._nc.subscribe(self._subject, queue=self._queue)
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb) -> None:
-        if self._sub is not None:
-            try:
-                await self._sub.unsubscribe()
-            finally:
-                self._sub = None
 
     def __aiter__(self) -> AsyncIterator[NatsMessage]:
         return self
 
     async def __anext__(self) -> NatsMessage:
-        if self._sub is None:
-            raise RuntimeError("Subscription is not active. Use 'async with nc.subscribe(...) as sub:'.")
         raw = await self._sub.messages.__anext__()
         return NatsMessage(raw, self._model)
 
     async def next(self, *, timeout: Optional[float] = None) -> NatsMessage:
         """Fetch the next message, optionally with a timeout."""
-        if self._sub is None:
-            raise RuntimeError("Subscription is not active. Use 'async with nc.subscribe(...) as sub:'.")
         raw = await self._sub.next_msg(timeout=timeout) if timeout is not None else await self._sub.next_msg()
         return NatsMessage(raw, self._model)
 
@@ -150,44 +137,46 @@ class Subscription:
 class SubscriptionHandle(Mindtrace):
     """Managed background worker driven by a user-supplied handler.
 
-    Started by entering the async context manager (or `start()` explicitly).
-    The worker task pulls messages, invokes the handler, and — when `auto_ack`
-    is true and the message is a JetStream message — acks on success or naks
-    on handler exception. For core NATS subscriptions ack/nak are no-ops and
-    raise inside nats-py; the worker suppresses that so the loop continues.
+    Yielded by `NatsClient.subscribe(handler=...)` and the JetStream
+    `push_subscribe(handler=...)` / `pull_subscribe(handler=...)` worker
+    forms. Started and stopped by the owning async context manager — callers
+    never construct one directly.
 
-        async def my_handler(msg):
-            do_work(msg.data)
+    The worker task pulls messages from the underlying subscription, invokes
+    the handler, and — when `auto_ack` is true and the message is a JetStream
+    message — acks on success or naks on handler exception. For core NATS
+    subscriptions ack/nak are no-ops; the worker suppresses the resulting
+    nats-py error so the loop continues.
 
-        async with nc.subscribe("jobs.*", handler=my_handler) as worker:
-            await asyncio.sleep(10)  # process for 10s, then drain on exit
-
-    The `subscribe_fn` parameter is a callable that returns the underlying
-    nats-py subscription when awaited. This lets the same handle wrap either
-    a core NATS subscription (`nc.subscribe(...)`) or a JetStream push
-    subscription (`js.subscribe(...)`).
+    Fatal failures (the message source itself raising) terminate the loop and
+    are surfaced via the `exception` property and re-raised on the owning
+    CM's exit, unless `raise_on_error=False` was negotiated. This makes
+    silent-worker-death — the canonical production NATS failure — impossible.
     """
 
     def __init__(
         self,
-        subscribe_fn: Callable[[], Awaitable[Any]],
+        sub,
         *,
         subject: str,
         model: Optional[Type[BaseModel]],
         handler: Handler,
         auto_ack: bool = True,
         on_error: Optional[HandlerErrorCallback] = None,
+        message_source: Optional[MessageSource] = None,
     ):
         super().__init__()
-        self._subscribe_fn = subscribe_fn
+        self._sub = sub
         self._subject = subject
         self._model = model
         self._handler = handler
         self._auto_ack = auto_ack
         self._on_error = on_error
-        self._sub = None
+        self._message_source = message_source
         self._task: Optional[asyncio.Task] = None
         self._stopping = asyncio.Event()
+        self._exception: Optional[BaseException] = None
+        self._done = asyncio.Event()
 
     @property
     def subject(self) -> str:
@@ -197,30 +186,36 @@ class SubscriptionHandle(Mindtrace):
     def is_running(self) -> bool:
         return self._task is not None and not self._task.done()
 
-    async def __aenter__(self) -> "SubscriptionHandle":
-        await self.start()
-        return self
+    @property
+    def is_done(self) -> bool:
+        return self._done.is_set()
 
-    async def __aexit__(self, exc_type, exc, tb) -> None:
-        await self.stop()
+    @property
+    def exception(self) -> Optional[BaseException]:
+        """The fatal exception that terminated the worker loop, if any.
 
-    async def start(self) -> None:
-        """Subscribe and launch the worker loop. Idempotent."""
-        if self._task is not None:
-            return
+        `None` while the worker is running or after a clean stop. Set when
+        the message source itself raised (broker reset, malformed JS frame,
+        etc.) — per-handler exceptions are caught and forwarded to
+        `on_error` without terminating the loop.
+        """
+        return self._exception
+
+    async def wait_done(self) -> None:
+        """Block until the worker loop has exited (normally or via failure)."""
+        await self._done.wait()
+
+    def _start(self) -> None:
         self._stopping.clear()
-        self._sub = await self._subscribe_fn()
+        self._done.clear()
         self._task = asyncio.create_task(self._loop(), name=f"nats-worker:{self._subject}")
 
-    async def stop(self, *, timeout: float = 3.0) -> None:
-        """Unsubscribe and wait for the worker loop to exit. Cancels if it hangs."""
+    async def _stop(self, *, timeout: float = 3.0, raise_on_error: bool = True) -> None:
         self._stopping.set()
-        if self._sub is not None:
-            try:
-                await self._sub.unsubscribe()
-            except Exception as e:
-                self.logger.debug("unsubscribe raised during stop: %s", e)
-            self._sub = None
+        try:
+            await self._sub.unsubscribe()
+        except Exception as e:
+            self.logger.debug("unsubscribe raised during stop: %s", e)
         if self._task is not None:
             try:
                 await asyncio.wait_for(self._task, timeout=timeout)
@@ -230,11 +225,13 @@ class SubscriptionHandle(Mindtrace):
                 with contextlib.suppress(BaseException):
                     await self._task
             self._task = None
+        if raise_on_error and self._exception is not None:
+            raise self._exception
 
     async def _loop(self) -> None:
-        assert self._sub is not None
+        source: AsyncIterator[Any] = self._message_source() if self._message_source else self._sub.messages
         try:
-            async for raw in self._sub.messages:
+            async for raw in source:
                 if self._stopping.is_set():
                     break
                 msg = NatsMessage(raw, self._model)
@@ -255,7 +252,15 @@ class SubscriptionHandle(Mindtrace):
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            self.logger.debug("worker loop for %s exited unexpectedly: %s", self._subject, e)
+            self._exception = e
+            self.logger.warning(
+                "worker loop for %s exited with %s: %s",
+                self._subject,
+                type(e).__name__,
+                e,
+            )
+        finally:
+            self._done.set()
 
 
 class NatsClient(Mindtrace):
@@ -273,8 +278,13 @@ class NatsClient(Mindtrace):
         self._settings = settings
         self._js_wrapper = None
         self._last_error: Optional[Exception] = None
+        self._last_error_at: Optional[datetime] = None
         self._codec: Codec = codec or get_default_codec()
         self._subject_models: dict[str, Type[BaseModel]] = {}
+        # Strong-ref set so callers who do `async with nc.subscribe(handler=h):`
+        # without an `as worker` clause don't have their worker silently GC'd
+        # while the task is still scheduled. Cleared on shutdown.
+        self._workers: set[SubscriptionHandle] = set()
 
     @classmethod
     @asynccontextmanager
@@ -308,7 +318,6 @@ class NatsClient(Mindtrace):
         s = settings or NatsSettings()
         servers = urls or ([url] if url else None) or s.urls
 
-        # Compose auth + TLS + callbacks. Explicit `connect_kwargs` win.
         auth_kwargs = _collect_auth_kwargs(s)
         for k, v in auth_kwargs.items():
             connect_kwargs.setdefault(k, v)
@@ -318,6 +327,9 @@ class NatsClient(Mindtrace):
             connect_kwargs.setdefault("tls", tls_ctx)
         if s.tls_handshake_first:
             connect_kwargs.setdefault("tls_handshake_first", True)
+
+        connect_kwargs.setdefault("ping_interval", s.ping_interval)
+        connect_kwargs.setdefault("max_outstanding_pings", s.max_outstanding_pings)
 
         if on_disconnected is not None:
             connect_kwargs.setdefault("disconnected_cb", on_disconnected)
@@ -330,6 +342,7 @@ class NatsClient(Mindtrace):
 
         async def _capture_error(exc):
             client._last_error = exc
+            client._last_error_at = datetime.now(timezone.utc)
             if on_error is not None:
                 await on_error(exc)
 
@@ -337,6 +350,7 @@ class NatsClient(Mindtrace):
             # A successful reconnect means whatever caused the last error is
             # behind us; don't leave stale state in `health()`.
             client._last_error = None
+            client._last_error_at = None
             if on_reconnected is not None:
                 await on_reconnected()
 
@@ -374,6 +388,15 @@ class NatsClient(Mindtrace):
     def codec(self) -> Codec:
         return self._codec
 
+    # -- Worker tracking --------------------------------------------------------------
+
+    def _register_worker(self, worker: SubscriptionHandle) -> None:
+        """Internal: called by `subscribe(handler=...)` and the JetStream worker forms."""
+        self._workers.add(worker)
+
+    def _unregister_worker(self, worker: SubscriptionHandle) -> None:
+        self._workers.discard(worker)
+
     # -- Subject → model registry -----------------------------------------------------
 
     def register(self, subject: str, model: Type[BaseModel]) -> None:
@@ -409,6 +432,7 @@ class NatsClient(Mindtrace):
                 connected_url=None,
                 servers=[],
                 last_error=(repr(self._last_error) if self._last_error else None),
+                last_error_at=self._last_error_at,
                 stats=NatsStats(),
             )
         raw_stats = getattr(self._nc, "stats", {}) or {}
@@ -417,6 +441,7 @@ class NatsClient(Mindtrace):
             connected_url=(str(self._nc.connected_url) if self._nc.connected_url else None),
             servers=[str(srv) for srv in (self._nc.servers or [])],
             last_error=(repr(self._last_error) if self._last_error else None),
+            last_error_at=self._last_error_at,
             stats=NatsStats(**{k: v for k, v in raw_stats.items() if k in NatsStats.model_fields}),
         )
 
@@ -531,7 +556,7 @@ class NatsClient(Mindtrace):
         *,
         queue: str = "",
         model: Optional[Type[BaseModel]] = None,
-    ) -> Subscription: ...
+    ) -> "AbstractAsyncContextManager[Subscription]": ...
 
     @overload
     def subscribe(
@@ -543,9 +568,10 @@ class NatsClient(Mindtrace):
         model: Optional[Type[BaseModel]] = None,
         auto_ack: bool = True,
         on_error: Optional[HandlerErrorCallback] = None,
-    ) -> SubscriptionHandle: ...
+    ) -> "AbstractAsyncContextManager[SubscriptionHandle]": ...
 
-    def subscribe(
+    @asynccontextmanager
+    async def subscribe(
         self,
         subject: str,
         *,
@@ -554,14 +580,21 @@ class NatsClient(Mindtrace):
         model: Optional[Type[BaseModel]] = None,
         auto_ack: bool = True,
         on_error: Optional[HandlerErrorCallback] = None,
-    ) -> Union[Subscription, SubscriptionHandle]:
+    ) -> AsyncIterator[Union[Subscription, SubscriptionHandle]]:
         """Subscribe to a subject.
 
         Two shapes, picked by whether `handler` is supplied:
-        - **Iterator form** (`handler=None`): returns a `Subscription` you enter
-          with `async with` and iterate. Best for ad-hoc consumption.
-        - **Worker form** (`handler=<async fn>`): returns a `SubscriptionHandle`
-          that runs the handler in a managed task with auto-ack/nak.
+        - **Iterator form** (`handler=None`): yields a `Subscription` you
+          iterate over. Best for ad-hoc consumption.
+        - **Worker form** (`handler=<async fn>`): yields a `SubscriptionHandle`
+          driving the handler in a managed task with auto-ack/nak. Fatal
+          loop errors are surfaced on exit via `worker.exception` and
+          re-raised by the context manager.
+
+        Both forms are async context managers — the subscription is opened
+        on entry and unsubscribed on exit, even if the body raises. There
+        is no other way to obtain a subscription; forgetting `async with`
+        is a structural error rather than a silent no-op.
 
         Args:
             subject: NATS subject (wildcards `*` and `>` supported).
@@ -576,21 +609,42 @@ class NatsClient(Mindtrace):
         """
         self._check_open()
         eff_model = self._resolve_model(subject, model)
+        nats_sub = await self._nc.subscribe(subject, queue=queue)
         if handler is None:
-            return Subscription(self._nc, subject, queue, eff_model)
-        nc = self._nc
+            try:
+                yield Subscription(nats_sub, eff_model)
+            finally:
+                try:
+                    await nats_sub.unsubscribe()
+                except Exception as e:
+                    self.logger.debug("subscription unsubscribe raised on exit: %s", e)
+            return
 
-        async def _subscribe():
-            return await nc.subscribe(subject, queue=queue)
-
-        return SubscriptionHandle(
-            _subscribe,
+        worker = SubscriptionHandle(
+            nats_sub,
             subject=subject,
             model=eff_model,
             handler=handler,
             auto_ack=auto_ack,
             on_error=on_error,
         )
+        self._register_worker(worker)
+        worker._start()
+        try:
+            yield worker
+        except BaseException:
+            # Body raised — stop the worker but don't let its own exception
+            # mask the body's, which is what the user actually wants to see.
+            with contextlib.suppress(Exception):
+                await worker._stop(raise_on_error=False)
+            self._unregister_worker(worker)
+            raise
+        # Body exited cleanly. Stop the worker and re-raise any fatal loop
+        # error — silent worker death is the canonical production NATS bug.
+        try:
+            await worker._stop(raise_on_error=True)
+        finally:
+            self._unregister_worker(worker)
 
     def jetstream(self) -> "JetStreamContext":
         """Get the JetStream context wrapper (cached)."""
@@ -598,8 +652,24 @@ class NatsClient(Mindtrace):
         if self._js_wrapper is None:
             from mindtrace.core.messaging.nats.jetstream import JetStreamContext
 
-            self._js_wrapper = JetStreamContext(self._nc.jetstream(), codec=self._codec)
+            self._js_wrapper = JetStreamContext(self._nc.jetstream(), codec=self._codec, owner=self)
         return self._js_wrapper
+
+    async def add_stream(self, *, name: str, subjects: list[str], **kwargs):
+        """Create a JetStream stream. Returns the `StreamInfo` from the server."""
+        return await self.jetstream().add_stream(name=name, subjects=subjects, **kwargs)
+
+    @asynccontextmanager
+    async def scoped_stream(
+        self,
+        name: str,
+        *,
+        subjects: list[str],
+        **add_kwargs,
+    ) -> AsyncIterator[Any]:
+        """Create a JetStream stream on enter, delete it on exit."""
+        async with self.jetstream().scoped_stream(name, subjects=subjects, **add_kwargs) as info:
+            yield info
 
     async def kv(self, bucket: str) -> "KeyValueHandle":
         """Get an existing KV bucket handle. Raises if the bucket does not exist."""
@@ -670,6 +740,18 @@ class NatsClient(Mindtrace):
         # if drain/close themselves take a while.
         self._nc = None
         self._js_wrapper = None
+
+        # Stop any workers the caller forgot about before draining the
+        # connection — nats-py would otherwise error inside their iterators.
+        if self._workers:
+            active = list(self._workers)
+            self._workers.clear()
+            for w in active:
+                try:
+                    await w._stop(raise_on_error=False)
+                except Exception as e:
+                    self.logger.debug("orphan worker stop raised: %s", e)
+
         try:
             if nc.is_connected:
                 try:

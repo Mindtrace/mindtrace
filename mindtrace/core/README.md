@@ -359,13 +359,20 @@ reply = await nc.request("square", Q(n=9), timeout=2.0, model=A)
 
 ### JetStream, KV, Object Store
 
-`nc.jetstream()` returns a context with `add_stream` / `delete_stream` / `scoped_stream`, plus `pull_subscribe` and `push_subscribe`. KV and Object Store buckets are accessed via `nc.kv(...)` / `nc.create_kv(...)` (and the symmetric `scoped_kv` / `scoped_object_store` helpers that create on enter and destroy on exit).
+`nc.jetstream()` returns a context with `add_stream` / `delete_stream` / `scoped_stream`, plus `pull_subscribe` and `push_subscribe`. The convenience methods `nc.add_stream` / `nc.scoped_stream` are shortcuts for the JetStream context. KV and Object Store buckets are accessed via `nc.kv(...)` / `nc.create_kv(...)` (and the symmetric `scoped_kv` / `scoped_object_store` helpers that create on enter and destroy on exit).
 
 ```python
 async with nc.scoped_kv("settings") as kv:
     await kv.put("greeting", "hello")
     print(await kv.get("greeting"))
+    # KV.get raises nats.js.errors.KeyNotFoundError on a missing key
+    # unless you pass `default=`:
+    print(await kv.get("missing", default=None))  # → None
 ```
+
+JetStream `pull_subscribe` has both iterator and worker forms — pass `handler=` to get a managed fetch loop with auto-ack/nak, `batch=` and `fetch_timeout=` to tune the polling cadence. `push_subscribe` mirrors the same two shapes.
+
+KV `watch()` / `history()` (the streaming-update features of NATS KV) are not surfaced yet — drop to `kv.raw.watch(...)` if you need them.
 
 ### Configuration
 
@@ -379,7 +386,20 @@ Or pass settings directly: `NatsClient.connect(urls=[...], settings=NatsSettings
 
 ### Observability
 
-`nc.health()` returns a typed `NatsHealth` snapshot with the connected URL, full server list, `stats` (in/out msg + byte counters from nats-py), and any `last_error` captured by the wrapped `error_cb`. Pydantic publishes auto-stamp `Content-Type: application/json` in headers so non-Python consumers can inspect the wire format; any headers you pass through (including `traceparent`) are forwarded verbatim.
+`nc.health()` returns a typed `NatsHealth` snapshot with the connected URL, full server list, `stats` (in/out msg + byte counters from nats-py), and any `last_error` (plus `last_error_at` UTC timestamp) captured by the wrapped `error_cb`. Pydantic publishes auto-stamp `Content-Type: application/json` in headers so non-Python consumers can inspect the wire format; any headers you pass through (including `traceparent`) are forwarded verbatim.
+
+### Errors you'll catch
+
+The library is intentionally thin — most errors come from `nats-py` or `pydantic` and propagate as-is. The names worth knowing:
+
+- `mindtrace.core.NatsClientClosed` — any method called after the `connect()` async context manager has exited.
+- `asyncio.TimeoutError` — `request(timeout=...)`, JetStream pull `fetch(timeout=...)`, and `drain` exceeding their windows.
+- `nats.errors.NoRespondersError` — `request(...)` to a subject with no live responders.
+- `nats.errors.TimeoutError` — JetStream-specific timeout (`fetch` raises this and the worker loop treats it as "no work yet" rather than fatal).
+- `nats.js.errors.KeyNotFoundError` — `KeyValueHandle.get(key)` when the key is absent and no `default=` is supplied.
+- `pydantic.ValidationError` — `model=`-typed decode of a payload that doesn't validate.
+
+Worker forms (`subscribe(handler=...)`, `push_subscribe(handler=...)`, `pull_subscribe(handler=...)`) catch per-message handler exceptions and forward them to `on_error` without terminating the loop. A *fatal* loop exception (the message source itself raising) is captured on the `SubscriptionHandle` and re-raised when the async context manager exits — silent worker death is impossible.
 
 ### CLI
 
@@ -387,6 +407,8 @@ For quick ops smoke tests (uses the same `MINDTRACE_NATS__*` env vars; defaults 
 
 ```bash
 uv run python -m mindtrace.core.messaging.nats publish my.subject 'hello'
+uv run python -m mindtrace.core.messaging.nats publish my.subject '{"n":1}' --json
+uv run python -m mindtrace.core.messaging.nats publish my.subject --file ./payload.bin
 uv run python -m mindtrace.core.messaging.nats subscribe 'events.>' --count 5
 uv run python -m mindtrace.core.messaging.nats request my.subject 'ping' --timeout 2.0
 ```

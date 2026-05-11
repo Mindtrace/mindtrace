@@ -33,6 +33,8 @@ class NatsSettings(BaseSettings):
     max_reconnect_attempts: int = 60
     reconnect_time_wait: float = 2.0
     drain_timeout: float = 5.0
+    ping_interval: float = 120.0
+    max_outstanding_pings: int = 2
 
     # Auth.
     user: Optional[str] = None
@@ -43,7 +45,9 @@ class NatsSettings(BaseSettings):
 
     # TLS. nats-py auto-enables TLS if any URL is `tls://`, but the explicit
     # flag plus CA/cert/key paths covers the case where you connect to a
-    # `nats://` URL that requires a TLS handshake (e.g. via STARTTLS).
+    # `nats://` URL that needs a TLS handshake. Setting `tls=True` is itself
+    # the way to "require" TLS — it builds and passes an `ssl.SSLContext`,
+    # which nats-py won't downgrade.
     tls: bool = False
     tls_ca_file: Optional[str] = None
     tls_cert_file: Optional[str] = None

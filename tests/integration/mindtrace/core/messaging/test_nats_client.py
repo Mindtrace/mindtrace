@@ -305,8 +305,11 @@ async def test_methods_raise_natsclientclosed_after_shutdown(nats_url):
         await captured.request("anywhere", b"x", timeout=0.1)
     with pytest.raises(NatsClientClosed):
         captured.jetstream()
+    # `subscribe` is now an async context manager; the close check fires when
+    # the caller enters it, not at construction time.
     with pytest.raises(NatsClientClosed):
-        captured.subscribe("anywhere")
+        async with captured.subscribe("anywhere"):
+            pass
 
 
 async def test_on_closed_callback_fires(nats_url):
@@ -610,6 +613,111 @@ async def test_unregister_returns_old_model(nats_client, subject_prefix):
     assert nats_client.registered_model(subject) is _Payload
     assert nats_client.unregister(subject) is _Payload
     assert nats_client.registered_model(subject) is None
+
+
+# -- Worker lifetime & failure surfacing ----------------------------------------------
+
+
+async def test_worker_orphaned_at_shutdown_is_stopped_cleanly(nats_url, subject_prefix):
+    """A worker whose CM is escaped (e.g., via task cancellation) must not outlive the client."""
+    subject = f"{subject_prefix}.orphan"
+    saw: list[bytes] = []
+
+    async def handler(msg):
+        saw.append(msg.raw_data)
+
+    # Start a worker in a background task that we cancel without letting the
+    # CM exit cleanly — simulating a caller that forgets to stop it.
+    captured_worker_holder: list = []
+
+    async def run_and_leak():
+        async with NatsClient.connect(urls=[nats_url]) as nc:
+            cm = nc.subscribe(subject, handler=handler)
+            worker = await cm.__aenter__()
+            captured_worker_holder.append(worker)
+            # Deliberately do NOT call cm.__aexit__ — fall through.
+            return  # nc context manager exits here, which should stop the worker
+
+    await run_and_leak()
+    worker = captured_worker_holder[0]
+    # The client's shutdown should have stopped the worker.
+    assert worker.is_running is False
+
+
+async def test_pull_subscribe_worker_form_drives_handler(nats_client, subject_prefix, stream_name):
+    """JetStream pull subscribe with handler=: messages are fetched in batches, acked on success."""
+    js = nats_client.jetstream()
+    subject = f"{subject_prefix}.pull-worker"
+    seen: list[_Payload] = []
+    done = asyncio.Event()
+
+    async def handler(msg):
+        seen.append(msg.data)
+        if len(seen) >= 3:
+            done.set()
+
+    async with js.scoped_stream(stream_name, subjects=[f"{subject_prefix}.>"]):
+        for i in range(3):
+            await js.publish(subject, _Payload(name="p", count=i))
+
+        async with js.pull_subscribe(
+            subject,
+            handler=handler,
+            durable=f"pw-{stream_name[-6:]}",
+            stream=stream_name,
+            model=_Payload,
+            batch=2,
+            fetch_timeout=0.5,
+        ):
+            await asyncio.wait_for(done.wait(), timeout=5.0)
+
+    assert [m.count for m in seen] == [0, 1, 2]
+
+
+async def test_kv_get_with_default_returns_default_for_missing_key(nats_client, bucket_name):
+    """`KeyValueHandle.get(key, default=...)` should not raise on missing keys."""
+    async with nats_client.scoped_kv(bucket_name) as kv:
+        # Default returned verbatim (not codec-decoded).
+        assert await kv.get("missing", default=None) is None
+        sentinel = object()
+        assert await kv.get("also-missing", default=sentinel) is sentinel
+
+        # Without default the underlying KeyNotFoundError still propagates.
+        from nats.js.errors import KeyNotFoundError
+
+        with pytest.raises(KeyNotFoundError):
+            await kv.get("definitely-missing")
+
+
+async def test_object_store_get_with_model(nats_client, bucket_name):
+    """ObjectStore.get(model=) decodes JSON-stored objects directly into Pydantic."""
+    async with nats_client.scoped_object_store(bucket_name) as obs:
+        await obs.put("modeled.json", _Payload(name="o", count=42))
+        roundtripped = await obs.get("modeled.json", model=_Payload)
+        assert roundtripped == _Payload(name="o", count=42)
+
+
+async def test_client_scoped_stream_creates_and_destroys(nats_client, subject_prefix, stream_name):
+    """`NatsClient.scoped_stream` is the convenience re-export over the JetStream context."""
+    async with nats_client.scoped_stream(stream_name, subjects=[f"{subject_prefix}.>"]):
+        await nats_client.jetstream().publish(f"{subject_prefix}.x", b"payload")
+        info = await nats_client.jetstream().raw.stream_info(stream_name)
+        assert info.state.messages == 1
+
+    with pytest.raises(Exception):
+        await nats_client.jetstream().raw.stream_info(stream_name)
+
+
+async def test_client_add_stream_returns_stream_info(nats_client, subject_prefix, stream_name):
+    """`NatsClient.add_stream` returns the StreamInfo so callers don't drop to .jetstream()."""
+    info = await nats_client.add_stream(name=stream_name, subjects=[f"{subject_prefix}.>"])
+    try:
+        assert info.config.name == stream_name
+    finally:
+        await nats_client.delete_stream(stream_name)
+
+
+# -- Optional[T] (kept at the end of the file to bracket older tests) ----------------
 
 
 async def test_optional_model_allows_empty_request_reply(nats_client, subject_prefix):
