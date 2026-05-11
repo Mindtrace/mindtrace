@@ -160,8 +160,10 @@ def default_integration_resources(run_id: str) -> dict[str, Any]:
     if gcs_credentials_path:
         resources["gcs_credentials_path"] = gcs_credentials_path
     if mongo_atlas_uri:
+        resources["REMOTE_MONGO_DB_URI"] = mongo_atlas_uri
         resources["mongo_atlas_uri"] = mongo_atlas_uri
     if mongo_atlas_db_name:
+        resources["REMOTE_MONGO_DB_NAME"] = mongo_atlas_db_name
         resources["mongo_atlas_db_name"] = mongo_atlas_db_name
 
     return {"resources": resources}

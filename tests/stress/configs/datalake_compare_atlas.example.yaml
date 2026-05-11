@@ -9,8 +9,8 @@
 # this run only. Keep real credentials out of source control.
 
 # resources:
-#   mongo_atlas_uri: mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority&appName=<app>
-#   mongo_atlas_db_name: mindtrace_stress_atlas
+#   REMOTE_MONGO_DB_URI: mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority&appName=<app>
+#   REMOTE_MONGO_DB_NAME: mindtrace_stress_atlas
 
 suites:
   datalake.payload-write-ceiling:
