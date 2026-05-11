@@ -6,9 +6,11 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from itertools import product
 import importlib
 import json
 import logging
+import re
 import sys
 import time
 from datetime import UTC, datetime
@@ -41,6 +43,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--profile", default="smoke", help="Profile name to use (default: smoke)")
     parser.add_argument("--duration", help="Override per-suite measurement duration, e.g. 30s or 5m")
     parser.add_argument("--warmup", help="Override per-suite warmup duration")
+    parser.add_argument(
+        "--param",
+        "-P",
+        action="append",
+        default=[],
+        help="Suite parameter override or sweep, e.g. backend=local,gcs or payload_size=1KiB,1MiB",
+    )
     parser.add_argument("--config", type=Path, help="Optional resource/config YAML file for suites")
     parser.add_argument("--output-dir", type=Path, help="Output directory for this run")
     parser.add_argument("--no-menu", action="store_true", help="Disable the interactive selector")
@@ -91,6 +100,7 @@ def default_integration_resources(run_id: str) -> dict[str, Any]:
             "minio_endpoint": INTEGRATION_MINIO_ENDPOINT,
             "minio_access_key": "minioadmin",
             "minio_secret_key": "minioadmin",
+            "minio_bucket": "stress-registry",
             "minio_secure": False,
         }
     }
@@ -107,6 +117,140 @@ def redact(value: Any) -> Any:
 def is_secret_key(key: str) -> bool:
     lowered = key.lower()
     return any(token in lowered for token in ("secret", "token", "password", "access_key", "private_key"))
+
+
+def parse_param_assignments(assignments: list[str]) -> dict[str, list[str]]:
+    """Parse repeatable ``--param key=value[,value]`` arguments."""
+
+    parsed: dict[str, list[str]] = {}
+    for assignment in assignments:
+        if "=" not in assignment:
+            raise SystemExit(f"Invalid --param {assignment!r}; expected key=value[,value]")
+        key, raw_values = assignment.split("=", 1)
+        key = key.strip()
+        values = [value.strip() for value in raw_values.split(",") if value.strip()]
+        if not key or not values:
+            raise SystemExit(f"Invalid --param {assignment!r}; expected key=value[,value]")
+        parsed[key] = values
+    return parsed
+
+
+def suite_config_section(run_config: dict[str, Any], suite_id: str) -> dict[str, Any]:
+    section = run_config.get("suites", {}).get(suite_id, {})
+    if section is None:
+        return {}
+    if not isinstance(section, dict):
+        raise SystemExit(f"Config section for suite {suite_id!r} must be a mapping")
+    return section
+
+
+def expand_parameter_sets(
+    suite: SuiteDefinition,
+    *,
+    run_config: dict[str, Any],
+    cli_sweep: dict[str, list[str]],
+) -> list[dict[str, Any]]:
+    """Return suite parameter cases from config ``cases``/``sweep`` and CLI ``--param`` values."""
+
+    section = suite_config_section(run_config, suite.suite_id)
+    cases = section.get("cases")
+    config_sweep = normalize_parameter_mapping(suite, dict(section.get("sweep", {}) or {}))
+    config_sweep.update(normalize_parameter_mapping(suite, cli_sweep))
+
+    if cases is not None:
+        if not isinstance(cases, list) or not all(isinstance(case, dict) for case in cases):
+            raise SystemExit(f"Config cases for suite {suite.suite_id!r} must be a list of mappings")
+        if not config_sweep:
+            return [normalize_parameter_mapping(suite, dict(case)) for case in cases] or [{}]
+        expanded: list[dict[str, Any]] = []
+        for case in cases:
+            for sweep_case in matrix_cases(config_sweep):
+                expanded.append({**normalize_parameter_mapping(suite, dict(case)), **sweep_case})
+        return expanded or [{}]
+
+    return matrix_cases(config_sweep) or [{}]
+
+
+def normalize_parameter_mapping(suite: SuiteDefinition, values: dict[str, Any]) -> dict[str, Any]:
+    """Normalize declared parameter aliases to canonical manifest parameter names."""
+
+    if not values or not suite.parameters:
+        return values
+
+    aliases: dict[str, str] = {}
+    aliases["name"] = "name"
+    for key, definition in suite.parameters.items():
+        aliases[key] = key
+        if isinstance(definition, dict):
+            for alias in definition.get("aliases", []) or []:
+                aliases[str(alias)] = key
+
+    normalized: dict[str, Any] = {}
+    for key, value in values.items():
+        canonical_key = aliases.get(key)
+        if canonical_key is None:
+            expected = ", ".join(sorted(aliases))
+            raise SystemExit(f"Unknown parameter {key!r} for suite {suite.suite_id!r}; expected one of: {expected}")
+        normalized[canonical_key] = value
+    return normalized
+
+
+def manifest_parameter_defaults(suite: SuiteDefinition) -> dict[str, Any]:
+    defaults: dict[str, Any] = {}
+    for key, definition in suite.parameters.items():
+        if isinstance(definition, dict) and "default" in definition:
+            defaults[key] = definition["default"]
+    return defaults
+
+
+def validate_parameter_values(suite: SuiteDefinition, values: dict[str, Any]) -> None:
+    for key, value in values.items():
+        if key == "name":
+            continue
+        definition = suite.parameters.get(key)
+        if not isinstance(definition, dict) or "choices" not in definition:
+            continue
+        choices = definition.get("choices") or []
+        if str(value) not in {str(choice) for choice in choices}:
+            expected = ", ".join(str(choice) for choice in choices)
+            raise SystemExit(f"Invalid value {value!r} for {suite.suite_id}.{key}; expected one of: {expected}")
+
+
+def matrix_cases(sweep: dict[str, Any]) -> list[dict[str, Any]]:
+    """Expand a sweep mapping into a Cartesian product of parameter dictionaries."""
+
+    if not sweep:
+        return []
+    keys = list(sweep)
+    values_by_key: list[list[Any]] = []
+    for key in keys:
+        raw_values = sweep[key]
+        if isinstance(raw_values, list):
+            values = raw_values
+        else:
+            values = [raw_values]
+        if not values:
+            raise SystemExit(f"Sweep parameter {key!r} must contain at least one value")
+        values_by_key.append(values)
+    return [dict(zip(keys, values, strict=True)) for values in product(*values_by_key)]
+
+
+def variant_suite_id(suite_id: str, parameters: dict[str, Any]) -> str:
+    """Build a human-readable suite variant ID for reports and progress output."""
+
+    if not parameters:
+        return suite_id
+    name = parameters.get("name")
+    if name:
+        return f"{suite_id}[{name}]"
+    suffix = ",".join(f"{key}={value}" for key, value in sorted(parameters.items()))
+    return f"{suite_id}[{suffix}]"
+
+
+def artifact_id(suite_id: str) -> str:
+    """Return a filesystem-safe artifact ID for a suite or variant."""
+
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", suite_id).strip("_") or "suite"
 
 
 def select_suites(args: argparse.Namespace, suites: dict[str, SuiteDefinition]) -> list[SuiteDefinition]:
@@ -163,6 +307,7 @@ def resolve_suite_config(
     manifest: dict[str, Any],
     args: argparse.Namespace,
     resources: dict[str, Any],
+    parameter_overrides: dict[str, Any],
     output_dir: Path,
     run_id: str,
 ) -> StressSuiteConfig:
@@ -174,12 +319,16 @@ def resolve_suite_config(
     duration = parse_duration_seconds(args.duration or suite_profile.pop("duration", None) or global_profile.get("duration"), default=10.0)
     warmup = parse_duration_seconds(args.warmup or suite_profile.pop("warmup", None) or global_profile.get("warmup"), default=0.0)
     cooldown = parse_duration_seconds(suite_profile.pop("cooldown", None) or global_profile.get("cooldown"), default=0.0)
-    parameters = {key: value for key, value in suite_profile.items() if key not in {"duration", "warmup", "cooldown"}}
+    parameters = manifest_parameter_defaults(suite)
+    parameters.update({key: value for key, value in suite_profile.items() if key not in {"duration", "warmup", "cooldown"}})
+    parameters.update(parameter_overrides)
+    validate_parameter_values(suite, parameters)
     suite_resources = dict(resources.get("resources", {}))
     suite_resources.update(resources.get("suites", {}).get(suite.suite_id, {}).get("resources", {}))
+    resolved_suite_id = variant_suite_id(suite.suite_id, parameter_overrides)
 
     return StressSuiteConfig(
-        suite_id=suite.suite_id,
+        suite_id=resolved_suite_id,
         label=suite.label,
         profile=args.profile,
         duration_seconds=duration,
@@ -197,7 +346,11 @@ def list_suites(suites: dict[str, SuiteDefinition]) -> None:
     for suite in suites.values():
         tags = ", ".join(suite.tags) or "-"
         requires = ", ".join(suite.requires) or "-"
-        print(f"{suite.suite_id}\n  label: {suite.label}\n  tags: {tags}\n  requires: {requires}\n")
+        parameters = ", ".join(suite.parameters) or "-"
+        print(
+            f"{suite.suite_id}\n  label: {suite.label}\n  tags: {tags}\n"
+            f"  requires: {requires}\n  parameters: {parameters}\n"
+        )
 
 
 def print_plan(configs: list[StressSuiteConfig]) -> None:
@@ -296,8 +449,9 @@ def run_suite_with_progress(suite: SuiteDefinition, config: StressSuiteConfig, r
 def run_suite(suite: SuiteDefinition, config: StressSuiteConfig, output_dir: Path, quiet: bool) -> dict[str, Any]:
     suite_dir = output_dir / "suites"
     suite_dir.mkdir(parents=True, exist_ok=True)
-    summary_path = suite_dir / f"{config.suite_id}.json"
-    events_path = suite_dir / f"{config.suite_id}.jsonl"
+    suite_artifact_id = artifact_id(config.suite_id)
+    summary_path = suite_dir / f"{suite_artifact_id}.json"
+    events_path = suite_dir / f"{suite_artifact_id}.jsonl"
     started = utc_now_iso()
     monotonic_start = time.monotonic()
 
@@ -423,17 +577,25 @@ def main(argv: list[str] | None = None) -> int:
     run_id = args.run_id or datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
     resources = load_optional_config(args.config) if args.config else default_integration_resources(run_id)
     output_dir = args.output_dir or (DEFAULT_RESULTS_ROOT / run_id)
-    configs = [
-        resolve_suite_config(
-            suite,
-            manifest=manifest,
-            args=args,
-            resources=resources,
-            output_dir=output_dir,
-            run_id=run_id,
-        )
-        for suite in selected
-    ]
+    cli_sweep = parse_param_assignments(args.param)
+    suite_runs = []
+    for suite in selected:
+        for parameter_overrides in expand_parameter_sets(suite, run_config=resources, cli_sweep=cli_sweep):
+            suite_runs.append(
+                (
+                    suite,
+                    resolve_suite_config(
+                        suite,
+                        manifest=manifest,
+                        args=args,
+                        resources=resources,
+                        parameter_overrides=parameter_overrides,
+                        output_dir=output_dir,
+                        run_id=run_id,
+                    ),
+                )
+            )
+    configs = [config for _, config in suite_runs]
 
     print_plan(configs)
     if args.dry_run:
@@ -442,7 +604,7 @@ def main(argv: list[str] | None = None) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     started = utc_now_iso()
     suite_results = []
-    for suite, config in zip(selected, configs, strict=True):
+    for suite, config in suite_runs:
         result = run_suite(suite, config, output_dir, quiet=not args.verbose_suite_output)
         suite_results.append(result)
         if result["status"] != "passed" and args.fail_fast:

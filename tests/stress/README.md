@@ -9,7 +9,7 @@ Run stress suites through the normal test entry point:
 ```bash
 ds test --stress --list
 
-ds test --stress --suite registry.local-write-ceiling --profile smoke
+ds test --stress --suite registry.write-ceiling --profile smoke
 
 ds test --stress --tag datalake --profile standard --duration 120s
 
@@ -25,6 +25,8 @@ suites.
 - `--suite <id>` selects a suite by stable ID. Repeat it to run several suites.
 - `--tag <tag>` selects all suites with a tag. Repeat it to combine tags.
 - `--all` selects every suite in the manifest.
+- `--param key=value[,value]` or `-P key=value[,value]` overrides suite
+  parameters and expands comma-separated values into a matrix sweep.
 - In a TTY, `ds test --stress` opens a simple numbered selector.
 - Without a TTY, explicit selection is required so automation never hangs and
   never accidentally runs everything.
@@ -67,6 +69,46 @@ Each run writes artifacts under `.stress-results/<run-id>/` by default:
   unit/integration/utils tests, or when coverage data exists during a failing
   stress command. Coverage is not printed to the console for stress runs.
 
+## Parameter sweeps and cases
+
+Use `--param` for quick ad hoc sweeps:
+
+```bash
+ds test --stress \
+  --suite registry.write-ceiling \
+  --profile smoke \
+  -P backend=local,minio,gcs \
+  -P payload_size=1KiB,1MiB,10MiB
+```
+
+This expands to the Cartesian product of backends and payload sizes. Each variant
+gets its own suite result file and appears separately in the console summary.
+
+Use YAML for repeatable sweeps:
+
+```yaml
+suites:
+  registry.write-ceiling:
+    sweep:
+      backend: [local, minio, gcs]
+      payload_size: [1KiB, 1MiB, 10MiB]
+      concurrency: [1]
+```
+
+Use explicit cases when combinations need distinct resource settings or names:
+
+```yaml
+suites:
+  registry.write-ceiling:
+    cases:
+      - name: local-small
+        backend: local
+        payload_size: 1KiB
+      - name: gcs-large
+        backend: gcs
+        payload_size: 10MiB
+```
+
 ## Resource configuration
 
 For local development, stress runs use the integration Docker stack by default.
@@ -82,6 +124,7 @@ resources:
   minio_access_key: minioadmin
   minio_secret_key: minioadmin
   minio_secure: false
+  minio_bucket: stress-registry
 ```
 
 For production-like or externally managed resources, provide `--config`. When a
@@ -92,6 +135,9 @@ stress-only runs:
 resources:
   mongo_uri: mongodb://mindtrace:mindtrace@stress-mongo.example:27017
   mongo_db_name: mindtrace_stress_remote
+  gcs_project_id: my-gcp-project
+  gcs_bucket_name: my-stress-registry-bucket
+  gcs_credentials_path: /path/to/service-account.json
 ```
 
 Suite-specific resource overrides are supported:
@@ -108,8 +154,8 @@ contain credentials.
 
 ## Initial suites
 
-- `registry.local-write-ceiling` measures sustained local `Registry.save` write
-  throughput.
+- `registry.write-ceiling` measures sustained `Registry.save` write throughput
+  for `local`, `minio`, and `gcs` backends with configurable payload sizes.
 - `datalake.registry-write-ceiling` measures Datalake object writes through the
   configured Store/Registry path without metadata insertion.
 - `datalake.mongo-insert-ceiling` measures Asset + primary AssetAlias metadata

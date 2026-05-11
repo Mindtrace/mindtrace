@@ -9,18 +9,29 @@ profiles:
     cooldown: 0s
 
 suites:
-  registry.local-write-ceiling:
-    label: Registry / Local write ceiling
+  registry.write-ceiling:
+    label: Registry / write ceiling
     module: tests.stress.suites.registry.local_write_ceiling
-    tags: [registry, write, local]
+    tags: [registry, write]
     requires: [local_disk]
     default_selected: true
-    safety: Uses a temporary local Registry backend and cleans it up unless --keep-resources is set.
+    safety: Uses generated object prefixes. Local backend uses temporary disk; MinIO/GCS backends require configured resources.
+    parameters:
+      backend:
+        default: local
+        choices: [local, minio, gcs]
+      payload_size:
+        default: 64KiB
+        aliases: [object_size]
+      concurrency:
+        default: 1
     profiles:
       smoke:
+        backend: local
         payload_size: 64KiB
         concurrency: 1
       standard:
+        backend: local
         payload_size: 1MiB
         concurrency: 4
 
