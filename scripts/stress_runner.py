@@ -119,12 +119,15 @@ def default_integration_resources(run_id: str) -> dict[str, Any]:
     gcs_project_id = None
     gcs_bucket_name = None
     gcs_credentials_path = None
+    mongo_atlas_uri = None
+    mongo_atlas_db_name = None
 
     try:
         from mindtrace.core import CoreConfig
 
         core_config = CoreConfig()
         minio_cfg = core_config.get("MINDTRACE_MINIO", {})
+        datalake_cfg = core_config.get("MINDTRACE_DATALAKE", {})
         gcp_cfg = core_config.get("MINDTRACE_GCP", {})
         gcp_registry_cfg = core_config.get("MINDTRACE_GCP_REGISTRY", {})
 
@@ -134,6 +137,8 @@ def default_integration_resources(run_id: str) -> dict[str, Any]:
         gcs_project_id = gcp_cfg.get("GCP_PROJECT_ID")
         gcs_bucket_name = gcp_registry_cfg.get("GCP_BUCKET_NAME") or gcp_cfg.get("GCP_BUCKET_NAME")
         gcs_credentials_path = gcp_cfg.get("GCP_CREDENTIALS_PATH")
+        mongo_atlas_uri = core_config.get_secret("MINDTRACE_DATALAKE", "REMOTE_MONGO_DB_URI")
+        mongo_atlas_db_name = datalake_cfg.get("REMOTE_MONGO_DB_NAME")
     except Exception:
         pass
 
@@ -154,6 +159,10 @@ def default_integration_resources(run_id: str) -> dict[str, Any]:
         resources["gcs_bucket_name"] = gcs_bucket_name
     if gcs_credentials_path:
         resources["gcs_credentials_path"] = gcs_credentials_path
+    if mongo_atlas_uri:
+        resources["mongo_atlas_uri"] = mongo_atlas_uri
+    if mongo_atlas_db_name:
+        resources["mongo_atlas_db_name"] = mongo_atlas_db_name
 
     return {"resources": resources}
 

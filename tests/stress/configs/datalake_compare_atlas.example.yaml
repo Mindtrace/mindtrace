@@ -1,10 +1,16 @@
 # Example Datalake comparison config that compares local integration Mongo with
-# MongoDB Atlas. Copy this file outside source control or inject mongo_atlas_uri
-# from your local secrets before running.
+# MongoDB Atlas.
+#
+# Prefer configuring Atlas through standard Mindtrace config/env:
+#   MINDTRACE_DATALAKE__REMOTE_MONGO_DB_URI=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?appName=<app>
+#   MINDTRACE_DATALAKE__REMOTE_MONGO_DB_NAME=mindtrace_stress_atlas
+#
+# If needed, uncomment the resources block below to override those values for
+# this run only. Keep real credentials out of source control.
 
-resources:
-  mongo_atlas_uri: mongodb+srv://<user>:<password>@<cluster>/<database>?retryWrites=true&w=majority
-  mongo_atlas_db_name: mindtrace_stress_atlas
+# resources:
+#   mongo_atlas_uri: mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority&appName=<app>
+#   mongo_atlas_db_name: mindtrace_stress_atlas
 
 suites:
   datalake.payload-write-ceiling:
