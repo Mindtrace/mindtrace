@@ -541,8 +541,26 @@ class Registry(Mindtrace):
                 "last_accessed": time.time(),
             }
 
+    def _count_new_cache_entries(self, entries: List[tuple[str, str]]) -> int:
+        """Return how many cache entries are not already present before a cache write."""
+        if not self._cached or self._cache_max_entries is None or not entries:
+            return 0
+
+        unique_entries = list(dict.fromkeys(entries))
+        try:
+            exists = self._cache.backend.has_object(
+                [name for name, _ in unique_entries],
+                [version for _, version in unique_entries],
+            )
+            return sum(1 for entry in unique_entries if not exists.get(entry, False))
+        except Exception as e:
+            self.logger.debug(f"Could not preflight cache entries for LRU accounting: {e}")
+            # Fall back to the previous conservative estimate. The following
+            # prune pass rebuilds from live cache contents before deleting.
+            return len(unique_entries)
+
     def _note_cache_entries_added(self, count: int) -> None:
-        """Update the approximate cache entry count after successful cache writes."""
+        """Update the approximate cache entry count after successful new cache writes."""
         if not self._cached or self._cache_max_entries is None or count <= 0:
             return
         with self._cache_lru_lock:
@@ -683,6 +701,7 @@ class Registry(Mindtrace):
 
         # Update cache (best effort)
         touched_cache_entries: List[tuple[str, str]] = []
+        new_cache_entries = 0
         try:
             if isinstance(name, list):
                 if isinstance(result, BatchResult):
@@ -693,24 +712,28 @@ class Registry(Mindtrace):
                         if result.results[i] is not None
                     ]
                     if to_cache:
+                        cache_entries = [(t[0], t[1]) for t in to_cache]
+                        new_cache_entries = self._count_new_cache_entries(cache_entries)
                         self._cache.save(
                             [t[0] for t in to_cache],
                             [t[2] for t in to_cache],
                             version=[t[1] for t in to_cache],
                             on_conflict=OnConflict.OVERWRITE,
                         )
-                        touched_cache_entries.extend((t[0], t[1]) for t in to_cache)
+                        touched_cache_entries.extend(cache_entries)
             else:
                 if result is not None:
+                    cache_entries = [(name, result)]
+                    new_cache_entries = self._count_new_cache_entries(cache_entries)
                     self._cache.save(name, obj, version=result, on_conflict=OnConflict.OVERWRITE)
-                    touched_cache_entries.append((name, result))
+                    touched_cache_entries.extend(cache_entries)
         except Exception as e:
             self.logger.warning(f"Error updating cache: {e}")
 
         for cache_name, cache_version in touched_cache_entries:
             self._touch_cache_entry(cache_name, cache_version)
         if touched_cache_entries:
-            self._note_cache_entries_added(len(touched_cache_entries))
+            self._note_cache_entries_added(new_cache_entries)
             self._maybe_prune_cache_lru()
 
         return result
@@ -909,9 +932,11 @@ class Registry(Mindtrace):
         cache_v = resolved_v or (version if version and version != "latest" else self._remote._latest(name))
         if cache_v:
             try:
+                cache_entries = [(name, cache_v)]
+                new_cache_entries = self._count_new_cache_entries(cache_entries)
                 self._cache.save(name, obj, version=cache_v, on_conflict=OnConflict.OVERWRITE)
                 self._touch_cache_entry(name, cache_v)
-                self._note_cache_entries_added(1)
+                self._note_cache_entries_added(new_cache_entries)
                 self._maybe_prune_cache_lru()
             except Exception as e:
                 self.logger.warning(f"Error caching {name}: {e}")
@@ -994,6 +1019,8 @@ class Registry(Mindtrace):
 
             if to_cache:
                 try:
+                    cache_entries = [(t[0], t[1]) for t in to_cache]
+                    new_cache_entries = self._count_new_cache_entries(cache_entries)
                     self._cache.save(
                         [t[0] for t in to_cache],
                         [t[2] for t in to_cache],
@@ -1002,7 +1029,7 @@ class Registry(Mindtrace):
                     )
                     for cache_name, cache_version, _ in to_cache:
                         self._touch_cache_entry(cache_name, cache_version)
-                    self._note_cache_entries_added(len(to_cache))
+                    self._note_cache_entries_added(new_cache_entries)
                     self._maybe_prune_cache_lru()
                 except Exception as e:
                     self.logger.warning(f"Error updating cache: {e}")

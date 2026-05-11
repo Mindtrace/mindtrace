@@ -3304,6 +3304,52 @@ class TestRegistryCacheLRU:
 
         assert registry._cache_lru_estimated_entries is None
 
+    def test_count_new_cache_entries_uses_batch_backend_has_object(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=10)
+        registry._cache.backend.has_object = Mock(
+            return_value={
+                ("test:existing", "1.0.0"): True,
+                ("test:new", "1.0.0"): False,
+            }
+        )
+
+        added = registry._count_new_cache_entries(
+            [("test:existing", "1.0.0"), ("test:new", "1.0.0"), ("test:new", "1.0.0")]
+        )
+
+        assert added == 1
+        registry._cache.backend.has_object.assert_called_once_with(
+            ["test:existing", "test:new"],
+            ["1.0.0", "1.0.0"],
+        )
+
+    def test_save_overwrite_does_not_increment_cache_lru_estimate(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=10)
+        self.save_cache_entries(registry, [("test:obj", "1.0.0")])
+        registry._cache_lru_estimated_entries = 1
+        registry._remote.save = Mock(return_value="1.0.0")
+
+        with patch.object(registry, "_maybe_prune_cache_lru") as pruner:
+            registry.save("test:obj", "updated", version="1.0.0")
+
+        assert registry._cache_lru_estimated_entries == 1
+        pruner.assert_called_once_with()
+
+    def test_batch_save_counts_only_new_cache_lru_entries(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=10)
+        self.save_cache_entries(registry, [("test:existing", "1.0.0")])
+        registry._cache_lru_estimated_entries = 1
+        result = BatchResult()
+        result.results = ["1.0.0", "1.0.0"]
+        result.succeeded = [("test:existing", "1.0.0"), ("test:new", "1.0.0")]
+        registry._remote.save = Mock(return_value=result)
+
+        with patch.object(registry, "_maybe_prune_cache_lru") as pruner:
+            registry.save(["test:existing", "test:new"], ["updated", "fresh"], version=["1.0.0", "1.0.0"])
+
+        assert registry._cache_lru_estimated_entries == 2
+        pruner.assert_called_once_with()
+
     def test_maybe_prune_noops_when_uncached(self, temp_registry_dir):
         uncached = self.make_remote_registry(temp_registry_dir, use_cache=False)
 
