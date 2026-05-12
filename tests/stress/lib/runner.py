@@ -18,6 +18,11 @@ from pathlib import Path
 from typing import Any, TextIO
 from urllib.parse import urlsplit, urlunsplit
 
+from mindtrace.testing import (
+    SuiteContribution,
+    TestRunner,
+    default_test_runner,
+)
 from tests.stress.lib.benchmark import StressReporter, StressResult, StressSuiteConfig, utc_now_iso
 from tests.stress.lib.durations import parse_duration_seconds
 from tests.stress.lib.manifest import (
@@ -119,10 +124,14 @@ def load_stress_manifest(path: Path | str | None = None) -> dict[str, Any]:
 
 
 def suite_metadata(suite: SuiteDefinition) -> StressSuiteMetadata:
+    module = suite.module
+    if suite.run_fn is not None and not suite.module.strip():
+        module = "mindtrace.testing.plugin"
+
     return StressSuiteMetadata(
         suite_id=suite.suite_id,
         label=suite.label,
-        module=suite.module,
+        module=module,
         tags=list(suite.tags),
         requires=list(suite.requires),
         default_selected=suite.default_selected,
@@ -130,6 +139,45 @@ def suite_metadata(suite: SuiteDefinition) -> StressSuiteMetadata:
         parameters={key: StressParameterDefinition.from_manifest(raw) for key, raw in suite.parameters.items()},
         profiles=dict(suite.profiles),
     )
+
+
+def contribution_to_suite_definition(contrib: SuiteContribution) -> SuiteDefinition:
+    """Adapt a plugin contribution to manifest-shaped :class:`SuiteDefinition`."""
+
+    return SuiteDefinition(
+        suite_id=contrib.id,
+        label=contrib.title,
+        module="",
+        tags=list(contrib.tags),
+        requires=list(contrib.requires),
+        parameters=dict(contrib.parameters),
+        profiles=dict(contrib.profiles),
+        safety=contrib.safety,
+        run_fn=contrib.run,
+    )
+
+
+def merge_suite_definitions_with_plugins(
+    suites: dict[str, SuiteDefinition],
+    *,
+    test_runner: TestRunner | None = None,
+    merge_plugins: bool = True,
+) -> dict[str, SuiteDefinition]:
+    """Union manifest YAML suites with :mod:`mindtrace.testing` registrations.
+
+    When the same suite ID exists in both, the manifest/YAML definition wins so
+    in-repo manifests remain the source of truth.
+    """
+
+    if not merge_plugins:
+        return dict(suites)
+    runner = test_runner if test_runner is not None else default_test_runner()
+    runner.discover_plugins()
+    merged = dict(suites)
+    for contrib in runner.effective_suite_map().values():
+        candidate = contribution_to_suite_definition(contrib)
+        merged.setdefault(candidate.suite_id, candidate)
+    return merged
 
 
 def scenario_metadata(scenario: ScenarioDefinition, manifest_path: Path | None = None) -> StressScenarioMetadata:
@@ -148,9 +196,19 @@ def scenario_metadata(scenario: ScenarioDefinition, manifest_path: Path | None =
     )
 
 
-def list_stress_suites(manifest_path: Path | None = None) -> list[StressSuiteMetadata]:
+def list_stress_suites(
+    manifest_path: Path | None = None,
+    *,
+    merge_plugins: bool = True,
+    test_runner: TestRunner | None = None,
+) -> list[StressSuiteMetadata]:
     manifest = load_stress_manifest(manifest_path)
-    return [suite_metadata(suite) for suite in suite_definitions(manifest).values()]
+    merged = merge_suite_definitions_with_plugins(
+        suite_definitions(manifest),
+        test_runner=test_runner,
+        merge_plugins=merge_plugins,
+    )
+    return [suite_metadata(suite) for suite in merged.values()]
 
 
 def list_stress_scenarios(manifest_path: Path | None = None) -> list[StressScenarioMetadata]:
@@ -437,7 +495,9 @@ def apply_scenarios(
             profile = scenario.profile
         if config_path is None and scenario.config:
             scenario_config = Path(scenario.config)
-            config_path = scenario_config if scenario_config.is_absolute() else (manifest_path.parents[2] / scenario_config)
+            config_path = (
+                scenario_config if scenario_config.is_absolute() else (manifest_path.parents[2] / scenario_config)
+            )
 
     return StressPlanRequest(
         manifest_path=request.manifest_path,
@@ -528,6 +588,7 @@ def resolve_case(
         safety=suite.safety,
         requires=list(suite.requires),
         module=suite.module,
+        run_fn=suite.run_fn,
     )
     config = StressSuiteConfig(
         suite_id=variant_id,
@@ -562,7 +623,9 @@ def resource_warnings(cases: list[StressPlanCase], resources: dict[str, Any]) ->
             if not shared.get("gcs_bucket_name"):
                 warnings.append(prefix + "backend=gcs requires gcs_bucket_name.")
             if not shared.get("gcs_credentials_path"):
-                warnings.append(prefix + "backend=gcs has no gcs_credentials_path; ambient auth must be available at runtime.")
+                warnings.append(
+                    prefix + "backend=gcs has no gcs_credentials_path; ambient auth must be available at runtime."
+                )
         if backend == "minio":
             if not shared.get("minio_endpoint"):
                 warnings.append(prefix + "backend=minio requires minio_endpoint.")
@@ -578,12 +641,12 @@ def resource_warnings(cases: list[StressPlanCase], resources: dict[str, Any]) ->
     return warnings
 
 
-def resolve_stress_plan(request: StressPlanRequest) -> StressPlan:
+def resolve_stress_plan(request: StressPlanRequest, *, test_runner: TestRunner | None = None) -> StressPlan:
     """Resolve and validate the exact stress execution plan without running it."""
 
     manifest_path = Path(request.manifest_path) if request.manifest_path is not None else DEFAULT_MANIFEST
     manifest = load_stress_manifest(manifest_path)
-    suites = suite_definitions(manifest)
+    suites = merge_suite_definitions_with_plugins(suite_definitions(manifest), test_runner=test_runner)
     scenarios = scenario_definitions(manifest)
     request = apply_scenarios(request, scenarios, manifest_path)
     selected = select_suites_from_request(request, suites)
@@ -592,7 +655,9 @@ def resolve_stress_plan(request: StressPlanRequest) -> StressPlan:
     file_config = load_optional_config(config_path) if config_path else {}
     if request.config_payload:
         file_config = merge_config(file_config, request.config_payload)
-    resources = file_config if request.external_resources else merge_config(default_integration_resources(run_id), file_config)
+    resources = (
+        file_config if request.external_resources else merge_config(default_integration_resources(run_id), file_config)
+    )
     output_dir = Path(request.output_dir) if request.output_dir is not None else (DEFAULT_RESULTS_ROOT / run_id)
     cases: list[StressPlanCase] = []
     for suite in selected:
@@ -733,6 +798,10 @@ def run_suite_with_progress(
 
     def target():
         with suppress_suite_logging(quiet):
+            if suite.run_fn is not None:
+                return suite.run_fn(config, reporter)
+            if not suite.module:
+                raise ValueError(f"Stress suite {suite.suite_id!r} has neither module nor run_fn callable")
             module = importlib.import_module(suite.module)
             return module.run(config, reporter)
 
@@ -897,6 +966,7 @@ def run_stress_plan(
                 module=case.module or "",
                 requires=list(case.requires),
                 safety=case.safety,
+                run_fn=case.run_fn,
             )
             config = config_from_case(case, plan, cancellation_token)
             run_events.emit("suite_started", suite_id=case.suite_id, variant_id=case.variant_id, payload=case.to_dict())
@@ -925,7 +995,9 @@ def run_stress_plan(
             runner_version=RUNNER_VERSION,
             status=status,
         )
-        run_event_name = "run_completed" if status == "completed" else "run_cancelled" if status == "cancelled" else "run_failed"
+        run_event_name = (
+            "run_completed" if status == "completed" else "run_cancelled" if status == "cancelled" else "run_failed"
+        )
         run_events.emit(run_event_name, payload=run_payload.to_dict())
 
     (output_dir / "run.json").write_text(
