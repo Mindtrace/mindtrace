@@ -44,7 +44,7 @@ The CLI is a wrapper around `tests.stress.lib.runner`. UIs and CI jobs should us
 this module rather than shelling out and scraping terminal output.
 
 Manifest suites are merged with any workloads registered globally via
-`mindtrace.testing.TestRunner.register_suite` (explicit class-level registration
+`mindtrace.core.TestRunner` (`register_test_suite` / `register_suite`—explicit registration
 in library/bootstrap code—the same ergonomic model as Registry defaults). The
 manifest wins when a suite ID exists in both. Automated tests should call
 `TestRunner.unregister_suite` / `TestRunner.clear_registry` when isolation is

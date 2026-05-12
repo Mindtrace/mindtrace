@@ -1,13 +1,15 @@
-"""Process-wide test suite registry (Registry-style classmethods; not instantiable)."""
+"""Global :class:`TestRunner` (classmethod only; mirrors Registry ergonomics)."""
 
 from __future__ import annotations
 
 import threading
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, TypeVar
 
-from mindtrace.testing.types import (
+from mindtrace.core.testing.test_suite import TestSuite
+from mindtrace.core.testing.types import (
+    OverallStatus,
     ProgressEvent,
     RunOutcome,
     SuiteContribution,
@@ -20,26 +22,32 @@ from mindtrace.testing.types import (
 _registry: dict[str, SuiteContribution] = {}
 _lock = threading.RLock()
 
+_TS = TypeVar("_TS", bound=type[TestSuite])
+
 
 def _utc_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 class TestRunner:
-    """Namespace for registering and running suites (similar feel to ``Registry.register_default_*``).
-
-    Do not instantiate. Use classmethods only. Registration is **process-global**; call
-    :meth:`clear_registry` in tests between cases if you need isolation.
-    """
+    """See :mod:`mindtrace.core.testing`; use **classmethods only**."""
 
     def __new__(cls, *_args: Any, **_kwargs: Any) -> Any:
         raise TypeError(f"{cls.__name__} must not be instantiated; use classmethods only.")
 
-    # --- registry (classmethods) ---
+    @classmethod
+    def register_test_suite(cls, suite_cls: _TS, *, replace: bool = False) -> _TS:
+        """Register a :class:`TestSuite` subclass (fresh instance per ``run`` call)."""
+
+        if not isinstance(suite_cls, type) or not issubclass(suite_cls, TestSuite):
+            raise TypeError("register_test_suite expects a subclass of TestSuite.")
+        contrib = suite_cls.as_contribution()
+        cls.register_suite(contrib, replace=replace)
+        return suite_cls
 
     @classmethod
     def register_suite(cls, contribution: SuiteContribution, *, replace: bool = False) -> None:
-        """Register ``contribution``. Raises ``ValueError`` if ``id`` exists and ``replace`` is false."""
+        """Register raw contribution (when not using :class:`TestSuite` subclasses)."""
 
         sid = contribution.id
         with _lock:
@@ -54,7 +62,7 @@ class TestRunner:
 
     @classmethod
     def clear_registry(cls) -> None:
-        """Remove every registered suite (for tests); not for production use."""
+        """Wipe registrations (typically from tests only)."""
 
         with _lock:
             _registry.clear()
@@ -69,8 +77,6 @@ class TestRunner:
 
     @classmethod
     def registered_suites(cls) -> dict[str, SuiteContribution]:
-        """Snapshot copy of registered contributions."""
-
         with _lock:
             return dict(_registry)
 
@@ -78,7 +84,6 @@ class TestRunner:
     def list_suite_ids(cls, *, tags: set[str] | None = None) -> list[str]:
         with _lock:
             items = sorted(_registry.items())
-
         ids: list[str] = []
         for sid, contrib in items:
             if tags and not tags.intersection(contrib.tags):
@@ -86,12 +91,8 @@ class TestRunner:
             ids.append(sid)
         return ids
 
-    # --- execution ---
-
     @classmethod
     def invoke_suite(cls, suite_id: str, config: object, reporter: object) -> object:
-        """Call ``contribution.run(config, reporter)`` for a registered suite."""
-
         run: SuiteRun = cls.get_contribution(suite_id).run
         return run(config, reporter)
 
@@ -103,11 +104,7 @@ class TestRunner:
         execute: Callable[[SuiteContribution], SuiteExecutionResult],
         progress: Callable[[ProgressEvent], None] | None = None,
     ) -> RunOutcome:
-        """Execute each suite in order, yielding optional progress callbacks and an aggregate outcome.
-
-        ``execute`` runs one suite (caller typically closes over harness context). It must return a
-        :class:`SuiteExecutionResult`. Exceptions are captured as ``status="failed"``.
-        """
+        """Batch driver; ``execute`` sees the stored :class:`SuiteContribution`."""
 
         started = _utc_iso()
         with _lock:
@@ -128,31 +125,19 @@ class TestRunner:
                 progress(ProgressEvent(kind="suite_started", suite_id=sid))
             try:
                 exec_row = execute(contrib)
-                row = SuiteExecutionResult(
-                    suite_id=sid,
-                    status=exec_row.status,
-                    error=exec_row.error,
-                )
-            except BaseException as exc:  # noqa: BLE001 - batch harness captures all failures
+                row = SuiteExecutionResult(suite_id=sid, status=exec_row.status, error=exec_row.error)
+            except BaseException as exc:  # noqa: BLE001
                 row = SuiteExecutionResult(suite_id=sid, status="failed", error=exc)
                 if progress:
-                    progress(
-                        ProgressEvent(kind="suite_failed", suite_id=sid, detail=str(exc), suite_result=row),
-                    )
+                    progress(ProgressEvent(kind="suite_failed", suite_id=sid, detail=str(exc), suite_result=row))
             else:
                 if progress:
-                    progress(
-                        ProgressEvent(kind="suite_finished", suite_id=sid, suite_result=row),
-                    )
+                    progress(ProgressEvent(kind="suite_finished", suite_id=sid, suite_result=row))
 
             rows.append(row)
 
         ended = _utc_iso()
-        if all(r.status == "passed" for r in rows):
-            overall = "passed"
-        else:
-            overall = "failed"
-
+        overall: OverallStatus = "passed" if all(r.status == "passed" for r in rows) else "failed"
         return RunOutcome(
             overall=overall,
             suites=tuple(rows),

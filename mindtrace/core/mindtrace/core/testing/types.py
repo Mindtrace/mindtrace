@@ -1,4 +1,4 @@
-"""Concrete types for the ``mindtrace.testing`` suite registry surface."""
+"""Schemas for bench-style suite registration and aggregate run results."""
 
 from __future__ import annotations
 
@@ -10,22 +10,18 @@ from typing import Any, Literal
 _SUITE_ID_PATTERN = re.compile(r"^[a-z][a-z0-9]*(\.[a-z0-9_]+)+$")
 
 SuiteRun = Callable[[Any, Any], Any]
-"""Callable ``(config, reporter) -> result`` compatible with tooling like ``tests/stress``."""
+"""`(config, reporter) -> …` callable used by tooling such as ``tests/stress``."""
 
 
 def validate_suite_id(suite_id: str) -> str:
-    """Validate and return ``suite_id`` or raise ``ValueError``.
+    """Validate and return ``suite_id`` or raise ``ValueError``."""
 
-    Convention: hierarchical IDs with lowercase segments separated by dots, e.g.
-    ``mindtrace.registry.write_throughput.smoke``.
-    """
-
-    if not isinstance(suite_id, str):  # pragma: no cover - defensive typing path
+    if not isinstance(suite_id, str):  # pragma: no cover
         raise TypeError("suite_id must be str")
     if not _SUITE_ID_PATTERN.fullmatch(suite_id):
         raise ValueError(
-            f"Invalid SuiteId {suite_id!r}; "
-            'expected pattern like "vendor.feature.suite" '
+            f"Invalid suite id {suite_id!r}; "
+            'expected dotted segments like "vendor.area.suite" '
             r"(regex: ^[a-z][a-z0-9]*(\.[a-z0-9_]+)+$).",
         )
     return suite_id
@@ -33,7 +29,7 @@ def validate_suite_id(suite_id: str) -> str:
 
 @dataclass(frozen=True)
 class SuiteContribution:
-    """Immutable registration payload for one registered test suite workload."""
+    """Low-level immutable registration payload (used when not subclassing :class:`TestSuite`)."""
 
     id: str
     title: str
@@ -49,7 +45,7 @@ class SuiteContribution:
         object.__setattr__(self, "id", validate_suite_id(self.id))
         if not (self.title and str(self.title).strip()):
             raise ValueError("SuiteContribution.title must be non-empty")
-        if self.run is None or not callable(self.run):  # pragma: no cover - ctor guard
+        if self.run is None or not callable(self.run):  # pragma: no cover
             raise TypeError("SuiteContribution.run must be callable")
 
 
@@ -58,7 +54,7 @@ OverallStatus = Literal["passed", "failed", "empty"]
 
 @dataclass(frozen=True)
 class SuiteExecutionResult:
-    """Outcome for a single suite inside :meth:`TestRunner.run`."""
+    """One row produced by :meth:`TestRunner.run`."""
 
     suite_id: str
     status: Literal["passed", "failed"]
@@ -67,7 +63,7 @@ class SuiteExecutionResult:
 
 @dataclass(frozen=True)
 class ProgressEvent:
-    """Coarse lifecycle hook emitted while :meth:`TestRunner.run` iterates suites."""
+    """Emitted while :meth:`TestRunner.run` iterates suites."""
 
     kind: Literal["suite_started", "suite_finished", "suite_failed"]
     suite_id: str
@@ -77,7 +73,7 @@ class ProgressEvent:
 
 @dataclass(frozen=True)
 class RunOutcome:
-    """Aggregated result for a batch run."""
+    """Aggregated outcome for ``TestRunner.run``."""
 
     overall: OverallStatus
     suites: tuple[SuiteExecutionResult, ...]
@@ -86,7 +82,7 @@ class RunOutcome:
 
 
 class UnknownSuiteIdError(KeyError):
-    """Raised when no contribution exists for an ID."""
+    """Raised when the registry has no entry for ``suite_id``."""
 
     def __init__(self, suite_id: str) -> None:
         super().__init__(suite_id)
