@@ -45,14 +45,21 @@ def deterministic_payload(size_bytes: int) -> bytes:
     return seed * repeats + seed[:remainder]
 
 
-def run_threaded_until_deadline(concurrency: int, deadline: float, operation: Callable[[], T]) -> None:
+def run_threaded_until_deadline(
+    concurrency: int,
+    deadline: float,
+    operation: Callable[[], T],
+    *,
+    should_continue: Callable[[], bool] | None = None,
+) -> None:
     """Keep up to ``concurrency`` operations in flight until a monotonic deadline."""
 
     concurrency = max(1, concurrency)
+    keep_going = should_continue or (lambda: True)
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         futures: set[Future[T]] = set()
-        while time.perf_counter() < deadline or futures:
-            while time.perf_counter() < deadline and len(futures) < concurrency:
+        while (time.perf_counter() < deadline and keep_going()) or futures:
+            while time.perf_counter() < deadline and keep_going() and len(futures) < concurrency:
                 futures.add(pool.submit(operation))
             if not futures:
                 break
