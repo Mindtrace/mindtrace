@@ -1,4 +1,4 @@
-"""Concrete types for the ``mindtrace.testing`` plugin surface."""
+"""Concrete types for the ``mindtrace.testing`` suite registry surface."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Any, Literal
 _SUITE_ID_PATTERN = re.compile(r"^[a-z][a-z0-9]*(\.[a-z0-9_]+)+$")
 
 SuiteRun = Callable[[Any, Any], Any]
-"""Workload entrypoint aligned with ``tests/stress`` (config, reporter) -> StressResult-like."""
+"""Callable ``(config, reporter) -> result`` compatible with tooling like ``tests/stress``."""
 
 
 def validate_suite_id(suite_id: str) -> str:
@@ -33,7 +33,7 @@ def validate_suite_id(suite_id: str) -> str:
 
 @dataclass(frozen=True)
 class SuiteContribution:
-    """Immutable registration payload for one stress-compatible workload."""
+    """Immutable registration payload for one registered test suite workload."""
 
     id: str
     title: str
@@ -53,29 +53,36 @@ class SuiteContribution:
             raise TypeError("SuiteContribution.run must be callable")
 
 
-@dataclass(frozen=True)
-class ResolvedSuite:
-    """Effective suite after merging explicit registrations with plugins."""
-
-    contribution: SuiteContribution
-    source: Literal["explicit", "plugin"]
-    distribution_name: str | None = None
-    distribution_version: str | None = None
+OverallStatus = Literal["passed", "failed", "empty"]
 
 
 @dataclass(frozen=True)
-class PluginLoadError:
-    """Structured record for failures while loading/testing an entry-point plugin."""
+class SuiteExecutionResult:
+    """Outcome for a single suite inside :meth:`TestRunner.run`."""
 
-    entry_name: str
-    message: str
-    distribution_name: str | None = None
-    distribution_version: str | None = None
-    exc_type: str | None = None
+    suite_id: str
+    status: Literal["passed", "failed"]
+    error: BaseException | None = None
 
 
-class DuplicateSuiteIdError(RuntimeError):
-    """Raised when ``strict_plugin_duplicates`` forbids conflicting plugin registrations."""
+@dataclass(frozen=True)
+class ProgressEvent:
+    """Coarse lifecycle hook emitted while :meth:`TestRunner.run` iterates suites."""
+
+    kind: Literal["suite_started", "suite_finished", "suite_failed"]
+    suite_id: str
+    detail: str | None = None
+    suite_result: SuiteExecutionResult | None = None
+
+
+@dataclass(frozen=True)
+class RunOutcome:
+    """Aggregated result for a batch run."""
+
+    overall: OverallStatus
+    suites: tuple[SuiteExecutionResult, ...]
+    started_at: str
+    finished_at: str
 
 
 class UnknownSuiteIdError(KeyError):
