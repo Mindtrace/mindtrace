@@ -1,9 +1,8 @@
 """Unit tests for track_operation function."""
 
 import asyncio
-import importlib
 import logging
-import sys
+import warnings
 from unittest.mock import Mock, patch
 
 import pytest
@@ -99,10 +98,7 @@ class TestTrackOperationDecorator:
             await asyncio.sleep(0.2)
             return "done"
 
-        # When FastAPI is available, it raises HTTPException instead of TimeoutError
-        from fastapi.exceptions import HTTPException
-
-        with pytest.raises(HTTPException, match="504"):
+        with pytest.raises(TimeoutError):
             await slow_function()
 
     def test_decorator_preserves_function_metadata(self):
@@ -199,17 +195,16 @@ class TestTrackOperationLoggerDetermination:
         assert result == "success"
 
     def test_fallback_logger_creation(self):
-        """Test fallback logger creation when no logger supports bind()."""
+        """Stdlib loggers are adapted silently; no warning is emitted."""
         stdlib_logger = logging.getLogger("stdlib_test")
 
         @track_operation("op", logger=stdlib_logger)
         def test_func():
             return "success"
 
-        # Should create a new structlog logger with a warning
-        with pytest.warns(UserWarning, match="does not support .bind\\(\\)"):
-            result = test_func()
-        assert result == "success"
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            assert test_func() == "success"
 
 
 class TestTrackOperationContextBinding:
@@ -322,19 +317,15 @@ class TestTrackOperationFastAPIIntegration:
     """Test track_operation FastAPI integration."""
 
     @pytest.mark.asyncio
-    async def test_timeout_raises_http_exception_when_fastapi_available(self):
-        """Test that timeout raises HTTPException when FastAPI is available."""
+    async def test_timeout_raises_timeout_error(self):
+        """Test that timeout raises TimeoutError."""
         logger = get_logger("test", use_structlog=True)
-
-        # FastAPI is available by default in the test environment
-        from fastapi.exceptions import HTTPException
 
         @track_operation("op", logger=logger, timeout=0.1)
         async def slow_function():
             await asyncio.sleep(0.2)
 
-        # Should raise HTTPException when FastAPI is available
-        with pytest.raises(HTTPException, match="504"):
+        with pytest.raises(TimeoutError):
             await slow_function()
 
 
@@ -382,70 +373,21 @@ class TestTrackOperationEdgeCases:
         assert results == ["completed_op1", "completed_op2", "completed_op3"]
 
 
-class TestTrackOperationFastAPINotAvailable:
-    """Test track_operation when FastAPI is not available."""
+class TestTrackOperationWithStdlibLogger:
+    """track_operation works with stdlib loggers silently, attaching context via `extra={...}`."""
 
-    @pytest.mark.asyncio
-    async def test_timeout_without_fastapi_raises_timeout_error(self):
-        """Test that timeout raises asyncio.TimeoutError when FastAPI is not available."""
-        logger = get_logger("test", use_structlog=True)
-
-        # Mock FastAPI import to fail (simulating it not being installed)
-        with patch.dict(sys.modules, {"fastapi": None, "fastapi.exceptions": None}):
-            # Need to reimport to get the None value for _HTTPException
-            from mindtrace.core import logging as logging_module
-
-            importlib.reload(logging_module.logger)
-            from mindtrace.core.logging.logger import track_operation as track_op_no_fastapi
-
-            @track_op_no_fastapi("op", logger=logger, timeout=0.1)
-            async def slow_function():
-                await asyncio.sleep(0.2)
-
-            # Should raise asyncio.TimeoutError when FastAPI is not available
-            with pytest.raises(asyncio.TimeoutError):
-                await slow_function()
-
-            # Reload again to restore FastAPI
-            importlib.reload(logging_module.logger)
-
-    @pytest.mark.asyncio
-    async def test_timeout_logs_correctly_without_fastapi(self):
-        """Test that timeout is logged correctly even without FastAPI."""
-        logger = get_logger("test", use_structlog=True)
-
-        # This test verifies the code handles the case where FastAPI isn't available
-        # Since FastAPI IS available in our test environment, we just verify
-        # that the timeout mechanism works (HTTPException will be raised)
-        from fastapi.exceptions import HTTPException
-
-        @track_operation("op", logger=logger, timeout=0.1)
-        async def slow_function():
-            await asyncio.sleep(0.2)
-
-        # In our test environment, FastAPI is available, so HTTPException is raised
-        with pytest.raises(HTTPException, match="504"):
-            await slow_function()
-
-
-class TestTrackOperationLoggerWithoutBindSupport:
-    """Test track_operation with loggers that don't support bind()."""
-
-    def test_stdlib_logger_creates_warning_and_new_logger(self):
-        """Test that stdlib logger without bind() creates warning and new structlog logger."""
+    def test_stdlib_logger_emits_no_bind_warning(self):
         stdlib_logger = logging.getLogger("stdlib_test")
 
         @track_operation("op", logger=stdlib_logger)
         def test_func():
             return "success"
 
-        # Should create a new structlog logger with a warning
-        with pytest.warns(UserWarning, match="does not support .bind\\(\\)"):
-            result = test_func()
-        assert result == "success"
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            assert test_func() == "success"
 
-    def test_class_with_stdlib_logger_creates_warning(self):
-        """Test class method with stdlib logger creates warning and new logger."""
+    def test_class_with_stdlib_logger_emits_no_warning(self):
         stdlib_logger = logging.getLogger("class_stdlib_test")
 
         class TestClass:
@@ -458,13 +400,11 @@ class TestTrackOperationLoggerWithoutBindSupport:
 
         instance = TestClass()
 
-        # Should create a new structlog logger with a warning
-        with pytest.warns(UserWarning, match="does not support .bind\\(\\)"):
-            result = test_method(instance)
-        assert result == "success"
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            assert test_method(instance) == "success"
 
-    def test_context_manager_with_stdlib_logger(self):
-        """Test context manager with stdlib logger creates warning."""
+    def test_context_manager_with_stdlib_logger_emits_no_warning(self):
         stdlib_logger = logging.getLogger("ctx_stdlib_test")
 
         async def run_test():
@@ -472,10 +412,51 @@ class TestTrackOperationLoggerWithoutBindSupport:
                 assert log is not None
                 return "success"
 
-        # Should create warning about bind method
-        with pytest.warns(UserWarning, match="does not support .bind\\(\\)"):
-            result = asyncio.run(run_test())
-        assert result == "success"
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            assert asyncio.run(run_test()) == "success"
+
+    def test_stdlib_logger_success_attaches_context_via_extra(self, caplog: pytest.LogCaptureFixture):
+        stdlib_logger = logging.getLogger("stdlib_success")
+
+        @track_operation("my_op", logger=stdlib_logger, user_id="u-1")
+        def test_func():
+            return "success"
+
+        with caplog.at_level(logging.DEBUG, logger="stdlib_success"):
+            assert test_func() == "success"
+
+        events = [r.message for r in caplog.records]
+        assert "my_op_started" in events
+        assert "my_op_completed" in events
+        started = next(r for r in caplog.records if r.message == "my_op_started")
+        completed = next(r for r in caplog.records if r.message == "my_op_completed")
+        assert started.operation == "my_op"
+        assert started.user_id == "u-1"
+        assert completed.operation == "my_op"
+        assert "duration_ms" in completed.__dict__
+
+    def test_stdlib_logger_failure_sets_exc_info(self, caplog: pytest.LogCaptureFixture):
+        stdlib_logger = logging.getLogger("stdlib_failure")
+
+        @track_operation("my_op", logger=stdlib_logger)
+        def test_func():
+            raise ValueError("boom")
+
+        with caplog.at_level(logging.DEBUG, logger="stdlib_failure"):
+            with pytest.raises(ValueError):
+                test_func()
+
+        failed = next(r for r in caplog.records if r.message == "my_op_failed")
+        assert failed.exc_info is not None
+        assert failed.exc_info[0] is ValueError
+
+    def test_structlog_logger_passes_through_unchanged(self):
+        structlog_logger = get_logger("structlog_passthrough", use_structlog=True)
+
+        from mindtrace.core.logging.logger import _wrap_if_stdlib
+
+        assert _wrap_if_stdlib(structlog_logger) is structlog_logger
 
 
 class TestTrackOperationLoggerNameFallback:
@@ -522,13 +503,10 @@ class TestTrackOperationContextManagerWithActualTimeout:
     async def test_context_manager_timeout_error_in_aexit(self):
         """Test context manager properly handles TimeoutError in __aexit__."""
         logger = get_logger("test", use_structlog=True)
-        from fastapi.exceptions import HTTPException
 
-        # To test the timeout path in __aexit__, we need to raise asyncio.TimeoutError
-        # directly within the context manager
-        with pytest.raises(HTTPException, match="504"):
+        # Raise asyncio.TimeoutError directly to trigger the timeout path in __aexit__
+        with pytest.raises(TimeoutError):
             async with track_operation("op", logger=logger, timeout=0.1):
-                # Directly raise asyncio.TimeoutError to trigger the timeout path in __aexit__
                 raise asyncio.TimeoutError()
 
     @pytest.mark.asyncio
@@ -695,32 +673,6 @@ class TestTrackOperationClassMethodWithoutLogger:
         assert result == "success"
 
     @pytest.mark.asyncio
-    async def test_context_manager_timeout_without_fastapi_raises_timeout_error(self):
-        """Test context manager timeout raises TimeoutError when FastAPI is not available.
-
-        Tests the fallback raise statement when _HTTPException is None.
-        """
-        logger = get_logger("test", use_structlog=True)
-
-        # Mock FastAPI import to fail (simulating it not being installed)
-        with patch.dict(sys.modules, {"fastapi": None, "fastapi.exceptions": None}):
-            # Need to reimport to get the None value for _HTTPException
-            from mindtrace.core import logging as logging_module
-
-            importlib.reload(logging_module.logger)
-            from mindtrace.core.logging.logger import track_operation as track_op_no_fastapi
-
-            # Test context manager with timeout that will be exceeded
-            with pytest.raises(asyncio.TimeoutError):
-                async with track_op_no_fastapi("op", logger=logger, timeout=0.1):
-                    # Directly raise asyncio.TimeoutError to trigger the timeout path in __aexit__
-                    # This tests the raise statement when _HTTPException is None
-                    raise asyncio.TimeoutError()
-
-            # Reload again to restore FastAPI
-            importlib.reload(logging_module.logger)
-
-    @pytest.mark.asyncio
     async def test_async_decorator_with_metrics_snapshot(self):
         """Test async decorator includes metrics snapshot in context.
 
@@ -740,3 +692,74 @@ class TestTrackOperationClassMethodWithoutLogger:
 
         result = await async_function_with_metrics()
         assert result == "success"
+
+
+class TestTrackOperationExcInfo:
+    """Failures must carry exc_info so structlog's format_exc_info renders a real traceback."""
+
+    @staticmethod
+    def _mock_logger() -> Mock:
+        logger = Mock()
+        logger.bind.return_value = logger
+        return logger
+
+    @pytest.mark.asyncio
+    async def test_async_context_manager_generic_exception_passes_exc_info(self):
+        logger = self._mock_logger()
+        with pytest.raises(ValueError):
+            async with track_operation("op", logger=logger):
+                raise ValueError("boom")
+        logger.error.assert_called_once()
+        kwargs = logger.error.call_args.kwargs
+        assert kwargs.get("exc_info") is not None
+        exc_type, exc_val, _ = kwargs["exc_info"]
+        assert exc_type is ValueError
+        assert str(exc_val) == "boom"
+
+    @pytest.mark.asyncio
+    async def test_async_context_manager_timeout_passes_exc_info(self):
+        logger = self._mock_logger()
+        with pytest.raises(TimeoutError):
+            async with track_operation("op", logger=logger, timeout=0.1):
+                raise asyncio.TimeoutError()
+        logger.error.assert_called_once()
+        kwargs = logger.error.call_args.kwargs
+        assert kwargs.get("exc_info") is not None
+
+    @pytest.mark.asyncio
+    async def test_async_decorator_failure_passes_exc_info(self):
+        logger = self._mock_logger()
+
+        @track_operation("op", logger=logger)
+        async def boom():
+            raise RuntimeError("nope")
+
+        with pytest.raises(RuntimeError):
+            await boom()
+        logger.error.assert_called_once()
+        assert logger.error.call_args.kwargs.get("exc_info") is True
+
+    @pytest.mark.asyncio
+    async def test_async_decorator_timeout_passes_exc_info(self):
+        logger = self._mock_logger()
+
+        @track_operation("op", logger=logger, timeout=0.05)
+        async def slow():
+            await asyncio.sleep(1.0)
+
+        with pytest.raises(TimeoutError):
+            await slow()
+        logger.error.assert_called_once()
+        assert logger.error.call_args.kwargs.get("exc_info") is True
+
+    def test_sync_decorator_failure_passes_exc_info(self):
+        logger = self._mock_logger()
+
+        @track_operation("op", logger=logger)
+        def boom():
+            raise RuntimeError("nope")
+
+        with pytest.raises(RuntimeError):
+            boom()
+        logger.error.assert_called_once()
+        assert logger.error.call_args.kwargs.get("exc_info") is True

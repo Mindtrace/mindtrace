@@ -5,7 +5,6 @@ from fastapi import HTTPException
 
 if TYPE_CHECKING:  # pragma: no cover
     from mindtrace.services import Service
-from mindtrace.core import Mindtrace
 from mindtrace.services.core.connection_manager import ConnectionManager
 
 
@@ -52,7 +51,7 @@ def add_endpoint(app, path, self: Optional["Service"], **kwargs):
     self._endpoints.append(path.removeprefix("/"))
 
     def wrapper(func):
-        app.add_api_route(f"/{path}", endpoint=Mindtrace.autolog(self=self)(func), methods=["POST"], **kwargs)
+        app.add_api_route(f"/{path}", endpoint=func, methods=["POST"], **kwargs)
 
     return wrapper
 

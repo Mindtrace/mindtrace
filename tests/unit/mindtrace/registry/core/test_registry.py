@@ -450,9 +450,8 @@ def test_find_materializer_with_class_object(registry, test_config):
     class object is converted to a string representation using type(materializer).
 
     Note: When a materializer class object is provided (not a string), it is converted
-    to a string using type(materializer) which returns:
-    - For classes with metaclasses: the metaclass (e.g., ArchiverMeta)
-    - For regular classes: builtins.type
+    to a string using type(materializer) which returns the class's metaclass.
+    Archiver inherits from BaseMaterializer, so its metaclass is BaseMaterializerMeta.
     """
     from mindtrace.registry.archivers.config_archiver import ConfigArchiver
 
@@ -461,9 +460,7 @@ def test_find_materializer_with_class_object(registry, test_config):
     # return f"{type(materializer).__module__}.{type(materializer).__name__}"
     materializer_str = registry._find_materializer(test_config, provided_materializer=ConfigArchiver)
 
-    # Verify the materializer class was converted to a string
-    # Since ConfigArchiver uses a metaclass, type(ConfigArchiver) returns ArchiverMeta
-    assert materializer_str == "mindtrace.registry.core.archiver.ArchiverMeta"
+    assert materializer_str == "zenml.materializers.base_materializer.BaseMaterializerMeta"
     assert isinstance(materializer_str, str)
 
     # Verify that if we pass a regular class, type() returns builtins.type

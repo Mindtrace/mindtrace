@@ -4,16 +4,10 @@ from typing import Any, Set, Type
 from zenml.enums import ArtifactType
 from zenml.materializers.base_materializer import BaseMaterializer
 
-from mindtrace.core import Mindtrace, MindtraceMeta
+from mindtrace.core import Mindtrace
 
 
-class ArchiverMeta(MindtraceMeta, type(BaseMaterializer)):
-    """Meta class for Archiver."""
-
-    pass
-
-
-class Archiver(Mindtrace, BaseMaterializer, metaclass=ArchiverMeta):
+class Archiver(Mindtrace, BaseMaterializer):
     """Base Archiver class for handling data persistence."""
 
     # Required by BaseMaterializer
