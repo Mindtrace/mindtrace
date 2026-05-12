@@ -22,6 +22,10 @@ suites.
 ## Selection behavior
 
 - `--list` prints all manifest suites.
+- `--list --json` emits suite metadata as JSON.
+- `--list-scenarios` prints optional high-level benchmark scenarios.
+- `--scenario <id>` expands a named scenario into ordinary suite selections,
+  profile defaults, config, and parameter sweeps.
 - `--suite <id>` selects a suite by stable ID. Repeat it to run several suites.
 - `--tag <tag>` selects all suites with a tag. Repeat it to combine tags.
 - `--all` selects every suite in the manifest.
@@ -33,6 +37,44 @@ suites.
 - Suite/library debug logging is suppressed by default so the runner-owned
   progress bars and final summary stay readable. Use `--verbose-suite-output`
   when diagnosing a noisy or failing suite.
+
+## Programmatic runner API
+
+The CLI is a wrapper around `tests.stress.lib.runner`. UIs and CI jobs should use
+this module rather than shelling out and scraping terminal output.
+
+```python
+from tests.stress.lib.models import StressPlanRequest
+from tests.stress.lib.runner import list_stress_suites, resolve_stress_plan, run_stress_plan
+
+suites = list_stress_suites()
+plan = resolve_stress_plan(
+    StressPlanRequest(
+        suites=[
+            "datalake.payload-write-ceiling",
+            "datalake.mongo-insert-ceiling",
+            "datalake.create-asset-from-object",
+        ],
+        profile="standard",
+        config_path="tests/stress/configs/datalake_compare_atlas.example.yaml",
+    )
+)
+result = run_stress_plan(plan)
+```
+
+Stable public helpers:
+
+- `load_stress_manifest(path=None)`
+- `list_stress_suites(manifest_path=None)`
+- `list_stress_scenarios(manifest_path=None)`
+- `resolve_stress_plan(request)`
+- `run_stress_plan(plan, event_sink=None, cancellation_token=None)`
+- `list_stress_runs(results_root=DEFAULT_RESULTS_ROOT)`
+- `load_stress_run(run_id, results_root=DEFAULT_RESULTS_ROOT)`
+- `load_stress_events(run_id, since_sequence=None, results_root=DEFAULT_RESULTS_ROOT)`
+
+The typed dataclass models live in `tests.stress.lib.models` and expose
+`to_dict()` for JSON serialization.
 
 ## Profiles and duration
 
@@ -47,7 +89,34 @@ The default profile is `smoke`, intended as a short wiring check. `standard` is
 intended for meaningful local benchmarking. Longer `soak` or `remote` profiles
 should be added only with explicit resource safety notes.
 
-## Results
+## Dry-run plan JSON
+
+Human dry-run output remains the default:
+
+```bash
+ds test --stress --suite registry.write-ceiling --profile smoke --dry-run
+```
+
+Machine-readable plan output is available for UI preview pages:
+
+```bash
+ds test --stress \
+  --scenario datalake.compare-atlas \
+  --dry-run \
+  --json
+
+ds test --stress \
+  --scenario datalake.compare-atlas \
+  --dry-run \
+  --plan-json .stress-results/preview-plan.json
+```
+
+The plan JSON includes `run_id`, `output_dir`, selected cases after expansion,
+`suite_id`, `variant_id`, profile, timings, normalized parameters, redacted
+resource config, safety notes, required resources, estimated duration, and
+validation warnings.
+
+## Results and artifact schemas
 
 Each run writes artifacts under `.stress-results/<run-id>/` by default:
 
@@ -55,23 +124,127 @@ Each run writes artifacts under `.stress-results/<run-id>/` by default:
 .stress-results/<run-id>/
   run.json
   summary.md
-  errors.log          # only populated when suite errors occur
+  errors.log
+  events.jsonl
   suites/
-    <suite-id>.json
-    <suite-id>.jsonl
+    <suite-variant>.json
+    <suite-variant>.jsonl
 ```
 
-- `run.json` records selected suites, profile, Git metadata, Python version,
-  resource config with secrets redacted, and per-suite summaries.
-- each suite JSON file contains final metrics.
+- `run.json` uses `schema_version: stress-run/v1` and records selected suites,
+  status, profile, Git metadata, Python version, resource config with secrets
+  redacted, output dir, and per-suite summaries.
+- each suite JSON file uses `schema_version: stress-suite-result/v1` and contains
+  final metrics plus `variant_id`, `base_suite_id`, `label`, `parameters`,
+  `requires`, and `safety`.
 - each suite JSONL file contains operation/event records, including per-operation
   `error_type` and `error_message` fields.
+- `events.jsonl` is the run-level stream for UIs and orchestrators.
 - `errors.log` contains run-level JSONL error records for failed operations and
   suite setup failures.
 - `summary.md` is a short human-readable summary.
 - `coverage.txt` is written when a stress run is combined with coverage-producing
   unit/integration/utils tests, or when coverage data exists during a failing
   stress command. Coverage is not printed to the console for stress runs.
+
+Important run-level fields for dashboards:
+
+- `schema_version`
+- `runner_version`
+- `run_id`
+- `status`
+- `profile`
+- `started_at`
+- `ended_at`
+- `git.branch`
+- `git.sha`
+- `resource_config`
+- `output_dir`
+- `suites`
+
+Important suite-level fields:
+
+- `schema_version`
+- `suite_id`
+- `base_suite_id`
+- `variant_id`
+- `label`
+- `status`
+- `started_at`
+- `ended_at`
+- `duration_seconds`
+- `parameters`
+- `requires`
+- `safety`
+- `operations`, `successes`, `failures`, `bytes_processed`
+- throughput and latency percentile fields
+- `error_counts`, `metrics`, `artifacts`
+
+## Run-level events
+
+`events.jsonl` contains one JSON object per line:
+
+```json
+{
+  "timestamp": "2026-05-12T09:30:00Z",
+  "run_id": "2026-05-12T09-30-00Z",
+  "event": "suite_started",
+  "suite_id": "datalake.payload-write-ceiling",
+  "variant_id": "datalake.payload-write-ceiling[backend=minio,concurrency=1,payload_size=1MiB]",
+  "sequence": 12,
+  "payload": {}
+}
+```
+
+Event names include:
+
+- `run_planned`
+- `run_started`
+- `suite_started`
+- `suite_progress`
+- `metric`
+- `suite_completed`
+- `suite_failed`
+- `run_completed`
+- `run_failed`
+- `run_cancelled`
+
+For polling UIs, use:
+
+```bash
+ds test --stress --show-events <run-id> --since-sequence 42 --json
+```
+
+or the importable `load_stress_events(run_id, since_sequence=42)` helper.
+
+## Cancellation
+
+Programmatic callers may pass a cancellation token to `run_stress_plan`. CLI
+subprocess callers can use a sentinel file:
+
+```bash
+ds test --stress \
+  --scenario datalake.compare-atlas \
+  --run-id my-run \
+  --cancel-file .stress-results/my-run/cancel.requested
+```
+
+The runner checks cancellation before suites, during warmup/cooldown, and while
+waiting for suite completion. Suites can check `reporter.is_cancelled()` or
+`config.is_cancelled()` inside long loops. Cancelled runs still write final
+artifacts and still clean up unless `--keep-resources` is set.
+
+## Historical result discovery
+
+Use the safe result helpers instead of constructing paths from untrusted input:
+
+```bash
+ds test --stress --list-runs --json
+
+ds test --stress --show-run <run-id> --json
+```
+
+`run_id` path traversal is rejected by the importable helpers and CLI wrappers.
 
 ## Parameter sweeps and cases
 
@@ -98,53 +271,11 @@ ds test --stress \
   --config tests/stress/configs/datalake_compare.yaml
 ```
 
-The config file contains:
-
-```yaml
-suites:
-  datalake.payload-write-ceiling:
-    sweep:
-      backend: [local, minio, gcs]
-      payload_size: [1KiB, 1MiB, 10MiB]
-      concurrency: [1]
-  datalake.mongo-insert-ceiling:
-    sweep:
-      mongo_backend: [local]
-      batch_size: [100]
-  datalake.create-asset-from-object:
-    sweep:
-      backend: [local, minio, gcs]
-      mongo_backend: [local]
-      payload_size: [1KiB, 1MiB, 10MiB]
-      concurrency: [1]
-```
-
-To compare local Mongo with MongoDB Atlas, copy
-`tests/stress/configs/datalake_compare_atlas.example.yaml` and configure Atlas
-through standard Mindtrace config/env:
+The manifest also includes the equivalent scenario-oriented entry point for the
+Atlas comparison recipe:
 
 ```bash
-export MINDTRACE_DATALAKE__REMOTE_MONGO_DB_URI='mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?appName=<app>'
-export MINDTRACE_DATALAKE__REMOTE_MONGO_DB_NAME='mindtrace_stress_atlas'
-```
-
-Atlas variants use `mongo_backend: atlas`; local variants use the default
-integration Mongo. You can also override per run with `resources.REMOTE_MONGO_DB_URI`
-and `resources.REMOTE_MONGO_DB_NAME` (matching `MINDTRACE_DATALAKE` field names).
-Legacy aliases `mongo_atlas_uri` and `mongo_atlas_db_name` are still accepted.
-
-Use explicit cases when combinations need distinct resource settings or names:
-
-```yaml
-suites:
-  registry.write-ceiling:
-    cases:
-      - name: local-small
-        backend: local
-        payload_size: 1KiB
-      - name: gcs-large
-        backend: gcs
-        payload_size: 10MiB
+ds test --stress --scenario datalake.compare-atlas --dry-run
 ```
 
 ## Resource configuration
@@ -153,57 +284,23 @@ For local development, stress runs use the integration Docker stack by default.
 When `--config` is not provided, `scripts/run_tests.sh` starts `tests/docker-compose.yml`.
 The runner resolves defaults the same way as `ds test: registry --integration`:
 local Docker-provided MinIO settings come from the environment, while GCS comes
-from `CoreConfig` (`MINDTRACE_GCP*` env vars first, then `config.ini`):
-
-```yaml
-resources:
-  mongo_uri: mongodb://localhost:27018
-  mongo_secondary_uri: mongodb://localhost:27019
-  mongo_db_name: mindtrace_stress_<run-id>
-  # Included when REMOTE_* are configured via MINDTRACE_DATALAKE / CoreConfig:
-  REMOTE_MONGO_DB_URI: mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?appName=<app>
-  REMOTE_MONGO_DB_NAME: mindtrace_stress_atlas
-  # Deprecated aliases mirrored for compatibility:
-  # mongo_atlas_uri: ...
-  # mongo_atlas_db_name: ...
-  minio_endpoint: localhost:9100
-  minio_access_key: minioadmin
-  minio_secret_key: minioadmin
-  minio_secure: false
-  minio_bucket: stress-registry
-  # included when configured via CoreConfig:
-  gcs_project_id: datalake-426010
-  gcs_bucket_name: mindtrace-datalake-test-bucket
-  gcs_credentials_path: ~/.config/gcloud/datalake_credentials.json
-```
+from `CoreConfig` (`MINDTRACE_GCP*` env vars first, then `config.ini`).
 
 Config files are merged over these defaults, so a config containing only suite
 `sweep`/`cases` still uses the local integration stack.
 
 For production-like or externally managed resources, provide `--config` with
 `--external-resources`. In that mode local integration containers are not
-launched for stress-only runs and the config resources are used as-is:
+launched for stress-only runs and the config resources are used as-is.
 
-```yaml
-resources:
-  mongo_uri: mongodb://mindtrace:mindtrace@stress-mongo.example:27017
-  mongo_db_name: mindtrace_stress_remote
-  gcs_project_id: my-gcp-project
-  gcs_bucket_name: my-stress-registry-bucket
-  gcs_credentials_path: /path/to/service-account.json
-```
+Secrets are redacted from `run.json`, dry-run plan JSON, and event payloads, but
+avoid committing config files that contain credentials.
 
-Suite-specific resource overrides are supported:
-
-```yaml
-suites:
-  datalake.create-asset-from-object:
-    resources:
-      mongo_db_name: mindtrace_stress_e2e
-```
-
-Secrets are redacted from `run.json`, but avoid committing config files that
-contain credentials.
+During plan resolution the runner returns warnings for resource selections that
+look incomplete, such as `backend=gcs` without GCS project/bucket config,
+`backend=minio` without endpoint/bucket config, or `mongo_backend=atlas` without
+Atlas URI/database config. Warnings are non-destructive and do not contact
+external services.
 
 ## Initial suites
 
@@ -227,3 +324,5 @@ contain credentials.
 - Generated names include the stress run ID.
 - Local temporary storage is cleaned up by default; use `--keep-resources` for
   debugging.
+- Terminal output is for humans. JSON outputs, events, and versioned artifacts
+  are the integration contract for UIs and CI jobs.
