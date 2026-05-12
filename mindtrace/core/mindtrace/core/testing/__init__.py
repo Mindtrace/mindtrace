@@ -1,9 +1,11 @@
-"""Mindtrace test suite registry (class-level registration, no entry points)."""
+"""Bench / stress-suite registry primitives shipped with ``mindtrace-core``."""
 
 from __future__ import annotations
 
-from mindtrace.testing.runner import TestRunner
-from mindtrace.testing.types import (
+from mindtrace.core.testing.runner import TestRunner
+from mindtrace.core.testing.test_suite import TestSuite
+from mindtrace.core.testing.types import (
+    OverallStatus,
     ProgressEvent,
     RunOutcome,
     SuiteContribution,
@@ -14,12 +16,14 @@ from mindtrace.testing.types import (
 )
 
 __all__ = [
+    "OverallStatus",
     "ProgressEvent",
     "RunOutcome",
     "SuiteContribution",
     "SuiteExecutionResult",
     "SuiteRun",
     "TestRunner",
+    "TestSuite",
     "UnknownSuiteIdError",
     "validate_suite_id",
 ]

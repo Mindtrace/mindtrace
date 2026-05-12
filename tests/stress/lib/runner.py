@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, TextIO
 from urllib.parse import urlsplit, urlunsplit
 
-from mindtrace.testing import SuiteContribution, TestRunner
+from mindtrace.core import SuiteContribution, TestRunner
 from tests.stress.lib.benchmark import StressReporter, StressResult, StressSuiteConfig, utc_now_iso
 from tests.stress.lib.durations import parse_duration_seconds
 from tests.stress.lib.manifest import (
@@ -122,7 +122,7 @@ def load_stress_manifest(path: Path | str | None = None) -> dict[str, Any]:
 def suite_metadata(suite: SuiteDefinition) -> StressSuiteMetadata:
     module = suite.module
     if suite.run_fn is not None and not suite.module.strip():
-        module = "mindtrace.testing.plugin"
+        module = "mindtrace.core.testing.plugin"
 
     return StressSuiteMetadata(
         suite_id=suite.suite_id,
@@ -138,7 +138,7 @@ def suite_metadata(suite: SuiteDefinition) -> StressSuiteMetadata:
 
 
 def contribution_to_suite_definition(contrib: SuiteContribution) -> SuiteDefinition:
-    """Adapt a :mod:`mindtrace.testing` contribution to manifest-shaped :class:`SuiteDefinition`."""
+    """Adapt a contribution from ``TestRunner`` into manifest-shaped :class:`SuiteDefinition`."""
 
     return SuiteDefinition(
         suite_id=contrib.id,
@@ -158,9 +158,10 @@ def merge_suite_definitions_with_plugins(
     *,
     merge_registered: bool = True,
 ) -> dict[str, SuiteDefinition]:
-    """Union manifest YAML suites with :mod:`mindtrace.testing` registrations.
+    """Union manifest YAML suites with :class:`~mindtrace.core.TestRunner` registrations.
 
-    Registrations come from :meth:`mindtrace.testing.TestRunner.register_suite` (process-global).
+    Registrations come from :meth:`~mindtrace.core.TestRunner.register_suite` or
+    :meth:`~mindtrace.core.TestRunner.register_test_suite`.
     When the same suite ID exists in both, the manifest/YAML definition wins so in-repo manifests
     remain the source of truth.
     """

@@ -18,7 +18,7 @@ class SuiteDefinition:
     profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
     default_selected: bool = False
     safety: str | None = None
-    #: When set (for example via ``mindtrace.testing`` plugins), the runner skips ``import_module`` and invokes this callable.
+    #: When set (registered via ``TestRunner``, see ``mindtrace.core``), the runner skips ``import_module`` and invokes ``run_fn`` directly.
     run_fn: Callable[..., Any] | None = None
 
 

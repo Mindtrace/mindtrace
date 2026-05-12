@@ -17,7 +17,7 @@ The `Core` module provides the foundational abstractions, configuration, logging
 
 ## Stress / benchmark plugins
 
-Stress / benchmark suite registration (class-level **`TestRunner.register_suite`**, similar in feel to Registry defaults) lives under **`mindtrace.testing`** (see **[testing.md](testing.md)**).
+Stress / benchmark suite registration lives on **`mindtrace.core.TestRunner`** (see **[testing.md](testing.md)**): subclass **`TestSuite`**, then **`TestRunner.register_test_suite(MySuite)`**.
 
 ## Quick Start
 

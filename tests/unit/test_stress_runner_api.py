@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from mindtrace.testing import SuiteContribution, TestRunner
+from mindtrace.core import SuiteContribution, TestRunner
 from tests.stress.lib.models import StressPlanRequest
 from tests.stress.lib.runner import (
     DEFAULT_MANIFEST,

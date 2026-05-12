@@ -5,6 +5,16 @@ from mindtrace.core.observables.context_listener import ContextListener
 from mindtrace.core.observables.event_bus import EventBus
 from mindtrace.core.observables.observable_context import ObservableContext
 from mindtrace.core.samples.echo_task import EchoInput, EchoOutput, echo_task
+from mindtrace.core.testing import (
+    ProgressEvent,
+    RunOutcome,
+    SuiteContribution,
+    SuiteExecutionResult,
+    TestRunner,
+    TestSuite,
+    UnknownSuiteIdError,
+    validate_suite_id,
+)
 from mindtrace.core.types.task_schema import TaskSchema
 from mindtrace.core.utils.checks import check_libs, first_not_none, ifnone, ifnone_url
 from mindtrace.core.utils.dynamic import get_class, instantiate_target
@@ -30,6 +40,14 @@ from mindtrace.core.utils.timers import Timeout, Timer, TimerCollection
 setup_logger()  # Initialize the default logger
 
 __all__ = [
+    "ProgressEvent",
+    "RunOutcome",
+    "SuiteContribution",
+    "SuiteExecutionResult",
+    "TestRunner",
+    "TestSuite",
+    "UnknownSuiteIdError",
+    "validate_suite_id",
     "check_libs",
     "check_port_available",
     "compute_dir_hash",
