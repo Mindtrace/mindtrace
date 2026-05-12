@@ -1,14 +1,15 @@
-# Mindtrace Testing — suite plugins
+# Mindtrace Testing — suite registry (`mindtrace.testing`)
 
-This note describes **`mindtrace.testing`**, shipped in the **`mindtrace-core`** wheel. It provides a **plugin registry** so optional packages (and in-process callers) can **register benchmark-style stress suites** that integrate with Mindtrace tooling.
+Design doc for **`mindtrace.testing`**, shipped in **`mindtrace-core`**. It provides a **process-global registry** of test suites (workloads you can invoke with.harness-specific `(config, reporter)` objects), patterned after **class-level Mindtrace Registry registration**—not setuptools entry points and not instantiable runner objects.
 
-Goals:
+---
 
-1. **Entry-point discovery** — installed distributions advertise loaders via setuptools **`pyproject.toml`** **`[project.entry-points]`**.
-2. **Explicit registration** — embedders, notebooks, and tests call **`TestRunner.register(...)`** without packaging entry points.
-3. **Lazy loading** — calling **`import mindtrace.testing`** must not execute third-party workloads; loaders run only during **`discover_plugins()`** (or **`list_suite_ids` / `get_resolved`** / **`run_stress_workload`** after discovery).
+## Plan (migration summary)
 
-YAML manifest dotted-path wiring is **not** implemented here; the in-repo **`tests/stress`** runner merges manifest suites **with** registered plugins when you use its APIs (see “Stress runner integration”).
+1. Suites register explicitly via **`TestRunner.register_suite(SuiteContribution)`** (typically from library import/bootstrap modules).
+2. Callers optionally batch-execute registered IDs with **`TestRunner.run`** (progress callbacks + **`RunOutcome`**) or invoke one suite with **`TestRunner.invoke_suite`**.
+3. The in-repo **`tests/stress`** harness unions **`manifest.yaml`** with **`TestRunner.registered_suites()`** when **`merge_registered=True`**—manifest wins on duplicate IDs.
+4. **No entry-point discovery**, no singleton **`TestRunner()`** instances, no YAML inside **`mindtrace-core`**.
 
 ---
 
@@ -16,151 +17,92 @@ YAML manifest dotted-path wiring is **not** implemented here; the in-repo **`tes
 
 | Term | Meaning |
 |------|---------|
-| **`SuiteId`** | Stable string ID for a suite. Must match the regex documented on **`validate_suite_id`**. Prefer vendor prefixes (**`mindtrace.registry.*`**, **`chiron.*`**, …) to avoid clashes. |
-| **`SuiteContribution`** | Immutable descriptor: ID, **`title`**, **`run`** callable, optional **`tags`**, **`requires`**, manifest-shaped **`parameters`** / **`profiles`**, **`safety`**. |
-| **`TestRunner`** | Owns **`SuiteRegistry`** state, merges **explicit** registrations with **plugins**, applies collision rules. |
-| **Entry-point group** | Canonical name: **`mindtrace.testing.suite_loader`**. Each entry **`name`** is the **`SuiteId`**; the **`value`** is an import path to a **loader callable**. |
+| **`SuiteId`** | Stable suite key; validated by **`validate_suite_id`**. |
+| **`SuiteContribution`** | Frozen payload: **`id`**, **`title`**, **`run(config, reporter)`**, optional **`tags`**, **`requires`**, **`parameters`**, **`profiles`**, **`safety`**. |
+| **`TestRunner`** | Namespace of **classmethods only** (`__new__` raises). Mirrors **`Registry.register_default_materializer`**: register once per process / test isolation via **`clear_registry`**. |
 
-Workload contract (stress runner):
-
-- **`run(config, reporter)`** — same convention as **`tests/stress`** manifest suites: **`config`** is a **`StressSuiteConfig`**, **`reporter`** a **`StressReporter`**, return **`StressResult`** or **`None`** (the runner synthesizes summaries when needed).
-
-The **`mindtrace.testing`** layer types this as **`SuiteRun`** (**`Callable[[Any, Any], Any]`**) so **`mindtrace-core`** does **not** import **`tests.stress`**.
+The **`tests/stress`** harness still uses **`StressSuiteConfig`** / **`StressReporter`** (`tests/stress/lib/benchmark.py`). **`mindtrace-core`** stays decoupled: **`SuiteRun = Callable[[Any, Any], Any]`**.
 
 ---
 
-## Entry points (primary discovery)
+## Registration (primary API)
 
-Declare loaders under the group **`mindtrace.testing.suite_loader`**. Install your wheel alongside **`mindtrace-core`**.
-
- **`pyproject.toml`** example:
-
-```toml
-[project.entry-points."mindtrace.testing.suite_loader"]
-"mindtrace.example.echo_smoke" = "my_company.stress:load_suites"
-```
-
-Loader implementation (**`my_company/stress.py`**):
-
-```python
-from __future__ import annotations
-
-from collections.abc import Iterable
-
-from mindtrace.testing import SuiteContribution
-
-
-def load_suites() -> Iterable[SuiteContribution]:
-    """Return suites for this plugin (may be lazily imported inside this function).
-
-    Prefer keeping heavy imports *inside* this function so unrelated environments
-    do not pull your dependencies at ``import my_company``.
-    """
-
-    def run(config: object, reporter: object) -> object:
-        # Implement workload using StressSuiteConfig / StressReporter at runtime.
-        reporter.event("operation", payload={"note": "echo_smoke"})
-        return None
-
-    return [
-        SuiteContribution(
-            id="mindtrace.example.echo_smoke",
-            title="Example echo workload",
-            run=run,
-            tags=frozenset({"cpu", "local"}),
-            requires=(),
-            parameters={},
-            profiles={
-                "smoke": {"duration": "5s", "warmup": "0s", "cooldown": "0s"},
-            },
-        )
-    ]
-```
-
-Notes:
-
-- The **entry-point name** and **`SuiteContribution.id`** should match (**`mindtrace.example.echo_smoke`** above).
-- **`profiles`** should include **`smoke`** at minimum if callers use **`--profile smoke`** (matching **`tests/stress`** behavior).
-
----
-
-## Explicit registration (secondary)
-
-Use when you prototype in a notebook, wrap a downstream app inside another process, or inject fakes in unit tests:
+Packages or bootstrap modules execute at import:
 
 ```python
 from mindtrace.testing import SuiteContribution, TestRunner
 
 
-def noop_run(config, reporter) -> None:
-    reporter.event("suite_progress", noop=True)
+def run_payload_ceiling(config: object, reporter: object) -> object:
+    # Stress harness passes StressSuiteConfig + StressReporter
+    reporter.event("operation", note="warmup")
+    return None
 
 
-runner = TestRunner()
-runner.register(
+TestRunner.register_suite(
     SuiteContribution(
-        id="local.demo.noop",
-        title="Demo",
-        run=noop_run,
-        profiles={"smoke": {"duration": "2s"}},
-    )
+        id="mindtrace.my_module.payload_ceiling.smoke",
+        title="Payload write ceiling",
+        run=run_payload_ceiling,
+        tags=frozenset({"io", "local"}),
+        profiles={"smoke": {"duration": "5s", "warmup": "0s", "cooldown": "0s"}},
+    ),
 )
-suite_ids = runner.list_suite_ids()
 ```
 
-**Globals:** prefer constructing your own **`TestRunner`**. **`default_test_runner()`** returns a shared instance for tooling that genuinely needs one process-wide registry.
+Duplicates: second **`register_suite`** raises **`ValueError`** unless **`replace=True`**.
 
 ---
 
-## API surface
+## Execution
 
-Rough flow:
+**Single suite (delegate to callable):**
 
-```text
-runner = TestRunner(strict_plugin_duplicates=False)
-runner.register(...)                           # explicit
-runner.discover_plugins()                      # import entry_points, call loaders (lazy)
-runner.list_suite_ids(tags={"mongo"})         # filtered listing
-resolved = runner.get_resolved("my.suite.id")  # ResolvedSuite wrapper
-runner.run_stress_workload(suite_id, config, reporter)  # invokes contribution.run(...)
+```python
+result = TestRunner.invoke_suite(suite_id, config, reporter)
 ```
 
-Important flags:
+**Batch (unified envelope + optional progress):**
 
-- **`strict_plugin_duplicates`** — if **True**, two plugins claiming the same **`SuiteId`** raises **`DuplicateSuiteIdError`**.
-- **Explicit overrides plugin** — if you **`register`** the same ID as an entry-point suite, the explicit contribution wins; **`discovery_notes`** may record that override.
+```python
+from mindtrace.testing import SuiteExecutionResult, TestRunner
 
-Diagnostics:
 
-- **`runner.plugin_load_errors`** — **`PluginLoadError`** instances for loaders that threw or produced invalid payloads.
-- **`runner.discovery_notes`** — non-fatal messages (skipped duplicate, explicit overriding plugin).
+def exec_one(contrib: SuiteContribution) -> SuiteExecutionResult:
+    try:
+        # Build config/reporter from your orchestrator …
+        return SuiteExecutionResult(suite_id=contrib.id, status="passed")
+    except Exception as exc:
+        return SuiteExecutionResult(suite_id=contrib.id, status="failed", error=exc)
+
+
+outcome = TestRunner.run(
+    ["vendor.suite.a", "vendor.suite.b"],
+    execute=exec_one,
+    progress=lambda ev: print(ev.kind, ev.suite_id),
+)
+```
+
+**`suite_ids`** **`None`** runs **every** registered suite (sorted IDs). An empty registry yields **`overall="empty"`**.
+
+---
+
+## Test isolation
+
+`TestRunner.clear_registry()` wipes all registrations—use **`pytest`** fixtures (**`autouse`**) **only when no other concurrent tests share the interpreter**.
+
+Prefer **`unregister_suite(id)`** for surgical cleanup.
 
 ---
 
 ## Stress runner integration
 
-The repository stress harness (**`tests/stress/lib/runner.py`**) merges **`SuiteDefinition`** entries from **`manifest.yaml`** with contributions discovered via **`merge_suite_definitions_with_plugins(...)`** (which forwards to **`default_test_runner()`** unless you pass your own **`TestRunner`**).
+`tests/stress/lib/runner.py` merges manifest definitions with **`TestRunner.registered_suites()`** via **`merge_suite_definitions_with_plugins(..., merge_registered=True)`**.
 
-For full plans:
-
-When building a **`StressPlanRequest`**, **`resolve_stress_plan(..., test_runner=my_runner)`** accepts an isolated **`TestRunner`** for tests.
-
-```python
-plan = resolve_stress_plan(request, test_runner=my_runner)
-```
-
-**`list_stress_suites()`** unions manifest metadata with plugins for **`ds test --stress --list`**.
+`list_stress_suites(..., merge_registered=False)` lists manifest suites only—useful for deterministic unit tests without registry pollution.
 
 ---
 
 ## Security
 
-Entry points are **trusted like imports**. Installing a hostile wheel may register workloads that execute with your **`StressSuiteConfig`**. Run stress only in isolated environments or with controlled installs.
-
-Future allowlisting (**`MINDTRACE_TESTING_ALLOWED_PREFIXES`**, …) may be added separately.
-
----
-
-## Versioning
-
-The **loader return shape** (**`Iterable[SuiteContribution]`**) and **`SuiteContribution`** fields are public contracts. Prefer **semver** bumps on incompatible changes to **`mindtrace-core`**.
+Registration mutates global state; callers can register arbitrary callables equivalent to **`import`**. Isolate environments appropriately.
