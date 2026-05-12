@@ -17,7 +17,7 @@ from tests.stress.lib.runner import (
 
 
 def test_list_stress_suites_exposes_metadata() -> None:
-    suites = {suite.suite_id: suite for suite in list_stress_suites(DEFAULT_MANIFEST, merge_plugins=False)}
+    suites = {suite.suite_id: suite for suite in list_stress_suites(DEFAULT_MANIFEST, merge_registered=False)}
 
     payload_suite = suites["datalake.payload-write-ceiling"]
     assert payload_suite.label == "Datalake / payload write ceiling"
@@ -95,27 +95,27 @@ def test_load_stress_events_filters_by_sequence(tmp_path: Path) -> None:
     assert events[0].event == "run_completed"
 
 
-def test_resolve_stress_plan_merges_explicit_plugin_suite(tmp_path: Path) -> None:
-    isolated = TestRunner(auto_discover=False)
+def test_resolve_stress_plan_merges_registered_plugin_suite(tmp_path: Path) -> None:
     contrib = SuiteContribution(
         id="unit.stress.plugin.suite",
         title="Synthetic stress plugin",
         run=lambda _c, _r: None,
         profiles={"smoke": {"duration": "10s"}},
     )
-    isolated.register(contrib)
+    TestRunner.register_suite(contrib)
+    try:
+        plan = resolve_stress_plan(
+            StressPlanRequest(
+                manifest_path=DEFAULT_MANIFEST,
+                run_id="unit-plugin-merge",
+                suites=["unit.stress.plugin.suite"],
+                output_dir=tmp_path / "merge-run",
+                no_menu=True,
+            ),
+        )
 
-    plan = resolve_stress_plan(
-        StressPlanRequest(
-            manifest_path=DEFAULT_MANIFEST,
-            run_id="unit-plugin-merge",
-            suites=["unit.stress.plugin.suite"],
-            output_dir=tmp_path / "merge-run",
-            no_menu=True,
-        ),
-        test_runner=isolated,
-    )
-
-    assert len(plan.cases) == 1
-    assert plan.cases[0].suite_id == "unit.stress.plugin.suite"
-    assert plan.cases[0].run_fn is contrib.run
+        assert len(plan.cases) == 1
+        assert plan.cases[0].suite_id == "unit.stress.plugin.suite"
+        assert plan.cases[0].run_fn is contrib.run
+    finally:
+        TestRunner.unregister_suite(contrib.id)
