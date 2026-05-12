@@ -43,6 +43,14 @@ suites.
 The CLI is a wrapper around `tests.stress.lib.runner`. UIs and CI jobs should use
 this module rather than shelling out and scraping terminal output.
 
+Manifest suites are merged with any workloads registered via `mindtrace.testing`
+(entry points declared in installer packages or attached with
+`mindtrace.testing.TestRunner.register`). The manifest wins when a suite ID
+exists in both. For an isolated registry in automated tests, build a dedicated
+`TestRunner` with `auto_discover=False`, register contributions, then pass it as
+`test_runner=` to `list_stress_suites(...)` / `resolve_stress_plan(...)`. See
+`mindtrace/core/testing.md` on the Mindtrace repo for packaging details.
+
 ```python
 from tests.stress.lib.models import StressPlanRequest
 from tests.stress.lib.runner import list_stress_suites, resolve_stress_plan, run_stress_plan
@@ -65,9 +73,9 @@ result = run_stress_plan(plan)
 Stable public helpers:
 
 - `load_stress_manifest(path=None)`
-- `list_stress_suites(manifest_path=None)`
+- `list_stress_suites(manifest_path=None, merge_plugins=True, test_runner=None)`
 - `list_stress_scenarios(manifest_path=None)`
-- `resolve_stress_plan(request)`
+- `resolve_stress_plan(request, test_runner=None)`
 - `run_stress_plan(plan, event_sink=None, cancellation_token=None)`
 - `list_stress_runs(results_root=DEFAULT_RESULTS_ROOT)`
 - `load_stress_run(run_id, results_root=DEFAULT_RESULTS_ROOT)`

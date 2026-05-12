@@ -11,7 +11,6 @@ from dataclasses import asdict, dataclass, field, is_dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-
 JsonDict = dict[str, Any]
 
 
@@ -117,9 +116,12 @@ class StressPlanCase:
     safety: str | None = None
     requires: list[str] = field(default_factory=list)
     module: str | None = None
+    run_fn: Callable[..., Any] | None = field(default=None, compare=False, repr=False)
 
     def to_dict(self) -> JsonDict:
-        return _jsonable(self)
+        payload = asdict(self)
+        payload.pop("run_fn", None)
+        return _jsonable(payload)
 
 
 @dataclass(frozen=True)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 @dataclass(frozen=True)
@@ -18,6 +18,8 @@ class SuiteDefinition:
     profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
     default_selected: bool = False
     safety: str | None = None
+    #: When set (for example via ``mindtrace.testing`` plugins), the runner skips ``import_module`` and invokes this callable.
+    run_fn: Callable[..., Any] | None = None
 
 
 @dataclass(frozen=True)
