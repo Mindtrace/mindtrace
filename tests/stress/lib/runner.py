@@ -18,11 +18,7 @@ from pathlib import Path
 from typing import Any, TextIO
 from urllib.parse import urlsplit, urlunsplit
 
-from mindtrace.testing import (
-    SuiteContribution,
-    TestRunner,
-    default_test_runner,
-)
+from mindtrace.testing import SuiteContribution, TestRunner
 from tests.stress.lib.benchmark import StressReporter, StressResult, StressSuiteConfig, utc_now_iso
 from tests.stress.lib.durations import parse_duration_seconds
 from tests.stress.lib.manifest import (
@@ -142,7 +138,7 @@ def suite_metadata(suite: SuiteDefinition) -> StressSuiteMetadata:
 
 
 def contribution_to_suite_definition(contrib: SuiteContribution) -> SuiteDefinition:
-    """Adapt a plugin contribution to manifest-shaped :class:`SuiteDefinition`."""
+    """Adapt a :mod:`mindtrace.testing` contribution to manifest-shaped :class:`SuiteDefinition`."""
 
     return SuiteDefinition(
         suite_id=contrib.id,
@@ -160,21 +156,19 @@ def contribution_to_suite_definition(contrib: SuiteContribution) -> SuiteDefinit
 def merge_suite_definitions_with_plugins(
     suites: dict[str, SuiteDefinition],
     *,
-    test_runner: TestRunner | None = None,
-    merge_plugins: bool = True,
+    merge_registered: bool = True,
 ) -> dict[str, SuiteDefinition]:
     """Union manifest YAML suites with :mod:`mindtrace.testing` registrations.
 
-    When the same suite ID exists in both, the manifest/YAML definition wins so
-    in-repo manifests remain the source of truth.
+    Registrations come from :meth:`mindtrace.testing.TestRunner.register_suite` (process-global).
+    When the same suite ID exists in both, the manifest/YAML definition wins so in-repo manifests
+    remain the source of truth.
     """
 
-    if not merge_plugins:
+    if not merge_registered:
         return dict(suites)
-    runner = test_runner if test_runner is not None else default_test_runner()
-    runner.discover_plugins()
     merged = dict(suites)
-    for contrib in runner.effective_suite_map().values():
+    for contrib in TestRunner.registered_suites().values():
         candidate = contribution_to_suite_definition(contrib)
         merged.setdefault(candidate.suite_id, candidate)
     return merged
@@ -199,14 +193,12 @@ def scenario_metadata(scenario: ScenarioDefinition, manifest_path: Path | None =
 def list_stress_suites(
     manifest_path: Path | None = None,
     *,
-    merge_plugins: bool = True,
-    test_runner: TestRunner | None = None,
+    merge_registered: bool = True,
 ) -> list[StressSuiteMetadata]:
     manifest = load_stress_manifest(manifest_path)
     merged = merge_suite_definitions_with_plugins(
         suite_definitions(manifest),
-        test_runner=test_runner,
-        merge_plugins=merge_plugins,
+        merge_registered=merge_registered,
     )
     return [suite_metadata(suite) for suite in merged.values()]
 
@@ -641,12 +633,12 @@ def resource_warnings(cases: list[StressPlanCase], resources: dict[str, Any]) ->
     return warnings
 
 
-def resolve_stress_plan(request: StressPlanRequest, *, test_runner: TestRunner | None = None) -> StressPlan:
+def resolve_stress_plan(request: StressPlanRequest) -> StressPlan:
     """Resolve and validate the exact stress execution plan without running it."""
 
     manifest_path = Path(request.manifest_path) if request.manifest_path is not None else DEFAULT_MANIFEST
     manifest = load_stress_manifest(manifest_path)
-    suites = merge_suite_definitions_with_plugins(suite_definitions(manifest), test_runner=test_runner)
+    suites = merge_suite_definitions_with_plugins(suite_definitions(manifest))
     scenarios = scenario_definitions(manifest)
     request = apply_scenarios(request, scenarios, manifest_path)
     selected = select_suites_from_request(request, suites)
