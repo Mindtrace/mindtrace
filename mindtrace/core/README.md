@@ -15,6 +15,10 @@ The `Core` module provides the foundational abstractions, configuration, logging
 - **Observability primitives** with `EventBus`, `ObservableContext`, and `ContextListener`
 - **Shared utility helpers** for dynamic loading, networking, timing, hashing, and metrics
 
+## Stress / benchmark plugins
+
+Stress suite discovery via setuptools entry points and an in-process **`TestRunner`** registry lives under **`mindtrace.testing`** (see **[testing.md](testing.md)** for API details and examples).
+
 ## Quick Start
 
 ```python
