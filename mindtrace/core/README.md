@@ -8,8 +8,8 @@ The `Core` module provides the foundational abstractions, configuration, logging
 
 ## Features
 
-- **Base abstractions** with `Mindtrace`, `MindtraceABC`, and shared metaclass behavior
-- **Configuration management** with `Config` and `CoreConfig`
+- **Base abstractions** with `Mindtrace` and `MindtraceABC`
+- **Configuration management** with a single `Config` (a `pydantic_settings.BaseSettings` subclass)
 - **Task typing** with `TaskSchema`
 - **Logging and operation tracking** with standard and structured logging support
 - **Observability primitives** with `EventBus`, `ObservableContext`, and `ContextListener`
@@ -55,10 +55,9 @@ This example shows the typical role of `mindtrace-core`: it gives you a common b
 
 `Mindtrace` is the main base class for shared Mindtrace components. It provides:
 
-- a consistent logger on both instances and classes
-- access to `CoreConfig`
+- a consistent logger on both instances and classes (`self.logger` / `cls.logger`)
+- access to the shared `Config` (`self.config` / `cls.config`)
 - context-manager support
-- the `autolog()` decorator for automatic execution logging
 
 Example:
 
@@ -80,63 +79,42 @@ If you need an abstract base class with the same Mindtrace behavior, use `Mindtr
 
 ## Config
 
-`Config` is the general-purpose configuration container in `mindtrace-core`. Use it when you want a flexible config object built from your own dictionaries, Pydantic models, or Pydantic settings objects.
+`Config` is the shared configuration container in `mindtrace-core`. It is a `pydantic_settings.BaseSettings` subclass with the standard Mindtrace sections (`MINDTRACE_DIR_PATHS`, `MINDTRACE_DEFAULT_HOST_URLS`, `MINDTRACE_API_KEYS`, ...) declared as typed fields.
 
-It supports:
+Values are loaded from (highest to lowest precedence):
 
-- dict-style access
-- attribute-style access
-- environment-variable overrides
-- masking of secret fields by default
-- cloning and JSON save/load helpers
+1. Constructor kwargs
+2. Environment variables (`SECTION__KEY` delimiter)
+3. `.env` file
+4. `config.ini` bundled with the package
 
-`CoreConfig` uses the same underlying configuration system, but starts from Mindtrace’s standard core settings first and then layers your overrides on top.
+Features:
 
-In practice:
-
-- use `Config` for generic application or component configuration
-- use `CoreConfig` when you want the normal Mindtrace core sections already present, such as `MINDTRACE_DIR_PATHS`, `MINDTRACE_DEFAULT_HOST_URLS`, and `MINDTRACE_MCP`
-
-Example with `Config`:
+- attribute-style access (`config.MINDTRACE_DIR_PATHS.TEMP_DIR`)
+- dict-style access (`config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]`)
+- `~` expansion on string fields
+- secret masking on `repr()`; reveal with `get_secret(...)` or `model_dump_json()`
 
 ```python
 from mindtrace.core import Config
 
 
-config = Config(
-    {
-        "MY_APP": {
-            "DEBUG": "true",
-            "CACHE_DIR": "~/my-app-cache",
-        }
-    }
-)
+config = Config()
 
-print(config.MY_APP.DEBUG)
-print(config.MY_APP.CACHE_DIR)
-```
-
-Example with `CoreConfig`:
-
-```python
-from mindtrace.core import CoreConfig
-
-
-config = CoreConfig(
-    {
-        "MY_APP": {
-            "DEBUG": "true",
-        }
-    }
-)
-
-# Your own settings are still present
-print(config.MY_APP.DEBUG)
-
-# But CoreConfig also includes the standard Mindtrace core sections
 print(config.MINDTRACE_DIR_PATHS.TEMP_DIR)
-print(config.MINDTRACE_DEFAULT_HOST_URLS.SERVICE)
+print(config["MINDTRACE_DEFAULT_HOST_URLS"]["SERVICE"])
+
+# Reveal a single secret
+api_key = config.get_secret("MINDTRACE_API_KEYS", "OPENAI")
 ```
+
+Override via environment variable (most common):
+
+```bash
+export MINDTRACE_DEFAULT_HOST_URLS__SERVICE=http://custom:8080
+```
+
+`Config()` will pick that up automatically.
 
 ## TaskSchema
 
@@ -201,20 +179,6 @@ logger = get_logger(
     structlog_bind={"service": "demo"},
 )
 logger.info("Structured log event", user_id="123")
-```
-
-### `Mindtrace.autolog`
-
-Use `Mindtrace.autolog()` when you want to automatically log function execution, completion, and failures.
-
-```python
-from mindtrace.core import Mindtrace
-
-
-class DataProcessor(Mindtrace):
-    @Mindtrace.autolog()
-    def double(self, values: list[int]) -> list[int]:
-        return [value * 2 for value in values]
 ```
 
 ### `track_operation`
@@ -366,7 +330,7 @@ See these examples and related docs in the repo for more end-to-end reference:
 
 - [Core echo task sample](mindtrace/core/mindtrace/core/samples/echo_task.py)
 - [Core configuration examples](samples/core/config)
-- [Core logging / autolog examples](samples/core/logging)
+- [Core logging examples](samples/core/logging)
 
 ## Testing
 
@@ -387,8 +351,8 @@ ds test: --unit core
 
 ## Practical Notes and Caveats
 
-- `CoreConfig` includes Mindtrace’s default core settings; plain `Config` is the more generic configuration container.
-- Secret configuration values are masked by default; use explicit secret access helpers when you need the real value.
+- `Config` is a `pydantic_settings.BaseSettings`.
+- Secret configuration values are masked on `repr()`; use `config.get_secret(...)` or `model_dump_json()` when you need the real value.
 - `TaskSchema` is a typed contract, not an execution engine by itself.
-- `Mindtrace.autolog()` and `track_operation()` overlap conceptually, but they are useful at different levels of abstraction.
+- `track_operation()` attaches structured per-operation context (duration, start/completed/failed, system metrics).
 - Many helpers in `core` are intentionally low-level building blocks; the README should help you discover them, while the code docs remain the detailed reference.
