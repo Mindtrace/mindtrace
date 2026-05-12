@@ -30,7 +30,7 @@ async def _run_async(config: StressSuiteConfig, reporter: StressReporter) -> Str
         await asset_db.initialize()
         await alias_db.initialize()
         deadline = reporter.deadline(config.duration_seconds)
-        while time.perf_counter() < deadline:
+        while time.perf_counter() < deadline and not reporter.is_cancelled():
             batch_id = uuid4().hex
             assets = [build_asset(config, batch_id, index) for index in range(batch_size)]
             op_start = time.perf_counter()

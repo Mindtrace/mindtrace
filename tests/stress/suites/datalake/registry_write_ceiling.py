@@ -60,7 +60,7 @@ def run(config: StressSuiteConfig, reporter: StressReporter) -> StressResult:
                 bytes_processed=payload_size,
             )
 
-        run_threaded_until_deadline(concurrency, deadline, operation)
+        run_threaded_until_deadline(concurrency, deadline, operation, should_continue=lambda: not reporter.is_cancelled())
     finally:
         if lake is not None:
             lake.close()
