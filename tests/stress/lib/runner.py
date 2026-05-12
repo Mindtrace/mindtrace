@@ -112,10 +112,10 @@ class RunEventWriter:
         return stress_event
 
 
-def load_stress_manifest(path: Path | None = None) -> dict[str, Any]:
+def load_stress_manifest(path: Path | str | None = None) -> dict[str, Any]:
     """Load the stress manifest using the default path when omitted."""
 
-    return load_manifest(path or DEFAULT_MANIFEST)
+    return load_manifest(Path(path) if path is not None else DEFAULT_MANIFEST)
 
 
 def suite_metadata(suite: SuiteDefinition) -> StressSuiteMetadata:
@@ -159,9 +159,10 @@ def list_stress_scenarios(manifest_path: Path | None = None) -> list[StressScena
     return [scenario_metadata(scenario, manifest_path) for scenario in scenario_definitions(manifest).values()]
 
 
-def load_optional_config(path: Path | None) -> dict[str, Any]:
+def load_optional_config(path: Path | str | None) -> dict[str, Any]:
     if path is None:
         return {}
+    path = Path(path)
     try:
         import yaml
     except ImportError as exc:  # pragma: no cover - dependency/environment guard
@@ -580,18 +581,19 @@ def resource_warnings(cases: list[StressPlanCase], resources: dict[str, Any]) ->
 def resolve_stress_plan(request: StressPlanRequest) -> StressPlan:
     """Resolve and validate the exact stress execution plan without running it."""
 
-    manifest_path = request.manifest_path or DEFAULT_MANIFEST
+    manifest_path = Path(request.manifest_path) if request.manifest_path is not None else DEFAULT_MANIFEST
     manifest = load_stress_manifest(manifest_path)
     suites = suite_definitions(manifest)
     scenarios = scenario_definitions(manifest)
     request = apply_scenarios(request, scenarios, manifest_path)
     selected = select_suites_from_request(request, suites)
     run_id = request.run_id or datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
-    file_config = load_optional_config(request.config_path) if request.config_path else {}
+    config_path = Path(request.config_path) if request.config_path is not None else None
+    file_config = load_optional_config(config_path) if config_path else {}
     if request.config_payload:
         file_config = merge_config(file_config, request.config_payload)
     resources = file_config if request.external_resources else merge_config(default_integration_resources(run_id), file_config)
-    output_dir = request.output_dir or (DEFAULT_RESULTS_ROOT / run_id)
+    output_dir = Path(request.output_dir) if request.output_dir is not None else (DEFAULT_RESULTS_ROOT / run_id)
     cases: list[StressPlanCase] = []
     for suite in selected:
         for parameter_overrides in expand_parameter_sets(suite, run_config=resources, cli_sweep=request.params):
