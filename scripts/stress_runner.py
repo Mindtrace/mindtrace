@@ -13,6 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tests.stress.lib.manifest import load_manifest, scenario_definitions, suite_definitions  # noqa: E402
+from tests.stress.lib.models import StressPlanRequest  # noqa: E402
 from tests.stress.lib.runner import (  # noqa: E402
     DEFAULT_MANIFEST,
     DEFAULT_RESULTS_ROOT,
@@ -28,7 +29,6 @@ from tests.stress.lib.runner import (  # noqa: E402
     resolve_stress_plan,
     run_stress_plan,
 )
-from tests.stress.lib.models import StressPlanRequest  # noqa: E402
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,9 +58,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Treat --config resources as externally managed and do not merge default integration resources",
     )
     parser.add_argument("--output-dir", type=Path, help="Output directory for this run")
-    parser.add_argument("--results-root", type=Path, default=DEFAULT_RESULTS_ROOT, help="Root directory for historical runs")
+    parser.add_argument(
+        "--results-root", type=Path, default=DEFAULT_RESULTS_ROOT, help="Root directory for historical runs"
+    )
     parser.add_argument("--no-menu", action="store_true", help="Disable the interactive selector")
-    parser.add_argument("--dry-run", action="store_true", help="Print the resolved execution plan without running suites")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print the resolved execution plan without running suites"
+    )
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON for supported commands")
     parser.add_argument("--plan-json", type=Path, help="Write resolved dry-run plan JSON to this path")
     parser.add_argument("--list-runs", action="store_true", help="List historical runs under --results-root")
@@ -160,14 +164,20 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.list:
         if args.json:
-            print(json.dumps([suite.to_dict() for suite in list_stress_suites(args.manifest)], indent=2, sort_keys=True))
+            print(
+                json.dumps([suite.to_dict() for suite in list_stress_suites(args.manifest)], indent=2, sort_keys=True)
+            )
         else:
             print_suites_human(args.manifest)
         return 0
 
     if args.list_scenarios:
         if args.json:
-            print(json.dumps([scenario.to_dict() for scenario in list_stress_scenarios(args.manifest)], indent=2, sort_keys=True))
+            print(
+                json.dumps(
+                    [scenario.to_dict() for scenario in list_stress_scenarios(args.manifest)], indent=2, sort_keys=True
+                )
+            )
         else:
             print_scenarios_human(args.manifest)
         return 0
@@ -183,7 +193,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.show_events:
-        events = [event.to_dict() for event in load_stress_events(args.show_events, args.since_sequence, args.results_root)]
+        events = [
+            event.to_dict() for event in load_stress_events(args.show_events, args.since_sequence, args.results_root)
+        ]
         print(json.dumps(events, indent=2, sort_keys=True))
         return 0
 
@@ -195,7 +207,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.plan_json:
         args.plan_json.parent.mkdir(parents=True, exist_ok=True)
-        args.plan_json.write_text(json.dumps(plan.to_dict(), indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
+        args.plan_json.write_text(
+            json.dumps(plan.to_dict(), indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8"
+        )
 
     if args.dry_run:
         return 0
