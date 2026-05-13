@@ -1,59 +1,9 @@
-from typing import TYPE_CHECKING, Optional, Type
+from typing import Type
 
 import httpx
 from fastapi import HTTPException
 
-if TYPE_CHECKING:  # pragma: no cover
-    from mindtrace.services import Service
 from mindtrace.services.core.connection_manager import ConnectionManager
-
-
-def add_endpoint(app, path, self: Optional["Service"], **kwargs):
-    """Register a new endpoint.
-
-    This decorator method is functionally identical as calling add_endpoint on a Service instance. It is useful when
-    the endpoints are defined in a separate method, such as grouping api routes in a more complicated FastAPI app.
-
-    Args:
-        app: The FastAPI app.
-        path: The endpoint path.
-        self: The server instance.
-        **kwargs: Additional arguments to pass when creating the FastAPI route.
-
-    Example::
-
-        from fastapi import FastAPI
-        from mindtrace.services import Service
-
-        class MyServer(Service):
-            def __init__(self):
-                super().__init__()
-
-                self.add_endpoint(path="/status_using_method", func=self.status)
-                self.create_app()
-
-            def status(self):
-                return {"status": "Available"}
-
-            def create_app():
-                # May put all the endpoints in a single method, and call the method in __init__.
-
-                @add_endpoint(self.app, "/status_using_decorator", self=self)
-                def status():
-                    return {"status": "Available"}
-
-                @add_endpoint(self.app, "/another_hundred_endpoints", self=self)
-                def another_hundred_endpoints():
-                    return
-
-
-    """
-    self._endpoints.append(path.removeprefix("/"))
-
-    def wrapper(func):
-        app.add_api_route(f"/{path}", endpoint=func, methods=["POST"], **kwargs)
-
-    return wrapper
 
 
 def register_connection_manager(connection_manager: Type["ConnectionManager"]):
@@ -99,6 +49,61 @@ def register_connection_manager(connection_manager: Type["ConnectionManager"]):
     return wrapper
 
 
+def _validate_payload(args, kwargs, input_schema, endpoint_name: str, validate_input: bool) -> dict:
+    """Build the JSON payload for a generated endpoint call.
+
+    With validation off, kwargs flow through unchanged. With validation on, either a single
+    positional ``input_schema`` instance OR kwargs are accepted (not both) — any other shape
+    raises ``ValueError``.
+    """
+    if not validate_input:
+        return kwargs
+    if args:
+        if len(args) != 1 or not isinstance(args[0], input_schema) or kwargs:
+            raise ValueError(
+                f"Service method {endpoint_name} must be called with either kwargs or a single "
+                f"argument of type {input_schema}"
+            )
+        return args[0].model_dump(mode="json")
+    if input_schema is None:
+        return {}
+    return input_schema(**kwargs).model_dump(mode="json")
+
+
+def _parse_response(response: httpx.Response, output_schema, validate_output: bool):
+    """Return the parsed response, raising ``HTTPException`` on non-200; tolerates empty bodies."""
+    if response.status_code != 200:
+        raise HTTPException(response.status_code, response.text)
+    try:
+        result = response.json()
+    except Exception:
+        result = {"success": True}
+    if not validate_output:
+        return result
+    return output_schema(**result) if output_schema is not None else result
+
+
+def _make_endpoint_methods(endpoint_name: str, endpoint_path: str, input_schema, output_schema):
+    """Build a ``(sync, async)`` method pair that POSTs to ``endpoint_path`` on ``self.url``."""
+
+    def method(self, *args, validate_input: bool = True, validate_output: bool = True, timeout=60, **kwargs):
+        payload = _validate_payload(args, kwargs, input_schema, endpoint_name, validate_input)
+        res = httpx.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=timeout)
+        return _parse_response(res, output_schema, validate_output)
+
+    async def amethod(self, *args, validate_input: bool = True, validate_output: bool = True, timeout=60, **kwargs):
+        payload = _validate_payload(args, kwargs, input_schema, endpoint_name, validate_input)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            res = await client.post(
+                str(self.url).rstrip("/") + endpoint_path,
+                json=payload,
+                timeout=timeout,
+            )
+        return _parse_response(res, output_schema, validate_output)
+
+    return method, amethod
+
+
 def generate_connection_manager(
     service_cls, protected_methods: list[str] = ["shutdown", "ashutdown", "status", "astatus"]
 ) -> type:
@@ -117,122 +122,25 @@ def generate_connection_manager(
     class ServiceConnectionManager(ConnectionManager):
         pass  # Methods will be added dynamically
 
-    # Create a temporary service instance to get the endpoints
     temp_service = service_cls(live_service=False)
 
-    # Store service class and endpoints
     ServiceConnectionManager._service_class = service_cls
     ServiceConnectionManager._service_endpoints = temp_service._endpoints
 
-    # Dynamically define one method per endpoint
     for endpoint_name, endpoint in temp_service._endpoints.items():
-        # Skip if this would override an existing method in ConnectionManager
         if endpoint_name in protected_methods:
             continue
 
         endpoint_path = f"/{endpoint_name}"
+        method, amethod = _make_endpoint_methods(
+            endpoint_name, endpoint_path, endpoint.input_schema, endpoint.output_schema
+        )
 
-        def make_method(endpoint_path, input_schema, output_schema):
-            def method(
-                self,
-                *args,
-                validate_input: bool = True,
-                validate_output: bool = True,
-                timeout=60,
-                **kwargs,
-            ):
-                if validate_input:
-                    if args:
-                        if len(args) != 1:
-                            raise ValueError(
-                                f"Service method {endpoint_name} must be called with either kwargs or a single argument of type {input_schema}"
-                            )
-                        if not isinstance(args[0], input_schema):
-                            raise ValueError(
-                                f"Service method {endpoint_name} must be called with either kwargs or a single argument of type {input_schema}"
-                            )
-                        if kwargs:
-                            raise ValueError(
-                                f"Service method {endpoint_name} must be called with either kwargs or a single argument of type {input_schema}"
-                            )
-                        payload = args[0].model_dump(mode="json")
-                    else:
-                        payload = input_schema(**kwargs).model_dump(mode="json") if input_schema is not None else {}
-                else:
-                    payload = kwargs
-                res = httpx.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=timeout)
-                if res.status_code != 200:
-                    raise HTTPException(res.status_code, res.text)
-
-                # Handle empty responses (e.g., from shutdown endpoint)
-                try:
-                    result = res.json()
-                except Exception:
-                    result = {"success": True}  # Default response for empty content
-
-                if not validate_output:
-                    return result  # raw result dict
-                return output_schema(**result) if output_schema is not None else result
-
-            async def amethod(
-                self,
-                *args,
-                validate_input: bool = True,
-                validate_output: bool = True,
-                timeout=60,
-                **kwargs,
-            ):
-                if validate_input:
-                    if args:
-                        if len(args) != 1:
-                            raise ValueError(
-                                f"Service method a{endpoint_name} must be called with either kwargs or a single argument of type {input_schema}"
-                            )
-                        if not isinstance(args[0], input_schema):
-                            raise ValueError(
-                                f"Service method a{endpoint_name} must be called with either kwargs or a single argument of type {input_schema}"
-                            )
-                        if kwargs:
-                            raise ValueError(
-                                f"Service method a{endpoint_name} must be called with either kwargs or a single argument of type {input_schema}"
-                            )
-                        payload = args[0].model_dump(mode="json")
-                    else:
-                        payload = input_schema(**kwargs).model_dump(mode="json") if input_schema is not None else {}
-                else:
-                    payload = kwargs
-                async with httpx.AsyncClient(timeout=timeout) as client:
-                    res = await client.post(
-                        str(self.url).rstrip("/") + endpoint_path,
-                        json=payload,
-                        timeout=timeout,
-                    )
-                if res.status_code != 200:
-                    raise HTTPException(res.status_code, res.text)
-
-                # Handle empty responses (e.g., from shutdown endpoint)
-                try:
-                    result = res.json()
-                except Exception:
-                    result = {"success": True}  # Default response for empty content
-
-                if not validate_output:
-                    return result  # raw result dict
-                return output_schema(**result) if output_schema is not None else result
-
-            return method, amethod
-
-        method, amethod = make_method(endpoint_path, endpoint.input_schema, endpoint.output_schema)
-
-        # Replace dots with underscores to make it a valid identifier
         method_name = endpoint_name.replace(".", "_")
-
-        # Set up sync method
         method.__name__ = method_name
         method.__doc__ = f"Calls the `{endpoint_name}` pipeline at `{endpoint_path}`"
         setattr(ServiceConnectionManager, method_name, method)
 
-        # Set up async method
         async_method_name = f"a{method_name}"
         amethod.__name__ = async_method_name
         amethod.__doc__ = f"Async version: Calls the `{endpoint_name}` pipeline at `{endpoint_path}`"
