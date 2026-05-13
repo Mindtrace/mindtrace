@@ -471,7 +471,7 @@ class DiscordService(Service):
             try:
                 import requests
 
-                response = requests.post(f"{connection_manager.url}/discord.status", json={})
+                response = requests.post(f"{str(connection_manager.url).rstrip('/')}/discord.status", json={})
                 if response.status_code == 200:
                     data = response.json()
                     # Bot is ready if it has a name and is not in "not_started" status
