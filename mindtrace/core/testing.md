@@ -1,38 +1,35 @@
-# Test suite runner (`mindtrace.core`)
+# Testing and benchmarks (`mindtrace.core.testing`)
 
-Bench / workload suites register on **`TestRunner`** (classmethods only—do not instantiate the class). Typical pattern:
+## Registration
 
-```python
-from mindtrace.core import TestRunner, TestSuite
+- **`TestRunner`**: global registry (classmethods only). Use **`TestRunner.register_test_suite(MySuite)`** or **`TestRunner.register_suite(SuiteContribution(...))`**.
 
+- **`TestSuite`**: minimal hook for custom runners; implement **`run(config, reporter)`**.
 
-class PayloadSuite(TestSuite):
-    suite_id = "acme.registry.payload_smoke"
-    title = "Payload smoke"
-    tags = frozenset({"registry", "io"})
-    profiles = {"smoke": {"duration": "10s"}}
+- **`BenchTestSuite`**: library-embedded timed workloads. Subclasses implement **`execute_bench(config, reporter)`** and receive **`BenchSuiteConfig`** / **`BenchReporter`**. Class-level **`profiles`** maps **`smoke`** vs **`stress`** (and optional keys) to **`duration_seconds`**, workload kwargs, and nested **`resources`** merged into the resolved config.
 
-    def run(self, config, reporter):
-        ...
+- **Tags**: tag suites with **`smoke`** or **`stress`** so **`suite_ids_for_profile("smoke")`** / **`mindtrace-bench --profile …`** can filter them.
 
+## Running embedded benches
 
-TestRunner.register_test_suite(PayloadSuite)
-```
-
-`TestSuite` subclasses carry **metadata as class attributes** (`suite_id`, `title`, tags, profiles, …). **`TestRunner.register_test_suite(MySuite)`** builds a stored contribution with a **fresh `MySuite()` instance per `run`**. For ad-hoc callables, use **`TestRunner.register_suite(SuiteContribution(...))`**.
-
-Import from the public core surface:
+After **`uv sync`**, install **`mindtrace-core`** (or the meta **`mindtrace`** package). Import a package testing module so registrations run:
 
 ```python
-from mindtrace.core import TestRunner, TestSuite, SuiteContribution, RunOutcome
+import mindtrace.registry.testing  # registers registry benches
+import mindtrace.datalake.testing  # registers datalake benches
 ```
 
-Each optional package can expose `mindtrace.<pkg>.testing` modules that call **`TestRunner.register_test_suite(...)`** when explicitly imported by the user or CLI bootstrap.
+CLI (console script from **`mindtrace-core`**):
 
-The in-repo stress harness merges **`manifest.yaml`** with **`TestRunner.registered_suites()`** when listing or resolving plans (`tests/stress`).
+```bash
+mindtrace-bench registry datalake --profile smoke --list
+mindtrace-bench registry --profile stress
+```
 
-## Plan (unchanged intent)
+Programmatic driver helpers live on **`mindtrace.core.testing`**: **`run_registered_benches`**, **`build_bench_suite_config`**, **`expand_param_matrix`** (Cartesian kwargs for matrix runs).
 
-1. Packages implement **`TestSuite`** subclasses and register from their `testing` submodules.
-2. **`tests/stress`** stays the CLI/manifest layer; manifest wins on duplicate suite IDs.
-3. Use **`TestRunner.clear_registry()`** in unit tests when isolation is required.
+## Package layout
+
+Each wheel ships **`mindtrace.<pkg>.testing`** with **`register_benchmark_suites()`** invoked once on import (guarded per package). First-party workloads mirror the legacy **`tests/stress/suites`** implementations but live beside the library code.
+
+Use **`TestRunner.clear_registry()`** in unit tests when isolation is required.
