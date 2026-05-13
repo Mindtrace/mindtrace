@@ -344,29 +344,21 @@ class TestProxyConnectionManagerIntegration:
     @pytest.fixture
     def proxy_cm(self, mock_original_cm):
         """Create a ProxyConnectionManager for testing."""
-        # Create the proxy but avoid triggering HTTP requests during creation
-        with patch("requests.get"), patch("requests.post"):
-            return ProxyConnectionManager(
-                gateway_url="http://localhost:8090", app_name="test-service", original_cm=mock_original_cm
-            )
+        return ProxyConnectionManager(
+            gateway_url="http://localhost:8090", app_name="test-service", original_cm=mock_original_cm
+        )
 
     def test_proxy_method_call_success(self, proxy_cm):
         """Test successful method call through proxy."""
-        with patch("requests.post") as mock_post:
+        with patch("mindtrace.services.gateway.proxy_connection_manager.httpx") as mock_httpx:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.json.return_value = {"echoed": "test message"}
-            mock_post.return_value = mock_response
+            mock_httpx.post.return_value = mock_response
 
-            # Get the dynamically created method directly from instance dict to avoid __getattribute__
-            instance_dict = object.__getattribute__(proxy_cm, "__dict__")
-            echo_method = instance_dict["echo"]
+            result = proxy_cm.echo(message="test message")
 
-            # Test calling a method through the proxy
-            result = echo_method(message="test message")
-
-            # Verify the request was made correctly
-            mock_post.assert_called_once_with(
+            mock_httpx.post.assert_called_once_with(
                 "http://localhost:8090/test-service/echo", json={"message": "test message"}, timeout=60
             )
 
@@ -374,56 +366,41 @@ class TestProxyConnectionManagerIntegration:
 
     def test_proxy_method_call_no_args(self, proxy_cm):
         """Test method call with no arguments through proxy."""
-        with patch("requests.post") as mock_post:
+        with patch("mindtrace.services.gateway.proxy_connection_manager.httpx") as mock_httpx:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.json.return_value = {"status": "ok"}
-            mock_post.return_value = mock_response
+            mock_httpx.post.return_value = mock_response
 
-            # Get the dynamically created method directly from instance dict to avoid __getattribute__
-            instance_dict = object.__getattribute__(proxy_cm, "__dict__")
-            status_method = instance_dict["status"]
+            proxy_cm.status()
 
-            # Test calling a no-arg method
-            _ = status_method()
-
-            # Verify POST was used (all proxy methods use POST)
-            mock_post.assert_called_once_with("http://localhost:8090/test-service/status", json={}, timeout=60)
+            mock_httpx.post.assert_called_once_with("http://localhost:8090/test-service/status", json={}, timeout=60)
 
     def test_proxy_method_call_failure(self, proxy_cm):
-        """Test failed method call through proxy."""
-        with patch("requests.post") as mock_post:
+        """Test failed method call through proxy raises HTTPException."""
+        with patch("mindtrace.services.gateway.proxy_connection_manager.httpx") as mock_httpx:
             mock_response = Mock()
             mock_response.status_code = 500
             mock_response.text = "Internal Server Error"
-            mock_post.return_value = mock_response
+            mock_httpx.post.return_value = mock_response
 
-            # Get the dynamically created method directly from instance dict to avoid __getattribute__
-            instance_dict = object.__getattribute__(proxy_cm, "__dict__")
-            echo_method = instance_dict["echo"]
+            with pytest.raises(HTTPException) as exc_info:
+                proxy_cm.echo(message="test")
 
-            with pytest.raises(RuntimeError) as exc_info:
-                echo_method(message="test")
-
-            assert "Gateway proxy request failed: Internal Server Error" in str(exc_info.value)
+            assert exc_info.value.status_code == 500
+            assert exc_info.value.detail == "Internal Server Error"
 
     def test_proxy_attribute_access(self, proxy_cm, mock_original_cm):
         """Test accessing internal attributes of proxy."""
-        # Test direct attribute access using object.__getattribute__ to avoid HTTP requests
-        assert object.__getattribute__(proxy_cm, "gateway_url") == "http://localhost:8090"
-        assert object.__getattribute__(proxy_cm, "app_name") == "test-service"
-        assert object.__getattribute__(proxy_cm, "original_cm") == mock_original_cm
+        assert proxy_cm.gateway_url == "http://localhost:8090"
+        assert proxy_cm.app_name == "test-service"
+        assert proxy_cm.original_cm == mock_original_cm
 
     def test_proxy_missing_method(self, proxy_cm):
-        """Test that __getattr__ fallback works correctly without recursion."""
-        # This test verifies that accessing a truly non-existent attribute
-        # eventually falls back to __getattr__ and raises the correct error
-        # without causing infinite recursion
+        """Accessing unknown attributes raises AttributeError (no HTTP round-trip)."""
         with pytest.raises(AttributeError) as exc_info:
-            # Access a non-existent attribute that should fall back to __getattr__
             _ = proxy_cm.nonexistent_attribute
 
-        # The error message should come from __getattr__ fallback
         assert "ProxyConnectionManager" in str(exc_info.value)
         assert "has no attribute 'nonexistent_attribute'" in str(exc_info.value)
 
