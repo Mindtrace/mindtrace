@@ -327,7 +327,7 @@ def test_data_vault_from_url(monkeypatch):
         return fake_cm
 
     monkeypatch.setattr(
-        "mindtrace.datalake.data_vault.DatalakeService.connect",
+        "mindtrace.datalake.service.DatalakeService.connect",
         classmethod(fake_connect),
     )
     vault = DataVault.from_url("http://example:8080", timeout=30, object_name_prefix="prefix")
@@ -346,7 +346,7 @@ def test_async_data_vault_from_url(monkeypatch):
         return fake_cm
 
     monkeypatch.setattr(
-        "mindtrace.datalake.data_vault.DatalakeService.connect",
+        "mindtrace.datalake.service.DatalakeService.connect",
         classmethod(fake_connect),
     )
     vault = AsyncDataVault.from_url("http://async:9090", timeout=45, object_name_prefix="av")
