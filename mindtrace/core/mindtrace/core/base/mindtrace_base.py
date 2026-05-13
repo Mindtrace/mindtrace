@@ -79,12 +79,7 @@ class Mindtrace:
     name = _ClassOrInstanceProperty(lambda cls: cls.__name__)
 
     def __init__(self, **kwargs):
-        try:
-            super().__init__(**kwargs)
-        except TypeError:
-            # Tolerate non-cooperative bases (e.g. ``object`` further up the MRO)
-            # that reject extra kwargs the caller intended for a sibling class.
-            super().__init__()
+        super().__init__(**kwargs)
         self.logger = get_logger(self.unique_name)
         self.config = Config()
 
