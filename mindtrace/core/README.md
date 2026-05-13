@@ -15,10 +15,6 @@ The `Core` module provides the foundational abstractions, configuration, logging
 - **Observability primitives** with `EventBus`, `ObservableContext`, and `ContextListener`
 - **Shared utility helpers** for dynamic loading, networking, timing, hashing, and metrics
 
-## Stress / benchmark plugins
-
-Stress / benchmark suite registration lives on **`mindtrace.core.TestRunner`** (see **[testing.md](testing.md)**): subclass **`TestSuite`**, then **`TestRunner.register_test_suite(MySuite)`**.
-
 ## Quick Start
 
 ```python
@@ -390,6 +386,11 @@ ds test: core
 # Run only unit tests for core
 ds test: --unit core
 ```
+
+## Stress / benchmark plugins
+
+Timed workloads use **`mindtrace.core.testing`**: **`BenchTestSuite`**, **`TestRunner`**, and **`mindtrace-bench`** / **`run_registered_benches`**. See **[testing.md](testing.md)** for registering suites, running shipped benches, and adding application-specific benchmarks.
+
 
 ## Practical Notes and Caveats
 
