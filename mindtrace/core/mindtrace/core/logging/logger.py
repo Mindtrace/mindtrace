@@ -254,6 +254,16 @@ def get_logger(
     # Children inherit handlers from root via propagation; adding their own
     # would write every record twice (once locally, once through root).
     if not caller_provided_kwargs:
+        if full_name != "mindtrace" and Config().MINDTRACE_LOGGER.PER_MODULE_FILES:
+            # Opt-in per-module file at modules/<full_name>.log. Propagation
+            # stays on so records still reach the unified mindtrace.log; the
+            # root already owns the stream handler, so we suppress it here.
+            return setup_logger(
+                full_name,
+                add_stream_handler=False,
+                propagate=True,
+                use_structlog=use_structlog,
+            )
         if use_structlog:
             import structlog
 

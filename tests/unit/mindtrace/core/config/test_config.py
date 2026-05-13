@@ -151,6 +151,19 @@ class TestConfigDictAccess:
         assert isinstance(settings.MINDTRACE_CLUSTER.RABBITMQ_PORT, int)
         assert isinstance(settings.MINDTRACE_LOGGER.USE_STRUCTLOG, bool)
 
+    def test_per_module_files_defaults_off(self):
+        """PER_MODULE_FILES defaults to False from config.ini."""
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MINDTRACE_LOGGER__PER_MODULE_FILES", None)
+            settings = Config()
+            assert settings.MINDTRACE_LOGGER.PER_MODULE_FILES is False
+
+    def test_per_module_files_env_override(self):
+        """PER_MODULE_FILES can be enabled via env var."""
+        with patch.dict(os.environ, {"MINDTRACE_LOGGER__PER_MODULE_FILES": "true"}):
+            settings = Config()
+            assert settings.MINDTRACE_LOGGER.PER_MODULE_FILES is True
+
     def test_env_override(self):
         """Test that env vars override INI values."""
         with patch.dict(os.environ, {"MINDTRACE_TEST_PARAM": "from_env"}):

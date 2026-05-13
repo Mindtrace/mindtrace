@@ -165,6 +165,8 @@ logger = get_logger("core.example")
 logger.info("Logger configured")
 ```
 
+By default all loggers write to a single rotating file at `~/.cache/mindtrace/logs/mindtrace.log` (plus the console stream). To also get a per-module file at `logs/modules/<logger-name>.log`, set `MINDTRACE_LOGGER__PER_MODULE_FILES=true` — records are then written to both the unified file and the per-module one.
+
 ### Structured logger
 
 If enabled, the same logging helpers can produce structured logs using `structlog`.

@@ -59,6 +59,7 @@ class MINDTRACE_DIR_PATHS(ConfigModel):
 
 class MINDTRACE_LOGGER(ConfigModel):
     USE_STRUCTLOG: bool
+    PER_MODULE_FILES: bool = False
 
 
 class MINDTRACE_DEFAULT_HOST_URLS(ConfigModel):
