@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -95,6 +96,7 @@ class TestDatalakeSyncFacade:
             expires_at=datetime.now(timezone.utc),
         )
         for name, value in {
+            "close": None,
             "initialize": None,
             "get_health": {"status": "ok", "database": "test_db", "default_mount": "temp"},
             "put_object": StorageRef(mount="temp", name="hopper.png", version="v1"),
@@ -231,10 +233,47 @@ class TestDatalakeSyncFacade:
 
     @pytest.fixture
     def datalake(self, mock_backend):
-        with patch("mindtrace.datalake.datalake.AsyncDatalake", return_value=mock_backend):
-            dl = Datalake("mongodb://test:27017", "test_db")
+        loop = asyncio.new_event_loop()
+        thread_ready = threading.Event()
+
+        def _run_forever() -> None:
+            asyncio.set_event_loop(loop)
+            thread_ready.set()
+            loop.run_forever()
+
+        thread = threading.Thread(target=_run_forever, name="DatalakeTestLoop", daemon=True)
+        thread.start()
+        assert thread_ready.wait(timeout=10.0), "datalake fixture event loop failed to start"
+
+        dl = Datalake(
+            mongo_db_uri="ignored",
+            mongo_db_name="ignored",
+            async_datalake=mock_backend,
+            loop=loop,
+        )
+        dl._owns_loop_thread = True
+        dl._loop_thread = thread
+
+        try:
             yield dl
-            dl.close()
+        finally:
+            try:
+                backend = getattr(dl, "_backend", None)
+                owns_loop = getattr(dl, "_owns_loop_thread", False)
+                if backend is not None or owns_loop:
+                    dl.close()
+            except Exception:
+                pass
+            # Tests may replace datalake._loop with a MagicMock while the real loop
+            # still runs in ``thread``; always tear down ``loop`` regardless.
+            if loop.is_running():
+                loop.call_soon_threadsafe(loop.stop)
+            thread.join(timeout=5.0)
+            try:
+                if not loop.is_closed():
+                    loop.close()
+            except Exception:
+                pass
 
     def test_sync_facade_rejects_calls_inside_running_loop(self, datalake):
         async def inner():
