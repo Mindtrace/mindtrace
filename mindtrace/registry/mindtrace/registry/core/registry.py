@@ -6,6 +6,9 @@ and transparently adds local caching when a remote backend is used.
 """
 
 import hashlib
+import os
+import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Type, overload
 
@@ -94,6 +97,8 @@ class Registry(Mindtrace):
         version_digits: int | None = None,
         versions_cache_ttl: float = 60.0,
         use_cache: bool = True,
+        cache_max_entries: int | None = 1024,
+        cache_prune_buffer: int | None = None,
         **kwargs,
     ):
         """Initialize the registry.
@@ -110,13 +115,30 @@ class Registry(Mindtrace):
             versions_cache_ttl: TTL in seconds for the in-memory versions cache.
             use_cache: Whether to maintain a local cache for remote backends.
                 Default ``True``.
+            cache_max_entries: Maximum number of concrete object versions to keep
+                in the local cache for remote backends. Defaults to ``1024``.
+                Set to ``None`` to disable automatic LRU pruning.
+            cache_prune_buffer: Number of entries below ``cache_max_entries`` to
+                prune back to when the cache exceeds its maximum. Defaults to
+                ``min(max(cache_max_entries // 4, 1), 1024)``.
             **kwargs: Additional arguments forwarded to the backend.
         """
-        # Registry is a library-facing API; avoid leaking debug records into
-        # globally configured root handlers (e.g. ZenML import-time logging).
-        kwargs.setdefault("propagate", False)
-
         super().__init__(**kwargs)
+
+        if cache_max_entries is not None and cache_max_entries <= 0:
+            raise ValueError("cache_max_entries must be > 0 or None")
+        self._cache_max_entries = cache_max_entries
+        if cache_max_entries is None:
+            self._cache_prune_buffer = 0
+        else:
+            resolved_buffer = (
+                min(max(cache_max_entries // 4, 1), 1024) if cache_prune_buffer is None else cache_prune_buffer
+            )
+            if resolved_buffer < 0:
+                raise ValueError("cache_prune_buffer must be >= 0")
+            self._cache_prune_buffer = min(resolved_buffer, cache_max_entries - 1)
+        self._cache_lru_lock = threading.RLock()
+        self._cache_lru_estimated_entries: int | None = None
 
         is_remote = backend is not None and not isinstance(backend, (str, Path, LocalRegistryBackend))
 
@@ -263,7 +285,10 @@ class Registry(Mindtrace):
     # ─────────────────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _get_cache_dir(backend_uri: str | Path, config: Dict[str, Any] | None = None) -> Path:
+    def _get_cache_dir(
+        backend_uri: str | Path,
+        config: Dict[str, Any] | None = None,
+    ) -> Path:
         """Generate a deterministic cache directory path based on backend URI hash.
 
         Args:
@@ -338,8 +363,116 @@ class Registry(Mindtrace):
     def clear_cache(self) -> None:
         """Clear the local cache. No-op if caching is not enabled."""
         if self._cached:
-            self._cache.clear()
+            with self._cache_lru_lock:
+                self._cache.clear()
+                self._cache_lru_estimated_entries = 0
             self.logger.debug("Cleared local cache.")
+
+    def _list_cache_lru_entries(self) -> List[dict[str, Any]]:
+        """Return live cached object versions with metadata-mtime recency."""
+        entries: List[dict[str, Any]] = []
+        if not self._cached:
+            return entries
+
+        try:
+            for name in self._cache.list_objects():
+                for version in self._cache.list_versions(name):
+                    last_accessed = time.time()
+                    try:
+                        metadata_path = self._cache.backend._object_metadata_path(name, version)
+                        last_accessed = metadata_path.stat().st_mtime
+                    except Exception:
+                        pass
+                    entries.append({"name": name, "version": version, "last_accessed": last_accessed})
+        except Exception as e:
+            self.logger.debug(f"Could not list cache LRU entries: {e}")
+        return entries
+
+    def _touch_cache_entry(self, name: str, version: str) -> None:
+        """Mark a concrete cached object version as recently used via metadata mtime."""
+        if not self._cached or self._cache_max_entries is None:
+            return
+
+        try:
+            metadata_path = self._cache.backend._object_metadata_path(name, version)
+            os.utime(metadata_path, None)
+        except Exception as e:
+            self.logger.debug(f"Could not touch cache metadata for {name}@{version}: {e}")
+
+    def _count_new_cache_entries(self, entries: List[tuple[str, str]]) -> int:
+        """Return how many cache entries are not already present before a cache write."""
+        if not self._cached or self._cache_max_entries is None or not entries:
+            return 0
+
+        unique_entries = list(dict.fromkeys(entries))
+        try:
+            exists = self._cache.backend.has_object(
+                [name for name, _ in unique_entries],
+                [version for _, version in unique_entries],
+            )
+            return sum(1 for entry in unique_entries if not exists.get(entry, False))
+        except Exception as e:
+            self.logger.debug(f"Could not preflight cache entries for LRU accounting: {e}")
+            # Fall back to the previous conservative estimate. The following
+            # prune pass rebuilds from live cache contents before deleting.
+            return len(unique_entries)
+
+    def _note_cache_entries_added(self, count: int) -> None:
+        """Update the approximate cache entry count after successful new cache writes."""
+        if not self._cached or self._cache_max_entries is None or count <= 0:
+            return
+        with self._cache_lru_lock:
+            if self._cache_lru_estimated_entries is not None:
+                self._cache_lru_estimated_entries += count
+
+    def _maybe_prune_cache_lru(self) -> None:
+        """Prune only when the estimated cache size exceeds the configured maximum."""
+        if not self._cached or self._cache_max_entries is None:
+            return
+        with self._cache_lru_lock:
+            if (
+                self._cache_lru_estimated_entries is not None
+                and self._cache_lru_estimated_entries <= self._cache_max_entries
+            ):
+                return
+        self._prune_cache_lru()
+
+    def _remove_cache_lru_entries(self, entries: List[tuple[str, str]]) -> None:
+        """Update the approximate cache entry count after cache entries are removed."""
+        if not self._cached or self._cache_max_entries is None or not entries:
+            return
+
+        with self._cache_lru_lock:
+            if self._cache_lru_estimated_entries is not None:
+                self._cache_lru_estimated_entries = max(0, self._cache_lru_estimated_entries - len(set(entries)))
+
+    def _prune_cache_lru(self) -> None:
+        """Evict least-recently-used cache entries until max entry count is satisfied."""
+        if not self._cached or self._cache_max_entries is None:
+            return
+
+        with self._cache_lru_lock:
+            live_entries = self._list_cache_lru_entries()
+            pruned = 0
+            target_entries = self._cache_max_entries
+            if len(live_entries) > self._cache_max_entries:
+                target_entries = max(self._cache_max_entries - self._cache_prune_buffer, 0)
+
+            sorted_entries = sorted(live_entries, key=lambda entry: entry.get("last_accessed", 0.0))
+            while len(live_entries) > target_entries and sorted_entries:
+                entry = sorted_entries.pop(0)
+                name = entry["name"]
+                version = entry["version"]
+                try:
+                    self._cache.delete(name, version)
+                    live_entries.remove(entry)
+                    pruned += 1
+                except Exception as e:
+                    self.logger.warning(f"Error pruning cached object {name}@{version}: {e}")
+
+            self._cache_lru_estimated_entries = len(live_entries)
+            if pruned:
+                self.logger.debug(f"Pruned {pruned} registry cache entr{'y' if pruned == 1 else 'ies'}.")
 
     # ─────────────────────────────────────────────────────────────────────────
     # Core operations (cache-aware when _cached is True)
@@ -397,6 +530,8 @@ class Registry(Mindtrace):
         )
 
         # Update cache (best effort)
+        touched_cache_entries: List[tuple[str, str]] = []
+        new_cache_entries = 0
         try:
             if isinstance(name, list):
                 if isinstance(result, BatchResult):
@@ -407,17 +542,29 @@ class Registry(Mindtrace):
                         if result.results[i] is not None
                     ]
                     if to_cache:
+                        cache_entries = [(t[0], t[1]) for t in to_cache]
+                        new_cache_entries = self._count_new_cache_entries(cache_entries)
                         self._cache.save(
                             [t[0] for t in to_cache],
                             [t[2] for t in to_cache],
                             version=[t[1] for t in to_cache],
                             on_conflict=OnConflict.OVERWRITE,
                         )
+                        touched_cache_entries.extend(cache_entries)
             else:
                 if result is not None:
+                    cache_entries = [(name, result)]
+                    new_cache_entries = self._count_new_cache_entries(cache_entries)
                     self._cache.save(name, obj, version=result, on_conflict=OnConflict.OVERWRITE)
+                    touched_cache_entries.extend(cache_entries)
         except Exception as e:
             self.logger.warning(f"Error updating cache: {e}")
+
+        for cache_name, cache_version in touched_cache_entries:
+            self._touch_cache_entry(cache_name, cache_version)
+        if touched_cache_entries:
+            self._note_cache_entries_added(new_cache_entries)
+            self._maybe_prune_cache_lru()
 
         return result
 
@@ -595,11 +742,14 @@ class Registry(Mindtrace):
             if resolved_v and self._cache.has_object(name, resolved_v):
                 if not check_staleness or not self._is_cache_stale(name, resolved_v):
                     try:
-                        return self._cache.load(name, resolved_v, output_dir=output_dir, verify=verify, **kwargs)
+                        obj = self._cache.load(name, resolved_v, output_dir=output_dir, verify=verify, **kwargs)
+                        self._touch_cache_entry(name, resolved_v)
+                        return obj
                     except ValueError:
                         self.logger.debug(f"Cache corrupted for {name}@{resolved_v}, re-downloading")
                         try:
                             self._cache.delete(name, resolved_v)
+                            self._remove_cache_lru_entries([(name, resolved_v)])
                         except Exception:
                             pass
         except Exception:
@@ -612,7 +762,12 @@ class Registry(Mindtrace):
         cache_v = resolved_v or (version if version and version != "latest" else self._remote._latest(name))
         if cache_v:
             try:
+                cache_entries = [(name, cache_v)]
+                new_cache_entries = self._count_new_cache_entries(cache_entries)
                 self._cache.save(name, obj, version=cache_v, on_conflict=OnConflict.OVERWRITE)
+                self._touch_cache_entry(name, cache_v)
+                self._note_cache_entries_added(new_cache_entries)
+                self._maybe_prune_cache_lru()
             except Exception as e:
                 self.logger.warning(f"Error caching {name}: {e}")
 
@@ -668,6 +823,10 @@ class Registry(Mindtrace):
             for i in self._find_stale_indices(resolved, cached):
                 objects[i] = None  # add to misses list
 
+        for i in [i for i in pending if objects[i] is not None]:
+            cache_name, cache_version = resolved[i]
+            self._touch_cache_entry(cache_name, cache_version)
+
         # Step 3: Remote load for misses
         misses = [i for i in pending if objects[i] is None]
         if misses:
@@ -690,12 +849,18 @@ class Registry(Mindtrace):
 
             if to_cache:
                 try:
+                    cache_entries = [(t[0], t[1]) for t in to_cache]
+                    new_cache_entries = self._count_new_cache_entries(cache_entries)
                     self._cache.save(
                         [t[0] for t in to_cache],
                         [t[2] for t in to_cache],
                         version=[t[1] for t in to_cache],
                         on_conflict=OnConflict.OVERWRITE,
                     )
+                    for cache_name, cache_version, _ in to_cache:
+                        self._touch_cache_entry(cache_name, cache_version)
+                    self._note_cache_entries_added(new_cache_entries)
+                    self._maybe_prune_cache_lru()
                 except Exception as e:
                     self.logger.warning(f"Error updating cache: {e}")
 
@@ -748,6 +913,7 @@ class Registry(Mindtrace):
         try:
             names_list = name if isinstance(name, list) else [name]
             versions_list = version if isinstance(version, list) else [version] * len(names_list)
+            removed_cache_entries: List[tuple[str, str]] = []
 
             for n, v in zip(names_list, versions_list):
                 try:
@@ -755,14 +921,17 @@ class Registry(Mindtrace):
                         for ver in self._cache.list_versions(n):
                             try:
                                 self._cache.delete(n, ver)
+                                removed_cache_entries.append((n, ver))
                             except Exception:
                                 pass
                     else:
                         resolved_v = v if v != "latest" else self._cache._latest(n)
                         if resolved_v and self._cache.has_object(n, resolved_v):
                             self._cache.delete(n, resolved_v)
+                            removed_cache_entries.append((n, resolved_v))
                 except Exception:
                     pass
+            self._remove_cache_lru_entries(removed_cache_entries)
         except Exception as e:
             self.logger.warning(f"Error deleting from cache: {e}")
 
@@ -776,7 +945,9 @@ class Registry(Mindtrace):
         """
         if self._cached:
             self._remote.clear(clear_registry_metadata)
-            self._cache.clear()
+            with self._cache_lru_lock:
+                self._cache.clear()
+                self._cache_lru_estimated_entries = 0
         else:
             self._core.clear(clear_registry_metadata)
 
