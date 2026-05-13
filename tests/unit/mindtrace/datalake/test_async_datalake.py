@@ -83,95 +83,6 @@ class TestAsyncDatalakeUnit:
         assert path.parent == Path("~/.cache/mindtrace/temp").expanduser()
         assert path.name.startswith("datalake-")
 
-    @pytest.fixture(autouse=True)
-    def _mock_motor_client(self):
-        """Stub ``AsyncIOMotorClient`` so AsyncDatalake's shared client never tries to talk to a real Mongo."""
-        with patch("mindtrace.datalake.async_datalake.AsyncIOMotorClient") as mock_cls:
-            mock_cls.return_value = MagicMock()
-            yield mock_cls
-
-    @pytest.fixture
-    def mock_odm(self):
-        mock = AsyncMock()
-        mock.initialize = AsyncMock(side_effect=lambda *args, **kwargs: setattr(mock, "_is_initialized", True))
-        mock.insert = AsyncMock(side_effect=lambda obj: obj)
-        mock.find = AsyncMock(return_value=[])
-        mock.find_iter = AsyncMock()
-        mock.find_window = AsyncMock(return_value=[])
-        mock.count_documents = AsyncMock(return_value=0)
-        mock.update = AsyncMock(side_effect=lambda obj: obj)
-        mock.delete = AsyncMock()
-        mock.client = MagicMock()
-        mock.client.drop_database = AsyncMock()
-        mock.close = MagicMock()
-        mock._is_initialized = False
-        return mock
-
-    @pytest.fixture
-    def mock_store(self):
-        store = MagicMock()
-        store.default_mount = "temp"
-        store.list_mount_info.return_value = {
-            "temp": {
-                "read_only": False,
-                "backend": "file:///tmp/mindtrace-store-test",
-                "version_objects": False,
-                "mutable": True,
-                "version_digits": 6,
-            },
-            "nas": {
-                "read_only": False,
-                "backend": "file:///tmp/mindtrace-nas",
-                "version_objects": False,
-                "mutable": True,
-                "version_digits": 6,
-            },
-            "archive": {
-                "read_only": False,
-                "backend": "file:///tmp/mindtrace-archive",
-                "version_objects": False,
-                "mutable": True,
-                "version_digits": 6,
-            },
-        }
-        mounts = {mount: MagicMock() for mount in store.list_mount_info.return_value}
-        for mount in mounts.values():
-            mount.registry = MagicMock()
-            mount.registry.clear = MagicMock()
-        store.has_mount.side_effect = lambda mount: mount in store.list_mount_info.return_value
-        store.list_mounts.side_effect = lambda: sorted(store.list_mount_info.return_value.keys())
-        store.get_mount.side_effect = lambda mount: mounts[mount]
-        store.clear_location_cache = MagicMock()
-        store.build_key.side_effect = lambda mount, name, version=None: (
-            f"{mount}/{name}" if version is None else f"{mount}/{name}@{version}"
-        )
-        store.save.return_value = "v1"
-        store.copy.return_value = "v2"
-        store.load.return_value = b"payload"
-        store.info.return_value = {"size": 123}
-        store.has_object.return_value = True
-        store.create_direct_upload_target.return_value = {
-            "upload_method": "local_path",
-            "upload_url": None,
-            "upload_path": "/tmp/direct-upload/data.txt",
-            "upload_headers": {},
-            "staged_target": {"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
-        }
-        store.inspect_direct_upload_target.return_value = {"exists": True, "size_bytes": 7}
-        store.commit_direct_upload.return_value = "v5"
-        store.cleanup_direct_upload_target.return_value = True
-        return store
-
-    @pytest.fixture
-    def async_datalake(self, mock_odm, mock_store):
-        with patch("mindtrace.datalake.async_datalake.MongoMindtraceODM", return_value=mock_odm):
-            return AsyncDatalake(
-                "mongodb://test:27017",
-                "test_db",
-                store=mock_store,
-                slow_ops_policy=SlowOpsPolicy.ALLOW,
-            )
-
     def test_init_raises_when_store_and_mounts_both_provided(self, mock_store):
         with pytest.raises(ValueError, match="Provide either store or mounts, not both"):
             AsyncDatalake("mongodb://test:27017", "test_db", store=mock_store, mounts=[MagicMock()])
@@ -214,8 +125,7 @@ class TestAsyncDatalakeUnit:
 
     @pytest.mark.asyncio
     async def test_create_classmethod_initializes_instance(self, mock_odm, mock_store):
-        with patch("mindtrace.datalake.async_datalake.MongoMindtraceODM", return_value=mock_odm):
-            created = await AsyncDatalake.create("mongodb://test:27017", "test_db", store=mock_store)
+        created = await AsyncDatalake.create("mongodb://test:27017", "test_db", store=mock_store)
         assert isinstance(created, AsyncDatalake)
         assert created.store == mock_store
         assert mock_odm.initialize.await_count == len(created._all_odms())
@@ -264,27 +174,24 @@ class TestAsyncDatalakeUnit:
         mock_store.clear_location_cache.assert_called_once_with()
 
     def test_init_defaults_slow_ops_policy_to_warn(self, mock_odm, mock_store):
-        with patch("mindtrace.datalake.async_datalake.MongoMindtraceODM", return_value=mock_odm):
-            datalake = AsyncDatalake("mongodb://test:27017", "test_db", store=mock_store)
+        datalake = AsyncDatalake("mongodb://test:27017", "test_db", store=mock_store)
 
         assert datalake.slow_ops_policy == SlowOpsPolicy.WARN
 
     @pytest.mark.asyncio
     async def test_guard_slow_list_operation_warns_or_forbids(self, mock_odm, mock_store):
-        with patch("mindtrace.datalake.async_datalake.MongoMindtraceODM", return_value=mock_odm):
-            warn_datalake = AsyncDatalake(
-                "mongodb://test:27017",
-                "test_db",
-                store=mock_store,
-                slow_ops_policy=SlowOpsPolicy.WARN,
-            )
-            forbid_datalake = AsyncDatalake(
-                "mongodb://test:27017",
-                "test_db",
-                store=mock_store,
-                slow_ops_policy=SlowOpsPolicy.FORBID,
-            )
-
+        warn_datalake = AsyncDatalake(
+            "mongodb://test:27017",
+            "test_db",
+            store=mock_store,
+            slow_ops_policy=SlowOpsPolicy.WARN,
+        )
+        forbid_datalake = AsyncDatalake(
+            "mongodb://test:27017",
+            "test_db",
+            store=mock_store,
+            slow_ops_policy=SlowOpsPolicy.FORBID,
+        )
         with pytest.warns(SlowOperationWarning, match="list_assets\\(\\).*iter_assets\\(\\) or list_assets_page\\(\\)"):
             assert await warn_datalake.list_assets() == []
 
@@ -2740,7 +2647,6 @@ class TestAsyncDatalakeUnit:
     @pytest.mark.asyncio
     async def test_async_context_manager_closes_on_exit(self, mock_odm, mock_store, _mock_motor_client):
         """`async with AsyncDatalake(...)` closes on exit."""
-        with patch("mindtrace.datalake.async_datalake.MongoMindtraceODM", return_value=mock_odm):
-            async with AsyncDatalake("mongodb://test:27017", "test_db", store=mock_store) as dl:
-                shared_client = dl._mongo_client
+        async with AsyncDatalake("mongodb://test:27017", "test_db", store=mock_store) as dl:
+            shared_client = dl._mongo_client
         shared_client.close.assert_called_once()
