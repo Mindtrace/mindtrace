@@ -324,7 +324,7 @@ class ClusterManager(Gateway):
         job_status = cluster_types.JobStatus(
             job_id=job.id, status=cluster_types.JobStatusEnum.RUNNING, output={}, worker_id=endpoint, job=job
         )
-        endpoint_url = f"{self._url}{endpoint}"
+        endpoint_url = f"{str(self._url).rstrip('/')}/{endpoint.lstrip('/')}"
         self.job_status_database.insert(job_status)
         self.logger.info(f"Submitted job {job.id} to {endpoint_url}")
 
