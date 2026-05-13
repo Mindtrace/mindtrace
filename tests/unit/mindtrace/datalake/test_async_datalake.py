@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from datalake_unit_mongo_uri import DATALAKE_UNIT_MONGO_URI
 from export_test_utils import (
     png_bytes as export_fixture_png_bytes,
 )
@@ -92,7 +93,7 @@ class TestAsyncDatalakeUnit:
 
     def test_init_raises_when_store_and_mounts_both_provided(self, mock_store):
         with pytest.raises(ValueError, match="Provide either store or mounts, not both"):
-            AsyncDatalake("DATALAKE_UNIT_MONGO_URI", "test_db", store=mock_store, mounts=[MagicMock()])
+            AsyncDatalake(DATALAKE_UNIT_MONGO_URI, "test_db", store=mock_store, mounts=[MagicMock()])
 
     def test_init_builds_store_from_mounts(self, mock_odm):
         fake_store = MagicMock()
@@ -100,7 +101,7 @@ class TestAsyncDatalakeUnit:
             patch("mindtrace.datalake.async_datalake.MongoMindtraceODM", return_value=mock_odm),
             patch("mindtrace.datalake.async_datalake.Store.from_mounts", return_value=fake_store) as from_mounts,
         ):
-            datalake = AsyncDatalake("DATALAKE_UNIT_MONGO_URI", "test_db", mounts=[MagicMock()], default_mount="nas")
+            datalake = AsyncDatalake(DATALAKE_UNIT_MONGO_URI, "test_db", mounts=[MagicMock()], default_mount="nas")
         assert datalake.store == fake_store
         from_mounts.assert_called_once()
 
@@ -114,9 +115,9 @@ class TestAsyncDatalakeUnit:
             ) as default_path,
             patch("mindtrace.datalake.async_datalake.Store.from_mounts", return_value=fake_store) as from_mounts,
         ):
-            datalake = AsyncDatalake("DATALAKE_UNIT_MONGO_URI", "test_db", default_mount="nas")
+            datalake = AsyncDatalake(DATALAKE_UNIT_MONGO_URI, "test_db", default_mount="nas")
         assert datalake.store == fake_store
-        default_path.assert_called_once_with("DATALAKE_UNIT_MONGO_URI", "test_db")
+        default_path.assert_called_once_with(DATALAKE_UNIT_MONGO_URI, "test_db")
         fake_path.mkdir.assert_called_once_with(parents=True, exist_ok=True)
         from_mounts.assert_called_once()
         mounts = from_mounts.call_args.args[0]
@@ -132,7 +133,7 @@ class TestAsyncDatalakeUnit:
 
     @pytest.mark.asyncio
     async def test_create_classmethod_initializes_instance(self, mock_odm, mock_store):
-        created = await AsyncDatalake.create("DATALAKE_UNIT_MONGO_URI", "test_db", store=mock_store)
+        created = await AsyncDatalake.create(DATALAKE_UNIT_MONGO_URI, "test_db", store=mock_store)
         assert isinstance(created, AsyncDatalake)
         assert created.store == mock_store
         assert mock_odm.initialize.await_count == len(created._all_odms())
@@ -181,20 +182,20 @@ class TestAsyncDatalakeUnit:
         mock_store.clear_location_cache.assert_called_once_with()
 
     def test_init_defaults_slow_ops_policy_to_warn(self, mock_odm, mock_store):
-        datalake = AsyncDatalake("DATALAKE_UNIT_MONGO_URI", "test_db", store=mock_store)
+        datalake = AsyncDatalake(DATALAKE_UNIT_MONGO_URI, "test_db", store=mock_store)
 
         assert datalake.slow_ops_policy == SlowOpsPolicy.WARN
 
     @pytest.mark.asyncio
     async def test_guard_slow_list_operation_warns_or_forbids(self, mock_odm, mock_store):
         warn_datalake = AsyncDatalake(
-            "DATALAKE_UNIT_MONGO_URI",
+            DATALAKE_UNIT_MONGO_URI,
             "test_db",
             store=mock_store,
             slow_ops_policy=SlowOpsPolicy.WARN,
         )
         forbid_datalake = AsyncDatalake(
-            "DATALAKE_UNIT_MONGO_URI",
+            DATALAKE_UNIT_MONGO_URI,
             "test_db",
             store=mock_store,
             slow_ops_policy=SlowOpsPolicy.FORBID,
@@ -2654,7 +2655,7 @@ class TestAsyncDatalakeUnit:
     @pytest.mark.asyncio
     async def test_async_context_manager_closes_on_exit(self, mock_odm, mock_store, _mock_motor_client):
         """`async with AsyncDatalake(...)` closes on exit."""
-        async with AsyncDatalake("DATALAKE_UNIT_MONGO_URI", "test_db", store=mock_store) as dl:
+        async with AsyncDatalake(DATALAKE_UNIT_MONGO_URI, "test_db", store=mock_store) as dl:
             shared_client = dl._mongo_client
         shared_client.close.assert_called_once()
 
@@ -2742,8 +2743,8 @@ def alias_datalake_fixture():
 
     store = _alias_fixture_make_store()
     with patch("mindtrace.datalake.async_datalake.MongoMindtraceODM", side_effect=mongo_odm):
-        dl = AsyncDatalake("DATALAKE_UNIT_MONGO_URI", "test_db", store=store)
-    return dl, asset_db, alias_db
+        dl = AsyncDatalake(DATALAKE_UNIT_MONGO_URI, "test_db", store=store)
+        yield dl, asset_db, alias_db
 
 
 class TestAsyncDatalakeRowLevelAliases:
