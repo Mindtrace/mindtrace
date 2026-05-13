@@ -246,6 +246,10 @@ def get_logger(
     caller_provided_kwargs = bool(kwargs)
     kwargs.setdefault("propagate", True)
 
+    # Resolve config-driven defaults up front so child-logger shortcuts honor
+    # MINDTRACE_LOGGER__USE_STRUCTLOG instead of silently falling through to stdlib.
+    use_structlog = ifnone(use_structlog, Config().MINDTRACE_LOGGER.USE_STRUCTLOG)
+
     # Ensure the root "mindtrace" logger exists so propagated messages have a handler.
     root = logging.getLogger("mindtrace")
     if not root.handlers and full_name != "mindtrace":
