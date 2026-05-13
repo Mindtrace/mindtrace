@@ -697,3 +697,31 @@ class TestPerModuleFilesFlag:
         per_module_log = tmp_path / "modules" / "mindtrace.per_module_propagate.log"
         assert root_log.exists() and "propagated message" in root_log.read_text()
         assert per_module_log.exists() and "propagated message" in per_module_log.read_text()
+
+
+class TestUseStructlogConfigDefault:
+    """Child loggers should honor MINDTRACE_LOGGER__USE_STRUCTLOG without an explicit kwarg."""
+
+    _MANAGED_NAMES = ("mindtrace", "mindtrace.structlog_default_child")
+
+    @pytest.fixture(autouse=True)
+    def _isolate_logger_state(self):
+        snapshots = {n: list(logging.getLogger(n).handlers) for n in self._MANAGED_NAMES}
+        for name in self._MANAGED_NAMES:
+            logging.getLogger(name).handlers = []
+        yield
+        for name, handlers in snapshots.items():
+            logging.getLogger(name).handlers = list(handlers)
+
+    def test_child_logger_picks_up_structlog_from_config(self, tmp_path, monkeypatch):
+        """With USE_STRUCTLOG enabled via env, a no-kwargs child returns a structlog-bound logger."""
+        monkeypatch.setenv("MINDTRACE_DIR_PATHS__LOGGER_DIR", str(tmp_path))
+        monkeypatch.setenv("MINDTRACE_DIR_PATHS__STRUCT_LOGGER_DIR", str(tmp_path))
+        monkeypatch.setenv("MINDTRACE_LOGGER__USE_STRUCTLOG", "true")
+
+        logger = get_logger("mindtrace.structlog_default_child")
+
+        # A structlog-bound logger supports .bind(); a plain stdlib Logger does not.
+        assert not isinstance(logger, logging.Logger)
+        assert hasattr(logger, "bind")
+        assert callable(logger.bind)
