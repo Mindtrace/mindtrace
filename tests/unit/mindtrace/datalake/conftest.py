@@ -7,10 +7,24 @@ everything under ``tests/unit/mindtrace/datalake/``.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Allow ``import export_test_utils`` from exporters/ test modules (mirror layout sibling package).
+_DL_SUITE_ROOT = Path(__file__).resolve().parent
+_EXPORTERS_SUITE_ROOT_STR = str(_DL_SUITE_ROOT / "exporters")
+_DL_SUITE_ROOT_STR = str(_DL_SUITE_ROOT)
+if _EXPORTERS_SUITE_ROOT_STR not in sys.path:
+    sys.path.insert(0, _EXPORTERS_SUITE_ROOT_STR)
+# Append (not prepend) suite root so ``export_test_utils`` still resolves inside ``exporters/``.
+if _DL_SUITE_ROOT_STR not in sys.path:
+    sys.path.append(_DL_SUITE_ROOT_STR)
+
 from contextlib import ExitStack
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from datalake_unit_mongo_uri import DATALAKE_UNIT_MONGO_URI
 
 from mindtrace.datalake import AsyncDatalake
 from mindtrace.datalake.async_datalake import SlowOpsPolicy
@@ -120,7 +134,7 @@ def async_datalake(mock_odm, mock_store, _patch_mongo_odm_aliases):
     # ``_patch_mongo_odm_aliases`` pulls autouse Mongo ODM patches in before construct.
     # (Otherwise pytest may build this fixture before those patches activate.)
     return AsyncDatalake(
-        "mongodb://test:27017",
+        DATALAKE_UNIT_MONGO_URI,
         "test_db",
         store=mock_store,
         slow_ops_policy=SlowOpsPolicy.ALLOW,
