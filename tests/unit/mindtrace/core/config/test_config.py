@@ -33,6 +33,17 @@ class TestConfigModel:
         with pytest.raises(AttributeError):
             m["nonexistent"]
 
+    def test_setitem(self):
+        """Test dict-style assignment via __setitem__."""
+
+        class MyModel(ConfigModel):
+            name: str = "test"
+
+        m = MyModel()
+        m["name"] = "updated"
+        assert m.name == "updated"
+        assert m["name"] == "updated"
+
     def test_get_with_default(self):
         """Test .get() with fallback default."""
 
@@ -169,6 +180,11 @@ class TestConfigDictAccess:
         with patch.dict(os.environ, {"MINDTRACE_TEST_PARAM": "from_env"}):
             settings = Config()
             assert settings.MINDTRACE_TEST_PARAM == "from_env"
+
+    def test_init_with_positional_settings_dict(self):
+        """Config accepts a positional dict that is merged into init kwargs."""
+        settings = Config({"MINDTRACE_TEST_PARAM": "from_positional"})
+        assert settings.MINDTRACE_TEST_PARAM == "from_positional"
 
     def test_tilde_expansion_in_paths(self):
         """Test that ~ is expanded in directory paths."""

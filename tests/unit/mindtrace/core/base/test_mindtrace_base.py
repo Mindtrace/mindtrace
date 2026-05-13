@@ -57,6 +57,20 @@ class TestDescriptors:
         assert isinstance(instance.logger, logging.Logger)
         assert isinstance(TestClass.logger, logging.Logger)
 
+    def test_instance_logger_override_can_be_cleared(self):
+        """Clearing a per-instance logger reverts access to the class-level default."""
+
+        class TestClass(Mindtrace):
+            pass
+
+        instance = TestClass()
+        instance.logger = logging.getLogger("custom_override")
+        assert instance.logger.name == "custom_override"
+
+        del instance.logger
+        assert "custom_override" not in instance.logger.name
+        assert "TestClass" in instance.logger.name
+
     def test_class_level_config(self):
         """cls.config lazily creates a CoreConfig."""
 
