@@ -73,7 +73,7 @@ cd tests
 docker-compose up -d
 
 # Test service functionality with pytest
-pytest tests/utils/pypylon/test_service.py -v
+pytest tests/utils/pypylon/test_utils_pypylon_service.py -v
 
 # Expected output:
 # === pypylon Service Test ===
@@ -196,7 +196,7 @@ docker-compose ps
 ls -la /tmp/pypylon/
 
 # Test service directly with pytest
-pytest tests/utils/pypylon/test_service.py -v
+pytest tests/utils/pypylon/test_utils_pypylon_service.py -v
 ```
 
 ### Performance Issues
