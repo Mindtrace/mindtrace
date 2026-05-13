@@ -49,6 +49,13 @@ class TestTrackOperationContextManager:
             assert log is not None
             # In context manager mode, user is responsible for their own timeout handling
 
+    @pytest.mark.asyncio
+    async def test_context_manager_resolves_default_logger(self):
+        """When neither logger nor logger_name is given, a default logger is resolved automatically."""
+        async with track_operation("auto_resolved_op") as log:
+            assert log is not None
+            assert hasattr(log, "log")
+
 
 class TestTrackOperationDecorator:
     """Test track_operation as decorator."""
@@ -457,6 +464,44 @@ class TestTrackOperationWithStdlibLogger:
         from mindtrace.core.logging.logger import _wrap_if_stdlib
 
         assert _wrap_if_stdlib(structlog_logger) is structlog_logger
+
+    def test_unrecognized_logger_object_passes_through_unchanged(self):
+        """Objects that are neither structlog nor stdlib loggers are returned untouched."""
+        from mindtrace.core.logging.logger import _wrap_if_stdlib
+
+        class Sink:
+            def info(self, *args, **kwargs):
+                pass
+
+        sink = Sink()
+        assert _wrap_if_stdlib(sink) is sink
+
+    def test_stdlib_logger_bound_in_context_manager_supports_full_api(self, caplog: pytest.LogCaptureFixture):
+        """Inside an async track_operation block, a stdlib-backed bound logger exposes the standard log methods."""
+        stdlib_logger = logging.getLogger("stdlib_binder_api")
+
+        async def run():
+            async with track_operation("op", logger=stdlib_logger) as bound:
+                bound.info("info_event", note="hi")
+                bound.debug("debug_event")
+                bound.warning("warning_event")
+                try:
+                    raise RuntimeError("boom")
+                except RuntimeError:
+                    bound.exception("exc_event")
+
+        with caplog.at_level(logging.DEBUG, logger="stdlib_binder_api"):
+            asyncio.run(run())
+
+        events = {r.message for r in caplog.records}
+        assert {"info_event", "debug_event", "warning_event", "exc_event"} <= events
+
+        info_rec = next(r for r in caplog.records if r.message == "info_event")
+        assert info_rec.note == "hi"
+
+        exc_rec = next(r for r in caplog.records if r.message == "exc_event")
+        assert exc_rec.exc_info is not None
+        assert exc_rec.exc_info[0] is RuntimeError
 
 
 class TestTrackOperationLoggerNameFallback:
