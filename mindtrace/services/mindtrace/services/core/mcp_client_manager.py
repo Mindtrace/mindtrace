@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Type
 
-from fastmcp import Client
 from urllib3.util.url import Url
 
 if TYPE_CHECKING:  # pragma: no cover
+    from fastmcp import Client
+
     from mindtrace.services import Service
 
 
@@ -45,6 +48,8 @@ class MCPClientManager:
                 tools = await mcp_client.list_tools()
                 print(f"Available tools: {tools}")
         """
+        from fastmcp import Client
+
         # Build the URL with priority logic
         service_url = self.service_cls.build_url(url=url)
         # Build MCP URL from centralized class helper
@@ -79,6 +84,8 @@ class MCPClientManager:
                 tools = await mcp_client.list_tools()
                 print(f"Available tools: {tools}")
         """
+        from fastmcp import Client
+
         connection_manager = self.service_cls.launch(**launch_kwargs)
         mcp_mount_path, mcp_http_app_path = self.service_cls.get_mcp_paths()
         mcp_url = f"{str(connection_manager.url).rstrip('/')}{mcp_mount_path}{mcp_http_app_path}"

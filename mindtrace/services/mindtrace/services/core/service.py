@@ -1,5 +1,7 @@
 """Service base class. Provides unified methods for all Mindtrace (micro)services."""
 
+from __future__ import annotations
+
 import atexit
 import json
 import logging
@@ -19,7 +21,6 @@ import fastapi
 import psutil
 import requests
 from fastapi import FastAPI, HTTPException
-from fastmcp import FastMCP
 from urllib3.util.url import Url, parse_url
 
 from mindtrace.core import Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url, named_lambda
@@ -104,6 +105,8 @@ class Service(Mindtrace):
 
         description = str(ifnone(description, default=f"{self.name} server."))
         version_str = "Mindtrace " + version("mindtrace-services")
+
+        from fastmcp import FastMCP
 
         self.mcp = FastMCP(
             name=re.sub(r"server", "mcp server", description, flags=re.IGNORECASE),

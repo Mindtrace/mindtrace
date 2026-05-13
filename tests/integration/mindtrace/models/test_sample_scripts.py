@@ -25,10 +25,11 @@ _REPO_ROOT = str(_SAMPLES_DIR.parents[1])
 _TIMEOUT = 120
 _MAX_WORKERS = 4
 
+# Skip MLflow's uv-project auto-detection — `uv export` is slow on this monorepo.
+_ENV: dict[str, str] = {**os.environ, "MLFLOW_UV_AUTO_DETECT": "false"}
 # Skip the ~2-3 s CUDA probe per subprocess on GPU-less CI runners.
-_ENV: dict[str, str] | None = None
 if not torch.cuda.is_available():
-    _ENV = {**os.environ, "CUDA_VISIBLE_DEVICES": ""}
+    _ENV["CUDA_VISIBLE_DEVICES"] = ""
 
 
 def _run_script(script: Path) -> tuple[Path, subprocess.CompletedProcess[str]]:
