@@ -1,7 +1,7 @@
 import asyncio
 import threading
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -40,7 +40,7 @@ class TestDatalakeSyncFacade:
     def test_init_with_existing_async_datalake_and_loop(self):
         backend = MagicMock()
         backend.store = MagicMock()
-        backend.mongo_db_uri = "mongodb://test:27017"
+        backend.mongo_db_uri = "DATALAKE_UNIT_MONGO_URI"
         backend.mongo_db_name = "test_db"
         backend.slow_ops_policy = SlowOpsPolicy.FORBID
         loop = asyncio.new_event_loop()
@@ -49,7 +49,7 @@ class TestDatalakeSyncFacade:
             assert datalake._backend is backend
             assert datalake._loop is loop
             assert datalake.store is backend.store
-            assert datalake.mongo_db_uri == "mongodb://test:27017"
+            assert datalake.mongo_db_uri == "DATALAKE_UNIT_MONGO_URI"
             assert datalake.mongo_db_name == "test_db"
             assert datalake.slow_ops_policy == SlowOpsPolicy.FORBID
         finally:
@@ -60,10 +60,10 @@ class TestDatalakeSyncFacade:
             patch.object(Datalake, "__init__", return_value=None) as init_mock,
             patch.object(Datalake, "initialize", return_value=None) as initialize_mock,
         ):
-            result = Datalake.create("mongodb://test:27017", "test_db")
+            result = Datalake.create("DATALAKE_UNIT_MONGO_URI", "test_db")
 
         init_mock.assert_called_once_with(
-            mongo_db_uri="mongodb://test:27017",
+            mongo_db_uri="DATALAKE_UNIT_MONGO_URI",
             mongo_db_name="test_db",
             store=None,
             mounts=None,
@@ -83,7 +83,7 @@ class TestDatalakeSyncFacade:
             "default_mount": "temp",
             "mounts": [{"name": "temp", "backend": "file:///tmp", "mutable": True}],
         }
-        backend.mongo_db_uri = "mongodb://test:27017"
+        backend.mongo_db_uri = "DATALAKE_UNIT_MONGO_URI"
         backend.mongo_db_name = "test_db"
         upload_session = DirectUploadSession(
             upload_session_id="upload_session_1",
@@ -747,3 +747,20 @@ class TestDatalakeSyncFacade:
 
         assert datalake.get_asset_payload("asset_1", mmap=True) == b"asset-payload"
         mock_backend.get_asset_payload.assert_awaited_once_with("asset_1", mmap=True)
+
+    def test_export_dataset_version_to_format_delegates_to_async_backend(self, tmp_path):
+        datalake = object.__new__(Datalake)
+        datalake._backend = Mock()
+        datalake._submit_coro = Mock(return_value="exported")
+
+        result = Datalake.export_dataset_version_to_format(
+            datalake,
+            "dataset-a",
+            "1.0.0",
+            format="huggingface",
+            destination=tmp_path / "hf",
+        )
+
+        assert result == "exported"
+        datalake._backend.export_dataset_version_to_format.assert_called_once()
+        datalake._submit_coro.assert_called_once()
