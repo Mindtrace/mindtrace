@@ -6,6 +6,8 @@ from mindtrace.core.observables.event_bus import EventBus
 from mindtrace.core.observables.observable_context import ObservableContext
 from mindtrace.core.samples.echo_task import EchoInput, EchoOutput, echo_task
 from mindtrace.core.testing import (
+    BenchSuiteConfig,
+    BenchTestSuite,
     ProgressEvent,
     RunOutcome,
     SuiteContribution,
@@ -13,6 +15,7 @@ from mindtrace.core.testing import (
     TestRunner,
     TestSuite,
     UnknownSuiteIdError,
+    build_bench_suite_config,
     validate_suite_id,
 )
 from mindtrace.core.types.task_schema import TaskSchema
@@ -40,6 +43,8 @@ from mindtrace.core.utils.timers import Timeout, Timer, TimerCollection
 setup_logger()  # Initialize the default logger
 
 __all__ = [
+    "BenchSuiteConfig",
+    "BenchTestSuite",
     "ProgressEvent",
     "RunOutcome",
     "SuiteContribution",
@@ -47,6 +52,7 @@ __all__ = [
     "TestRunner",
     "TestSuite",
     "UnknownSuiteIdError",
+    "build_bench_suite_config",
     "validate_suite_id",
     "check_libs",
     "check_port_available",
