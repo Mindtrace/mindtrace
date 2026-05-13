@@ -123,10 +123,6 @@ class Registry(Mindtrace):
                 ``min(max(cache_max_entries // 4, 1), 1024)``.
             **kwargs: Additional arguments forwarded to the backend.
         """
-        # Registry is a library-facing API; avoid leaking debug records into
-        # globally configured root handlers (e.g. ZenML import-time logging).
-        kwargs.setdefault("propagate", False)
-
         super().__init__(**kwargs)
 
         if cache_max_entries is not None and cache_max_entries <= 0:
