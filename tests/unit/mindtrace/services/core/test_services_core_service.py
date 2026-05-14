@@ -676,7 +676,7 @@ class TestServiceLaunchExceptionHandling:
 
         # Create a mock logger and patch it at the class level
         mock_logger = Mock()
-        with patch.object(type(Service), "logger", mock_logger, create=True):
+        with patch.object(Service, "logger", mock_logger, create=True):
             with pytest.raises(RuntimeError, match="Connection failed"):
                 Service.launch()
 
@@ -866,7 +866,7 @@ class TestServiceCleanupMethods:
 
         try:
             mock_logger = Mock()
-            with patch.object(type(Service), "logger", mock_logger, create=True):
+            with patch.object(Service, "logger", mock_logger, create=True):
                 # Should handle NoSuchProcess exception gracefully
                 Service._cleanup_server(test_uuid)
 

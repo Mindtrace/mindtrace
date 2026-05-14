@@ -36,20 +36,13 @@ class TestAddEndpoint:
         def test_func():
             return {"test": "response"}
 
-        with patch("mindtrace.services.core.utils.Mindtrace") as mock_mindtrace:
-            mock_autolog = Mock()
-            mock_mindtrace.autolog.return_value = mock_autolog
-            mock_autolog.return_value = test_func
+        decorator(test_func)
 
-            # Apply decorator
-            _ = decorator(test_func)
-
-            # Verify Mindtrace.autolog was called correctly
-            mock_mindtrace.autolog.assert_called_once_with(self=mock_server)
-            mock_autolog.assert_called_once_with(test_func)
-
-            # Verify add_api_route was called (note: the actual implementation adds "//test")
-            mock_app.add_api_route.assert_called_once_with("//test", endpoint=test_func, methods=["POST"])
+        # The endpoint passed to add_api_route is the track_operation-wrapped callable,
+        # so identity-check the surrounding call rather than the endpoint object itself.
+        mock_app.add_api_route.assert_called_once_with("//test", endpoint=ANY, methods=["POST"])
+        wrapped = mock_app.add_api_route.call_args.kwargs["endpoint"]
+        assert wrapped.__wrapped__ is test_func
 
     def test_add_endpoint_with_leading_slash(self):
         """Test add_endpoint removes leading slash from path."""
@@ -78,17 +71,14 @@ class TestAddEndpoint:
         def test_func():
             return {}
 
-        with patch("mindtrace.services.core.utils.Mindtrace") as mock_mindtrace:
-            mock_autolog = Mock()
-            mock_mindtrace.autolog.return_value = mock_autolog
-            mock_autolog.return_value = test_func
+        decorator(test_func)
 
-            decorator(test_func)
-
-            # Verify kwargs were passed
-            mock_app.add_api_route.assert_called_once_with(
-                "//test", endpoint=test_func, methods=["POST"], tags=["test"], summary="Test endpoint"
-            )
+        # Verify kwargs were passed; endpoint is the track_operation-wrapped callable.
+        mock_app.add_api_route.assert_called_once_with(
+            "//test", endpoint=ANY, methods=["POST"], tags=["test"], summary="Test endpoint"
+        )
+        wrapped = mock_app.add_api_route.call_args.kwargs["endpoint"]
+        assert wrapped.__wrapped__ is test_func
 
     def test_add_endpoint_multiple_calls(self):
         """Test multiple add_endpoint calls accumulate in _endpoints."""
