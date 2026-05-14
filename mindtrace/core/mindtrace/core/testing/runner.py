@@ -7,7 +7,7 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from typing import Any, TypeVar
 
-from mindtrace.core.types.task_schema import _pydantic_json_schema
+from mindtrace.core.types.task_schema import pydantic_model_json_schema
 from mindtrace.core.testing.test_suite import TestSuite
 from mindtrace.core.testing.types import (
     OverallStatus,
@@ -92,7 +92,7 @@ class TestRunner:
             payload = contrib.task_schema.to_json_schema_payload()
             task_schema = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
         resource_json_schema = (
-            _pydantic_json_schema(contrib.resource_schema) if contrib.resource_schema is not None else None
+            pydantic_model_json_schema(contrib.resource_schema) if contrib.resource_schema is not None else None
         )
         return SuiteSchema(
             suite_id=contrib.id,
