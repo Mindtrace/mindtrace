@@ -87,10 +87,7 @@ class TestRunner:
         """Return REST-friendly metadata and task/resource schemas for one suite."""
 
         contrib = cls.get_contribution(suite_id)
-        task_schema = None
-        if contrib.task_schema is not None:
-            payload = contrib.task_schema.to_json_schema_payload()
-            task_schema = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+        task_schema = contrib.task_schema.to_json_schema() if contrib.task_schema is not None else None
         resource_json_schema = (
             pydantic_model_json_schema(contrib.resource_schema) if contrib.resource_schema is not None else None
         )
