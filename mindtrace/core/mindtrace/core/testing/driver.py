@@ -12,11 +12,12 @@ from mindtrace.core.testing.runner import TestRunner
 from mindtrace.core.testing.types import ProgressEvent, SuiteContribution, SuiteExecutionResult
 
 
-def suite_ids_for_profile(profile: str) -> list[str]:
+def suite_ids_for_profile(profile: str, *, runner: TestRunner | None = None) -> list[str]:
     """Return registered suite IDs whose tags include ``profile`` (``smoke`` or ``stress``)."""
 
     tag = profile.lower().strip()
-    return TestRunner.list_suite_ids(tags={tag})
+    target = runner or TestRunner.default()
+    return target.list_suite_ids(tags={tag})
 
 
 def run_registered_benches(
@@ -29,15 +30,17 @@ def run_registered_benches(
     cancellation_token: Any | None = None,
     output_dir: Path | None = None,
     keep_resources: bool = False,
+    runner: TestRunner | None = None,
 ) -> tuple[list[BenchResult], list[SuiteExecutionResult]]:
     """Run each suite ID with timing/profile resolved from its :class:`SuiteContribution`."""
 
+    target = runner or TestRunner.default()
     rows: list[SuiteExecutionResult] = []
     bench_rows: list[BenchResult] = []
     merged_resources = dict(resources or {})
 
     for sid in suite_ids:
-        contrib = TestRunner.get_contribution(sid)
+        contrib = target.get_contribution(sid)
         cfg = build_bench_suite_config(
             contrib,
             profile=profile,
