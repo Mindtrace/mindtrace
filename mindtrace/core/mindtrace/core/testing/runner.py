@@ -9,6 +9,7 @@ from typing import Any, Generic, Type, TypeVar
 
 from pydantic import BaseModel
 
+from mindtrace.core.base import Mindtrace
 from mindtrace.core.types.task_schema import TaskSchema
 from mindtrace.core.testing.test_suite import TestSuite
 from mindtrace.core.testing.types import (
@@ -62,7 +63,7 @@ class _dualmethod(Generic[_T]):
         return self.func.__get__(target, cls)  # type: ignore[union-attr, return-value]
 
 
-class TestRunner:
+class TestRunner(Mindtrace):
     """Registry and runner for Mindtrace test/benchmark suites.
 
     Instances own isolated registries. Calling methods on ``TestRunner`` itself
@@ -73,7 +74,8 @@ class TestRunner:
     _default_runner: TestRunner | None = None
     _default_lock = threading.RLock()
 
-    def __init__(self) -> None:
+    def __init__(self, suppress: bool = False, **kwargs: Any) -> None:
+        super().__init__(suppress=suppress, **kwargs)
         self._registry: dict[str, SuiteContribution] = {}
         self._lock = threading.RLock()
 
