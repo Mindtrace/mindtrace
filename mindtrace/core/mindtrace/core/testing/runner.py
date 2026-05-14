@@ -80,12 +80,10 @@ class TestRunner(Mindtrace):
 
     def __init__(
         self,
-        suppress: bool = False,
         *,
         discover_benchmark_suites: bool | set[str] = False,
-        **kwargs: Any,
     ) -> None:
-        super().__init__(suppress=suppress, **kwargs)
+        super().__init__()
         self._registry: dict[str, SuiteContribution] = {}
         self._lock = threading.RLock()
         if discover_benchmark_suites:
