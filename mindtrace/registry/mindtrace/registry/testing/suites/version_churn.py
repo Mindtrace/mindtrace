@@ -57,11 +57,11 @@ class RegistryVersionChurnSuite(BenchTestSuite):
         names_count = int(config.parameters.get("names", 10))
         load_latest = bool(config.parameters.get("load_latest", True))
         payload = deterministic_payload(payload_size)
-        prefix = f"bench/{config.run_id}/{config.suite_id}/{uuid4().hex}"
+        prefix = f"bench:{config.run_id}:{config.suite_id}:{uuid4().hex}"
 
         registry, cleanup, backend_metrics = build_registry(config, backend, prefix)
         try:
-            names = [f"{prefix}/object-{index:04d}" for index in range(names_count)]
+            names = [f"{prefix}:object-{index:04d}" for index in range(names_count)]
             deadline = reporter.deadline(config.duration_seconds)
             version_index = 0
             loads = 0

@@ -69,14 +69,14 @@ class RegistryWriteCeilingSuite(BenchTestSuite):
         )
         concurrency = int(config.parameters.get("concurrency", 1))
         payload = deterministic_payload(payload_size)
-        prefix = f"bench/{config.run_id}/{config.suite_id}/{uuid4().hex}"
+        prefix = f"bench:{config.run_id}:{config.suite_id}:{uuid4().hex}"
 
         registry, cleanup, backend_metrics = build_registry(config, backend, prefix)
         try:
             deadline = reporter.deadline(config.duration_seconds)
 
             def operation() -> None:
-                name = f"{prefix}/{uuid4().hex}"
+                name = f"{prefix}:{uuid4().hex}"
                 op_start = time.perf_counter()
                 try:
                     registry.save(name, payload)

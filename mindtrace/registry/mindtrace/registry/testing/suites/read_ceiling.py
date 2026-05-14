@@ -58,11 +58,11 @@ class RegistryReadCeilingSuite(BenchTestSuite):
         object_count = int(config.parameters.get("object_count", 100))
         read_pattern = str(config.parameters.get("read_pattern", "random"))
         payload = deterministic_payload(payload_size)
-        prefix = f"bench/{config.run_id}/{config.suite_id}/{uuid4().hex}"
+        prefix = f"bench:{config.run_id}:{config.suite_id}:{uuid4().hex}"
 
         registry, cleanup, backend_metrics = build_registry(config, backend, prefix)
         try:
-            names = [f"{prefix}/{index:08d}" for index in range(object_count)]
+            names = [f"{prefix}:{index:08d}" for index in range(object_count)]
             for name in names:
                 registry.save(name, payload)
             deadline = reporter.deadline(config.duration_seconds)
