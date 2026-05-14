@@ -100,6 +100,34 @@ def test_runner_runs_registered_benches() -> None:
 
 def test_runner_discovers_entrypoint_benchmark_suites(monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeEntryPoint:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def load(self):  # noqa: ANN201 - mirrors importlib.metadata.EntryPoint.load
+            def register_benchmark_suites(*, runner: TestRunner | None = None, replace: bool = True) -> None:
+                (runner or TestRunner.default()).register_test_suite(SampleBenchSuite, replace=replace)
+
+            return register_benchmark_suites
+
+    class FakeEntryPoints(list[FakeEntryPoint]):
+        def select(self, *, group: str) -> "FakeEntryPoints":
+            return self if group == "mindtrace.benchmark_suites" else FakeEntryPoints()
+
+    monkeypatch.setattr(
+        runner_module.importlib_metadata,
+        "entry_points",
+        lambda: FakeEntryPoints([FakeEntryPoint("other"), FakeEntryPoint("sample")]),
+    )
+
+    runner = TestRunner()
+    results = runner.register_entrypoint_benchmark_suites(names={"sample"})
+
+    assert results == {"sample": None}
+    assert runner.suite_ids_for_profile("smoke") == [SampleBenchSuite.suite_id]
+
+
+def test_runner_can_discover_entrypoint_benchmark_suites_on_instantiation(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeEntryPoint:
         name = "sample"
 
         def load(self):  # noqa: ANN201 - mirrors importlib.metadata.EntryPoint.load
@@ -114,10 +142,10 @@ def test_runner_discovers_entrypoint_benchmark_suites(monkeypatch: pytest.Monkey
 
     monkeypatch.setattr(runner_module.importlib_metadata, "entry_points", lambda: FakeEntryPoints([FakeEntryPoint()]))
 
-    runner = TestRunner()
-    results = runner.register_entrypoint_benchmark_suites()
+    assert TestRunner().registered_suites() == {}
 
-    assert results == {"sample": None}
+    runner = TestRunner(discover_benchmark_suites={"sample"})
+
     assert runner.suite_ids_for_profile("smoke") == [SampleBenchSuite.suite_id]
 
 
