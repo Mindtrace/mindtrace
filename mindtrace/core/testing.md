@@ -2,7 +2,7 @@
 
 This document covers **library-embedded benchmark workloads** (timed “stress” style checks) shipped with Mindtrace and **how downstream applications** register and run them—including **adding their own suites** on top.
 
-The integration surface is **`TestRunner`**, **`BenchTestSuite`**, and **`run_registered_benches`**. Discovery is **import-driven** (no separate manifest file in this model).
+The integration surface is **`TestRunner`** and **`BenchTestSuite`**. Discovery is **import-driven** (no separate manifest file in this model).
 
 ---
 
@@ -18,7 +18,7 @@ The integration surface is **`TestRunner`**, **`BenchTestSuite`**, and **`run_re
 
 - **`resource_schema`**: optional class-level Pydantic model for environment/resource config such as Mongo URIs, MinIO credentials, or GCS settings. Resource schemas are separate from task inputs because resource values often need redaction or secret handling.
 
-- **Tags**: tag suites with **`smoke`** or **`stress`** so **`suite_ids_for_profile("smoke")`** and **`mindtrace-bench --profile …`** can filter them. Additional domain tags (**`api`**, **`ingest`**, etc.) may be useful for future multi-tag selection if the **`TestRunner` API grows.
+- **Tags**: tag suites with **`smoke`** or **`stress`** so **`runner.suite_ids_for_profile("smoke")`** and **`mindtrace-bench --profile …`** can filter them. Additional domain tags (**`api`**, **`ingest`**, etc.) may be useful for future multi-tag selection if the **`TestRunner` API grows.
 
 ---
 
@@ -29,7 +29,7 @@ The integration surface is **`TestRunner`**, **`BenchTestSuite`**, and **`run_re
 | **Suite** | Named workload: stable **`suite_id`**, **`tags`**, **`requires`**, safety text, parameter definitions, **`profiles`**. |
 | **Profile** | Named preset (**`smoke`**, **`stress`**, …): **`duration_seconds`**, defaults for parameters, optional nested **`resources`**. |
 | **Registry** | Each **`TestRunner`** instance holds **`SuiteContribution`** entries. Class-level calls use the process-global default runner; imports of **`mindtrace.<pkg>.testing`** register suites into that default runner as a side effect. |
-| **Execution** | A CLI or script calls **`run_registered_benches(...)`** with **`suite_id`** strings and a **profile tag** (**`smoke`** or **`stress`** for built-in tooling). |
+| **Execution** | A CLI or script calls **`runner.run_registered_benches(...)`** with **`suite_id`** strings and a **profile tag** (**`smoke`** or **`stress`** for built-in tooling). |
 
 ---
 
@@ -94,12 +94,11 @@ mindtrace-bench datalake --profile stress --run-id "$(date -u +%Y-%m-%dT%H-%M-%S
 - **`--profile smoke|stress`** selects suites whose **tags include that literal string**.
 - **`--list`** prints matching **`suite_id`** values.
 
-**Programmatic helpers** (`mindtrace.core.testing.driver`): **`suite_ids_for_profile`**, **`run_registered_benches`**. Config building: **`build_bench_suite_config`**, **`expand_param_matrix`**.
+**Programmatic helpers**: **`runner.suite_ids_for_profile`** and **`runner.run_registered_benches`**. Config building: **`build_bench_suite_config`**, **`expand_param_matrix`**.
 
 Example (run explicit suites after registration):
 
 ```python
-from mindtrace.core.testing.driver import run_registered_benches, suite_ids_for_profile
 from mindtrace.core.testing.runner import TestRunner
 
 runner = TestRunner()
@@ -110,20 +109,19 @@ mindtrace.registry.testing.register_benchmark_suites(runner=runner)
 mindtrace.datalake.testing.register_benchmark_suites(runner=runner)
 
 # Optional: discovery
-print("stress-tagged suites:", suite_ids_for_profile("stress", runner=runner))
+print("stress-tagged suites:", runner.suite_ids_for_profile("stress"))
 
-bench_results, exec_rows = run_registered_benches(
+bench_results, exec_rows = runner.run_registered_benches(
     ["registry.stress.write_ceiling"],
     profile="stress",
     run_id="dev-run-1",
     resources={},  # optional: e.g. mongo_uri, minio_endpoint from your environment
-    runner=runner,
 )
 for row in bench_results:
     print(row.suite_id, row.status, row.operations, row.failures)
 ```
 
-Use **`runner = TestRunner()`** in unit tests or applications when you need isolation between cases. **`TestRunner.clear_registry()`** still clears the global default runner for backwards-compatible scripts.
+Use **`runner = TestRunner()`** in unit tests or applications when you need isolation between cases. Class-level calls such as **`TestRunner.clear_registry()`** operate on the process-global default runner.
 
 ---
 
@@ -135,7 +133,7 @@ Each first-party wheel that ships benchmarks exposes **`mindtrace.<pkg>.testing`
 
 ## Integrating benchmarks in a downstream application
 
-Downstream services that depend on Mindtrace can **reuse** the same **`BenchTestSuite`** model and **`run_registered_benches`** runner.
+Downstream services that depend on Mindtrace can **reuse** the same **`BenchTestSuite`** model and execute registered suites with **`runner.run_registered_benches`**.
 
 ### Dependencies
 
@@ -147,14 +145,14 @@ Downstream services that depend on Mindtrace can **reuse** the same **`BenchTest
 1. Create **`runner = TestRunner()`** when a clean isolated registry is required (recommended for applications, tests, and repeated runs in one process).
 2. **`import mindtrace.<pkg>.testing`** for each subsystem you need.
 3. Call **`mindtrace.<pkg>.testing.register_benchmark_suites(runner=runner)`** for isolated registration, or rely on import side effects / class-level **`TestRunner`** calls for the global default runner.
-4. Choose **`suite_id`** values to run (static allowlist or **`suite_ids_for_profile`**).
+4. Choose **`suite_id`** values to run (static allowlist or **`runner.suite_ids_for_profile`**).
 
 ### Adding application-specific suites
 
 1. Subclass **`BenchTestSuite`** from **`mindtrace.core.testing.bench_suite`** (or contribute a **`SuiteContribution`** for non-class implementations).
 2. Set:
    - **`suite_id`**: stable, namespaced string (e.g. **`my_service.orders.write_ceiling`**).
-   - **`tags`**: include **`smoke`** and/or **`stress`** so **`suite_ids_for_profile`** and **`mindtrace-bench --profile`** can match.
+   - **`tags`**: include **`smoke`** and/or **`stress`** so **`runner.suite_ids_for_profile`** and **`mindtrace-bench --profile`** can match.
    - **`task_schema`**: a **`TaskSchema`** with Pydantic **`input_schema`** / **`output_schema`** models. The input model documents accepted benchmark parameters; the output model documents serialized results.
    - **`resource_schema`**: optional Pydantic model for externally supplied resource config.
    - **`profiles`**: **`MappingProxyType`** from profile name to **`duration_seconds`**, parameters, and optional **`resources`**.
@@ -268,11 +266,10 @@ def register_benchmark_suites(*, runner: TestRunner | None = None, replace: bool
 register_benchmark_suites()
 ```
 
-**Running it** — create an isolated runner, register your suites and optionally Mindtrace’s, and call **`run_registered_benches`** with the suite ID, **`profile`**, and **`runner`**:
+**Running it** — create an isolated runner, register your suites and optionally Mindtrace’s, and call **`runner.run_registered_benches`** with the suite ID and **`profile`**:
 
 ```python
 # e.g. example_app/bench_run.py or a small __main__.py CLI
-from mindtrace.core.testing.driver import run_registered_benches, suite_ids_for_profile
 from mindtrace.core.testing.runner import TestRunner
 
 runner = TestRunner()
@@ -281,12 +278,11 @@ import example_app.testing
 example_app.testing.register_benchmark_suites(runner=runner)
 # Optional: import mindtrace.registry.testing and register into the same runner.
 
-bench_results, exec_rows = run_registered_benches(
+bench_results, exec_rows = runner.run_registered_benches(
     ["example.echo.loop_throughput"],
     profile="smoke",
     run_id="2026-03-09Tbench-local",
     resources={},  # e.g. merge API base URLs / DB URIs from your config here
-    runner=runner,
 )
 
 for bench in bench_results:
@@ -298,18 +294,18 @@ assert all(row.status == "passed" for row in exec_rows)
 To list only your **`example.`** suites among those tagged **`stress`**:
 
 ```python
-print([sid for sid in suite_ids_for_profile("stress", runner=runner) if sid.startswith("example.")])
+print([sid for sid in runner.suite_ids_for_profile("stress") if sid.startswith("example.")])
 ```
 
 ---
 
 ### Entry point for operators and CI
 
-Ship a small CLI (e.g. **`python -m your_package.bench`**) that imports Mindtrace and application **`testing`** modules, parses **`--profile`** / **`--list`**, and calls **`run_registered_benches`**, exiting non-zero on failed **`SuiteExecutionResult`** rows. Keep CI non-interactive with fixed suite lists or tag-based discovery.
+Ship a small CLI (e.g. **`python -m your_package.bench`**) that imports Mindtrace and application **`testing`** modules, parses **`--profile`** / **`--list`**, and calls **`runner.run_registered_benches`**, exiting non-zero on failed **`SuiteExecutionResult`** rows. Keep CI non-interactive with fixed suite lists or tag-based discovery.
 
 ### Resources and configuration
 
-Pass secrets and service endpoints via your normal config layer; at bench time merge them into **`run_registered_benches(..., resources={...}, runner=runner)`** so **`build_bench_suite_config`** can unify Mindtrace defaults with overrides. Document which **`resources`** keys your suites consume.
+Pass secrets and service endpoints via your normal config layer; at bench time merge them into **`runner.run_registered_benches(..., resources={...})`** so **`build_bench_suite_config`** can unify Mindtrace defaults with overrides. Document which **`resources`** keys your suites consume.
 
 ### Recommended tagging
 
@@ -328,11 +324,11 @@ The stock CLI only auto-imports a fixed set of first-party shorthand packages (*
 
 ## Mindtrace maintainers: backlog for downstream ergonomics
 
-Checklist toward stronger third‑party integration (no backward compatibility requirement for superseded orchestration elsewhere in the repo):
+Checklist toward stronger third‑party integration:
 
 ### Documentation and API contract
 
-- [ ] Treat **`mindtrace.core.testing`**’s **`run_registered_benches`**, **`BenchTestSuite`**, and **`BenchResult`** as explicitly versioned **public surface** where stability is promised.
+- [ ] Treat **`mindtrace.core.testing`**’s **`TestRunner.run_registered_benches`**, **`BenchTestSuite`**, and **`BenchResult`** as explicitly versioned **public surface** where stability is promised.
 - [ ] Document **`resources`** keys read by first-party **`BenchTestSuite`** implementations (Mongo, MinIO, GCS, …).
 - [ ] Publish **`suite_id` naming** guidance to reduce collisions across teams and packages.
 
@@ -354,7 +350,7 @@ Checklist toward stronger third‑party integration (no backward compatibility r
 
 ### Tests and packaging
 
-- [ ] Contract tests that register a **synthetic third-party **`BenchTestSuite`** next to Mindtrace benches and run **`run_registered_benches`** after refactors.
+- [ ] Contract tests that register a synthetic third-party **`BenchTestSuite`** next to Mindtrace benches and run **`runner.run_registered_benches`** after refactors.
 - [ ] Document optional extras for backends (S3, GCS, …) needed for specific benches.
 - [ ] Decide whether **`mindtrace-bench`** stays in **`mindtrace-core`** if optional dependencies grow.
 
@@ -364,7 +360,7 @@ Checklist toward stronger third‑party integration (no backward compatibility r
 
 | Goal | Action |
 |------|--------|
-| Run shipped Mindtrace benches | `import mindtrace.<pkg>.testing` → **`run_registered_benches(...)`** |
+| Run shipped Mindtrace benches | `runner = TestRunner()` → `mindtrace.<pkg>.testing.register_benchmark_suites(runner=runner)` → **`runner.run_registered_benches(...)`** |
 | Add custom benches | Subclass **`BenchTestSuite`**, tag **`smoke`** / **`stress`**, **`register_test_suite`** |
 | CI / ops | Thin app CLI; pass **`resources`** from environment / config |
 
