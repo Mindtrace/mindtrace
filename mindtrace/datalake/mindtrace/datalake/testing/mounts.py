@@ -7,7 +7,7 @@ from pathlib import Path
 from shutil import rmtree
 from tempfile import mkdtemp
 
-from mindtrace.core.testing.bench_framework import BenchSuiteConfig
+from mindtrace.core import BenchSuiteConfig
 from mindtrace.registry import (
     AmbientAuth,
     GCSMountConfig,

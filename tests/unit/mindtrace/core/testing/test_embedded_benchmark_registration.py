@@ -27,17 +27,37 @@ def test_registry_testing_registers_expected_ids_and_schemas() -> None:
     rt.register_benchmark_suites()
 
     ids = sorted(TestRunner.registered_suites())
-    assert "registry.smoke.package_install" in ids
-    assert "registry.stress.write_ceiling" in ids
+    expected = {
+        "registry.smoke.local_crud",
+        "registry.stress.write_ceiling",
+        "registry.stress.read_ceiling",
+        "registry.stress.mixed_rw",
+        "registry.stress.version_churn",
+    }
+    assert expected.issubset(ids)
 
-    _assert_suite_schema_contract(
-        TestRunner.get_suite_schema("registry.smoke.package_install"),
-        suite_id="registry.smoke.package_install",
-    )
-    _assert_suite_schema_contract(
-        TestRunner.get_suite_schema("registry.stress.write_ceiling"),
-        suite_id="registry.stress.write_ceiling",
-    )
+    for suite_id in expected:
+        _assert_suite_schema_contract(TestRunner.get_suite_schema(suite_id), suite_id=suite_id)
+
+
+def test_database_testing_registers_expected_ids_and_schemas() -> None:
+    import mindtrace.database.testing as dbt
+    from mindtrace.core import TestRunner
+
+    TestRunner.clear_registry()
+    dbt.register_benchmark_suites()
+
+    ids = sorted(TestRunner.registered_suites())
+    expected = {
+        "database.smoke.mongo_crud",
+        "database.stress.mongo_insert_ceiling",
+        "database.stress.mongo_read_ceiling",
+        "database.stress.mongo_update_ceiling",
+    }
+    assert expected.issubset(ids)
+
+    for suite_id in expected:
+        _assert_suite_schema_contract(TestRunner.get_suite_schema(suite_id), suite_id=suite_id)
 
 
 def test_datalake_testing_registers_expected_ids_and_schemas() -> None:
@@ -48,15 +68,17 @@ def test_datalake_testing_registers_expected_ids_and_schemas() -> None:
     dt.register_benchmark_suites()
 
     ids = sorted(TestRunner.registered_suites())
-    assert "datalake.smoke.package_install" in ids
-    assert "datalake.stress.payload_write_ceiling" in ids
-    assert "datalake.stress.mongo_insert_ceiling" in ids
-    assert "datalake.stress.create_asset_from_object" in ids
-
-    for suite_id in (
-        "datalake.smoke.package_install",
+    expected = {
+        "datalake.smoke.local_object",
         "datalake.stress.payload_write_ceiling",
+        "datalake.stress.payload_read_ceiling",
+        "datalake.stress.payload_mixed_rw",
         "datalake.stress.mongo_insert_ceiling",
         "datalake.stress.create_asset_from_object",
-    ):
+        "datalake.stress.collection_item",
+        "datalake.stress.retention",
+    }
+    assert expected.issubset(ids)
+
+    for suite_id in expected:
         _assert_suite_schema_contract(TestRunner.get_suite_schema(suite_id), suite_id=suite_id)

@@ -50,10 +50,12 @@ For applications that want a fixed set of packages, call the package registratio
 
 ```python
 from mindtrace.core import TestRunner
+import mindtrace.database.testing
 import mindtrace.registry.testing
 import mindtrace.datalake.testing
 
 runner = TestRunner()
+mindtrace.database.testing.register_benchmark_suites(runner=runner)
 mindtrace.registry.testing.register_benchmark_suites(runner=runner)
 mindtrace.datalake.testing.register_benchmark_suites(runner=runner)
 
@@ -102,7 +104,7 @@ Example (run explicit suites after registration):
 ```python
 from mindtrace.core import TestRunner
 
-runner = TestRunner(discover_benchmark_suites={"registry", "datalake"})
+runner = TestRunner(discover_benchmark_suites={"database", "registry", "datalake"})
 
 # Optional: discovery
 print("stress-tagged suites:", runner.suite_ids_for_profile("stress"))
@@ -119,6 +121,22 @@ for row in bench_results:
 
 Use **`runner = TestRunner()`** in unit tests or applications when you need isolation between cases. Class-level calls such as **`TestRunner.clear_registry()`** operate on the process-global default runner.
 
+### First-party suite coverage
+
+Tier 1 smoke suites verify local wiring and one end-to-end operation:
+
+- **`database.smoke.mongo_crud`** — Mongo ODM insert/get/update/find/delete.
+- **`registry.smoke.local_crud`** — local Registry save/load/delete.
+- **`datalake.smoke.local_object`** — local Datalake put/get/head object with Mongo metadata initialization.
+
+Tier 2 stress suites are designed for overhead comparisons across layers and parameter sweeps such as concurrency, object size, backend, and local-vs-remote Mongo:
+
+- **Database**: **`database.stress.mongo_insert_ceiling`**, **`database.stress.mongo_read_ceiling`**, **`database.stress.mongo_update_ceiling`**.
+- **Registry**: **`registry.stress.write_ceiling`**, **`registry.stress.read_ceiling`**, **`registry.stress.mixed_rw`**, **`registry.stress.version_churn`**.
+- **Datalake**: **`datalake.stress.payload_write_ceiling`**, **`datalake.stress.payload_read_ceiling`**, **`datalake.stress.payload_mixed_rw`**, **`datalake.stress.mongo_insert_ceiling`**, **`datalake.stress.create_asset_from_object`**, **`datalake.stress.collection_item`**, **`datalake.stress.retention`**.
+
+Tier 3, intentionally left for a follow-on PR, should cover broader package areas and operational scenarios such as hardware packages, replication, large import sessions, and long-haul soak runs.
+
 ---
 
 ## Package layout (Mindtrace wheels)
@@ -127,7 +145,9 @@ Each first-party wheel that ships benchmarks exposes **`mindtrace.<pkg>.testing`
 
 ```toml
 [project.entry-points."mindtrace.benchmark_suites"]
+database = "mindtrace.database.testing:register_benchmark_suites"
 registry = "mindtrace.registry.testing:register_benchmark_suites"
+datalake = "mindtrace.datalake.testing:register_benchmark_suites"
 ```
 
 ---
