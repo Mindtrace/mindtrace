@@ -60,4 +60,5 @@ docker compose down
 
 ## Notes
 - Struct logging is enabled by default (`MINDTRACE_LOGGER_USE_STRUCTLOG=True`).
+- This sample also enables `MINDTRACE_LOGGER__PER_MODULE_FILES=True` so each logger writes to `structlogs/modules/<name>.log`, which is the glob Promtail tails. Without that flag, all records would land in a single `structlogs/mindtrace.log` and Promtail's `modules/*.log` pattern would match nothing.
 - Promtail config parses JSON logs and promotes common keys to labels for easy filtering in Grafana. 
