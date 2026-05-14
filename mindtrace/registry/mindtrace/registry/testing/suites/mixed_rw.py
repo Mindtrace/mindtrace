@@ -58,11 +58,11 @@ class RegistryMixedRwSuite(BenchTestSuite):
         object_count = int(config.parameters.get("object_count", 100))
         read_ratio = float(config.parameters.get("read_ratio", 0.8))
         payload = deterministic_payload(payload_size)
-        prefix = f"bench/{config.run_id}/{config.suite_id}/{uuid4().hex}"
+        prefix = f"bench:{config.run_id}:{config.suite_id}:{uuid4().hex}"
 
         registry, cleanup, backend_metrics = build_registry(config, backend, prefix)
         try:
-            names = [f"{prefix}/seed/{index:08d}" for index in range(object_count)]
+            names = [f"{prefix}:seed:{index:08d}" for index in range(object_count)]
             for name in names:
                 registry.save(name, payload)
             deadline = reporter.deadline(config.duration_seconds)
@@ -74,7 +74,7 @@ class RegistryMixedRwSuite(BenchTestSuite):
             def operation() -> None:
                 nonlocal read_ops, write_index, write_ops
                 is_read = rng.random() < read_ratio
-                name = rng.choice(names) if is_read else f"{prefix}/write/{write_index:08d}-{uuid4().hex}"
+                name = rng.choice(names) if is_read else f"{prefix}:write:{write_index:08d}-{uuid4().hex}"
                 if not is_read:
                     write_index += 1
                 op_start = time.perf_counter()
