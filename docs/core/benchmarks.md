@@ -38,7 +38,7 @@ The integration surface is **`TestRunner`** and **`BenchTestSuite`**. Discovery 
 For installed packages, use benchmark-suite entry points to register all available suites into a runner without importing each package explicitly:
 
 ```python
-from mindtrace.core.testing.runner import TestRunner
+from mindtrace.core import TestRunner
 
 runner = TestRunner(discover_benchmark_suites=True)
 
@@ -49,7 +49,7 @@ all_stress_schemas = runner.list_suite_schemas(tags={"stress"})
 For applications that want a fixed set of packages, call the package registration hooks directly:
 
 ```python
-from mindtrace.core.testing.runner import TestRunner
+from mindtrace.core import TestRunner
 import mindtrace.registry.testing
 import mindtrace.datalake.testing
 
@@ -77,7 +77,7 @@ For example, a UI can render form controls from **`suite_schema.task_schema["inp
 After installing **`mindtrace-core`** and any Mindtrace libraries whose benches you need, discover benchmark suites from package entry points:
 
 ```python
-from mindtrace.core.testing.runner import TestRunner
+from mindtrace.core import TestRunner
 
 runner = TestRunner(discover_benchmark_suites=True)
 ```
@@ -100,7 +100,7 @@ mindtrace-bench datalake --profile stress --run-id "$(date -u +%Y-%m-%dT%H-%M-%S
 Example (run explicit suites after registration):
 
 ```python
-from mindtrace.core.testing.runner import TestRunner
+from mindtrace.core import TestRunner
 
 runner = TestRunner(discover_benchmark_suites={"registry", "datalake"})
 
@@ -150,7 +150,7 @@ Downstream services that depend on Mindtrace can **reuse** the same **`BenchTest
 
 ### Adding application-specific suites
 
-1. Subclass **`BenchTestSuite`** from **`mindtrace.core.testing.bench_suite`** (or contribute a **`SuiteContribution`** for non-class implementations).
+1. Subclass **`BenchTestSuite`** from **`mindtrace.core`** (or contribute a **`SuiteContribution`** for non-class implementations).
 2. Set:
    - **`suite_id`**: stable, namespaced string (e.g. **`my_service.orders.write_ceiling`**).
    - **`tags`**: include **`smoke`** and/or **`stress`** so **`runner.suite_ids_for_profile`** and **`mindtrace-bench --profile`** can match.
@@ -179,15 +179,15 @@ from types import MappingProxyType
 
 from pydantic import BaseModel, Field
 
-from mindtrace.core.types.task_schema import TaskSchema
-from mindtrace.core.testing.bench_framework import (
+from mindtrace.core import (
     BenchReporter,
     BenchResult,
     BenchResultSchema,
     BenchSuiteConfig,
+    BenchTestSuite,
+    TaskSchema,
     utc_now_iso,
 )
-from mindtrace.core.testing.bench_suite import BenchTestSuite
 
 
 class EchoLoopInput(BaseModel):
@@ -255,7 +255,7 @@ class EchoLoopThroughputSuite(BenchTestSuite):
 
 ```python
 # example_app/testing/__init__.py
-from mindtrace.core.testing.runner import TestRunner
+from mindtrace.core import TestRunner
 
 from example_app.testing.benches import EchoLoopThroughputSuite
 
@@ -270,7 +270,7 @@ def register_benchmark_suites(*, runner: TestRunner | None = None, replace: bool
 
 ```python
 # e.g. example_app/bench_run.py or a small __main__.py CLI
-from mindtrace.core.testing.runner import TestRunner
+from mindtrace.core import TestRunner
 
 runner = TestRunner(discover_benchmark_suites={"example_app"})
 
