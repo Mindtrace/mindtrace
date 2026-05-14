@@ -14,9 +14,18 @@ def register_benchmark_suites(*, runner: TestRunner | None = None, replace: bool
 
     target = runner or TestRunner.default()
 
+    from mindtrace.registry.testing.suites.mixed_rw import RegistryMixedRwSuite
+    from mindtrace.registry.testing.suites.read_ceiling import RegistryReadCeilingSuite
     from mindtrace.registry.testing.suites.smoke import RegistrySmokeSuite
+    from mindtrace.registry.testing.suites.version_churn import RegistryVersionChurnSuite
     from mindtrace.registry.testing.suites.write_ceiling import RegistryWriteCeilingSuite
 
-    for cls in (RegistrySmokeSuite, RegistryWriteCeilingSuite):
+    for cls in (
+        RegistrySmokeSuite,
+        RegistryWriteCeilingSuite,
+        RegistryReadCeilingSuite,
+        RegistryMixedRwSuite,
+        RegistryVersionChurnSuite,
+    ):
         if replace or cls.suite_id not in target.registered_suites():
             target.register_test_suite(cls, replace=replace)
