@@ -22,6 +22,7 @@ from mindtrace.core.testing.types import (
     SuiteContribution,
     SuiteExecutionResult,
     SuiteRun,
+    SuiteSchema,
     UnknownSuiteIdError,
     validate_suite_id,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "SuiteContribution",
     "SuiteExecutionResult",
     "SuiteRun",
+    "SuiteSchema",
     "TestRunner",
     "TestSuite",
     "UnknownSuiteIdError",

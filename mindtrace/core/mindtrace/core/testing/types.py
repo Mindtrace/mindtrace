@@ -5,7 +5,11 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, Type
+
+from pydantic import BaseModel, Field
+
+from mindtrace.core.types.task_schema import TaskSchema
 
 _SUITE_ID_PATTERN = re.compile(r"^[a-z][a-z0-9]*(\.[a-z0-9_]+)+$")
 
@@ -40,6 +44,8 @@ class SuiteContribution:
     parameters: Mapping[str, Any] = field(default_factory=dict)
     profiles: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     safety: str | None = None
+    task_schema: TaskSchema | None = None
+    resource_schema: Type[BaseModel] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "id", validate_suite_id(self.id))
@@ -47,6 +53,21 @@ class SuiteContribution:
             raise ValueError("SuiteContribution.title must be non-empty")
         if self.run is None or not callable(self.run):  # pragma: no cover
             raise TypeError("SuiteContribution.run must be callable")
+
+
+class SuiteSchema(BaseModel):
+    """REST-friendly metadata and schema payload for one registered suite."""
+
+    suite_id: str
+    title: str
+    description: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    requires: list[str] = Field(default_factory=list)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    profiles: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    safety: str | None = None
+    task_schema: dict[str, Any] | None = None
+    resource_json_schema: dict[str, Any] | None = None
 
 
 OverallStatus = Literal["passed", "failed", "empty"]

@@ -5,8 +5,11 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Type
 
+from pydantic import BaseModel
+
+from mindtrace.core.types.task_schema import TaskSchema
 from mindtrace.core.testing.types import SuiteContribution, validate_suite_id
 
 
@@ -26,6 +29,8 @@ class TestSuite(ABC):
     parameters: ClassVar[Mapping[str, Any]] = MappingProxyType({})
     profiles: ClassVar[Mapping[str, Mapping[str, Any]]] = MappingProxyType({})
     safety: ClassVar[str | None] = None
+    task_schema: ClassVar[TaskSchema | None] = None
+    resource_schema: ClassVar[Type[BaseModel] | None] = None
 
     @abstractmethod
     def run(self, config: Any, reporter: Any) -> Any:
@@ -52,4 +57,6 @@ class TestSuite(ABC):
             parameters=dict(cls.parameters),
             profiles=profiles_copy,
             safety=cls.safety,
+            task_schema=cls.task_schema,
+            resource_schema=cls.resource_schema,
         )
