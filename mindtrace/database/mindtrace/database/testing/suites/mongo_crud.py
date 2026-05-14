@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from types import MappingProxyType
 from typing import Literal
@@ -52,21 +53,25 @@ class DatabaseMongoCrudSmokeSuite(BenchTestSuite):
         mongo_backend, mongo_uri, mongo_db_name = resolve_mongo_resources(config)
         odm = MongoMindtraceODM(model_cls=DatabaseBenchDocument, db_uri=mongo_uri, db_name=mongo_db_name)
         run_id = f"{config.run_id}-{uuid4().hex}"
-        try:
-            odm.initialize_sync()
+        async def _crud_roundtrip() -> tuple[bool, float]:
+            await odm.initialize()
             op_start = time.perf_counter()
-            doc = odm.insert_sync(DatabaseBenchDocument(run_id=run_id, sequence=1, payload="smoke"))
-            loaded = odm.get_sync(doc.id)
+            doc = await odm.insert(DatabaseBenchDocument(run_id=run_id, sequence=1, payload="smoke"))
+            loaded = await odm.get(doc.id)
             loaded.update_count = 1
-            updated = odm.update_sync(loaded)
-            found = odm.find_sync({"run_id": run_id})
-            odm.delete_sync(updated.id)
-            if updated.update_count == 1 and found:
-                reporter.record_operation(success=True, latency_seconds=time.perf_counter() - op_start)
+            updated = await odm.update(loaded)
+            found = await odm.find({"run_id": run_id})
+            await odm.delete(updated.id)
+            return updated.update_count == 1 and bool(found), time.perf_counter() - op_start
+
+        try:
+            verified, latency_seconds = asyncio.run(_crud_roundtrip())
+            if verified:
+                reporter.record_operation(success=True, latency_seconds=latency_seconds)
             else:
                 reporter.record_operation(
                     success=False,
-                    latency_seconds=time.perf_counter() - op_start,
+                    latency_seconds=latency_seconds,
                     error=AssertionError("CRUD verification failed"),
                 )
         except BaseException as exc:  # noqa: BLE001
