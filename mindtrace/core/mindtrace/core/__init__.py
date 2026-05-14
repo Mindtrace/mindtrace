@@ -20,7 +20,7 @@ from mindtrace.core.testing import (
     build_bench_suite_config,
     validate_suite_id,
 )
-from mindtrace.core.types.task_schema import TaskSchema
+from mindtrace.core.types.task_schema import TaskSchema, TaskSchemaPayload, pydantic_model_json_schema
 from mindtrace.core.utils.checks import check_libs, first_not_none, ifnone, ifnone_url
 from mindtrace.core.utils.dynamic import get_class, instantiate_target
 from mindtrace.core.utils.hashing import compute_dir_hash
@@ -89,6 +89,8 @@ __all__ = [
     "PortInUseError",
     "ServiceTimeoutError",
     "TaskSchema",
+    "TaskSchemaPayload",
+    "pydantic_model_json_schema",
     "Timer",
     "TimerCollection",
     "Timeout",
