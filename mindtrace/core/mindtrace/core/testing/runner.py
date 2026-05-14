@@ -7,6 +7,7 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from typing import Any, TypeVar
 
+from mindtrace.core.types.task_schema import _pydantic_json_schema
 from mindtrace.core.testing.test_suite import TestSuite
 from mindtrace.core.testing.types import (
     OverallStatus,
@@ -14,6 +15,7 @@ from mindtrace.core.testing.types import (
     RunOutcome,
     SuiteContribution,
     SuiteExecutionResult,
+    SuiteSchema,
     SuiteRun,
     UnknownSuiteIdError,
     validate_suite_id,
@@ -79,6 +81,37 @@ class TestRunner:
     def registered_suites(cls) -> dict[str, SuiteContribution]:
         with _lock:
             return dict(_registry)
+
+    @classmethod
+    def get_suite_schema(cls, suite_id: str) -> SuiteSchema:
+        """Return REST-friendly metadata and task/resource schemas for one suite."""
+
+        contrib = cls.get_contribution(suite_id)
+        task_schema = None
+        if contrib.task_schema is not None:
+            payload = contrib.task_schema.to_json_schema_payload()
+            task_schema = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+        resource_json_schema = (
+            _pydantic_json_schema(contrib.resource_schema) if contrib.resource_schema is not None else None
+        )
+        return SuiteSchema(
+            suite_id=contrib.id,
+            title=contrib.title,
+            description=contrib.description,
+            tags=sorted(contrib.tags),
+            requires=list(contrib.requires),
+            parameters=dict(contrib.parameters),
+            profiles={key: dict(value) for key, value in contrib.profiles.items()},
+            safety=contrib.safety,
+            task_schema=task_schema,
+            resource_json_schema=resource_json_schema,
+        )
+
+    @classmethod
+    def list_suite_schemas(cls, *, tags: set[str] | None = None) -> list[SuiteSchema]:
+        """List REST-friendly suite schemas, optionally filtered by tag."""
+
+        return [cls.get_suite_schema(sid) for sid in cls.list_suite_ids(tags=tags)]
 
     @classmethod
     def list_suite_ids(cls, *, tags: set[str] | None = None) -> list[str]:
