@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Generic, Type, TypeVar
 
 from pydantic import BaseModel
 
 from mindtrace.core.base import Mindtrace
 from mindtrace.core.types.task_schema import TaskSchema
+from mindtrace.core.testing.bench_framework import BenchResult
+from mindtrace.core.testing.bench_suite import build_bench_suite_config, coerce_bench_reporter
 from mindtrace.core.testing.test_suite import TestSuite
 from mindtrace.core.testing.types import (
     OverallStatus,
@@ -67,8 +70,7 @@ class TestRunner(Mindtrace):
     """Registry and runner for Mindtrace test/benchmark suites.
 
     Instances own isolated registries. Calling methods on ``TestRunner`` itself
-    preserves the historical global-default behavior by dispatching to
-    ``TestRunner.default()``.
+    dispatches to ``TestRunner.default()`` for process-global convenience.
     """
 
     _default_runner: TestRunner | None = None
@@ -176,6 +178,75 @@ class TestRunner(Mindtrace):
     def invoke_suite(self, suite_id: str, config: object, reporter: object) -> object:
         run: SuiteRun = self.get_contribution(suite_id).run
         return run(config, reporter)
+
+    @_dualmethod
+    def suite_ids_for_profile(self, profile: str) -> list[str]:
+        """Return registered suite IDs whose tags include ``profile`` (``smoke`` or ``stress``)."""
+
+        return self.list_suite_ids(tags={profile.lower().strip()})
+
+    @_dualmethod
+    def run_registered_benches(
+        self,
+        suite_ids: Sequence[str],
+        *,
+        profile: str,
+        run_id: str,
+        resources: Mapping[str, Any] | None = None,
+        progress: Callable[[ProgressEvent], None] | None = None,
+        cancellation_token: Any | None = None,
+        output_dir: Path | None = None,
+        keep_resources: bool = False,
+    ) -> tuple[list[BenchResult], list[SuiteExecutionResult]]:
+        """Run registered benchmark suites with timing/profile resolved from their contributions."""
+
+        rows: list[SuiteExecutionResult] = []
+        bench_rows: list[BenchResult] = []
+        merged_resources = dict(resources or {})
+
+        for sid in suite_ids:
+            contrib = self.get_contribution(sid)
+            cfg = build_bench_suite_config(
+                contrib,
+                profile=profile,
+                run_id=run_id,
+                resources=merged_resources,
+                output_dir=output_dir,
+                keep_resources=keep_resources,
+                cancellation_token=cancellation_token,
+            )
+            reporter = coerce_bench_reporter(None, cfg)
+
+            if progress:
+                progress(ProgressEvent(kind="suite_started", suite_id=sid))
+
+            try:
+                raw = contrib.run(cfg, reporter)
+            except BaseException as exc:  # noqa: BLE001 - surfaced as suite failure
+                rows.append(SuiteExecutionResult(suite_id=sid, status="failed", error=exc))
+                if progress:
+                    progress(
+                        ProgressEvent(
+                            kind="suite_failed",
+                            suite_id=sid,
+                            detail=str(exc),
+                            suite_result=rows[-1],
+                        ),
+                    )
+                continue
+
+            if isinstance(raw, BenchResult):
+                bench_rows.append(raw)
+                ok = raw.status == "passed"
+            else:
+                ok = True
+
+            row = SuiteExecutionResult(suite_id=sid, status="passed" if ok else "failed", error=None)
+            rows.append(row)
+            if progress:
+                progress(ProgressEvent(kind="suite_finished", suite_id=sid, suite_result=row))
+
+        return bench_rows, rows
 
     @_dualmethod
     def run(

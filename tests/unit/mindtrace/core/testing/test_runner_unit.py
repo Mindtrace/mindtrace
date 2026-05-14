@@ -3,6 +3,8 @@ from __future__ import annotations
 import pytest
 
 from mindtrace.core import (
+    BenchSuiteConfig,
+    BenchTestSuite,
     ProgressEvent,
     SuiteContribution,
     SuiteExecutionResult,
@@ -11,6 +13,7 @@ from mindtrace.core import (
     UnknownSuiteIdError,
     validate_suite_id,
 )
+from mindtrace.core.testing import BenchReporter, BenchResult, utc_now_iso
 
 
 @pytest.fixture(autouse=True)
@@ -38,6 +41,26 @@ class SampleSuite(TestSuite):
         return "done"
 
 
+class SampleBenchSuite(BenchTestSuite):
+    suite_id = "unit.testing.sample.bench"
+    title = "Sample Bench"
+    tags = frozenset({"smoke", "unit"})
+    profiles = {"smoke": {"duration_seconds": 0.1, "resources": {"from_profile": True}}}
+
+    def execute_bench(self, config: BenchSuiteConfig, reporter: BenchReporter) -> BenchResult:
+        now = utc_now_iso()
+        return BenchResult(
+            suite_id=config.suite_id,
+            status="passed",
+            started_at=now,
+            ended_at=now,
+            duration_seconds=0.1,
+            operations=1,
+            successes=1,
+            metrics={"from_profile": config.resources["from_profile"], "from_call": config.resources["from_call"]},
+        )
+
+
 def test_can_instantiate_isolated_runner() -> None:
     runner = TestRunner()
     runner.register_test_suite(SampleSuite)
@@ -53,6 +76,25 @@ def test_default_runner_class_api_remains_available() -> None:
     TestRunner.register_test_suite(SampleSuite)
 
     assert SampleSuite.suite_id in TestRunner.registered_suites()
+
+
+def test_runner_runs_registered_benches() -> None:
+    runner = TestRunner()
+    runner.register_test_suite(SampleBenchSuite)
+
+    assert runner.suite_ids_for_profile("smoke") == [SampleBenchSuite.suite_id]
+
+    bench_results, exec_rows = runner.run_registered_benches(
+        [SampleBenchSuite.suite_id],
+        profile="smoke",
+        run_id="unit-run",
+        resources={"from_call": True},
+    )
+
+    assert [row.status for row in exec_rows] == ["passed"]
+    assert len(bench_results) == 1
+    assert bench_results[0].suite_id == SampleBenchSuite.suite_id
+    assert bench_results[0].metrics == {"from_profile": True, "from_call": True}
 
 
 def test_validate_suite_id_accepts_and_rejects() -> None:

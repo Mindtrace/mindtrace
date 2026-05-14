@@ -6,7 +6,6 @@ import argparse
 import sys
 from datetime import UTC, datetime
 
-from mindtrace.core.testing.driver import run_registered_benches, suite_ids_for_profile
 from mindtrace.core.testing.runner import TestRunner
 
 _PACKAGE_IMPORTS = {
@@ -41,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     TestRunner.clear_registry()
     _import_packages(list(args.packages))
 
-    matched = suite_ids_for_profile(args.profile)
+    matched = TestRunner.suite_ids_for_profile(args.profile)
     if args.list:
         for sid in matched:
             print(sid)
@@ -58,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
         sid = getattr(ev, "suite_id", "")
         print(f"[{kind}] {sid}", flush=True)
 
-    bench_results, exec_rows = run_registered_benches(
+    bench_results, exec_rows = TestRunner.run_registered_benches(
         matched,
         profile=args.profile,
         run_id=run_id,
