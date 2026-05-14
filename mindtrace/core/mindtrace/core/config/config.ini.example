@@ -1,13 +1,10 @@
 ; ------------------------------------------------------------------------------
 ; Mindtrace CoreSettings template
 ;
-; On first import of ``CoreSettings``, if ``config.ini`` is missing alongside
-; this file, it is copied from this example so local development and CI
-; runners get the usual defaults. Override with ``MINDTRACE_*__*`` env vars as
-; needed (they take precedence over this file).
+; Copy this file to ``config.ini`` for local defaults, or override values with
+; ``MINDTRACE_*__*`` environment variables (they take precedence over this file).
 ;
-; The materialized ``config.ini`` remains Git-ignored. To skip auto-copy entirely
-; (rare): ``MINDTRACE_SKIP_CONFIG_INI_BOOTSTRAP=1``.
+; The materialized ``config.ini`` remains Git-ignored.
 ; ------------------------------------------------------------------------------
 
 [MINDTRACE_API_KEYS]
