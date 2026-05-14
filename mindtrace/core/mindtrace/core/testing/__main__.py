@@ -68,7 +68,13 @@ def main(argv: list[str] | None = None) -> int:
     suite_failures = sum(1 for row in exec_rows if row.status != "passed")
     for row in bench_results:
         summary = row.to_dict()
-        print(f"{summary['suite_id']}: {summary['status']} ops={summary['operations']} failures={summary['failures']}")
+        line = f"{summary['suite_id']}: {summary['status']} ops={summary['operations']} failures={summary['failures']}"
+        if summary.get("error_counts"):
+            line += f" errors={summary['error_counts']}"
+        metrics = summary.get("metrics") or {}
+        if metrics.get("last_error_type"):
+            line += f" last_error={metrics['last_error_type']}: {metrics.get('last_error_message', '')}"
+        print(line)
 
     return 1 if suite_failures else 0
 

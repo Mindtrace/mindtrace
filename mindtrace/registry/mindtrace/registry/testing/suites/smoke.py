@@ -54,12 +54,13 @@ class RegistrySmokeSuite(BenchTestSuite):
         mono = time.perf_counter()
         registry_path = Path(mkdtemp(prefix="mindtrace-registry-smoke-"))
         registry = Registry(backend=registry_path, version_objects=True, mutable=True)
+        object_name = "bench:smoke:key"
         payload = deterministic_payload(512)
         try:
-            registry.save("bench/smoke/key", payload)
-            loaded = registry.load("bench/smoke/key")
-            registry.delete("bench/smoke/key")
-            if loaded == payload and not registry.has_object("bench/smoke/key"):
+            registry.save(object_name, payload)
+            loaded = registry.load(object_name)
+            registry.delete(object_name)
+            if loaded == payload and not registry.has_object(object_name):
                 reporter.record_operation(success=True, latency_seconds=0.0, bytes_processed=len(payload))
             else:
                 reporter.record_operation(

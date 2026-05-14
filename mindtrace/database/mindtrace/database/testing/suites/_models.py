@@ -15,3 +15,7 @@ class DatabaseBenchDocument(MindtraceDocument):
     sequence: int = Field(0, index=True)
     payload: str = ""
     update_count: int = 0
+
+    class Settings:
+        name = "database_bench_documents"
+        use_cache = False
