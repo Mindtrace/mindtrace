@@ -1934,7 +1934,7 @@ class TestSyncModuleHelpers:
 
         assert out.payload_status == "present"
         assert out.storage_ref == staged
-        assert out.metadata["origin"]["lake_id"] == "target_db"
+        assert out.metadata["replication"]["origin_lake_id"] == "target_db"
         assert out.metadata["replication"]["payload_status"] == "present"
         target.asset_database.update.assert_awaited_once()
 
