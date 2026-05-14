@@ -1,7 +1,7 @@
 """Embedded benchmark suites for ``mindtrace-registry``.
 
-Import this module (or run ``mindtrace-bench registry``) to register smoke/stress workloads
-on :class:`~mindtrace.core.TestRunner`.
+Use ``register_benchmark_suites`` directly or discover it through the
+``mindtrace.benchmark_suites`` entry point group.
 """
 
 from __future__ import annotations
@@ -18,8 +18,5 @@ def register_benchmark_suites(*, runner: TestRunner | None = None, replace: bool
     from mindtrace.registry.testing.suites.write_ceiling import RegistryWriteCeilingSuite
 
     for cls in (RegistrySmokeSuite, RegistryWriteCeilingSuite):
-        if cls.suite_id not in target.registered_suites():
+        if replace or cls.suite_id not in target.registered_suites():
             target.register_test_suite(cls, replace=replace)
-
-
-register_benchmark_suites()

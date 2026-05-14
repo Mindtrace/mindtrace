@@ -8,28 +8,13 @@ from datetime import UTC, datetime
 
 from mindtrace.core.testing.runner import TestRunner
 
-_PACKAGE_IMPORTS = {
-    "registry": "mindtrace.registry.testing",
-    "datalake": "mindtrace.datalake.testing",
-}
-
-
-def _import_packages(names: list[str]) -> None:
-    for name in names:
-        key = name.strip().lower()
-        module = _PACKAGE_IMPORTS.get(key)
-        if module is None:
-            raise SystemExit(f"Unknown package shortcut {name!r}; expected one of {sorted(_PACKAGE_IMPORTS)}.")
-        __import__(module)
-
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run Mindtrace library-included benchmark suites.")
+    parser = argparse.ArgumentParser(description="Run installed Mindtrace benchmark suites.")
     parser.add_argument(
-        "packages",
+        "plugins",
         nargs="*",
-        default=["registry", "datalake"],
-        help=f"Packages to load ({', '.join(sorted(_PACKAGE_IMPORTS))}). Default: registry datalake.",
+        help="Optional benchmark entry point names to load. Defaults to all installed benchmark-suite plugins.",
     )
     parser.add_argument("--profile", choices=("smoke", "stress"), default="smoke")
     parser.add_argument("--list", action="store_true", help="Print suite IDs for the profile and exit.")
@@ -38,7 +23,22 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     TestRunner.clear_registry()
-    _import_packages(list(args.packages))
+    requested_plugins = {name.strip() for name in args.plugins if name.strip()}
+    registrations = TestRunner.register_entrypoint_benchmark_suites(
+        names=requested_plugins or None,
+        raise_on_error=False,
+    )
+
+    failures = {name: exc for name, exc in registrations.items() if exc is not None}
+    if failures:
+        for name, exc in failures.items():
+            print(f"Failed to load benchmark plugin {name!r}: {exc}", file=sys.stderr)
+        return 2
+
+    missing = requested_plugins.difference(registrations)
+    if missing:
+        print(f"Benchmark plugin(s) not found: {', '.join(sorted(missing))}", file=sys.stderr)
+        return 2
 
     matched = TestRunner.suite_ids_for_profile(args.profile)
     if args.list:
@@ -65,12 +65,12 @@ def main(argv: list[str] | None = None) -> int:
         keep_resources=args.keep_resources,
     )
 
-    failures = sum(1 for row in exec_rows if row.status != "passed")
+    suite_failures = sum(1 for row in exec_rows if row.status != "passed")
     for row in bench_results:
         summary = row.to_dict()
         print(f"{summary['suite_id']}: {summary['status']} ops={summary['operations']} failures={summary['failures']}")
 
-    return 1 if failures else 0
+    return 1 if suite_failures else 0
 
 
 if __name__ == "__main__":
