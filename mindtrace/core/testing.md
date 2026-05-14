@@ -14,6 +14,10 @@ The integration surface is **`TestRunner`**, **`BenchTestSuite`**, and **`run_re
 
 - **`BenchTestSuite`**: library-embedded timed workloads. Subclasses implement **`execute_bench(config, reporter)`** and receive **`BenchSuiteConfig`** / **`BenchReporter`**. Class-level **`profiles`** maps profile names (typically **`smoke`** and **`stress`**) to **`duration_seconds`**, workload kwargs, and nested **`resources`** merged into the resolved config.
 
+- **`TaskSchema`**: optional class-level input/output contract for a suite. Set **`task_schema = TaskSchema(name=suite_id, input_schema=..., output_schema=...)`** with Pydantic models so REST/UI callers can inspect accepted benchmark parameters and serialized outputs.
+
+- **`resource_schema`**: optional class-level Pydantic model for environment/resource config such as Mongo URIs, MinIO credentials, or GCS settings. Resource schemas are separate from task inputs because resource values often need redaction or secret handling.
+
 - **Tags**: tag suites with **`smoke`** or **`stress`** so **`suite_ids_for_profile("smoke")`** and **`mindtrace-bench --profile …`** can filter them. Additional domain tags (**`api`**, **`ingest`**, etc.) may be useful for future multi-tag selection if the **`TestRunner` API grows.
 
 ---
@@ -26,6 +30,31 @@ The integration surface is **`TestRunner`**, **`BenchTestSuite`**, and **`run_re
 | **Profile** | Named preset (**`smoke`**, **`stress`**, …): **`duration_seconds`**, defaults for parameters, optional nested **`resources`**. |
 | **Registry** | **`TestRunner`** holds **`SuiteContribution`** entries. Imports of **`mindtrace.<pkg>.testing`** (and your own modules) register suites as a side effect. |
 | **Execution** | A CLI or script calls **`run_registered_benches(...)`** with **`suite_id`** strings and a **profile tag** (**`smoke`** or **`stress`** for built-in tooling). |
+
+---
+
+## Discovering suite schemas for REST / UI callers
+
+After importing the package **`testing`** modules that register suites, callers can inspect one suite or all suites without importing suite classes directly:
+
+```python
+from mindtrace.core.testing.runner import TestRunner
+
+import mindtrace.registry.testing  # noqa: F401
+import mindtrace.datalake.testing  # noqa: F401
+
+suite_schema = TestRunner.get_suite_schema("registry.stress.write_ceiling")
+all_stress_schemas = TestRunner.list_suite_schemas(tags={"stress"})
+```
+
+The returned **`SuiteSchema`** is a Pydantic model intended to be easy to return from REST endpoints. It includes:
+
+- **`suite_id`**, **`title`**, **`description`**, **`tags`**, **`requires`**, and **`safety`**
+- **`profiles`** and legacy/default **`parameters`** metadata
+- **`task_schema`**, a JSON-schema payload generated from the suite's **`TaskSchema`** input/output Pydantic models
+- **`resource_json_schema`**, generated from the suite's resource Pydantic model
+
+For example, a UI can render form controls from **`suite_schema.task_schema["input_json_schema"]`**, display expected result fields from **`output_json_schema`**, and handle resource configuration separately from **`resource_json_schema`**.
 
 ---
 
@@ -106,6 +135,8 @@ Downstream services that depend on Mindtrace can **reuse** the same **`BenchTest
 2. Set:
    - **`suite_id`**: stable, namespaced string (e.g. **`my_service.orders.write_ceiling`**).
    - **`tags`**: include **`smoke`** and/or **`stress`** so **`suite_ids_for_profile`** and **`mindtrace-bench --profile`** can match.
+   - **`task_schema`**: a **`TaskSchema`** with Pydantic **`input_schema`** / **`output_schema`** models. The input model documents accepted benchmark parameters; the output model documents serialized results.
+   - **`resource_schema`**: optional Pydantic model for externally supplied resource config.
    - **`profiles`**: **`MappingProxyType`** from profile name to **`duration_seconds`**, parameters, and optional **`resources`**.
 3. Implement **`execute_bench(self, config: BenchSuiteConfig, reporter: BenchReporter) -> BenchResult`**:
    - Loop until **`reporter.deadline(config.duration_seconds)`**; respect **`reporter.is_cancelled()`**.
@@ -126,8 +157,25 @@ from __future__ import annotations
 import time
 from types import MappingProxyType
 
-from mindtrace.core.testing.bench_framework import BenchReporter, BenchResult, BenchSuiteConfig, utc_now_iso
+from pydantic import BaseModel, Field
+
+from mindtrace.core.types.task_schema import TaskSchema
+from mindtrace.core.testing.bench_framework import (
+    BenchReporter,
+    BenchResult,
+    BenchResultSchema,
+    BenchSuiteConfig,
+    utc_now_iso,
+)
 from mindtrace.core.testing.bench_suite import BenchTestSuite
+
+
+class EchoLoopInput(BaseModel):
+    iter_chunk: int = Field(50, ge=1, description="Inner loop iterations per recorded operation.")
+
+
+class EchoLoopResources(BaseModel):
+    """No external resources are required."""
 
 
 class EchoLoopThroughputSuite(BenchTestSuite):
@@ -139,6 +187,8 @@ class EchoLoopThroughputSuite(BenchTestSuite):
     tags = frozenset({"smoke", "stress", "example"})
     requires = ()
     safety = "Synthetic CPU loop only; trivial load."
+    task_schema = TaskSchema(name=suite_id, input_schema=EchoLoopInput, output_schema=BenchResultSchema)
+    resource_schema = EchoLoopResources
     profiles = MappingProxyType(
         {
             "smoke": {"duration_seconds": 0.75, "iter_chunk": 50},
