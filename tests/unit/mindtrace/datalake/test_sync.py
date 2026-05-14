@@ -1908,10 +1908,13 @@ class TestSyncModuleHelpers:
     @pytest.mark.asyncio
     async def test_finalize_pending_import_updates_asset(self, sync_objects):
         target = Mock()
+        target.mongo_db_name = "target_db"
         target.head_object = AsyncMock(return_value={"size_bytes": 1})
         asset = sync_objects.asset.model_copy(deep=True)
         asset.payload_status = "missing"
         target.get_asset = AsyncMock(return_value=asset)
+        target.asset_database.find = AsyncMock(return_value=[asset])
+        target.asset_database.update = AsyncMock()
         desc = ObjectPayloadDescriptor(
             asset_id=asset.asset_id,
             storage_ref=sync_objects.storage_ref,
@@ -1921,11 +1924,7 @@ class TestSyncModuleHelpers:
         )
         staged = StorageRef(mount="target", name="staged.bin", version="v1")
         manager = DatasetSyncManager(target)
-        with (
-            patch.object(manager, "_verify_transferred_payload", new=AsyncMock()),
-            patch("mindtrace.datalake.sync.ReplicationManager") as rm_cls,
-        ):
-            rm_cls.return_value._set_asset_replication_state = AsyncMock()
+        with patch.object(manager, "_verify_transferred_payload", new=AsyncMock()):
             out = await manager.finalize_pending_import_asset_payload(
                 asset_id=asset.asset_id,
                 payload_descriptor=desc,
@@ -1935,7 +1934,9 @@ class TestSyncModuleHelpers:
 
         assert out.payload_status == "present"
         assert out.storage_ref == staged
-        rm_cls.return_value._set_asset_replication_state.assert_awaited_once()
+        assert out.metadata["origin"]["lake_id"] == "target_db"
+        assert out.metadata["replication"]["payload_status"] == "present"
+        target.asset_database.update.assert_awaited_once()
 
 
 class TestSyncCommitGuardrails:
