@@ -8,15 +8,15 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from mindtrace.core.types.task_schema import TaskSchema
-from mindtrace.core.testing.bench_framework import (
+from mindtrace.core import (
     BenchReporter,
     BenchResult,
     BenchResultSchema,
     BenchSuiteConfig,
+    BenchTestSuite,
+    TaskSchema,
     utc_now_iso,
 )
-from mindtrace.core.testing.bench_suite import BenchTestSuite
 from mindtrace.core.testing.workloads import deterministic_payload
 from mindtrace.datalake import Datalake
 from mindtrace.datalake.testing.mongo_resolve import require_resource
@@ -33,8 +33,8 @@ class DatalakeSmokeResources(BaseModel):
 
 
 class DatalakeSmokeSuite(BenchTestSuite):
-    suite_id = "datalake.smoke.package_install"
-    title = "Datalake smoke — local mount + Mongo + put_object"
+    suite_id = "datalake.smoke.local_object"
+    title = "Datalake smoke — local mount + Mongo + object roundtrip"
     description = (
         "Creates a temporary local mount, connects to MongoDB from ``resources.mongo_uri``, "
         "and performs one ``put_object`` call."
@@ -75,7 +75,11 @@ class DatalakeSmokeSuite(BenchTestSuite):
             lake.initialize()
             op_start = time.perf_counter()
             try:
-                lake.put_object(name=f"{prefix}/smoke", obj=payload, mount="stress", metadata={"run_id": config.run_id})
+                storage_ref = lake.put_object(name=f"{prefix}/smoke", obj=payload, mount="stress", metadata={"run_id": config.run_id})
+                loaded = lake.get_object(storage_ref)
+                lake.head_object(storage_ref)
+                if loaded != payload:
+                    raise ValueError("payload mismatch")
             except Exception as exc:  # noqa: BLE001
                 reporter.record_operation(success=False, latency_seconds=time.perf_counter() - op_start, error=exc)
             else:
