@@ -1,3 +1,10 @@
+from mindtrace.registry.archivers.builtin_materializers import (
+    BuiltInContainerMaterializer,
+    BuiltInMaterializer,
+    BytesMaterializer,
+    CloudpickleMaterializer,
+    PydanticMaterializer,
+)
 from mindtrace.registry.archivers.config_archiver import ConfigArchiver
 from mindtrace.registry.archivers.default_archivers import register_default_materializers
 from mindtrace.registry.archivers.path_archiver import PathArchiver
@@ -5,6 +12,7 @@ from mindtrace.registry.backends.local_registry_backend import LocalRegistryBack
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.backends.s3_registry_backend import MinioRegistryBackend, S3RegistryBackend
 from mindtrace.registry.core.archiver import Archiver
+from mindtrace.registry.core.base_materializer import BaseMaterializer, Materializer
 from mindtrace.registry.core.exceptions import (
     LockTimeoutError,
     StoreAmbiguousObjectError,
@@ -28,8 +36,15 @@ from mindtrace.registry.core.store import MountedRegistry, Store
 __all__ = [
     "Archiver",
     "AmbientAuth",
+    "BaseMaterializer",
+    "BuiltInContainerMaterializer",
+    "BuiltInMaterializer",
+    "BytesMaterializer",
+    "CloudpickleMaterializer",
     "ConfigArchiver",
+    "Materializer",
     "PathArchiver",
+    "PydanticMaterializer",
     "LocalRegistryBackend",
     "LockTimeoutError",
     "GCSMountConfig",
