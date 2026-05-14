@@ -38,9 +38,21 @@ class SampleSuite(TestSuite):
         return "done"
 
 
-def test_cannot_instantiate_runner() -> None:
-    with pytest.raises(TypeError, match="must not be instantiated"):
-        TestRunner()  # type: ignore[call-arg]
+def test_can_instantiate_isolated_runner() -> None:
+    runner = TestRunner()
+    runner.register_test_suite(SampleSuite)
+
+    assert SampleSuite.suite_id in runner.registered_suites()
+    assert SampleSuite.suite_id not in TestRunner.registered_suites()
+
+    runner.clear_registry()
+    assert runner.registered_suites() == {}
+
+
+def test_default_runner_class_api_remains_available() -> None:
+    TestRunner.register_test_suite(SampleSuite)
+
+    assert SampleSuite.suite_id in TestRunner.registered_suites()
 
 
 def test_validate_suite_id_accepts_and_rejects() -> None:
