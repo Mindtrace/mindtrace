@@ -218,6 +218,8 @@ class BenchReporter:
             if error is not None:
                 key = type(error).__name__
                 self.error_counts[key] = self.error_counts.get(key, 0) + 1
+                self.metrics["last_error_type"] = key
+                self.metrics["last_error_message"] = str(error)
                 self.error(error, latency_seconds=latency_seconds, bytes_processed=bytes_processed, metrics=metrics)
         self.event(
             "operation",
