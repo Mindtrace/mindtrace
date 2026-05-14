@@ -6,12 +6,30 @@ import time
 from types import MappingProxyType
 from uuid import uuid4
 
-from mindtrace.core.testing.bench_framework import BenchReporter, BenchResult, BenchSuiteConfig, utc_now_iso
+from pydantic import BaseModel, Field
+
+from mindtrace.core.types.task_schema import TaskSchema
+from mindtrace.core.testing.bench_framework import (
+    BenchReporter,
+    BenchResult,
+    BenchResultSchema,
+    BenchSuiteConfig,
+    utc_now_iso,
+)
 from mindtrace.core.testing.bench_suite import BenchTestSuite
 from mindtrace.core.testing.workloads import deterministic_payload
 from mindtrace.datalake import Datalake
 from mindtrace.datalake.testing.mongo_resolve import require_resource
 from mindtrace.datalake.testing.mounts import build_payload_mount
+
+
+class DatalakeSmokeInput(BaseModel):
+    """Datalake smoke suite has no user-facing tunable parameters."""
+
+
+class DatalakeSmokeResources(BaseModel):
+    mongo_uri: str = Field("mongodb://127.0.0.1:27017", description="MongoDB URI used by the datalake ODM.")
+    mongo_db_name: str | None = Field(None, description="Optional Mongo database name for this run.")
 
 
 class DatalakeSmokeSuite(BenchTestSuite):
@@ -23,6 +41,12 @@ class DatalakeSmokeSuite(BenchTestSuite):
     )
     tags = frozenset({"smoke", "datalake"})
     requires = ("local_disk", "mongo")
+    task_schema = TaskSchema(
+        name=suite_id,
+        input_schema=DatalakeSmokeInput,
+        output_schema=BenchResultSchema,
+    )
+    resource_schema = DatalakeSmokeResources
     profiles = MappingProxyType(
         {
             "smoke": {

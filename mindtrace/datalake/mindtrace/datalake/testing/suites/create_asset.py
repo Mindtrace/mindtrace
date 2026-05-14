@@ -4,14 +4,70 @@ from __future__ import annotations
 
 import time
 from types import MappingProxyType
+from typing import Literal
 from uuid import uuid4
 
-from mindtrace.core.testing.bench_framework import BenchReporter, BenchResult, BenchSuiteConfig, utc_now_iso
+from pydantic import BaseModel, Field
+
+from mindtrace.core.types.task_schema import TaskSchema
+from mindtrace.core.testing.bench_framework import (
+    BenchReporter,
+    BenchResult,
+    BenchResultSchema,
+    BenchSuiteConfig,
+    utc_now_iso,
+)
 from mindtrace.core.testing.bench_suite import BenchTestSuite
 from mindtrace.core.testing.workloads import deterministic_payload, parse_size_bytes, run_threaded_until_deadline
 from mindtrace.datalake import Datalake
 from mindtrace.datalake.testing.mongo_resolve import resolve_mongo_triple
 from mindtrace.datalake.testing.mounts import build_payload_mount
+
+
+class DatalakeCreateAssetFromObjectInput(BaseModel):
+    backend: Literal["local", "minio", "gcs"] = Field("local", description="Object storage backend to benchmark.")
+    mongo_backend: Literal["local", "atlas"] = Field("local", description="Mongo backend label to resolve.")
+    payload_size: str = Field("64KiB", description="Generated payload size, e.g. '64KiB' or '1MiB'.")
+    concurrency: int = Field(1, ge=1, description="Number of concurrent writer threads.")
+
+
+class DatalakeCreateAssetFromObjectResources(BaseModel):
+    mongo_uri: str = Field("mongodb://127.0.0.1:27017", description="MongoDB URI for local backend.")
+    mongo_db_name: str | None = Field(None, description="Optional Mongo database name for this run.")
+    REMOTE_MONGO_DB_URI: str | None = Field(
+        None,
+        description="Atlas Mongo URI for atlas backend.",
+        json_schema_extra={"secret": True},
+    )
+    REMOTE_MONGO_DB_NAME: str | None = Field(None, description="Atlas Mongo database name for atlas backend.")
+    mongo_atlas_uri: str | None = Field(
+        None,
+        description="Alias for REMOTE_MONGO_DB_URI.",
+        json_schema_extra={"secret": True},
+    )
+    mongo_atlas_db_name: str | None = Field(None, description="Alias for REMOTE_MONGO_DB_NAME.")
+    minio_endpoint: str = Field("localhost:9100", description="S3-compatible endpoint for minio backend.")
+    minio_access_key: str = Field(
+        "minioadmin",
+        description="Access key for minio backend.",
+        json_schema_extra={"secret": True},
+    )
+    minio_secret_key: str = Field(
+        "minioadmin",
+        description="Secret key for minio backend.",
+        json_schema_extra={"secret": True},
+    )
+    minio_bucket: str = Field("stress-registry", description="Bucket for minio backend writes.")
+    minio_prefix: str | None = Field(None, description="Optional object prefix for minio backend writes.")
+    minio_secure: bool = Field(False, description="Whether the minio endpoint uses TLS.")
+    gcs_project_id: str | None = Field(None, description="GCP project ID for gcs backend.")
+    gcs_bucket_name: str | None = Field(None, description="GCS bucket name for gcs backend.")
+    gcs_prefix: str | None = Field(None, description="Optional object prefix for gcs backend writes.")
+    gcs_credentials_path: str | None = Field(
+        None,
+        description="Optional service account credentials path for gcs backend.",
+        json_schema_extra={"secret": True},
+    )
 
 
 class DatalakeCreateAssetFromObjectSuite(BenchTestSuite):
@@ -21,6 +77,12 @@ class DatalakeCreateAssetFromObjectSuite(BenchTestSuite):
     tags = frozenset({"stress", "datalake"})
     requires = ("local_disk", "mongo")
     safety = "Uses generated prefixes; remote backends require configured resources."
+    task_schema = TaskSchema(
+        name=suite_id,
+        input_schema=DatalakeCreateAssetFromObjectInput,
+        output_schema=BenchResultSchema,
+    )
+    resource_schema = DatalakeCreateAssetFromObjectResources
     profiles = MappingProxyType(
         {
             "stress": {

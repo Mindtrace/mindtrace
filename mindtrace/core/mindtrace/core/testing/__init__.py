@@ -5,6 +5,7 @@ from __future__ import annotations
 from mindtrace.core.testing.bench_framework import (
     BenchReporter,
     BenchResult,
+    BenchResultSchema,
     BenchSuiteConfig,
     CancellationToken,
     latency_summary,
@@ -31,6 +32,7 @@ from mindtrace.core.testing.workloads import deterministic_payload, parse_size_b
 __all__ = [
     "BenchReporter",
     "BenchResult",
+    "BenchResultSchema",
     "BenchSuiteConfig",
     "BenchTestSuite",
     "CancellationToken",
