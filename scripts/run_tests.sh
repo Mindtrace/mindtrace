@@ -16,11 +16,6 @@ RUN_INTEGRATION=false
 RUN_STRESS=false
 RUN_UTILS=false
 RUN_ALL=true
-STRESS_EXTERNAL_RESOURCES=false
-STRESS_OUTPUT_DIR_PROVIDED=false
-STRESS_RUN_ID_PROVIDED=false
-STRESS_OUTPUT_DIR=""
-STRESS_RUN_ID=""
 MODULES=()
 REPORT_INCLUDE_PATTERNS=()
 
@@ -31,30 +26,16 @@ PROJECT_ROOT=$(pwd)
 COVERAGE_CONFIG="$PROJECT_ROOT/.coveragerc"
 
 finalize_coverage() {
-    local report_output="${1:-}"
     if [ -f "$PROJECT_ROOT/.coverage" ] || (cd "$PROJECT_ROOT" && compgen -G ".coverage.*" > /dev/null); then
         echo "Combining coverage data..."
         (cd "$PROJECT_ROOT" && coverage combine)
-        if [ -n "$report_output" ]; then
-            echo "Writing coverage report to $report_output"
-            mkdir -p "$(dirname "$report_output")"
-        else
-            echo "Reporting coverage..."
-        fi
+        echo "Reporting coverage..."
         if [ ${#REPORT_INCLUDE_PATTERNS[@]} -gt 0 ]; then
             local include_arg
             include_arg=$(IFS=,; echo "${REPORT_INCLUDE_PATTERNS[*]}")
-            if [ -n "$report_output" ]; then
-                (cd "$PROJECT_ROOT" && coverage report -m --include="$include_arg" > "$report_output")
-            else
-                (cd "$PROJECT_ROOT" && coverage report -m --include="$include_arg")
-            fi
+            (cd "$PROJECT_ROOT" && coverage report -m --include="$include_arg")
         else
-            if [ -n "$report_output" ]; then
-                (cd "$PROJECT_ROOT" && coverage report -m > "$report_output")
-            else
-                (cd "$PROJECT_ROOT" && coverage report -m)
-            fi
+            (cd "$PROJECT_ROOT" && coverage report -m)
         fi
     fi
 }
@@ -102,57 +83,8 @@ while [[ $# -gt 0 ]]; do
             fi
             shift
             ;;
-        --config)
-            PYTEST_ARGS+=("$1")
-            shift
-            if [[ $# -gt 0 ]]; then
-                PYTEST_ARGS+=("$1")
-                shift
-            fi
-            ;;
-        --config=*)
-            PYTEST_ARGS+=("$1")
-            shift
-            ;;
-        --external-resources)
-            STRESS_EXTERNAL_RESOURCES=true
-            PYTEST_ARGS+=("$1")
-            shift
-            ;;
-        --output-dir)
-            STRESS_OUTPUT_DIR_PROVIDED=true
-            PYTEST_ARGS+=("$1")
-            shift
-            if [[ $# -gt 0 ]]; then
-                STRESS_OUTPUT_DIR="$1"
-                PYTEST_ARGS+=("$1")
-                shift
-            fi
-            ;;
-        --output-dir=*)
-            STRESS_OUTPUT_DIR_PROVIDED=true
-            STRESS_OUTPUT_DIR="${1#--output-dir=}"
-            PYTEST_ARGS+=("$1")
-            shift
-            ;;
-        --run-id)
-            STRESS_RUN_ID_PROVIDED=true
-            PYTEST_ARGS+=("$1")
-            shift
-            if [[ $# -gt 0 ]]; then
-                STRESS_RUN_ID="$1"
-                PYTEST_ARGS+=("$1")
-                shift
-            fi
-            ;;
-        --run-id=*)
-            STRESS_RUN_ID_PROVIDED=true
-            STRESS_RUN_ID="${1#--run-id=}"
-            PYTEST_ARGS+=("$1")
-            shift
-            ;;
         *)
-            # Pass all other arguments to pytest/stress runner
+            # Pass all other arguments to pytest
             PYTEST_ARGS+=("$1")
             shift
             ;;
@@ -169,29 +101,29 @@ fi
 # If specific paths are provided, run just those paths and exit
 if [ ${#SPECIFIC_PATHS[@]} -gt 0 ]; then
     echo "Running tests for specific paths: ${SPECIFIC_PATHS[*]}"
-    
+
     # Start docker containers if any integration tests are included
     if [ "$NEEDS_DOCKER" = true ]; then
         echo "Starting docker containers for integration tests..."
         . scripts/docker_up.sh
     fi
-    
+
     # Clear any existing coverage data
     coverage erase
-    
+
     # Run pytest on the specific paths with coverage
     # Use --rootdir to ensure tests/conftest.py fixtures are discoverable
     echo "Running: coverage run --rcfile=\"$COVERAGE_CONFIG\" --parallel-mode -m pytest -rs -W ignore::DeprecationWarning --rootdir=\"$PROJECT_ROOT\" ${PYTEST_ARGS[*]} ${SPECIFIC_PATHS[*]}"
     run_pytest_with_coverage -rs -W ignore::DeprecationWarning --rootdir="$PROJECT_ROOT" "${PYTEST_ARGS[@]}" "${SPECIFIC_PATHS[@]}"
     EXIT_CODE=$?
     finalize_coverage
-    
+
     # Stop docker containers if they were started
     if [ "$NEEDS_DOCKER" = true ]; then
         echo "Stopping docker containers..."
         $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
     fi
-    
+
     echo "Exiting with code: $EXIT_CODE"
     exit $EXIT_CODE
 fi
@@ -206,16 +138,7 @@ if [ "$RUN_ALL" = true ]; then
     # RUN_STRESS and RUN_UTILS remain false - only run when explicitly requested
 fi
 
-# Stress runs use the integration Docker stack by default for local development.
-# Config files may contain only suite sweeps/cases and are merged over default
-# integration resources. Use --external-resources when the config points at
-# externally managed services and local containers should not be launched.
-if [ "$RUN_STRESS" = true ] && [ "$STRESS_EXTERNAL_RESOURCES" = false ]; then
-    NEEDS_DOCKER=true
-fi
-
-# Start Docker containers if running integration, utils tests, stress tests with
-# default local resources, or specific docker-requiring paths.
+# Start Docker containers if running integration, utils tests, or specific docker-requiring paths
 if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
     echo "Starting docker containers..."
     . scripts/docker_up.sh
@@ -323,33 +246,42 @@ fi
 
 # Run stress tests if requested
 if [ "$RUN_STRESS" = true ]; then
-    echo "Running stress suites with scripts/stress_runner.py..."
+    echo "Running stress tests from mindtrace directory for proper imports..."
 
-    if [ "$STRESS_RUN_ID_PROVIDED" = false ]; then
-        STRESS_RUN_ID=$(date -u +"%Y-%m-%dT%H-%M-%SZ")
-        PYTEST_ARGS+=("--run-id" "$STRESS_RUN_ID")
+    # Get absolute path for stress tests
+    PROJECT_ROOT=$(pwd)
+    STRESS_TEST_PATH="$PROJECT_ROOT/tests/stress"
+
+    # For stress tests, use coverage only if other tests are also running
+    if [ "$RUN_UNIT" = true ] || [ "$RUN_INTEGRATION" = true ]; then
+        # Copy coverage data to mindtrace directory for proper combining
+        if [ -f .coverage ]; then
+            cp .coverage mindtrace/
+        fi
+
+        cd mindtrace
+
+        # Include coverage to combine with other test results
+        coverage run --rcfile="$COVERAGE_CONFIG" --parallel-mode -m pytest -rs -s --rootdir="$PROJECT_ROOT" -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" "$STRESS_TEST_PATH"
+
+        # Copy the combined coverage data back to project root
+        if [ -f .coverage ]; then
+            cp .coverage ../
+        fi
+    else
+        cd mindtrace
+
+        # Stress tests only - skip coverage for performance testing
+        pytest -rs -s --rootdir="$PROJECT_ROOT" -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" "$STRESS_TEST_PATH"
     fi
 
-    if [ "$STRESS_OUTPUT_DIR_PROVIDED" = false ]; then
-        STRESS_OUTPUT_DIR="$PROJECT_ROOT/.stress-results/${STRESS_RUN_ID}"
-        PYTEST_ARGS+=("--output-dir" "$STRESS_OUTPUT_DIR")
-    fi
-
-    # Stress tests are benchmark-style runs, so they are delegated to the
-    # manifest-driven stress runner instead of pytest. Arguments following
-    # --stress are forwarded through PYTEST_ARGS by the parser above.
-    PYTHON_CMD="${PYTHON:-python3}"
-    "$PYTHON_CMD" scripts/stress_runner.py "${PYTEST_ARGS[@]}"
     STRESS_EXIT_CODE=$?
+    cd ..
 
     if [ $STRESS_EXIT_CODE -ne 0 ]; then
         echo "Stress tests failed. Stopping test execution."
         OVERALL_EXIT_CODE=1
-        if [ -n "$STRESS_OUTPUT_DIR" ]; then
-            finalize_coverage "$STRESS_OUTPUT_DIR/coverage.txt"
-        else
-            finalize_coverage
-        fi
+        finalize_coverage
         # Stop docker containers if they were started
         if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
             echo "Stopping docker containers..."
@@ -360,11 +292,7 @@ if [ "$RUN_STRESS" = true ]; then
 fi
 
 if [ "$RUN_UNIT" = true ] || [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ]; then
-    if [ "$RUN_STRESS" = true ] && [ -n "${STRESS_OUTPUT_DIR:-}" ]; then
-        finalize_coverage "$STRESS_OUTPUT_DIR/coverage.txt"
-    else
-        finalize_coverage
-    fi
+    finalize_coverage
 fi
 
 # Stop docker containers if they were started
@@ -374,4 +302,4 @@ if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER"
 fi
 
 # Exit with overall status
-exit $OVERALL_EXIT_CODE 
+exit $OVERALL_EXIT_CODE

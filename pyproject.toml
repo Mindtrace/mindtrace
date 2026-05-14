@@ -129,10 +129,6 @@ test = """
     # Run only integration tests
     # ds test --integration
 
-    # Run stress suite runner commands (stress suites never run by default)
-    # ds test --stress --list
-    # ds test --stress --suite registry.write-ceiling --profile smoke
-
     # Run specific test file or function (note the colon after 'test')
     # ds test: tests/integration/mindtrace/services/test_simple_integration.py::TestServiceIntegration::test_url_construction_logic
 
