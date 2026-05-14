@@ -11,14 +11,6 @@ def pydantic_model_json_schema(model: Type[BaseModel]) -> dict[str, Any]:
     return model.schema()
 
 
-class TaskSchemaPayload(BaseModel):
-    """REST-friendly JSON-schema representation of a :class:`TaskSchema`."""
-
-    name: str
-    input_json_schema: dict[str, Any] | None = None
-    output_json_schema: dict[str, Any] | None = None
-
-
 class TaskSchema(BaseModel):
     """A task schema with strongly-typed input and output models."""
 
@@ -26,11 +18,21 @@ class TaskSchema(BaseModel):
     input_schema: None | Type[BaseModel] = None
     output_schema: None | Type[BaseModel] = None
 
-    def to_json_schema_payload(self) -> TaskSchemaPayload:
-        """Serialize this schema for REST/UI callers without Python model classes."""
+    def input_json_schema(self) -> dict[str, Any] | None:
+        """Return the input model JSON schema, when an input model is declared."""
 
-        return TaskSchemaPayload(
-            name=self.name,
-            input_json_schema=pydantic_model_json_schema(self.input_schema) if self.input_schema else None,
-            output_json_schema=pydantic_model_json_schema(self.output_schema) if self.output_schema else None,
-        )
+        return pydantic_model_json_schema(self.input_schema) if self.input_schema else None
+
+    def output_json_schema(self) -> dict[str, Any] | None:
+        """Return the output model JSON schema, when an output model is declared."""
+
+        return pydantic_model_json_schema(self.output_schema) if self.output_schema else None
+
+    def to_json_schema(self) -> dict[str, Any]:
+        """Serialize this task schema for REST/UI callers without Python model classes."""
+
+        return {
+            "name": self.name,
+            "input_json_schema": self.input_json_schema(),
+            "output_json_schema": self.output_json_schema(),
+        }
