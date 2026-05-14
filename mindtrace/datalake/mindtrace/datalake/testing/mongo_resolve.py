@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from mindtrace.core.testing.bench_framework import BenchSuiteConfig
+from mindtrace.core import BenchSuiteConfig
 from mindtrace.datalake.testing.remote_mongo import resolve_stress_atlas_mongo
 
 
