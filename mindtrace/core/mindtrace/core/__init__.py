@@ -7,6 +7,7 @@ from mindtrace.core.observables.observable_context import ObservableContext
 from mindtrace.core.samples.echo_task import EchoInput, EchoOutput, echo_task
 from mindtrace.core.testing import (
     BenchSuiteConfig,
+    BenchResultSchema,
     BenchTestSuite,
     ProgressEvent,
     RunOutcome,
@@ -45,6 +46,7 @@ setup_logger()  # Initialize the default logger
 
 __all__ = [
     "BenchSuiteConfig",
+    "BenchResultSchema",
     "BenchTestSuite",
     "ProgressEvent",
     "RunOutcome",

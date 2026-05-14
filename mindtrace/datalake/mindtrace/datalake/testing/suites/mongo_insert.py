@@ -5,13 +5,45 @@ from __future__ import annotations
 import asyncio
 import time
 from types import MappingProxyType
+from typing import Literal
 from uuid import uuid4
 
-from mindtrace.core.testing.bench_framework import BenchReporter, BenchResult, BenchSuiteConfig, utc_now_iso
+from pydantic import BaseModel, Field
+
+from mindtrace.core.types.task_schema import TaskSchema
+from mindtrace.core.testing.bench_framework import (
+    BenchReporter,
+    BenchResult,
+    BenchResultSchema,
+    BenchSuiteConfig,
+    utc_now_iso,
+)
 from mindtrace.core.testing.bench_suite import BenchTestSuite
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.datalake.testing.mongo_resolve import resolve_mongo_triple
 from mindtrace.datalake.types import Asset, AssetAlias, StorageRef
+
+
+class DatalakeMongoInsertInput(BaseModel):
+    mongo_backend: Literal["local", "atlas"] = Field("local", description="Mongo backend label to resolve.")
+    batch_size: int = Field(100, ge=1, description="Number of assets and aliases inserted per operation.")
+
+
+class DatalakeMongoInsertResources(BaseModel):
+    mongo_uri: str = Field("mongodb://127.0.0.1:27017", description="MongoDB URI for local backend.")
+    mongo_db_name: str | None = Field(None, description="Optional Mongo database name for this run.")
+    REMOTE_MONGO_DB_URI: str | None = Field(
+        None,
+        description="Atlas Mongo URI for atlas backend.",
+        json_schema_extra={"secret": True},
+    )
+    REMOTE_MONGO_DB_NAME: str | None = Field(None, description="Atlas Mongo database name for atlas backend.")
+    mongo_atlas_uri: str | None = Field(
+        None,
+        description="Alias for REMOTE_MONGO_DB_URI.",
+        json_schema_extra={"secret": True},
+    )
+    mongo_atlas_db_name: str | None = Field(None, description="Alias for REMOTE_MONGO_DB_NAME.")
 
 
 class DatalakeMongoInsertCeilingSuite(BenchTestSuite):
@@ -20,6 +52,12 @@ class DatalakeMongoInsertCeilingSuite(BenchTestSuite):
     description = "Bulk-inserts ``Asset`` rows plus primary ``AssetAlias`` metadata."
     tags = frozenset({"stress", "datalake"})
     requires = ("mongo",)
+    task_schema = TaskSchema(
+        name=suite_id,
+        input_schema=DatalakeMongoInsertInput,
+        output_schema=BenchResultSchema,
+    )
+    resource_schema = DatalakeMongoInsertResources
     profiles = MappingProxyType(
         {
             "stress": {

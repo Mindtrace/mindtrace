@@ -8,10 +8,27 @@ from shutil import rmtree
 from tempfile import mkdtemp
 from types import MappingProxyType
 
-from mindtrace.core.testing.bench_framework import BenchReporter, BenchResult, BenchSuiteConfig, utc_now_iso
+from pydantic import BaseModel
+
+from mindtrace.core.types.task_schema import TaskSchema
+from mindtrace.core.testing.bench_framework import (
+    BenchReporter,
+    BenchResult,
+    BenchResultSchema,
+    BenchSuiteConfig,
+    utc_now_iso,
+)
 from mindtrace.core.testing.bench_suite import BenchTestSuite
 from mindtrace.core.testing.workloads import deterministic_payload
 from mindtrace.registry import Registry
+
+
+class RegistrySmokeInput(BaseModel):
+    """Registry smoke suite has no tunable parameters."""
+
+
+class RegistrySmokeResources(BaseModel):
+    """Registry smoke suite uses only temporary local resources."""
 
 
 class RegistrySmokeSuite(BenchTestSuite):
@@ -20,6 +37,12 @@ class RegistrySmokeSuite(BenchTestSuite):
     description = "Verifies ``mindtrace-registry`` imports and ``Registry.save`` / ``Registry.load`` on a temp dir."
     tags = frozenset({"smoke", "registry"})
     requires = ("local_disk",)
+    task_schema = TaskSchema(
+        name=suite_id,
+        input_schema=RegistrySmokeInput,
+        output_schema=BenchResultSchema,
+    )
+    resource_schema = RegistrySmokeResources
     profiles = MappingProxyType(
         {
             "smoke": {"duration_seconds": 1.25},

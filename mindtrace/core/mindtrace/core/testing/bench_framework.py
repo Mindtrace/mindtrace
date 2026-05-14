@@ -12,6 +12,8 @@ from statistics import median, quantiles
 from time import perf_counter
 from typing import Any, Callable, Protocol, TextIO
 
+from pydantic import BaseModel, Field
+
 
 class CancellationToken(Protocol):
     """Minimal protocol for cooperative cancellation."""
@@ -91,6 +93,28 @@ class BenchResult:
         }
         payload.update(latency_summary(self.latency_seconds))
         return payload
+
+
+class BenchResultSchema(BaseModel):
+    """Pydantic output contract for serialized benchmark results."""
+
+    suite_id: str
+    status: str
+    started_at: str
+    ended_at: str
+    duration_seconds: float
+    operations: int = 0
+    successes: int = 0
+    failures: int = 0
+    bytes_processed: int = 0
+    throughput_ops_per_second: float | None = None
+    throughput_bytes_per_second: float | None = None
+    latency_p50_seconds: float | None = None
+    latency_p95_seconds: float | None = None
+    latency_p99_seconds: float | None = None
+    error_counts: dict[str, int] = Field(default_factory=dict)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    artifacts: dict[str, str] = Field(default_factory=dict)
 
 
 def latency_summary(samples: list[float]) -> dict[str, float | None]:
