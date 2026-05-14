@@ -87,7 +87,13 @@ def register_default_materializers():
         "mindtrace.models.archivers.ultralytics.yoloe_archiver.YoloEArchiver",
     )
 
-    # HuggingFace models
+    # HuggingFace models. Both the public and ``__module__`` paths registered so
+    # MRO dispatch hits. ``TFPreTrainedModel`` is intentionally omitted —
+    # ``HuggingFaceModelArchiver`` is PyTorch-only.
+    Registry.register_default_materializer(
+        "transformers.PreTrainedModel",
+        "mindtrace.models.archivers.huggingface.hf_model_archiver.HuggingFaceModelArchiver",
+    )
     Registry.register_default_materializer(
         "transformers.modeling_utils.PreTrainedModel",
         "mindtrace.models.archivers.huggingface.hf_model_archiver.HuggingFaceModelArchiver",
