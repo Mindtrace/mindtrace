@@ -389,7 +389,7 @@ ds test: --unit core
 
 ## Stress / benchmark plugins
 
-Timed workloads use **`mindtrace.core.testing`**: **`BenchTestSuite`**, **`TestRunner`**, and **`mindtrace-bench`**. See **[benchmarks.md](benchmarks.md)** for registering suites, running shipped benches, and adding application-specific benchmarks.
+Timed workloads use **`mindtrace.core.testing`**: **`BenchTestSuite`**, **`TestRunner`**, and **`mindtrace-bench`**. See **[docs/core/benchmarks.md](../../docs/core/benchmarks.md)** for registering suites, running shipped benches, and adding application-specific benchmarks.
 
 
 ## Practical Notes and Caveats
