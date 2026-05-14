@@ -10,15 +10,15 @@ from types import MappingProxyType
 
 from pydantic import BaseModel
 
-from mindtrace.core.types.task_schema import TaskSchema
-from mindtrace.core.testing.bench_framework import (
+from mindtrace.core import (
     BenchReporter,
     BenchResult,
     BenchResultSchema,
     BenchSuiteConfig,
+    BenchTestSuite,
+    TaskSchema,
     utc_now_iso,
 )
-from mindtrace.core.testing.bench_suite import BenchTestSuite
 from mindtrace.core.testing.workloads import deterministic_payload
 from mindtrace.registry import Registry
 
@@ -32,9 +32,9 @@ class RegistrySmokeResources(BaseModel):
 
 
 class RegistrySmokeSuite(BenchTestSuite):
-    suite_id = "registry.smoke.package_install"
-    title = "Registry smoke — local save/load wiring"
-    description = "Verifies ``mindtrace-registry`` imports and ``Registry.save`` / ``Registry.load`` on a temp dir."
+    suite_id = "registry.smoke.local_crud"
+    title = "Registry smoke — local CRUD wiring"
+    description = "Verifies ``Registry.save`` / ``Registry.load`` / ``Registry.delete`` on a temp dir."
     tags = frozenset({"smoke", "registry"})
     requires = ("local_disk",)
     task_schema = TaskSchema(
@@ -58,7 +58,8 @@ class RegistrySmokeSuite(BenchTestSuite):
         try:
             registry.save("bench/smoke/key", payload)
             loaded = registry.load("bench/smoke/key")
-            if loaded == payload:
+            registry.delete("bench/smoke/key")
+            if loaded == payload and not registry.has_object("bench/smoke/key"):
                 reporter.record_operation(success=True, latency_seconds=0.0, bytes_processed=len(payload))
             else:
                 reporter.record_operation(
