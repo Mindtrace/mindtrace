@@ -1,15 +1,14 @@
 """Integration tests for Registry local cache with a real non-local backend (S3/MinIO).
 
-Exercises LRU sidecar behavior, ``verify=full`` staleness, batch load with partial
-cache misses, explicit cache clearing, and lightweight concurrent reads. Skips when
-MinIO is unavailable (see ``tests/integration/conftest.py``).
+Exercises LRU pruning (metadata mtime ordering), ``verify=full`` staleness, batch load
+with partial cache misses, explicit cache clearing, and lightweight concurrent reads.
+Skips when MinIO is unavailable (see ``tests/integration/conftest.py``).
 """
 
 from __future__ import annotations
 
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
 
 import pytest
 
@@ -155,48 +154,18 @@ def test_integration_single_load_misses_amortize_pruning_with_buffer(s3_backend:
     assert (names[-1], "1.0.0") in cached
 
 
-def test_integration_process_cache_scope_uses_independent_local_cache(s3_backend: S3RegistryBackend):
-    """Process-scoped registries do not share the default backend cache directory."""
-    shared = Registry(
-        backend=s3_backend,
-        version_objects=True,
-        mutable=True,
-        use_cache=True,
-        cache_scope="shared",
-    )
-    process = Registry(
-        backend=s3_backend,
-        version_objects=True,
-        mutable=True,
-        use_cache=True,
-        cache_scope="process",
-    )
-    name = "integration:scope:process"
-    shared.save(name, {"scope": "shared"}, version="1.0.0")
-
-    shared.clear_cache()
-    process.clear_cache()
-    assert shared._cache.backend.uri != process._cache.backend.uri
-
-    assert process.load(name, version="1.0.0", verify=VerifyLevel.INTEGRITY) == {"scope": "shared"}
-    assert process._cache.has_object(name, "1.0.0")
-    assert not shared._cache.has_object(name, "1.0.0")
-
-
-def test_integration_clear_cache_removes_sidecar_and_artifacts(cached_registry_large):
-    """``clear_cache`` drops cached blobs and removes the LRU index file."""
+def test_integration_clear_cache_removes_cached_artifacts(cached_registry_large):
+    """``clear_cache`` drops cached blobs and resets the LRU entry estimate."""
     reg = cached_registry_large
     reg.save("integration:clr:x", {"x": 1}, version="1.0.0")
     reg.load("integration:clr:x", version="1.0.0")
 
-    lru_path = reg._cache_lru_index_path()
     assert reg._cache.has_object("integration:clr:x", "1.0.0")
-    assert isinstance(lru_path, Path)
 
     reg.clear_cache()
 
     assert not reg._cache.has_object("integration:clr:x", "1.0.0")
-    assert not lru_path.exists()
+    assert reg._cache_lru_estimated_entries == 0
 
 
 def test_integration_delete_removes_cached_version(cached_registry_large):
@@ -211,19 +180,6 @@ def test_integration_delete_removes_cached_version(cached_registry_large):
 
     assert not reg._cache.has_object("integration:del:a", "1.0.0")
     assert reg._cache.has_object("integration:del:b", "1.0.0")
-
-
-def test_integration_corrupt_lru_sidecar_does_not_block_save_and_load(cached_registry_large):
-    """A corrupt ``.registry_cache_lru.json`` is tolerated; save/load still succeed."""
-    reg = cached_registry_large
-    reg.save("integration:badidx", {"ok": True}, version="1.0.0")
-
-    lru = reg._cache_lru_index_path()
-    lru.write_text("not-json {{{", encoding="utf-8")
-
-    reg.save("integration:badidx", {"ok": True, "t": 2}, version="1.0.0", on_conflict="overwrite")
-    loaded = reg.load("integration:badidx", version="1.0.0", verify=VerifyLevel.FULL)
-    assert loaded == {"ok": True, "t": 2}
 
 
 def test_integration_concurrent_loads_on_hot_object(cached_registry_large):

@@ -1,4 +1,3 @@
-import json
 import os
 import shutil
 import threading
@@ -452,9 +451,8 @@ def test_find_materializer_with_class_object(registry, test_config):
     class object is converted to a string representation using type(materializer).
 
     Note: When a materializer class object is provided (not a string), it is converted
-    to a string using type(materializer) which returns:
-    - For classes with metaclasses: the metaclass (e.g., ArchiverMeta)
-    - For regular classes: builtins.type
+    to a string using type(materializer) which returns the class's metaclass.
+    Archiver inherits from BaseMaterializer, so its metaclass is BaseMaterializerMeta.
     """
     from mindtrace.registry.archivers.config_archiver import ConfigArchiver
 
@@ -463,9 +461,7 @@ def test_find_materializer_with_class_object(registry, test_config):
     # return f"{type(materializer).__module__}.{type(materializer).__name__}"
     materializer_str = registry._find_materializer(test_config, provided_materializer=ConfigArchiver)
 
-    # Verify the materializer class was converted to a string
-    # Since ConfigArchiver uses a metaclass, type(ConfigArchiver) returns ArchiverMeta
-    assert materializer_str == "mindtrace.registry.core.archiver.ArchiverMeta"
+    assert materializer_str == "zenml.materializers.base_materializer.BaseMaterializerMeta"
     assert isinstance(materializer_str, str)
 
     # Verify that if we pass a regular class, type() returns builtins.type
@@ -2886,13 +2882,23 @@ class TestRegistryCacheLRU:
         for name, version in entries:
             registry._cache.save(name, f"{name}@{version}", version=version)
 
+    @staticmethod
+    def set_cache_mtime(registry, name, version, timestamp):
+        """Set cached metadata mtime for deterministic LRU assertions."""
+        metadata_path = registry._cache.backend._object_metadata_path(name, version)
+        os.utime(metadata_path, (timestamp, timestamp))
+
+    @staticmethod
+    def cache_mtime(registry, name, version):
+        """Return cached metadata mtime."""
+        return registry._cache.backend._object_metadata_path(name, version).stat().st_mtime
+
     def test_default_cache_max_entries_is_1024(self, temp_registry_dir):
         registry = self.make_remote_registry(temp_registry_dir)
 
         assert registry._cached is True
         assert registry._cache_max_entries == 1024
         assert registry._cache_prune_buffer == 256
-        assert registry._cache_scope == "shared"
 
     def test_non_positive_cache_max_entries_is_rejected(self, temp_registry_dir):
         with pytest.raises(ValueError, match="cache_max_entries"):
@@ -2914,73 +2920,84 @@ class TestRegistryCacheLRU:
         with pytest.raises(ValueError, match="cache_prune_buffer"):
             self.make_remote_registry(temp_registry_dir, cache_max_entries=10, cache_prune_buffer=-1)
 
-    def test_cache_scope_process_uses_process_specific_cache_dir(self, temp_registry_dir):
-        shared = self.make_remote_registry(temp_registry_dir, cache_scope="shared")
-        process = self.make_remote_registry(temp_registry_dir, cache_scope="process")
+    def test_cache_dir_is_deterministic_per_backend_uri(self, temp_registry_dir):
+        first = self.make_remote_registry(temp_registry_dir)
+        second = self.make_remote_registry(temp_registry_dir)
 
-        assert shared._cache_scope == "shared"
-        assert process._cache_scope == "process"
-        assert shared._cache.backend.uri != process._cache.backend.uri
-        assert f"pid_{os.getpid()}" in str(process._cache.backend.uri)
+        assert first._cache.backend.uri == second._cache.backend.uri
 
-    def test_invalid_cache_scope_is_rejected(self, temp_registry_dir):
-        with pytest.raises(ValueError, match="cache_scope"):
-            self.make_remote_registry(temp_registry_dir, cache_scope="worker")
-
-    def test_shared_cache_file_lock_degrades_when_platform_locking_unavailable(self, temp_registry_dir):
-        registry = self.make_remote_registry(temp_registry_dir, cache_scope="shared")
-
-        with patch("mindtrace.registry.core.registry._fcntl", None):
-            with patch("mindtrace.registry.core.registry._msvcrt", None):
-                with registry._cache_lru_file_lock():
-                    assert registry._cache_lru_lock_path().exists()
-
-    def test_process_cache_scope_skips_file_lock_creation(self, temp_registry_dir):
-        registry = self.make_remote_registry(temp_registry_dir, cache_scope="process")
-
-        with registry._cache_lru_file_lock():
-            pass
-
-        assert not registry._cache_lru_lock_path().exists()
-
-    def test_none_cache_max_entries_disables_lru_sidecar_and_pruning(self, temp_registry_dir):
+    def test_none_cache_max_entries_disables_lru_touch_and_pruning(self, temp_registry_dir):
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=None)
         entries = [("test:a", "1.0.0"), ("test:b", "1.0.0"), ("test:c", "1.0.0")]
         self.save_cache_entries(registry, entries)
+        before = self.cache_mtime(registry, "test:a", "1.0.0")
 
-        for name, version in entries:
-            registry._touch_cache_entry(name, version)
+        registry._touch_cache_entry("test:a", "1.0.0")
         registry._prune_cache_lru()
 
         assert self.cache_names(registry) == set(entries)
-        assert not registry._cache_lru_index_path().exists()
+        assert self.cache_mtime(registry, "test:a", "1.0.0") == before
 
-    def test_prune_keeps_most_recent_entries(self, temp_registry_dir):
+    def test_touch_updates_cached_metadata_mtime(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
+        self.save_cache_entries(registry, [("test:obj", "1.0.0")])
+        self.set_cache_mtime(registry, "test:obj", "1.0.0", 100.0)
+
+        registry._touch_cache_entry("test:obj", "1.0.0")
+
+        assert self.cache_mtime(registry, "test:obj", "1.0.0") >= 100.0
+
+    def test_touch_swallows_metadata_update_failure(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
+        with patch.object(registry._cache.backend, "_object_metadata_path", side_effect=OSError("missing")):
+            registry._touch_cache_entry("test:missing", "1.0.0")
+
+    def test_list_cache_lru_entries_uses_metadata_mtime(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=8)
+        self.save_cache_entries(registry, [("test:obj", "1.0.0")])
+        self.set_cache_mtime(registry, "test:obj", "1.0.0", 123.0)
+
+        entries = registry._list_cache_lru_entries()
+
+        assert entries == [{"name": "test:obj", "version": "1.0.0", "last_accessed": 123.0}]
+
+    def test_list_cache_lru_entries_falls_back_when_stat_fails(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=8)
+        registry._cache.save("test:stat", "x", version="1.0.0")
+        bad_meta = MagicMock()
+        bad_meta.stat.side_effect = OSError("no stat")
+        with patch.object(registry._cache.backend, "_object_metadata_path", return_value=bad_meta):
+            with patch("mindtrace.registry.core.registry.time.time", return_value=999.0):
+                entries = registry._list_cache_lru_entries()
+
+        assert entries == [{"name": "test:stat", "version": "1.0.0", "last_accessed": 999.0}]
+
+    def test_list_cache_lru_entries_swallows_list_objects_failure(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=8)
+        with patch.object(registry._cache, "list_objects", side_effect=RuntimeError("boom")):
+            assert registry._list_cache_lru_entries() == []
+
+    def test_prune_keeps_most_recent_metadata_mtimes(self, temp_registry_dir):
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=3, cache_prune_buffer=1)
         entries = [("test:a", "1.0.0"), ("test:b", "1.0.0"), ("test:c", "1.0.0"), ("test:d", "1.0.0")]
         self.save_cache_entries(registry, entries)
+        for timestamp, (name, version) in enumerate(entries, start=1):
+            self.set_cache_mtime(registry, name, version, float(timestamp))
 
-        with patch(
-            "mindtrace.registry.core.registry.time.time", side_effect=_patch_registry_time_sequence(1.0, 2.0, 3.0)
-        ):
-            for name, version in entries:
-                registry._touch_cache_entry(name, version)
         registry._prune_cache_lru()
 
         assert self.cache_names(registry) == {("test:c", "1.0.0"), ("test:d", "1.0.0")}
+        assert registry._cache_lru_estimated_entries == 2
 
     def test_recency_update_preserves_cache_hit(self, temp_registry_dir):
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2, cache_prune_buffer=0)
         entries = [("test:a", "1.0.0"), ("test:b", "1.0.0"), ("test:c", "1.0.0")]
         self.save_cache_entries(registry, entries)
+        self.set_cache_mtime(registry, "test:a", "1.0.0", 1.0)
+        self.set_cache_mtime(registry, "test:b", "1.0.0", 2.0)
+        self.set_cache_mtime(registry, "test:c", "1.0.0", 3.0)
+        registry._touch_cache_entry("test:a", "1.0.0")
 
-        with patch(
-            "mindtrace.registry.core.registry.time.time", side_effect=_patch_registry_time_sequence(1.0, 2.0, 3.0, 4.0)
-        ):
-            registry._touch_cache_entry("test:a", "1.0.0")
-            registry._touch_cache_entry("test:b", "1.0.0")
-            registry._touch_cache_entry("test:a", "1.0.0")
-            registry._touch_cache_entry("test:c", "1.0.0")
         registry._prune_cache_lru()
 
         assert self.cache_names(registry) == {("test:a", "1.0.0"), ("test:c", "1.0.0")}
@@ -2989,136 +3006,34 @@ class TestRegistryCacheLRU:
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2, cache_prune_buffer=0)
         entries = [("test:obj", "1.0.0"), ("test:obj", "2.0.0"), ("test:other", "1.0.0")]
         self.save_cache_entries(registry, entries)
+        for timestamp, (name, version) in enumerate(entries, start=1):
+            self.set_cache_mtime(registry, name, version, float(timestamp))
 
-        with patch(
-            "mindtrace.registry.core.registry.time.time", side_effect=_patch_registry_time_sequence(1.0, 2.0, 3.0)
-        ):
-            for name, version in entries:
-                registry._touch_cache_entry(name, version)
         registry._prune_cache_lru()
 
         assert self.cache_names(registry) == {("test:obj", "2.0.0"), ("test:other", "1.0.0")}
 
-    def test_lru_key_is_stable_json_and_round_trips_colons_and_slashes(self):
-        key = Registry._cache_lru_key("path/to:test", "1.2.3")
-
-        assert json.loads(key) == ["path/to:test", "1.2.3"]
-
-    def test_touch_records_dirty_entry_without_writing_sidecar(self, temp_registry_dir):
-        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
-
-        with patch("mindtrace.registry.core.registry.time.time", side_effect=_patch_registry_time_sequence(10.0, 20.0)):
-            registry._touch_cache_entry("test:obj", "1.0.0")
-            registry._touch_cache_entry("test:obj", "1.0.0")
-
-        assert not registry._cache_lru_index_path().exists()
-        entry = registry._cache_lru_dirty[Registry._cache_lru_key("test:obj", "1.0.0")]
-        assert entry == {"name": "test:obj", "version": "1.0.0", "last_accessed": 20.0}
-
-    def test_remove_cache_lru_entries_removes_only_requested_entries(self, temp_registry_dir):
-        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
-        registry._save_cache_lru_index(
-            {
-                "version": 1,
-                "entries": {
-                    Registry._cache_lru_key("test:a", "1.0.0"): {
-                        "name": "test:a",
-                        "version": "1.0.0",
-                        "last_accessed": 1.0,
-                    },
-                    Registry._cache_lru_key("test:b", "1.0.0"): {
-                        "name": "test:b",
-                        "version": "1.0.0",
-                        "last_accessed": 2.0,
-                    },
-                },
-            }
-        )
-
-        registry._remove_cache_lru_entries([("test:a", "1.0.0")])
-
-        index = registry._load_cache_lru_index()
-        assert Registry._cache_lru_key("test:a", "1.0.0") not in index["entries"]
-        assert Registry._cache_lru_key("test:b", "1.0.0") in index["entries"]
-
-    def test_prune_drops_stale_index_entries_without_deleting_live_cache(self, temp_registry_dir):
-        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
-        registry._cache.save("test:live", "live", version="1.0.0")
-        registry._save_cache_lru_index(
-            {
-                "version": 1,
-                "entries": {
-                    Registry._cache_lru_key("test:missing", "1.0.0"): {
-                        "name": "test:missing",
-                        "version": "1.0.0",
-                        "last_accessed": 1.0,
-                    },
-                    Registry._cache_lru_key("test:live", "1.0.0"): {
-                        "name": "test:live",
-                        "version": "1.0.0",
-                        "last_accessed": 2.0,
-                    },
-                },
-            }
-        )
-
-        registry._prune_cache_lru()
-
-        index = registry._load_cache_lru_index()
-        assert set(index["entries"]) == {Registry._cache_lru_key("test:live", "1.0.0")}
-        assert self.cache_names(registry) == {("test:live", "1.0.0")}
-
-    def test_corrupt_index_does_not_break_pruning(self, temp_registry_dir):
-        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=1)
-        entries = [("test:a", "1.0.0"), ("test:b", "1.0.0")]
-        self.save_cache_entries(registry, entries)
-        registry._cache_lru_index_path().write_text("not json")
-
-        registry._prune_cache_lru()
-
-        assert len(self.cache_names(registry)) == 1
-
-    def test_invalid_index_shape_loads_as_empty_index(self, temp_registry_dir):
-        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=1)
-        registry._cache_lru_index_path().write_text(json.dumps({"version": 1, "entries": []}))
-
-        assert registry._load_cache_lru_index() == {"version": 1, "entries": {}}
-
-    def test_missing_index_is_rebuilt_from_cache_contents(self, temp_registry_dir):
-        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=1)
-        entries = [("test:a", "1.0.0"), ("test:b", "1.0.0")]
-        self.save_cache_entries(registry, entries)
-        registry._clear_cache_lru_index()
-
-        registry._prune_cache_lru()
-
-        assert len(self.cache_names(registry)) == 1
-        assert registry._cache_lru_index_path().exists()
-
-    def test_clear_cache_removes_cached_objects_and_lru_index(self, temp_registry_dir):
+    def test_clear_cache_removes_cached_objects_and_resets_estimate(self, temp_registry_dir):
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
         registry._cache.save("test:obj", "value", version="1.0.0")
-        registry._touch_cache_entry("test:obj", "1.0.0")
-        registry._prune_cache_lru()
-        assert registry._cache_lru_index_path().exists()
+        registry._cache_lru_estimated_entries = 1
 
         registry.clear_cache()
 
         assert self.cache_names(registry) == set()
-        assert not registry._cache_lru_index_path().exists()
+        assert registry._cache_lru_estimated_entries == 0
 
-    def test_clear_removes_lru_index_for_cached_registry(self, temp_registry_dir):
+    def test_clear_removes_cache_for_cached_registry_and_resets_estimate(self, temp_registry_dir):
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
         registry._cache.save("test:obj", "value", version="1.0.0")
-        registry._touch_cache_entry("test:obj", "1.0.0")
-        registry._prune_cache_lru()
+        registry._cache_lru_estimated_entries = 1
         registry._remote.clear = Mock()
 
         registry.clear()
 
         registry._remote.clear.assert_called_once_with(False)
         assert self.cache_names(registry) == set()
-        assert not registry._cache_lru_index_path().exists()
+        assert registry._cache_lru_estimated_entries == 0
 
     def test_local_and_uncached_registries_ignore_lru_helpers(self, temp_registry_dir):
         local_registry = Registry(backend=temp_registry_dir, cache_max_entries=1)
@@ -3128,50 +3043,38 @@ class TestRegistryCacheLRU:
         uncached_remote = self.make_remote_registry(temp_registry_dir, use_cache=False, cache_max_entries=1)
         assert uncached_remote._cached is False
         assert uncached_remote._cache_max_entries == 1
-        assert uncached_remote._load_cache_lru_index() == {"version": 1, "entries": {}}
-        uncached_remote._save_cache_lru_index({"version": 1, "entries": {}})
-        uncached_remote._clear_cache_lru_index()
+        assert uncached_remote._list_cache_lru_entries() == []
 
     def test_load_cache_hit_touches_lru_entry(self, temp_registry_dir):
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
         registry._cache.save("test:obj", "value", version="1.0.0")
         registry._remote._latest = Mock(return_value="1.0.0")
+        self.set_cache_mtime(registry, "test:obj", "1.0.0", 100.0)
 
-        # INTEGRITY avoids FULL staleness (remote mock has no matching metadata hashes).
-        with patch("mindtrace.registry.core.registry.time.time", return_value=123.0):
-            assert registry._load_single_cached("test:obj", "1.0.0", verify=VerifyLevel.INTEGRITY) == "value"
+        assert registry._load_single_cached("test:obj", "1.0.0", verify=VerifyLevel.INTEGRITY) == "value"
 
-        dirty = registry._cache_lru_dirty
-        assert dirty[Registry._cache_lru_key("test:obj", "1.0.0")]["last_accessed"] == 123.0
+        assert self.cache_mtime(registry, "test:obj", "1.0.0") >= 100.0
 
     def test_batch_cache_hits_touch_all_lru_entries(self, temp_registry_dir):
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
         entries = [("test:a", "1.0.0"), ("test:b", "1.0.0")]
         self.save_cache_entries(registry, entries)
+        for name, version in entries:
+            self.set_cache_mtime(registry, name, version, 100.0)
         registry._remote._resolve_load_version = Mock(side_effect=lambda name, version: version)
 
         result = registry._load_batch_cached(["test:a", "test:b"], ["1.0.0", "1.0.0"], verify=VerifyLevel.INTEGRITY)
 
         assert result.results == ["test:a@1.0.0", "test:b@1.0.0"]
-        key_a = Registry._cache_lru_key("test:a", "1.0.0")
-        key_b = Registry._cache_lru_key("test:b", "1.0.0")
-        dirty = registry._cache_lru_dirty
-        assert key_a in dirty
-        assert key_b in dirty
-        # `_touch_cache_entry` runs in batch order for cache hits; recency timestamps should
-        # reflect that ordering (later touch >= earlier; typically strict on real clocks).
-        assert dirty[key_a]["last_accessed"] <= dirty[key_b]["last_accessed"]
+        for name, version in entries:
+            assert self.cache_mtime(registry, name, version) >= 100.0
 
     def test_save_cache_update_prunes_after_remote_save(self, temp_registry_dir):
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=1)
         registry._remote.save = Mock(side_effect=["1.0.0", "1.0.0"])
 
-        with patch(
-            "mindtrace.registry.core.registry.time.time",
-            side_effect=_patch_registry_time_sequence(1.0, 2.0),
-        ):
-            registry.save("test:a", "a", version="1.0.0")
-            registry.save("test:b", "b", version="1.0.0")
+        registry.save("test:a", "a", version="1.0.0")
+        registry.save("test:b", "b", version="1.0.0")
 
         assert self.cache_names(registry) == {("test:b", "1.0.0")}
 
@@ -3234,59 +3137,13 @@ class TestRegistryCacheLRU:
         assert registry._cache_lru_estimated_entries == 4
         pruner.assert_called_once_with()
 
-    def test_prune_noops_below_max_but_flushes_dirty_touches(self, temp_registry_dir):
-        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=4)
-        entries = [("test:a", "1.0.0"), ("test:b", "1.0.0")]
-        self.save_cache_entries(registry, entries)
-        with patch("mindtrace.registry.core.registry.time.time", side_effect=_patch_registry_time_sequence(10.0, 20.0)):
-            for name, version in entries:
-                registry._touch_cache_entry(name, version)
-
-        registry._prune_cache_lru()
-
-        assert self.cache_names(registry) == set(entries)
-        assert registry._cache_lru_dirty == {}
-        assert registry._cache_lru_estimated_entries == 2
-        index = registry._load_cache_lru_index()
-        assert index["entries"][Registry._cache_lru_key("test:a", "1.0.0")]["last_accessed"] == 10.0
-        assert index["entries"][Registry._cache_lru_key("test:b", "1.0.0")]["last_accessed"] == 20.0
-
-    def test_remove_cache_lru_entries_clears_dirty_without_sidecar_row(self, temp_registry_dir):
+    def test_remove_cache_lru_entries_decrements_estimate(self, temp_registry_dir):
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
-        registry._touch_cache_entry("test:dirty", "1.0.0")
+        registry._cache_lru_estimated_entries = 2
 
-        registry._remove_cache_lru_entries([("test:dirty", "1.0.0")])
+        registry._remove_cache_lru_entries([("test:dirty", "1.0.0"), ("test:dirty", "1.0.0")])
 
-        assert registry._cache_lru_dirty == {}
-
-    def test_registry_get_cache_dir_rejects_invalid_cache_scope(self):
-        """Defense-in-depth: callers must pass ``cache_scope='shared'`` or ``'process'``."""
-        with pytest.raises(ValueError, match="cache_scope"):
-            Registry._get_cache_dir("mock://backend", cache_scope="invalid-scope")
-
-    def test_save_cache_lru_index_best_effort_unlink_after_failed_replace(self, temp_registry_dir):
-        """If rename fails after writing the temporary sidecar, cleanup unlink errors are swallowed."""
-        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
-
-        def synthetic_replace(self_inner: Path, target: Path, **_kwargs):  # type: ignore[misc]
-            raise OSError("simulated rename failure")
-
-        unlink_attempts_on_tmp = []
-
-        original_unlink = Path.unlink
-
-        def unlink_maybe_fail(self_inner: Path, missing_ok: bool = False):
-            stem = self_inner.name
-            if stem.endswith(".tmp") and ".registry_cache_lru.json." in stem:
-                unlink_attempts_on_tmp.append(self_inner.name)
-                if len(unlink_attempts_on_tmp) == 1:
-                    raise RuntimeError("simulated unlink failure")
-            return original_unlink(self_inner, missing_ok=missing_ok)
-
-        with patch.object(Path, "replace", synthetic_replace):
-            with patch.object(Path, "unlink", unlink_maybe_fail):
-                registry._save_cache_lru_index({"version": 1, "entries": {}})
-        assert len(unlink_attempts_on_tmp) == 1
+        assert registry._cache_lru_estimated_entries == 1
 
     def test_note_cache_entries_added_noop_when_count_not_positive(self, temp_registry_dir):
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=10)
@@ -3304,181 +3161,83 @@ class TestRegistryCacheLRU:
 
         assert registry._cache_lru_estimated_entries is None
 
-    def test_maybe_prune_noops_when_uncached(self, temp_registry_dir):
-        uncached = self.make_remote_registry(temp_registry_dir, use_cache=False)
-
-        with patch.object(uncached, "_prune_cache_lru") as pruner:
-            uncached._maybe_prune_cache_lru()
-
-        pruner.assert_not_called()
-
-    def test_maybe_prune_noops_when_lru_disabled(self, temp_registry_dir):
-        no_cap = self.make_remote_registry(temp_registry_dir, cache_max_entries=None)
-
-        with patch.object(no_cap, "_prune_cache_lru") as pruner:
-            no_cap._maybe_prune_cache_lru()
-
-        pruner.assert_not_called()
-
-    def test_prune_reduces_to_max_minus_buffer_and_updates_estimate(self, temp_registry_dir):
-        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=4, cache_prune_buffer=2)
-        entries = [(f"test:{idx}", "1.0.0") for idx in range(6)]
-        self.save_cache_entries(registry, entries)
-        with patch(
-            "mindtrace.registry.core.registry.time.time",
-            side_effect=_patch_registry_time_sequence(1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
-        ):
-            for name, version in entries:
-                registry._touch_cache_entry(name, version)
-
-        registry._prune_cache_lru()
-
-        assert self.cache_names(registry) == {("test:4", "1.0.0"), ("test:5", "1.0.0")}
-        assert registry._cache_lru_estimated_entries == 2
-        assert registry._cache_lru_dirty == {}
-
-    def test_prune_counts_cache_entries_missing_from_partial_sidecar(self, temp_registry_dir):
-        """Rebuild sees all on-disk objects; a partial sidecar must not drop unknown keys from disk.
-
-        Sidecar ``last_accessed`` must be comparable to rebuild's mtime-based timestamps
-        (both are wall-clock style floats); a small constant like ``3.0`` is incorrectly
-        interpreted as ancient next to ``st_mtime``.
-        """
-        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2, cache_prune_buffer=0)
-        entries = [("test:a", "1.0.0"), ("test:b", "1.0.0"), ("test:c", "1.0.0")]
-        self.save_cache_entries(registry, entries)
-        mtime_floor = max(registry._cache.backend._object_metadata_path(n, v).stat().st_mtime for n, v in entries)
-        registry._save_cache_lru_index(
-            {
-                "version": 1,
-                "entries": {
-                    Registry._cache_lru_key("test:c", "1.0.0"): {
-                        "name": "test:c",
-                        "version": "1.0.0",
-                        "last_accessed": mtime_floor + 3600.0,
-                    }
-                },
+    def test_count_new_cache_entries_uses_batch_backend_has_object(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=10)
+        registry._cache.backend.has_object = Mock(
+            return_value={
+                ("test:existing", "1.0.0"): True,
+                ("test:new", "1.0.0"): False,
             }
         )
 
-        registry._prune_cache_lru()
+        added = registry._count_new_cache_entries(
+            [("test:existing", "1.0.0"), ("test:new", "1.0.0"), ("test:new", "1.0.0")]
+        )
 
-        assert len(self.cache_names(registry)) == 2
-        assert ("test:c", "1.0.0") in self.cache_names(registry)
+        assert added == 1
+        registry._cache.backend.has_object.assert_called_once_with(
+            ["test:existing", "test:new"],
+            ["1.0.0", "1.0.0"],
+        )
 
-    def test_delete_removes_cache_and_lru_entry(self, temp_registry_dir):
+    def test_save_overwrite_does_not_increment_cache_lru_estimate(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=10)
+        self.save_cache_entries(registry, [("test:obj", "1.0.0")])
+        registry._cache_lru_estimated_entries = 1
+        registry._remote.save = Mock(return_value="1.0.0")
+
+        with patch.object(registry, "_maybe_prune_cache_lru") as pruner:
+            registry.save("test:obj", "updated", version="1.0.0")
+
+        assert registry._cache_lru_estimated_entries == 1
+        pruner.assert_called_once_with()
+
+    def test_batch_save_counts_only_new_cache_lru_entries(self, temp_registry_dir):
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=10)
+        self.save_cache_entries(registry, [("test:existing", "1.0.0")])
+        registry._cache_lru_estimated_entries = 1
+        result = BatchResult()
+        result.results = ["1.0.0", "1.0.0"]
+        result.succeeded = [("test:existing", "1.0.0"), ("test:new", "1.0.0")]
+        registry._remote.save = Mock(return_value=result)
+
+        with patch.object(registry, "_maybe_prune_cache_lru") as pruner:
+            registry.save(["test:existing", "test:new"], ["updated", "fresh"], version=["1.0.0", "1.0.0"])
+
+        assert registry._cache_lru_estimated_entries == 2
+        pruner.assert_called_once_with()
+
+    def test_delete_removes_cache_and_decrements_lru_estimate(self, temp_registry_dir):
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
         registry._remote.delete = Mock(return_value=None)
         registry._cache.save("test:obj", "value", version="1.0.0")
-        registry._touch_cache_entry("test:obj", "1.0.0")
+        registry._cache_lru_estimated_entries = 1
 
         registry.delete("test:obj", "1.0.0")
 
         assert self.cache_names(registry) == set()
-        assert registry._load_cache_lru_index()["entries"] == {}
+        assert registry._cache_lru_estimated_entries == 0
 
-    def test_delete_all_versions_removes_all_cache_and_lru_entries_for_name(self, temp_registry_dir):
+    def test_delete_all_versions_removes_all_cache_entries_for_name(self, temp_registry_dir):
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=3)
         registry._remote.delete = Mock(return_value=None)
         entries = [("test:obj", "1.0.0"), ("test:obj", "2.0.0"), ("test:other", "1.0.0")]
         self.save_cache_entries(registry, entries)
-        with patch(
-            "mindtrace.registry.core.registry.time.time",
-            side_effect=_patch_registry_time_sequence(1.0, 2.0, 3.0),
-        ):
-            for name, version in entries:
-                registry._touch_cache_entry(name, version)
-        registry._prune_cache_lru()
+        registry._cache_lru_estimated_entries = 3
 
         registry.delete("test:obj")
 
         assert self.cache_names(registry) == {("test:other", "1.0.0")}
-        index = registry._load_cache_lru_index()
-        assert set(index["entries"]) == {Registry._cache_lru_key("test:other", "1.0.0")}
-
-    def test_save_cache_lru_index_swallows_dump_failure(self, temp_registry_dir):
-        """``_save_cache_lru_index`` logs and ignores IO errors from ``json.dump``."""
-        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
-        with patch("mindtrace.registry.core.registry.json.dump", side_effect=OSError("disk full")):
-            registry._save_cache_lru_index({"version": 1, "entries": {}})
-
-    def test_clear_cache_lru_index_swallows_unlink_failure(self, temp_registry_dir):
-        """``_clear_cache_lru_index`` tolerates ``unlink`` raising."""
-        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
-        mock_path = MagicMock()
-        mock_path.unlink.side_effect = OSError("permission denied")
-        with patch.object(registry, "_cache_lru_index_path", return_value=mock_path):
-            registry._clear_cache_lru_index()
-        mock_path.unlink.assert_called_once_with(missing_ok=True)
-
-    def test_rebuild_cache_lru_index_empty_when_registry_not_cached(self, temp_registry_dir):
-        """Uncached registries return an empty index without touching ``_cache``."""
-        uncached = self.make_remote_registry(temp_registry_dir, use_cache=False, cache_max_entries=2)
-        assert uncached._rebuild_cache_lru_index() == {"version": 1, "entries": {}}
-
-    def test_rebuild_cache_lru_index_uses_mtime_or_falls_back_when_stat_fails(self, temp_registry_dir):
-        """If metadata ``stat`` fails, rebuild still records the object using ``time.time()``."""
-        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=8)
-        registry._cache.save("test:stat", "x", version="1.0.0")
-        bad_meta = MagicMock()
-        bad_meta.stat.side_effect = OSError("no stat")
-        with patch.object(registry._cache.backend, "_object_metadata_path", return_value=bad_meta):
-            with patch("mindtrace.registry.core.registry.time.time", return_value=999.0):
-                idx = registry._rebuild_cache_lru_index()
-
-        entry = idx["entries"][Registry._cache_lru_key("test:stat", "1.0.0")]
-        assert entry["name"] == "test:stat"
-        assert entry["version"] == "1.0.0"
-        assert entry["last_accessed"] == 999.0
-
-    def test_rebuild_cache_lru_index_swallows_list_objects_failure(self, temp_registry_dir):
-        """Rebuild returns the default shell if enumerating cached objects blows up."""
-        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=8)
-        with patch.object(registry._cache, "list_objects", side_effect=RuntimeError("boom")):
-            assert registry._rebuild_cache_lru_index() == {"version": 1, "entries": {}}
-
-    def test_prune_skips_malformed_lru_index_entries(self, temp_registry_dir):
-        """Non-string ``name``/``version`` in the sidecar are ignored during pruning."""
-        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=1)
-        registry._cache.save("test:x", "x", version="1.0.0")
-        registry._cache.save("test:y", "y", version="1.0.0")
-        registry._save_cache_lru_index(
-            {
-                "version": 1,
-                "entries": {
-                    "not-a-valid-key-shape": {
-                        "name": 123,
-                        "version": "1.0.0",
-                        "last_accessed": 0.0,
-                    },
-                    Registry._cache_lru_key("test:x", "1.0.0"): {
-                        "name": "test:x",
-                        "version": "1.0.0",
-                        "last_accessed": 1.0,
-                    },
-                    Registry._cache_lru_key("test:y", "1.0.0"): {
-                        "name": "test:y",
-                        "version": "1.0.0",
-                        "last_accessed": 2.0,
-                    },
-                },
-            }
-        )
-        registry._prune_cache_lru()
-        assert len(self.cache_names(registry)) == 1
-        assert ("test:y", "1.0.0") in self.cache_names(registry)
+        assert registry._cache_lru_estimated_entries == 1
 
     def test_prune_warns_and_continues_when_cache_delete_raises(self, temp_registry_dir):
-        """If eviction ``delete`` fails, prune logs and drops the row from the sidecar."""
-        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2)
+        # buffer=0 so prune target is exactly cache_max_entries (default buffer would
+        # target max - buffer and over-evict after a failed delete on the LRU entry).
+        registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=2, cache_prune_buffer=0)
         entries = [("test:a", "1.0.0"), ("test:b", "1.0.0"), ("test:c", "1.0.0")]
         self.save_cache_entries(registry, entries)
-        with patch(
-            "mindtrace.registry.core.registry.time.time",
-            side_effect=_patch_registry_time_sequence(1.0, 2.0, 3.0),
-        ):
-            for name, version in entries:
-                registry._touch_cache_entry(name, version)
+        for timestamp, (name, version) in enumerate(entries, start=1):
+            self.set_cache_mtime(registry, name, version, float(timestamp))
 
         real_delete = registry._cache.delete
 
@@ -3490,15 +3249,13 @@ class TestRegistryCacheLRU:
         with patch.object(registry._cache, "delete", side_effect=delete_side_effect):
             registry._prune_cache_lru()
 
-        # Oldest (test:a) delete failed; object may still exist on disk, but index no longer tracks it.
-        index = registry._load_cache_lru_index()
-        assert Registry._cache_lru_key("test:a", "1.0.0") not in index["entries"]
+        # LRU is test:a; delete fails. Next oldest (test:b) is removed so size <= max.
+        assert self.cache_names(registry) == {("test:a", "1.0.0"), ("test:c", "1.0.0")}
+        assert registry._cache_lru_estimated_entries == 2
 
     def test_load_single_cached_valueerror_invokes_lru_removal(self, temp_registry_dir):
-        """Corrupt cache materialization removes artifacts and LRU keys before remote load."""
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=8)
         registry._cache.save("test:corrupt", "cached", version="1.0.0")
-        registry._touch_cache_entry("test:corrupt", "1.0.0")
         registry._remote._latest = Mock(return_value="1.0.0")
         registry._remote.load = Mock(return_value="fresh")
 
@@ -3511,7 +3268,6 @@ class TestRegistryCacheLRU:
         registry._remote.load.assert_called_once()
 
     def test_load_single_cached_valueerror_swallows_delete_cleanup_failure(self, temp_registry_dir):
-        """If cleanup after corrupt cache fails, load still proceeds from remote."""
         registry = self.make_remote_registry(temp_registry_dir, cache_max_entries=8)
         registry._cache.save("test:corrupt", "cached", version="1.0.0")
         registry._remote._latest = Mock(return_value="1.0.0")

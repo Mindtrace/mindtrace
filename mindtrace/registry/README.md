@@ -123,7 +123,6 @@ registry = Registry(
     backend=gcp_backend,
     use_cache=True,
     cache_max_entries=1024,
-    cache_scope="shared",  # or "process" for a process-local cache directory
 )
 
 # Control verification level on load
@@ -141,14 +140,13 @@ registry.clear_cache()
 - `"full"`: Integrity check + compare cache hash against remote. Detects stale cache entries.
 
 **LRU pruning**: remote registry caches retain at most `cache_max_entries`
-concrete object versions, defaulting to `1024`. Cache hits update recency in
-memory, and cache maintenance is amortized: when cache writes push the cache
-above `cache_max_entries`, least-recently-used entries are removed down to
-`cache_max_entries - cache_prune_buffer`. The default prune buffer is
-`min(max(cache_max_entries // 4, 1), 1024)`. Set `cache_max_entries=None` to
-keep the cache unbounded. `cache_scope="shared"` reuses one cache directory per
-remote backend URI across processes; `cache_scope="process"` uses a
-process-specific cache directory to avoid cross-process cache contention.
+concrete object versions, defaulting to `1024`. Cache hits update the cached
+object metadata file timestamp with `os.utime(...)`, so recency is visible across
+processes sharing the same cache directory. Cache maintenance is amortized: when
+cache writes push the cache above `cache_max_entries`, least-recently-used
+entries are removed down to `cache_max_entries - cache_prune_buffer`. The default
+prune buffer is `min(max(cache_max_entries // 4, 1), 1024)`. Set
+`cache_max_entries=None` to keep the cache unbounded.
 
 ## Version Management
 
