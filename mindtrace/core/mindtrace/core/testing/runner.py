@@ -5,9 +5,11 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
-from typing import Any, TypeVar
+from typing import Any, Type, TypeVar
 
-from mindtrace.core.types.task_schema import pydantic_model_json_schema
+from pydantic import BaseModel
+
+from mindtrace.core.types.task_schema import TaskSchema
 from mindtrace.core.testing.test_suite import TestSuite
 from mindtrace.core.testing.types import (
     OverallStatus,
@@ -29,6 +31,26 @@ _TS = TypeVar("_TS", bound=type[TestSuite])
 
 def _utc_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _pydantic_model_json_schema(model: Type[BaseModel]) -> dict[str, Any]:
+    """Return a JSON schema for a Pydantic model across v1/v2 APIs."""
+
+    if hasattr(model, "model_json_schema"):
+        return model.model_json_schema()  # type: ignore[attr-defined]
+    return model.schema()
+
+
+def _task_schema_json_schema(task_schema: TaskSchema) -> dict[str, Any]:
+    return {
+        "name": task_schema.name,
+        "input_json_schema": (
+            _pydantic_model_json_schema(task_schema.input_schema) if task_schema.input_schema else None
+        ),
+        "output_json_schema": (
+            _pydantic_model_json_schema(task_schema.output_schema) if task_schema.output_schema else None
+        ),
+    }
 
 
 class TestRunner:
@@ -87,9 +109,9 @@ class TestRunner:
         """Return REST-friendly metadata and task/resource schemas for one suite."""
 
         contrib = cls.get_contribution(suite_id)
-        task_schema = contrib.task_schema.to_json_schema() if contrib.task_schema is not None else None
+        task_schema = _task_schema_json_schema(contrib.task_schema) if contrib.task_schema is not None else None
         resource_json_schema = (
-            pydantic_model_json_schema(contrib.resource_schema) if contrib.resource_schema is not None else None
+            _pydantic_model_json_schema(contrib.resource_schema) if contrib.resource_schema is not None else None
         )
         return SuiteSchema(
             suite_id=contrib.id,
