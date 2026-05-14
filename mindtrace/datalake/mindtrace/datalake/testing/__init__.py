@@ -1,7 +1,7 @@
 """Embedded benchmark suites for ``mindtrace-datalake``.
 
-Import this module (or run ``mindtrace-bench datalake``) to register workloads on
-:class:`~mindtrace.core.TestRunner`.
+Use ``register_benchmark_suites`` directly or discover it through the
+``mindtrace.benchmark_suites`` entry point group.
 """
 
 from __future__ import annotations
@@ -27,8 +27,5 @@ def register_benchmark_suites(*, runner: TestRunner | None = None, replace: bool
         DatalakeMongoInsertCeilingSuite,
         DatalakeCreateAssetFromObjectSuite,
     ):
-        if cls.suite_id not in target.registered_suites():
+        if replace or cls.suite_id not in target.registered_suites():
             target.register_test_suite(cls, replace=replace)
-
-
-register_benchmark_suites()

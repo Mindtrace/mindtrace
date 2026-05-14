@@ -1,4 +1,4 @@
-"""Embedded benchmark modules register workloads on import."""
+"""Embedded benchmark modules expose package-level registration hooks."""
 
 from __future__ import annotations
 

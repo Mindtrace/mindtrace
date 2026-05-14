@@ -1,8 +1,8 @@
-# Testing and benchmarks (`mindtrace.core.testing`)
+# Benchmark suites (`mindtrace.core.testing`)
 
 This document covers **library-embedded benchmark workloads** (timed “stress” style checks) shipped with Mindtrace and **how downstream applications** register and run them—including **adding their own suites** on top.
 
-The integration surface is **`TestRunner`** and **`BenchTestSuite`**. Discovery is **import-driven** (no separate manifest file in this model).
+The integration surface is **`TestRunner`** and **`BenchTestSuite`**. Discovery is **entry-point driven** for installed packages, with explicit package registration still available for tests and tightly controlled application flows.
 
 ---
 
@@ -28,26 +28,26 @@ The integration surface is **`TestRunner`** and **`BenchTestSuite`**. Discovery 
 |--------|---------|
 | **Suite** | Named workload: stable **`suite_id`**, **`tags`**, **`requires`**, safety text, parameter definitions, **`profiles`**. |
 | **Profile** | Named preset (**`smoke`**, **`stress`**, …): **`duration_seconds`**, defaults for parameters, optional nested **`resources`**. |
-| **Registry** | Each **`TestRunner`** instance holds **`SuiteContribution`** entries. Class-level calls use the process-global default runner; imports of **`mindtrace.<pkg>.testing`** register suites into that default runner as a side effect. |
+| **Registry** | Each **`TestRunner`** instance holds **`SuiteContribution`** entries. Class-level calls use the process-global default runner. Installed packages can advertise registration hooks through the **`mindtrace.benchmark_suites`** entry point group. |
 | **Execution** | A CLI or script calls **`runner.run_registered_benches(...)`** with **`suite_id`** strings and a **profile tag** (**`smoke`** or **`stress`** for built-in tooling). |
 
 ---
 
 ## Discovering suite schemas for REST / UI callers
 
-For simple scripts, import package **`testing`** modules to register suites into the process-global default runner. Callers can then inspect one suite or all suites without importing suite classes directly:
+For installed packages, use benchmark-suite entry points to register all available suites into a runner without importing each package explicitly:
 
 ```python
 from mindtrace.core.testing.runner import TestRunner
 
-import mindtrace.registry.testing  # noqa: F401
-import mindtrace.datalake.testing  # noqa: F401
+runner = TestRunner()
+load_results = runner.register_entrypoint_benchmark_suites()
 
-suite_schema = TestRunner.get_suite_schema("registry.stress.write_ceiling")
-all_stress_schemas = TestRunner.list_suite_schemas(tags={"stress"})
+suite_schema = runner.get_suite_schema("registry.stress.write_ceiling")
+all_stress_schemas = runner.list_suite_schemas(tags={"stress"})
 ```
 
-For applications that need isolation from global process state, create a runner and register package suites into that instance explicitly:
+For applications that want a fixed set of packages, call the package registration hooks directly:
 
 ```python
 from mindtrace.core.testing.runner import TestRunner
@@ -75,24 +75,27 @@ For example, a UI can render form controls from **`suite_schema.task_schema["inp
 
 ## Running Mindtrace shipped benches
 
-After installing **`mindtrace-core`** (and any Mindtrace libraries whose benches you need), import package **`testing`** modules so registrations execute:
+After installing **`mindtrace-core`** and any Mindtrace libraries whose benches you need, discover benchmark suites from package entry points:
 
 ```python
-import mindtrace.registry.testing  # registers registry benches
-import mindtrace.datalake.testing  # registers datalake benches
+from mindtrace.core.testing.runner import TestRunner
+
+runner = TestRunner()
+runner.register_entrypoint_benchmark_suites()
 ```
 
 CLI (console script **`mindtrace-bench`** from **`mindtrace-core`**):
 
 ```bash
-mindtrace-bench registry datalake --profile smoke --list
-mindtrace-bench registry datalake --profile smoke
-mindtrace-bench registry datalake --profile stress --list
+mindtrace-bench --profile smoke --list
+mindtrace-bench --profile smoke
+mindtrace-bench --profile stress --list
 mindtrace-bench datalake --profile stress --run-id "$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 ```
 
 - **`--profile smoke|stress`** selects suites whose **tags include that literal string**.
 - **`--list`** prints matching **`suite_id`** values.
+- Positional arguments, when supplied, are benchmark entry point names to load (for example **`registry`** or **`datalake`**). With no positional arguments, all installed benchmark-suite entry points are loaded.
 
 **Programmatic helpers**: **`runner.suite_ids_for_profile`** and **`runner.run_registered_benches`**. Config building: **`build_bench_suite_config`**, **`expand_param_matrix`**.
 
@@ -102,11 +105,7 @@ Example (run explicit suites after registration):
 from mindtrace.core.testing.runner import TestRunner
 
 runner = TestRunner()
-import mindtrace.registry.testing
-import mindtrace.datalake.testing
-
-mindtrace.registry.testing.register_benchmark_suites(runner=runner)
-mindtrace.datalake.testing.register_benchmark_suites(runner=runner)
+runner.register_entrypoint_benchmark_suites(names={"registry", "datalake"})
 
 # Optional: discovery
 print("stress-tagged suites:", runner.suite_ids_for_profile("stress"))
@@ -127,7 +126,12 @@ Use **`runner = TestRunner()`** in unit tests or applications when you need isol
 
 ## Package layout (Mindtrace wheels)
 
-Each first-party wheel that ships benchmarks exposes **`mindtrace.<pkg>.testing`** with **`register_benchmark_suites()`** invoked on import (idempotent / guarded per package). Workload implementations live beside library code under that package’s **`testing/`** subtree.
+Each first-party wheel that ships benchmarks exposes **`mindtrace.<pkg>.testing`** with **`register_benchmark_suites()`** and declares an entry point in **`pyproject.toml`** under **`mindtrace.benchmark_suites`**. Workload implementations live beside library code under that package’s **`testing/`** subtree.
+
+```toml
+[project.entry-points."mindtrace.benchmark_suites"]
+registry = "mindtrace.registry.testing:register_benchmark_suites"
+```
 
 ---
 
@@ -143,8 +147,8 @@ Downstream services that depend on Mindtrace can **reuse** the same **`BenchTest
 ### Registering Mindtrace suites
 
 1. Create **`runner = TestRunner()`** when a clean isolated registry is required (recommended for applications, tests, and repeated runs in one process).
-2. **`import mindtrace.<pkg>.testing`** for each subsystem you need.
-3. Call **`mindtrace.<pkg>.testing.register_benchmark_suites(runner=runner)`** for isolated registration, or rely on import side effects / class-level **`TestRunner`** calls for the global default runner.
+2. Call **`runner.register_entrypoint_benchmark_suites()`** to load all installed benchmark-suite plugins, or pass **`names={...}`** to load only selected entry points.
+3. For tests or source-checkout workflows, call **`mindtrace.<pkg>.testing.register_benchmark_suites(runner=runner)`** directly when entry points are not installed.
 4. Choose **`suite_id`** values to run (static allowlist or **`runner.suite_ids_for_profile`**).
 
 ### Adding application-specific suites
@@ -160,7 +164,8 @@ Downstream services that depend on Mindtrace can **reuse** the same **`BenchTest
    - Loop until **`reporter.deadline(config.duration_seconds)`**; respect **`reporter.is_cancelled()`**.
    - Record work via **`reporter.record_operation(...)`**.
    - Return **`BenchResult`** with status, operation counts, and **`metrics`**.
-4. Register with **`TestRunner.register_test_suite(MySuite)`**, often from **`def register_benchmark_suites(): ...`** in **`your_package.testing`**.
+4. Register with **`runner.register_test_suite(MySuite)`**, usually from **`def register_benchmark_suites(*, runner=None, replace=True): ...`** in **`your_package.testing`**.
+5. Advertise that hook through **`[project.entry-points."mindtrace.benchmark_suites"]`** so **`mindtrace-bench`** and applications can discover it automatically.
 
 ### Example: downstream project with one custom suite
 
@@ -249,7 +254,7 @@ class EchoLoopThroughputSuite(BenchTestSuite):
         )
 ```
 
-**`example_app/testing/__init__.py`** — register on import (same pattern Mindtrace wheels use):
+**`example_app/testing/__init__.py`** — expose the benchmark-suite entry point target:
 
 ```python
 # example_app/testing/__init__.py
@@ -262,8 +267,6 @@ def register_benchmark_suites(*, runner: TestRunner | None = None, replace: bool
     target = runner or TestRunner.default()
     target.register_test_suite(EchoLoopThroughputSuite, replace=replace)
 
-
-register_benchmark_suites()
 ```
 
 **Running it** — create an isolated runner, register your suites and optionally Mindtrace’s, and call **`runner.run_registered_benches`** with the suite ID and **`profile`**:
@@ -273,10 +276,7 @@ register_benchmark_suites()
 from mindtrace.core.testing.runner import TestRunner
 
 runner = TestRunner()
-import example_app.testing
-
-example_app.testing.register_benchmark_suites(runner=runner)
-# Optional: import mindtrace.registry.testing and register into the same runner.
+runner.register_entrypoint_benchmark_suites(names={"example_app"})
 
 bench_results, exec_rows = runner.run_registered_benches(
     ["example.echo.loop_throughput"],
@@ -301,7 +301,14 @@ print([sid for sid in runner.suite_ids_for_profile("stress") if sid.startswith("
 
 ### Entry point for operators and CI
 
-Ship a small CLI (e.g. **`python -m your_package.bench`**) that imports Mindtrace and application **`testing`** modules, parses **`--profile`** / **`--list`**, and calls **`runner.run_registered_benches`**, exiting non-zero on failed **`SuiteExecutionResult`** rows. Keep CI non-interactive with fixed suite lists or tag-based discovery.
+For most packages, declaring the entry point is enough for **`mindtrace-bench`**. For example:
+
+```toml
+[project.entry-points."mindtrace.benchmark_suites"]
+example_app = "example_app.testing:register_benchmark_suites"
+```
+
+Ship a custom CLI only when you need application-specific resource loading, authorization, or reporting. Keep CI non-interactive with fixed suite lists or tag-based discovery.
 
 ### Resources and configuration
 
@@ -316,12 +323,6 @@ Pass secrets and service endpoints via your normal config layer; at bench time m
 
 Domain-specific tags (**`billing`**, **`api`**, …) reserve room for finer filtering if listing APIs evolve.
 
-### Limitations of **`mindtrace-bench`**
-
-The stock CLI only auto-imports a fixed set of first-party shorthand packages (**`registry`**, **`datalake`**). **Application-defined** suites require **your own small CLI** (or a Mindtrace enhancement such as **`--import your_package.testing`**; see backlog below).
-
----
-
 ## Mindtrace maintainers: backlog for downstream ergonomics
 
 Checklist toward stronger third‑party integration:
@@ -334,7 +335,6 @@ Checklist toward stronger third‑party integration:
 
 ### CLI
 
-- [ ] Pluggable imports for **`mindtrace-bench`** (e.g. **`--import your_package.testing`** or entry-point discovery) so applications do not fork **`__main__`**.
 - [ ] Repeatable **`--suite <id>`** and optional multi-tag filters once **`TestRunner.list_suite_ids`** supports them.
 - [ ] Machine-readable listing (JSON) for CI matrix generation.
 
@@ -360,8 +360,8 @@ Checklist toward stronger third‑party integration:
 
 | Goal | Action |
 |------|--------|
-| Run shipped Mindtrace benches | `runner = TestRunner()` → `mindtrace.<pkg>.testing.register_benchmark_suites(runner=runner)` → **`runner.run_registered_benches(...)`** |
-| Add custom benches | Subclass **`BenchTestSuite`**, tag **`smoke`** / **`stress`**, **`register_test_suite`** |
+| Run installed benches | `runner = TestRunner()` → `runner.register_entrypoint_benchmark_suites()` → **`runner.run_registered_benches(...)`** |
+| Add custom benches | Subclass **`BenchTestSuite`**, expose **`register_benchmark_suites`**, declare a **`mindtrace.benchmark_suites`** entry point |
 | CI / ops | Thin app CLI; pass **`resources`** from environment / config |
 
 For high-level context, see the **Stress / benchmark plugins** section in **[README.md](README.md)** (this file is the detailed reference).

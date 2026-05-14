@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.metadata as importlib_metadata
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
@@ -29,6 +30,7 @@ from mindtrace.core.testing.types import (
 
 _TS = TypeVar("_TS", bound=type[TestSuite])
 _T = TypeVar("_T")
+_BENCHMARK_ENTRY_POINT_GROUP = "mindtrace.benchmark_suites"
 
 
 def _utc_iso() -> str:
@@ -184,6 +186,43 @@ class TestRunner(Mindtrace):
         """Return registered suite IDs whose tags include ``profile`` (``smoke`` or ``stress``)."""
 
         return self.list_suite_ids(tags={profile.lower().strip()})
+
+    @_dualmethod
+    def register_entrypoint_benchmark_suites(
+        self,
+        *,
+        group: str = _BENCHMARK_ENTRY_POINT_GROUP,
+        names: set[str] | None = None,
+        replace: bool = True,
+        raise_on_error: bool = False,
+    ) -> dict[str, BaseException | None]:
+        """Discover installed benchmark-suite entry points and register their suites.
+
+        Entry points in ``group`` must resolve to callables accepting the package
+        registration contract: ``register_benchmark_suites(*, runner, replace)``.
+        The returned mapping is keyed by entry point name, with ``None`` for success
+        or the exception raised while loading/registering that plugin.
+        """
+
+        discovered = importlib_metadata.entry_points()
+        selected = discovered.select(group=group)
+        name_filter = {name.strip() for name in names} if names else None
+        results: dict[str, BaseException | None] = {}
+
+        for entry_point in sorted(selected, key=lambda ep: ep.name):
+            if name_filter is not None and entry_point.name not in name_filter:
+                continue
+            try:
+                register = entry_point.load()
+                register(runner=self, replace=replace)
+            except BaseException as exc:  # noqa: BLE001 - optional plugins should be reportable
+                results[entry_point.name] = exc
+                if raise_on_error:
+                    raise
+            else:
+                results[entry_point.name] = None
+
+        return results
 
     @_dualmethod
     def run_registered_benches(
