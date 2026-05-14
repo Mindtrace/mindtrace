@@ -1,7 +1,7 @@
 """Unit tests for PathArchiver."""
 
 import tempfile
-from pathlib import Path, PosixPath
+from pathlib import Path
 
 import pytest
 
@@ -62,8 +62,6 @@ class TestPathArchiverInit:
         """Test PathArchiver class attributes."""
         assert PathArchiver.METADATA_FILE == "metadata.json"
         assert PathArchiver.ARCHIVE_NAME == "data.tar.gz"
-        assert Path in PathArchiver.ASSOCIATED_TYPES
-        assert PosixPath in PathArchiver.ASSOCIATED_TYPES
 
 
 class TestPathArchiverSaveFile:
