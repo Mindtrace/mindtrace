@@ -8,7 +8,7 @@ The integration surface is **`TestRunner`** and **`BenchTestSuite`**. Discovery 
 
 ## Registration primitives
 
-- **`TestRunner`**: instantiable suite registry. Use **`runner = TestRunner()`** for isolated application/test registries, or call **`TestRunner.register_test_suite(MySuite)`** / **`TestRunner.register_suite(SuiteContribution(...))`** for the process-global default runner.
+- **`TestRunner`**: instantiable suite registry. Use **`runner = TestRunner()`** for an empty isolated application/test registry, **`TestRunner(discover_benchmark_suites=True)`** to discover all installed benchmark-suite entry points on construction, or **`TestRunner(discover_benchmark_suites={"registry"})`** to load selected entry point names. Class-level **`TestRunner.register_test_suite(MySuite)`** / **`TestRunner.register_suite(SuiteContribution(...))`** calls target the process-global default runner.
 
 - **`TestSuite`**: minimal hook for custom runners; implement **`run(config, reporter)`**.
 
@@ -40,8 +40,7 @@ For installed packages, use benchmark-suite entry points to register all availab
 ```python
 from mindtrace.core.testing.runner import TestRunner
 
-runner = TestRunner()
-load_results = runner.register_entrypoint_benchmark_suites()
+runner = TestRunner(discover_benchmark_suites=True)
 
 suite_schema = runner.get_suite_schema("registry.stress.write_ceiling")
 all_stress_schemas = runner.list_suite_schemas(tags={"stress"})
@@ -80,8 +79,7 @@ After installing **`mindtrace-core`** and any Mindtrace libraries whose benches 
 ```python
 from mindtrace.core.testing.runner import TestRunner
 
-runner = TestRunner()
-runner.register_entrypoint_benchmark_suites()
+runner = TestRunner(discover_benchmark_suites=True)
 ```
 
 CLI (console script **`mindtrace-bench`** from **`mindtrace-core`**):
@@ -104,8 +102,7 @@ Example (run explicit suites after registration):
 ```python
 from mindtrace.core.testing.runner import TestRunner
 
-runner = TestRunner()
-runner.register_entrypoint_benchmark_suites(names={"registry", "datalake"})
+runner = TestRunner(discover_benchmark_suites={"registry", "datalake"})
 
 # Optional: discovery
 print("stress-tagged suites:", runner.suite_ids_for_profile("stress"))
@@ -147,7 +144,7 @@ Downstream services that depend on Mindtrace can **reuse** the same **`BenchTest
 ### Registering Mindtrace suites
 
 1. Create **`runner = TestRunner()`** when a clean isolated registry is required (recommended for applications, tests, and repeated runs in one process).
-2. Call **`runner.register_entrypoint_benchmark_suites()`** to load all installed benchmark-suite plugins, or pass **`names={...}`** to load only selected entry points.
+2. Call **`runner.register_entrypoint_benchmark_suites()`** to load all installed benchmark-suite plugins, or pass **`names={...}`** to load only selected entry points. For convenience, **`TestRunner(discover_benchmark_suites=True)`** discovers all installed plugins on construction, while **`TestRunner(discover_benchmark_suites={"registry", "datalake"})`** loads only those entry point names.
 3. For tests or source-checkout workflows, call **`mindtrace.<pkg>.testing.register_benchmark_suites(runner=runner)`** directly when entry points are not installed.
 4. Choose **`suite_id`** values to run (static allowlist or **`runner.suite_ids_for_profile`**).
 
@@ -275,8 +272,7 @@ def register_benchmark_suites(*, runner: TestRunner | None = None, replace: bool
 # e.g. example_app/bench_run.py or a small __main__.py CLI
 from mindtrace.core.testing.runner import TestRunner
 
-runner = TestRunner()
-runner.register_entrypoint_benchmark_suites(names={"example_app"})
+runner = TestRunner(discover_benchmark_suites={"example_app"})
 
 bench_results, exec_rows = runner.run_registered_benches(
     ["example.echo.loop_throughput"],
@@ -360,7 +356,7 @@ Checklist toward stronger third‑party integration:
 
 | Goal | Action |
 |------|--------|
-| Run installed benches | `runner = TestRunner()` → `runner.register_entrypoint_benchmark_suites()` → **`runner.run_registered_benches(...)`** |
+| Run installed benches | `runner = TestRunner(discover_benchmark_suites=True)` → **`runner.run_registered_benches(...)`** |
 | Add custom benches | Subclass **`BenchTestSuite`**, expose **`register_benchmark_suites`**, declare a **`mindtrace.benchmark_suites`** entry point |
 | CI / ops | Thin app CLI; pass **`resources`** from environment / config |
 
