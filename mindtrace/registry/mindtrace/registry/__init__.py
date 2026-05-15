@@ -1,17 +1,5 @@
-from mindtrace.registry.archivers.builtin_materializers import (
-    BuiltInContainerMaterializer,
-    BuiltInMaterializer,
-    BytesMaterializer,
-    CloudpickleMaterializer,
-    PydanticMaterializer,
-)
-from mindtrace.registry.archivers.config_archiver import ConfigArchiver
-from mindtrace.registry.archivers.default_archivers import register_default_materializers
-from mindtrace.registry.archivers.path_archiver import PathArchiver
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
-from mindtrace.registry.backends.s3_registry_backend import MinioRegistryBackend, S3RegistryBackend
-from mindtrace.registry.core.archiver import Archiver
 from mindtrace.registry.core.base_materializer import BaseMaterializer, Materializer
 from mindtrace.registry.core.exceptions import (
     LockTimeoutError,
@@ -37,14 +25,9 @@ __all__ = [
     "Archiver",
     "AmbientAuth",
     "BaseMaterializer",
-    "BuiltInContainerMaterializer",
-    "BuiltInMaterializer",
-    "BytesMaterializer",
-    "CloudpickleMaterializer",
     "ConfigArchiver",
     "Materializer",
     "PathArchiver",
-    "PydanticMaterializer",
     "LocalRegistryBackend",
     "LockTimeoutError",
     "GCSMountConfig",
@@ -67,13 +50,35 @@ __all__ = [
     "StoreAmbiguousObjectError",
 ]
 
-register_default_materializers()
+_lazy_registry_initialized = False
+
+
+def _ensure_default_materializers():
+    global _lazy_registry_initialized
+    if not _lazy_registry_initialized:
+        _lazy_registry_initialized = True
+        from mindtrace.registry.archivers.default_archivers import register_default_materializers
+
+        register_default_materializers()
+
+
+_LAZY_IMPORTS = {
+    "Archiver": ("mindtrace.registry.core.archiver", "Archiver"),
+    "ConfigArchiver": ("mindtrace.registry.archivers.config_archiver", "ConfigArchiver"),
+    "PathArchiver": ("mindtrace.registry.archivers.path_archiver", "PathArchiver"),
+    "S3RegistryBackend": ("mindtrace.registry.backends.s3_registry_backend", "S3RegistryBackend"),
+    "MinioRegistryBackend": ("mindtrace.registry.backends.s3_registry_backend", "MinioRegistryBackend"),
+    "GCPRegistryBackend": ("mindtrace.registry.backends.gcp_registry_backend", "GCPRegistryBackend"),
+}
 
 
 def __getattr__(name):
-    if name == "GCPRegistryBackend":
-        from mindtrace.registry.backends.gcp_registry_backend import GCPRegistryBackend
+    if name in _LAZY_IMPORTS:
+        module_path, attr = _LAZY_IMPORTS[name]
+        import importlib
 
-        globals()["GCPRegistryBackend"] = GCPRegistryBackend
-        return GCPRegistryBackend
+        mod = importlib.import_module(module_path)
+        val = getattr(mod, attr)
+        globals()[name] = val
+        return val
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

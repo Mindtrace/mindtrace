@@ -408,4 +408,5 @@ def test_register_hf_archiver_registers_peft_model():
     key = f"{PeftModel.__module__}.{PeftModel.__name__}"
     materializers = Registry.get_default_materializers()
     assert key in materializers
-    assert materializers[key] == HuggingFaceModelArchiver
+    expected = f"{HuggingFaceModelArchiver.__module__}.{HuggingFaceModelArchiver.__name__}"
+    assert materializers[key] == expected

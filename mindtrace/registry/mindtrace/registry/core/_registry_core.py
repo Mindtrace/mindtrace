@@ -99,6 +99,10 @@ class _RegistryCore(Mindtrace):
         """
         super().__init__(**kwargs)
 
+        from mindtrace.registry import _ensure_default_materializers
+
+        _ensure_default_materializers()
+
         if backend is None:
             registry_dir = Path(self.config["MINDTRACE_DIR_PATHS"]["REGISTRY_DIR"]).expanduser().resolve()
             backend = LocalRegistryBackend(uri=registry_dir, **kwargs)
@@ -140,21 +144,26 @@ class _RegistryCore(Mindtrace):
         self._warm_materializer_cache()
 
     @classmethod
-    def register_default_materializer(cls, object_class: str | type, materializer_class: str):
+    def register_default_materializer(cls, object_class: str | type, materializer_class: str | type):
         """Register a default materializer at the class level.
 
-        Args:
-            object_class: Object class (str or type) to register the materializer for.
-            materializer_class: Materializer class string to register.
+        Both ``object_class`` and ``materializer_class`` may be passed as a class or as a
+        ``"module.ClassName"`` string; the stored value is always normalized to a string so
+        the cache state is independent of registration order.
         """
         if isinstance(object_class, type):
             object_class = f"{object_class.__module__}.{object_class.__name__}"
+        if isinstance(materializer_class, type):
+            materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
         with cls._materializer_lock:
             cls._default_materializers[object_class] = materializer_class
 
     @classmethod
     def get_default_materializers(cls):
         """Get a copy of the class-level default materializers dictionary."""
+        from mindtrace.registry import _ensure_default_materializers
+
+        _ensure_default_materializers()
         with cls._materializer_lock:
             return dict(cls._default_materializers)
 
