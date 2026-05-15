@@ -5,11 +5,10 @@ identifying the correct architecture by parameter count.
 """
 
 import os
-from typing import Any, ClassVar, Tuple, Type
+from typing import Any, Type
 
 import torch
 from ultralytics import SAM
-from zenml.enums import ArtifactType
 
 from mindtrace.registry import Archiver, Registry
 
@@ -24,9 +23,6 @@ class SamArchiver(Archiver):
     parameter count during save and stored in the filename so that the correct
     SAM architecture is rebuilt on load.
     """
-
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (SAM,)
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.MODEL
 
     model_name: dict[int, str] = {  # maps number of params to model name
         93735472: "sam_b",
