@@ -6,12 +6,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, List, Tuple, Type
 
-from zenml.artifact_stores import LocalArtifactStore, LocalArtifactStoreConfig
-from zenml.materializers.base_materializer import BaseMaterializer
-
 from mindtrace.core import Mindtrace, compute_dir_hash, first_not_none, ifnone, instantiate_target
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
+from mindtrace.registry.core.base_materializer import Materializer
 from mindtrace.registry.core.exceptions import (
     RegistryCleanupRequired,
     RegistryObjectNotFound,
@@ -25,6 +23,35 @@ from mindtrace.registry.core.types import (
     VerifyLevel,
     Version,
 )
+
+# Legacy zenml materializer strings that may appear in metadata written by
+# earlier versions of the registry. Resolved transparently so existing on-disk
+# registries continue to load after zenml was removed.
+_LEGACY_MATERIALIZER_ALIASES = {
+    "zenml.materializers.built_in_materializer.BuiltInMaterializer": "mindtrace.registry.archivers.builtin_materializers.BuiltInMaterializer",
+    "zenml.materializers.BuiltInMaterializer": "mindtrace.registry.archivers.builtin_materializers.BuiltInMaterializer",
+    "zenml.materializers.built_in_materializer.BuiltInContainerMaterializer": "mindtrace.registry.archivers.builtin_materializers.BuiltInContainerMaterializer",
+    "zenml.materializers.BuiltInContainerMaterializer": "mindtrace.registry.archivers.builtin_materializers.BuiltInContainerMaterializer",
+    "zenml.materializers.bytes_materializer.BytesMaterializer": "mindtrace.registry.archivers.builtin_materializers.BytesMaterializer",
+    "zenml.materializers.BytesMaterializer": "mindtrace.registry.archivers.builtin_materializers.BytesMaterializer",
+    "zenml.materializers.pydantic_materializer.PydanticMaterializer": "mindtrace.registry.archivers.builtin_materializers.PydanticMaterializer",
+    "zenml.materializers.PydanticMaterializer": "mindtrace.registry.archivers.builtin_materializers.PydanticMaterializer",
+    "zenml.materializers.cloudpickle_materializer.CloudpickleMaterializer": "mindtrace.registry.archivers.builtin_materializers.CloudpickleMaterializer",
+    "zenml.materializers.CloudpickleMaterializer": "mindtrace.registry.archivers.builtin_materializers.CloudpickleMaterializer",
+    "zenml.integrations.numpy.materializers.numpy_materializer.NumpyMaterializer": "mindtrace.registry.archivers.integration_materializers.NumpyMaterializer",
+    "zenml.integrations.pillow.materializers.pillow_image_materializer.PillowImageMaterializer": "mindtrace.registry.archivers.integration_materializers.PillowImageMaterializer",
+    "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer": "mindtrace.registry.archivers.integration_materializers.PyTorchModuleMaterializer",
+    "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer": "mindtrace.registry.archivers.integration_materializers.PyTorchDataLoaderMaterializer",
+    "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer": "mindtrace.registry.archivers.integration_materializers.HFDatasetMaterializer",
+    "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer": "mindtrace.models.archivers.huggingface.hf_model_archiver.HuggingFaceModelArchiver",
+}
+
+
+def _resolve_materializer_string(s: str | None) -> str | None:
+    """Translate a legacy zenml materializer path to its in-house equivalent (idempotent)."""
+    if s is None:
+        return None
+    return _LEGACY_MATERIALIZER_ALIASES.get(s, s)
 
 
 def _version_sort_key(v: str, digits: int) -> tuple[int, ...]:
@@ -92,18 +119,10 @@ class _RegistryCore(Mindtrace):
             version_digits_explicit=version_digits is not None,
         )
 
-        self._artifact_store = LocalArtifactStore(
-            name="local_artifact_store",
-            id=None,  # Will be auto-generated
-            config=LocalArtifactStoreConfig(
-                path=str(Path(self.config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve() / "artifact_store")
-            ),
-            flavor="local",
-            type="artifact-store",
-            user=None,  # Will be auto-generated
-            created=None,  # Will be auto-generated
-            updated=None,  # Will be auto-generated
+        self._artifact_store_path = (
+            Path(self.config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve() / "artifact_store"
         )
+        self._artifact_store_path.mkdir(parents=True, exist_ok=True)
 
         # Materializer cache to reduce lock contention
         self._materializer_cache = {}
@@ -240,7 +259,7 @@ class _RegistryCore(Mindtrace):
 
         return self._validate_version(version)
 
-    def _find_materializer(self, obj: Any, provided_materializer: Type[BaseMaterializer] | None = None) -> str:
+    def _find_materializer(self, obj: Any, provided_materializer: Type[Materializer] | None = None) -> str:
         """Find the appropriate materializer for an object.
 
         The order of precedence for determining the materializer is:
@@ -278,7 +297,7 @@ class _RegistryCore(Mindtrace):
                     self.registered_materializer(f"{base.__module__}.{base.__name__}")
                     for base in get_all_base_classes(type(obj))
                 ],
-                object_class if isinstance(obj, BaseMaterializer) else None,
+                object_class if isinstance(obj, Materializer) else None,
             )
         )
 
@@ -323,7 +342,7 @@ class _RegistryCore(Mindtrace):
         """Build registry metadata for a bytes artifact uploaded out-of-band."""
         return {
             "class": "builtins.bytes",
-            "materializer": "zenml.materializers.BytesMaterializer",
+            "materializer": "mindtrace.registry.archivers.builtin_materializers.BytesMaterializer",
             "init_params": {},
             "metadata": ifnone(metadata, default={}),
             "_files": ["data.txt"],
@@ -334,7 +353,7 @@ class _RegistryCore(Mindtrace):
         name: str | List[str],
         obj: Any | List[Any],
         *,
-        materializer: Type[BaseMaterializer] | None = None,
+        materializer: Type[Materializer] | None = None,
         version: str | None | List[str | None] = None,
         init_params: Dict[str, Any] | List[Dict[str, Any]] | None = None,
         metadata: Dict[str, Any] | List[Dict[str, Any]] | None = None,
@@ -391,7 +410,7 @@ class _RegistryCore(Mindtrace):
         self,
         name: str,
         obj: Any,
-        materializer: Type[BaseMaterializer] | None = None,
+        materializer: Type[Materializer] | None = None,
         version: str | None = None,
         init_params: Dict[str, Any] | None = None,
         metadata: Dict[str, Any] | None = None,
@@ -409,16 +428,14 @@ class _RegistryCore(Mindtrace):
 
         # Validate version
         validated_version = self._validate_version(version)
-        with TemporaryDirectory(dir=self._artifact_store.path) as base_temp_dir:
+        with TemporaryDirectory(dir=self._artifact_store_path) as base_temp_dir:
             object_class = f"{type(obj).__module__}.{type(obj).__name__}"
             materializer_class = self._find_materializer(obj, materializer)
 
             temp_dir = Path(base_temp_dir) / f"{name.replace(':', '_')}"
             temp_dir.mkdir(parents=True, exist_ok=True)
 
-            mat_instance = instantiate_target(
-                materializer_class, uri=str(temp_dir), artifact_store=self._artifact_store
-            )
+            mat_instance = instantiate_target(materializer_class, uri=str(temp_dir))
             mat_instance.save(obj)
 
             push_metadata = {
@@ -461,7 +478,7 @@ class _RegistryCore(Mindtrace):
         self,
         names: List[str],
         objs: Any | List[Any],
-        materializer: Type[BaseMaterializer] | None = None,
+        materializer: Type[Materializer] | None = None,
         versions: str | None | List[str | None] = None,
         init_params: Dict[str, Any] | List[Dict[str, Any]] | None = None,
         metadata: Dict[str, Any] | List[Dict[str, Any]] | None = None,
@@ -484,7 +501,7 @@ class _RegistryCore(Mindtrace):
         result = BatchResult()
         prep_errors: Dict[Tuple[str, str], Dict[str, str]] = {}
 
-        with TemporaryDirectory(dir=self._artifact_store.path) as base_temp_dir:
+        with TemporaryDirectory(dir=self._artifact_store_path) as base_temp_dir:
             # Prepare items for batch push
             push_items: List[Tuple[str, str | None, Path, dict]] = []
 
@@ -503,9 +520,7 @@ class _RegistryCore(Mindtrace):
                     temp_dir.mkdir(parents=True, exist_ok=True)
 
                     materializer_class = self._find_materializer(obj, materializer)
-                    mat_instance = instantiate_target(
-                        materializer_class, uri=str(temp_dir), artifact_store=self._artifact_store
-                    )
+                    mat_instance = instantiate_target(materializer_class, uri=str(temp_dir))
                     mat_instance.save(obj)
 
                     push_metadata = {
@@ -575,11 +590,11 @@ class _RegistryCore(Mindtrace):
     def _materialize(self, temp_dir: Path, metadata: dict, **kwargs) -> Any:
         """Materialize an object from a temp directory using metadata."""
         object_class = metadata["class"]
-        materializer_class = metadata["materializer"]
+        materializer_class = _resolve_materializer_string(metadata["materializer"])
         init_params = metadata.get("init_params", {}).copy()
         init_params.update(kwargs)
 
-        materializer = instantiate_target(materializer_class, uri=str(temp_dir), artifact_store=self._artifact_store)
+        materializer = instantiate_target(materializer_class, uri=str(temp_dir))
 
         if isinstance(object_class, str):
             try:
@@ -600,7 +615,7 @@ class _RegistryCore(Mindtrace):
     def serialization_hints_for_object(
         self,
         obj: Any,
-        materializer: Type[BaseMaterializer] | None = None,
+        materializer: Type[Materializer] | None = None,
     ) -> Dict[str, str]:
         """Return ``class`` and ``materializer`` strings for embedding in external metadata (e.g. datalake assets)."""
         return {
@@ -618,8 +633,9 @@ class _RegistryCore(Mindtrace):
         relative_path: str = "data.txt",
         **kwargs: Any,
     ) -> Any:
-        """Write *raw* to *relative_path* under a staged directory and run the ZenML materializer."""
-        with TemporaryDirectory(dir=self._artifact_store.path) as base:
+        """Write *raw* to *relative_path* under a staged directory and run the materializer."""
+        materializer = _resolve_materializer_string(materializer)
+        with TemporaryDirectory(dir=self._artifact_store_path) as base:
             temp_dir = Path(base) / "staged"
             temp_dir.mkdir(parents=True, exist_ok=True)
             target = temp_dir / relative_path
@@ -685,7 +701,7 @@ class _RegistryCore(Mindtrace):
         metadata = result.metadata
 
         # Pull and materialize
-        with TemporaryDirectory(dir=self._artifact_store.path) as base_temp_dir:
+        with TemporaryDirectory(dir=self._artifact_store_path) as base_temp_dir:
             temp_dir = Path(base_temp_dir) / f"{name}_{v}".replace(":", "_")
             temp_dir.mkdir(parents=True, exist_ok=True)
 
@@ -772,7 +788,7 @@ class _RegistryCore(Mindtrace):
 
         # Pull artifacts in batch
         items_to_pull = [item for item in valid_items if item not in result.errors]
-        with TemporaryDirectory(dir=self._artifact_store.path) as base_temp_dir:
+        with TemporaryDirectory(dir=self._artifact_store_path) as base_temp_dir:
             temp_dirs = {}
             paths = []
             for n, v in items_to_pull:
@@ -1112,7 +1128,7 @@ class _RegistryCore(Mindtrace):
         # Cache miss - need to check backend (slow path)
         # registered_materializers now returns Dict[str, str]
         result = self.backend.registered_materializers(object_class)
-        materializer = result.get(object_class)
+        materializer = _resolve_materializer_string(result.get(object_class))
 
         # Cache the result (even if None)
         with self._materializer_cache_lock:
@@ -1121,12 +1137,12 @@ class _RegistryCore(Mindtrace):
         return materializer
 
     def registered_materializers(self) -> Dict[str, str]:
-        """Get all registered materializers.
+        """Get all registered materializers, with legacy zenml strings resolved.
 
         Returns:
             Dictionary mapping object classes to their registered materializer classes.
         """
-        return self.backend.registered_materializers()
+        return {k: _resolve_materializer_string(v) for k, v in self.backend.registered_materializers().items()}
 
     def list_objects(self) -> List[str]:
         """Return a list of all registered object names.
@@ -1450,13 +1466,16 @@ class _RegistryCore(Mindtrace):
         default_materializers = self.get_default_materializers()
         existing_materializers = self.backend.registered_materializers()
 
-        # Filter materializers that need to be registered
+        # Filter materializers that need to be registered. Treat any stored
+        # legacy zenml string as equivalent to its in-house replacement so we
+        # also override stale registrations from previous registry versions.
         materializers_to_register = {}
         for object_class, materializer_class in default_materializers.items():
-            if override_preexisting_materializers or object_class not in existing_materializers:
-                # Ensure materializer_class is a string for JSON serialization
-                if isinstance(materializer_class, type):
-                    materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
+            # Ensure materializer_class is a string for JSON serialization
+            if isinstance(materializer_class, type):
+                materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
+            existing = _resolve_materializer_string(existing_materializers.get(object_class))
+            if override_preexisting_materializers or existing is None or existing != materializer_class:
                 materializers_to_register[object_class] = materializer_class
 
         if materializers_to_register:
@@ -1474,8 +1493,11 @@ class _RegistryCore(Mindtrace):
     def _warm_materializer_cache(self):
         """Warm the materializer cache to reduce lock contention during operations."""
         try:
-            # Get all registered materializers and cache them
-            all_materializers = self.backend.registered_materializers()
+            # Get all registered materializers and cache them, resolving any
+            # legacy zenml strings to their in-house equivalents in the cache.
+            all_materializers = {
+                k: _resolve_materializer_string(v) for k, v in self.backend.registered_materializers().items()
+            }
 
             with self._materializer_cache_lock:
                 self._materializer_cache.update(all_materializers)
