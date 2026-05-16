@@ -124,11 +124,15 @@ RUN if [ "$INSTALL_GENICAM" = "true" ]; then \
         echo "==> GenICam SDK will be configured at runtime via setup script"; \
     fi
 
-# Daheng Galaxy SDK is installed in the runtime stage (not here) — gxipy
-# ctypes-loads ``libgxiapi.so`` from the system at import time, so the
-# install must persist into the final image. The runtime stage is
-# ``FROM ubuntu`` (fresh base), so SDK-stage installs would be discarded.
-# See the runtime-stage block for the actual install.
+# Install Daheng Galaxy SDK (native libraries required by gxipy Python package)
+# Note: Galaxy SDK requires manual download from Daheng website due to EULA.
+# Pre-download the Galaxy SDK .run installer and place it in docker/hardware/camera/
+# or install at runtime via: mindtrace-camera-daheng install
+RUN if [ "$INSTALL_DAHENG" = "true" ]; then \
+        echo "==> Daheng Galaxy SDK will be configured at runtime via setup script"; \
+        echo "==> Run 'mindtrace-camera-daheng install' after container start, or"; \
+        echo "==> mount pre-installed Galaxy SDK libs into /usr/lib/"; \
+    fi
 
 # =============================================================================
 # Stage 3: Python Dependencies - Install with uv
@@ -241,9 +245,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     net-tools \
     iproute2 \
     usbutils \
-    # Required for Daheng Galaxy SDK install (wget + unzip below). Tiny.
-    wget \
-    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Create python symlinks
@@ -252,43 +253,10 @@ RUN ln -sf /usr/bin/python3.12 /usr/bin/python3 && \
 
 # Copy Basler SDK from sdk stage (empty if not installed)
 COPY --from=sdk /opt/pylon /opt/pylon
-
-# Install Daheng Galaxy SDK in the runtime stage so the native ``libgxiapi.so``
-# survives into the final image (gxipy ctypes-loads it at import time).
-# Mirror Daheng's release on a Mindtrace-controlled URL — same pattern as
-# Basler (``basler-sdk`` on github.com/Mindtrace/basler-sdk/releases).
-# Override via ``--build-arg GALAXY_SDK_URL=...`` for local builds.
-ARG INSTALL_DAHENG=false
-ARG GALAXY_SDK_URL="https://github.com/Mindtrace/daheng-sdk/releases/download/galaxy_sdk_linux/Galaxy_Linux-x86_Gige-U3_32bits-64bits_2.4.2507.9231.zip"
-RUN if [ "$INSTALL_DAHENG" = "true" ]; then \
-        echo "==> Installing Daheng Galaxy SDK from $GALAXY_SDK_URL"; \
-        mkdir -p /tmp/galaxy && cd /tmp/galaxy && \
-        wget -q -O galaxy.zip "$GALAXY_SDK_URL" && \
-        unzip -q galaxy.zip && rm galaxy.zip && \
-        EXTRACTED=$(ls -d */ | head -1) && cd "$EXTRACTED" && \
-        chmod +x Galaxy_camera.run && \
-        # The Galaxy installer prompts Y/n for each step and defaults to Yes
-        # on empty input — pipe blank lines to drive it unattended.
-        yes '' | bash Galaxy_camera.run && \
-        cd / && rm -rf /tmp/galaxy && \
-        echo "==> Daheng Galaxy SDK installed successfully"; \
-    fi
-
 RUN ldconfig
 
 # Copy virtual environment with all dependencies
 COPY --from=application /workspace/.venv /workspace/.venv
-
-# Daheng's published ``iai-gxipy`` wheel (current 2.0.x) imports
-# ``numpy.compat.long``, which numpy >= 2.0 removed. The symbol is only used
-# at module top-level for ``INT_TYPE = (int, long)`` — replace with a no-op
-# shim so import succeeds. Keep the patch idempotent so it's safe on every
-# rebuild and a no-op when ``iai-gxipy`` isn't installed (no Daheng build).
-RUN if [ -f /workspace/.venv/lib/python3.12/site-packages/gxipy/DeviceManager.py ]; then \
-        sed -i 's/^from numpy.compat import long$/long = int  # py3+numpy>=2 compat shim/' \
-            /workspace/.venv/lib/python3.12/site-packages/gxipy/DeviceManager.py && \
-        echo "==> patched gxipy/DeviceManager.py for numpy>=2"; \
-    fi
 
 # Copy application code
 COPY --from=application /workspace/mindtrace /workspace/mindtrace
