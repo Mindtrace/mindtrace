@@ -4,27 +4,20 @@ Tests the DahengCameraBackend implementation using a mocked gxipy SDK,
 covering initialization, capture, configuration, discovery, and lifecycle.
 """
 
-import asyncio
 import sys
-from types import SimpleNamespace
-from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 import pytest_asyncio
 
 from mindtrace.hardware.core.exceptions import (
-    CameraCaptureError,
     CameraConfigurationError,
     CameraConnectionError,
     CameraInitializationError,
     CameraNotFoundError,
-    CameraTimeoutError,
-    HardwareOperationError,
     SDKNotAvailableError,
 )
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Mock gxipy SDK
@@ -71,9 +64,7 @@ class MockDataStream:
 
     def get_image(self, timeout=1000):
         raw = MagicMock()
-        raw.get_numpy_array.return_value = np.random.randint(
-            0, 255, (self._height, self._width, 3), dtype=np.uint8
-        )
+        raw.get_numpy_array.return_value = np.random.randint(0, 255, (self._height, self._width, 3), dtype=np.uint8)
         return raw
 
 
@@ -115,10 +106,22 @@ class MockGxDeviceManager:
 
     def __init__(self):
         self._devices = [
-            {"sn": "DH000001", "model_name": "MER2-G-P", "vendor_name": "Daheng Imaging",
-             "ip": "192.168.1.100", "user_id": "cam1", "display_name": "Daheng MER2-G-P"},
-            {"sn": "DH000002", "model_name": "MARS-G-P", "vendor_name": "Daheng Imaging",
-             "ip": "", "user_id": "", "display_name": "Daheng MARS-G-P"},
+            {
+                "sn": "DH000001",
+                "model_name": "MER2-G-P",
+                "vendor_name": "Daheng Imaging",
+                "ip": "192.168.1.100",
+                "user_id": "cam1",
+                "display_name": "Daheng MER2-G-P",
+            },
+            {
+                "sn": "DH000002",
+                "model_name": "MARS-G-P",
+                "vendor_name": "Daheng Imaging",
+                "ip": "",
+                "user_id": "",
+                "display_name": "Daheng MARS-G-P",
+            },
         ]
 
     def update_device_list(self):

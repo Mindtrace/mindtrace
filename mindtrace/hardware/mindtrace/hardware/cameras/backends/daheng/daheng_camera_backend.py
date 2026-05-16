@@ -302,9 +302,7 @@ class DahengCameraBackend(CameraBackend):
 
                 if cam is None:
                     available = [d.get("sn", "unknown") for d in dev_info_list]
-                    raise CameraNotFoundError(
-                        f"Camera '{camera_name}' not found. Available cameras: {available}"
-                    )
+                    raise CameraNotFoundError(f"Camera '{camera_name}' not found. Available cameras: {available}")
 
                 return cam, device_manager
 
@@ -358,9 +356,7 @@ class DahengCameraBackend(CameraBackend):
             self._streaming = True
             self.triggermode = "trigger"
 
-            self.logger.debug(
-                f"Daheng camera '{self.camera_name}' configured with buffer_count={self.buffer_count}"
-            )
+            self.logger.debug(f"Daheng camera '{self.camera_name}' configured with buffer_count={self.buffer_count}")
 
         except Exception as e:
             self.logger.error(f"Failed to configure Daheng camera '{self.camera_name}': {str(e)}")
@@ -705,9 +701,7 @@ class DahengCameraBackend(CameraBackend):
         except CameraConfigurationError:
             raise
         except Exception as e:
-            raise CameraConfigurationError(
-                f"Failed to set trigger mode for camera '{self.camera_name}': {e}"
-            ) from e
+            raise CameraConfigurationError(f"Failed to set trigger mode for camera '{self.camera_name}': {e}") from e
 
     async def check_connection(self) -> bool:
         """Check if camera is connected and operational.
@@ -899,11 +893,13 @@ class DahengCameraBackend(CameraBackend):
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
         try:
+
             def _get():
                 cam = self.camera
                 if cam.ColorTransformationEnable.is_implemented():
                     return cam.ColorTransformationEnable.get()
                 return False
+
             return await self._run_blocking(_get)
         except Exception as e:
             self.logger.warning(f"Color transformation not available for camera '{self.camera_name}': {e}")
@@ -918,11 +914,13 @@ class DahengCameraBackend(CameraBackend):
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
         try:
+
             def _set():
                 cam = self.camera
                 if cam.ColorTransformationEnable.is_implemented():
                     cam.ColorTransformationEnable.set(enabled)
                     pass
+
             await self._run_blocking(_set)
             self.logger.info(f"Color transformation set to {enabled} for camera '{self.camera_name}'")
         except Exception as e:
@@ -935,12 +933,14 @@ class DahengCameraBackend(CameraBackend):
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
         try:
+
             def _get():
                 cam = self.camera
                 if cam.LightSourcePreset.is_implemented():
                     _val, desc = cam.LightSourcePreset.get()
                     return desc
                 return "OFF"
+
             return await self._run_blocking(_get)
         except Exception as e:
             self.logger.warning(f"Light source preset not available for camera '{self.camera_name}': {e}")
@@ -956,15 +956,21 @@ class DahengCameraBackend(CameraBackend):
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
         preset_map = {
-            "OFF": 0, "CUSTOM": 1, "DAYLIGHT_6500K": 2, "DAYLIGHT_5000K": 3,
-            "COOL_WHITE_FLUORESCENCE": 4, "INCA": 5,
+            "OFF": 0,
+            "CUSTOM": 1,
+            "DAYLIGHT_6500K": 2,
+            "DAYLIGHT_5000K": 3,
+            "COOL_WHITE_FLUORESCENCE": 4,
+            "INCA": 5,
         }
         value = preset_map.get(preset.upper(), 0)
         try:
+
             def _set():
                 cam = self.camera
                 if cam.LightSourcePreset.is_implemented():
                     cam.LightSourcePreset.set(value)
+
             await self._run_blocking(_set)
             self.logger.debug(f"Light source preset set to '{preset}' for camera '{self.camera_name}'")
         except Exception as e:
@@ -981,6 +987,7 @@ class DahengCameraBackend(CameraBackend):
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
         try:
+
             def _get():
                 cam = self.camera
                 ratios = {}
@@ -988,6 +995,7 @@ class DahengCameraBackend(CameraBackend):
                     cam.BalanceRatioSelector.set(selector)
                     ratios[channel] = cam.BalanceRatio.get()
                 return ratios
+
             return await self._run_blocking(_get)
         except Exception as e:
             self.logger.warning(f"Balance ratios not available for camera '{self.camera_name}': {e}")
@@ -1004,6 +1012,7 @@ class DahengCameraBackend(CameraBackend):
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
         try:
+
             def _set():
                 cam = self.camera
                 if red is not None:
@@ -1015,6 +1024,7 @@ class DahengCameraBackend(CameraBackend):
                 if blue is not None:
                     cam.BalanceRatioSelector.set(2)
                     cam.BalanceRatio.set(blue)
+
             await self._run_blocking(_set)
             self.logger.debug(f"Balance ratios set (R={red}, G={green}, B={blue}) for camera '{self.camera_name}'")
         except Exception as e:
@@ -1033,10 +1043,12 @@ class DahengCameraBackend(CameraBackend):
         set_map = {"Default": 0, "UserSet0": 1, "UserSet1": 2}
         value = set_map.get(user_set, 1)
         try:
+
             def _save():
                 cam = self.camera
                 cam.UserSetSelector.set(value)
                 cam.UserSetSave.send_command()
+
             await self._run_blocking(_save)
             self.logger.info(f"Saved parameters to '{user_set}' for camera '{self.camera_name}'")
         except Exception as e:
@@ -1053,10 +1065,12 @@ class DahengCameraBackend(CameraBackend):
         set_map = {"Default": 0, "UserSet0": 1, "UserSet1": 2}
         value = set_map.get(user_set, 1)
         try:
+
             def _load():
                 cam = self.camera
                 cam.UserSetSelector.set(value)
                 cam.UserSetLoad.send_command()
+
             await self._run_blocking(_load)
             self.logger.info(f"Loaded parameters from '{user_set}' for camera '{self.camera_name}'")
         except Exception as e:
@@ -1073,9 +1087,11 @@ class DahengCameraBackend(CameraBackend):
         set_map = {"Default": 0, "UserSet0": 1, "UserSet1": 2}
         value = set_map.get(user_set, 1)
         try:
+
             def _set_default():
                 cam = self.camera
                 cam.UserSetDefault.set(value)
+
             await self._run_blocking(_set_default)
             self.logger.info(f"Startup user set set to '{user_set}' for camera '{self.camera_name}'")
         except Exception as e:
@@ -1086,10 +1102,12 @@ class DahengCameraBackend(CameraBackend):
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
         try:
+
             def _get():
                 cam = self.camera
                 _val, desc = cam.UserSetDefault.get()
                 return desc
+
             return await self._run_blocking(_get)
         except Exception as e:
             self.logger.warning(f"User set default not available for camera '{self.camera_name}': {e}")
@@ -1208,9 +1226,7 @@ class DahengCameraBackend(CameraBackend):
         except CameraConfigurationError:
             raise
         except Exception as e:
-            raise CameraConfigurationError(
-                f"Failed to set pixel format for camera '{self.camera_name}': {e}"
-            ) from e
+            raise CameraConfigurationError(f"Failed to set pixel format for camera '{self.camera_name}': {e}") from e
 
     async def import_config(self, config_path: str):
         """Import camera configuration from JSON file.
