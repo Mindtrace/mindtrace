@@ -24,7 +24,6 @@ from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 
 # Suppress verbose logging during stress tests
 logging.getLogger("mindtrace.registry").setLevel(logging.WARNING)
-logging.getLogger("zenml").setLevel(logging.WARNING)
 logging.getLogger("mindtrace.core").setLevel(logging.WARNING)
 
 # For even cleaner output during stress tests, uncomment the following line:

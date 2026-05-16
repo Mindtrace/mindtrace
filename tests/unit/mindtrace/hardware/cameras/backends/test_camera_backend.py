@@ -25,16 +25,20 @@ def enable_log_capture(backend, level=logging.WARNING):
         handler.setLevel(level)
 
     original_propagate = backend.logger.propagate
+    original_logger_level = backend.logger.level
     backend.logger.propagate = True
+    backend.logger.setLevel(level)
 
-    return original_levels, original_propagate
+    return original_levels, original_propagate, original_logger_level
 
 
-def restore_log_settings(backend, original_levels, original_propagate):
+def restore_log_settings(backend, original_levels, original_propagate, original_logger_level=None):
     """Helper function to restore original log settings."""
     for handler, level in zip(backend.logger.handlers, original_levels):
         handler.setLevel(level)
     backend.logger.propagate = original_propagate
+    if original_logger_level is not None:
+        backend.logger.setLevel(original_logger_level)
 
 
 # pypylon is already mocked by conftest.py mock_hardware_run_blockings fixture
@@ -359,17 +363,16 @@ class TestCameraBackendLogging:
 
         backend = MinimalConcreteBackend()
 
-        # Logger should be configured
+        # Logger should be configured by the camera-specific setup
         assert hasattr(backend, "logger")
         assert backend.logger.propagate is False
-        assert backend.logger.level == logging.DEBUG  # Actual level is DEBUG (10)
+        assert backend.logger.level == logging.INFO
 
-        # Should have handlers (may have multiple)
+        # Camera setup adds exactly one stream handler at INFO
         assert len(backend.logger.handlers) > 0
         handler = backend.logger.handlers[0]
         assert isinstance(handler, logging.StreamHandler)
-        # Handler level may be higher (ERROR level in actual implementation)
-        assert handler.level >= logging.WARNING
+        assert handler.level == logging.INFO
 
     @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
     def test_logger_formatter(self, mock_get_config):
@@ -384,11 +387,10 @@ class TestCameraBackendLogging:
         handler = backend.logger.handlers[0]
         formatter = handler.formatter
 
-        # Should have correct format (actual format from implementation)
-        expected_format = "[%(asctime)s] %(levelname)s: %(name)s: %(message)s"
+        # Camera-specific format set in _setup_camera_logger_formatting
+        expected_format = "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
         assert formatter._fmt == expected_format
-        # Actual implementation doesn't set datefmt
-        assert formatter.datefmt is None
+        assert formatter.datefmt == "%Y-%m-%d %H:%M:%S"
 
     @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
     def test_logger_with_existing_handlers(self, mock_get_config):
@@ -511,7 +513,7 @@ class TestCameraBackendDefaultImplementations:
         backend = MinimalConcreteBackend()
 
         # Temporarily lower handler levels to capture warnings
-        original_levels, original_propagate = enable_log_capture(backend)
+        original_levels, original_propagate, original_logger_level = enable_log_capture(backend)
 
         with caplog.at_level(logging.WARNING):
             # Test async config methods - call base class methods to trigger exceptions
@@ -523,7 +525,7 @@ class TestCameraBackendDefaultImplementations:
                 await CameraBackend.export_config(backend, "/path/to/config")
 
         # Restore original handler levels
-        restore_log_settings(backend, original_levels, original_propagate)
+        restore_log_settings(backend, original_levels, original_propagate, original_logger_level)
 
         # Should log warnings
         # Check log records instead of text for more reliable capture
@@ -544,7 +546,7 @@ class TestCameraBackendDefaultImplementations:
         backend = MinimalConcreteBackend()
 
         # Temporarily lower handler levels to capture warnings
-        original_levels, original_propagate = enable_log_capture(backend)
+        original_levels, original_propagate, original_logger_level = enable_log_capture(backend)
 
         with caplog.at_level(logging.WARNING):
             # Call base class methods to trigger warnings
@@ -567,7 +569,7 @@ class TestCameraBackendDefaultImplementations:
             assert result3 == ["auto", "manual", "off"]
 
         # Restore original handler levels
-        restore_log_settings(backend, original_levels, original_propagate)
+        restore_log_settings(backend, original_levels, original_propagate, original_logger_level)
 
         # Check log records instead of text for more reliable capture
         log_messages = [record.message for record in caplog.records]
@@ -587,7 +589,7 @@ class TestCameraBackendDefaultImplementations:
         backend = MinimalConcreteBackend()
 
         # Temporarily lower handler levels to capture warnings
-        original_levels, original_propagate = enable_log_capture(backend)
+        original_levels, original_propagate, original_logger_level = enable_log_capture(backend)
 
         with caplog.at_level(logging.WARNING):
             # Call base class methods to trigger warnings
@@ -605,7 +607,7 @@ class TestCameraBackendDefaultImplementations:
             assert result2 == "exception_raised"  # Base class raises NotImplementedError
 
         # Restore original handler levels
-        restore_log_settings(backend, original_levels, original_propagate)
+        restore_log_settings(backend, original_levels, original_propagate, original_logger_level)
 
         # Check log records instead of text for more reliable capture
         log_messages = [record.message for record in caplog.records]
@@ -624,7 +626,7 @@ class TestCameraBackendDefaultImplementations:
         backend = MinimalConcreteBackend()
 
         # Temporarily lower handler levels to capture warnings
-        original_levels, original_propagate = enable_log_capture(backend)
+        original_levels, original_propagate, original_logger_level = enable_log_capture(backend)
 
         with caplog.at_level(logging.WARNING):
             result1 = await backend.get_width_range()
@@ -634,7 +636,7 @@ class TestCameraBackendDefaultImplementations:
             assert result2 == [480, 1080]
 
         # Restore original handler levels
-        restore_log_settings(backend, original_levels, original_propagate)
+        restore_log_settings(backend, original_levels, original_propagate, original_logger_level)
 
     @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
     @pytest.mark.asyncio
@@ -648,7 +650,7 @@ class TestCameraBackendDefaultImplementations:
         backend = MinimalConcreteBackend()
 
         # Temporarily lower handler levels to capture warnings
-        original_levels, original_propagate = enable_log_capture(backend)
+        original_levels, original_propagate, original_logger_level = enable_log_capture(backend)
 
         with caplog.at_level(logging.WARNING):
             result1 = await backend.set_gain(2.0)
@@ -660,7 +662,7 @@ class TestCameraBackendDefaultImplementations:
             assert result3 == [1.0, 16.0]
 
         # Restore original handler levels
-        restore_log_settings(backend, original_levels, original_propagate)
+        restore_log_settings(backend, original_levels, original_propagate, original_logger_level)
 
     @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
     @pytest.mark.asyncio
@@ -674,7 +676,7 @@ class TestCameraBackendDefaultImplementations:
         backend = MinimalConcreteBackend()
 
         # Temporarily lower handler levels to capture warnings
-        original_levels, original_propagate = enable_log_capture(backend)
+        original_levels, original_propagate, original_logger_level = enable_log_capture(backend)
 
         with caplog.at_level(logging.WARNING):
             result1 = await backend.set_roi(0, 0, 640, 480)
@@ -686,7 +688,7 @@ class TestCameraBackendDefaultImplementations:
             assert result3 is True
 
         # Restore original handler levels
-        restore_log_settings(backend, original_levels, original_propagate)
+        restore_log_settings(backend, original_levels, original_propagate, original_logger_level)
 
     @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
     @pytest.mark.asyncio
@@ -700,7 +702,7 @@ class TestCameraBackendDefaultImplementations:
         backend = MinimalConcreteBackend()
 
         # Temporarily lower handler levels to capture warnings
-        original_levels, original_propagate = enable_log_capture(backend)
+        original_levels, original_propagate, original_logger_level = enable_log_capture(backend)
 
         with caplog.at_level(logging.WARNING):
             result1 = await backend.get_pixel_format_range()
@@ -712,7 +714,7 @@ class TestCameraBackendDefaultImplementations:
             assert result3 is True
 
         # Restore original handler levels
-        restore_log_settings(backend, original_levels, original_propagate)
+        restore_log_settings(backend, original_levels, original_propagate, original_logger_level)
 
 
 class TestCameraBackendImageQualityEnhancement:
@@ -744,7 +746,7 @@ class TestCameraBackendImageQualityEnhancement:
         backend = MinimalConcreteBackend()
 
         # Temporarily lower handler levels to capture debug logs
-        original_levels, original_propagate = enable_log_capture(backend, logging.DEBUG)
+        original_levels, original_propagate, original_logger_level = enable_log_capture(backend, logging.DEBUG)
 
         with caplog.at_level(logging.DEBUG):
             backend.set_image_quality_enhancement(False)
@@ -753,7 +755,7 @@ class TestCameraBackendImageQualityEnhancement:
             assert get_result is False
 
         # Restore original handler levels
-        restore_log_settings(backend, original_levels, original_propagate)
+        restore_log_settings(backend, original_levels, original_propagate, original_logger_level)
 
         # Should log the change
         # Check log records instead of text for more reliable capture

@@ -1,24 +1,18 @@
 from abc import abstractmethod
-from typing import Any, Set, Type
+from typing import Any, Type
 
-from zenml.enums import ArtifactType
-from zenml.materializers.base_materializer import BaseMaterializer
-
-from mindtrace.core import Mindtrace, MindtraceMeta
+from mindtrace.core import Mindtrace
+from mindtrace.registry.core.base_materializer import BaseMaterializer
 
 
-class ArchiverMeta(MindtraceMeta, type(BaseMaterializer)):
-    """Meta class for Archiver."""
+class Archiver(Mindtrace, BaseMaterializer):
+    """Base Archiver class for handling data persistence.
 
-    pass
-
-
-class Archiver(Mindtrace, BaseMaterializer, metaclass=ArchiverMeta):
-    """Base Archiver class for handling data persistence."""
-
-    # Required by BaseMaterializer
-    ASSOCIATED_TYPES: Set[Type] = {Any}
-    ASSOCIATED_ARTIFACT_TYPE: ArtifactType = ArtifactType.DATA
+    Concrete archivers override :meth:`save` and :meth:`load`. Inheriting from
+    :class:`BaseMaterializer` is a convenience — any class exposing ``uri``,
+    ``save``, and ``load`` already satisfies the registry's
+    :class:`~mindtrace.registry.core.base_materializer.Materializer` Protocol.
+    """
 
     def __init__(self, uri: str, *args, **kwargs):
         super().__init__(uri=uri, *args, **kwargs)

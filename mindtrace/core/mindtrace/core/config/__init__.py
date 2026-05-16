@@ -1,3 +1,5 @@
-from mindtrace.core.config.config import Config, CoreConfig, CoreSettings, SettingsLike
+from mindtrace.core.config.config import Config, ConfigModel
 
-__all__ = ["Config", "CoreSettings", "SettingsLike", "CoreConfig"]
+CoreConfig = Config
+
+__all__ = ["Config", "ConfigModel", "CoreConfig"]

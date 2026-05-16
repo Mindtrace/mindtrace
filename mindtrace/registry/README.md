@@ -117,6 +117,14 @@ When using a remote backend, the `Registry` maintains a local cache (enabled by 
 # Caching is on by default for remote backends
 registry = Registry(backend=gcp_backend, use_cache=True)
 
+# Keep at most 1024 concrete object versions in the local cache by default.
+# Set cache_max_entries=None to disable automatic LRU pruning.
+registry = Registry(
+    backend=gcp_backend,
+    use_cache=True,
+    cache_max_entries=1024,
+)
+
 # Control verification level on load
 obj = registry.load("my:model", verify="none")       # Trust cache, fastest
 obj = registry.load("my:model", verify="integrity")   # Verify hash (default)
@@ -130,6 +138,15 @@ registry.clear_cache()
 - `"none"`: Trust cache completely. Fastest.
 - `"integrity"`: Verify loaded artifacts match the hash in metadata. Default.
 - `"full"`: Integrity check + compare cache hash against remote. Detects stale cache entries.
+
+**LRU pruning**: remote registry caches retain at most `cache_max_entries`
+concrete object versions, defaulting to `1024`. Cache hits update the cached
+object metadata file timestamp with `os.utime(...)`, so recency is visible across
+processes sharing the same cache directory. Cache maintenance is amortized: when
+cache writes push the cache above `cache_max_entries`, least-recently-used
+entries are removed down to `cache_max_entries - cache_prune_buffer`. The default
+prune buffer is `min(max(cache_max_entries // 4, 1), 1024)`. Set
+`cache_max_entries=None` to keep the cache unbounded.
 
 ## Version Management
 
@@ -163,19 +180,39 @@ registry.save("model", obj, version="1.0.0", on_conflict="overwrite")
 
 ## Custom Materializers
 
-Register custom serialization handlers for your object types:
+A materializer is any class that exposes a `uri` attribute, a `save(data)` method, and a
+`load(data_type)` method. The contract is published as the runtime-checkable
+`mindtrace.registry.Materializer` Protocol — your class does **not** need to inherit from
+anything in mindtrace to be recognized. For convenience, you can inherit from
+`BaseMaterializer` (minimal) or `Archiver` (adds Mindtrace logging).
 
 ```python
-from mindtrace.registry import Registry
+from typing import Any, Type
+
+from mindtrace.registry import BaseMaterializer, Registry
+
+
+class MyMaterializer(BaseMaterializer):
+    def save(self, data: Any) -> None:
+        ...  # write to self.uri
+
+    def load(self, data_type: Type[Any]) -> Any:
+        ...  # read from self.uri
+
 
 registry = Registry()
 
-# Register a materializer for a custom class
+# Register a materializer for a custom class (by type or by fully-qualified string).
 registry.register_materializer("my_module.MyClass", "my_module.MyMaterializer")
 
-# Save with explicit materializer
+# Save with an explicit materializer override.
 registry.save("custom:obj", my_object, materializer=MyMaterializer)
 ```
+
+Built-in materializers cover scalars, container types, `bytes`, `pydantic.BaseModel`,
+`pathlib.Path`, numpy arrays, PIL images, PyTorch modules/dataloaders, and HuggingFace
+datasets. ML framework archivers for HuggingFace, ONNX, Ultralytics and timm models live
+in `mindtrace.models.archivers`.
 
 ## Metadata and Information
 
