@@ -588,6 +588,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="SDK Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#daheng-sdk-galaxy-eula-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Daheng SDK (Galaxy) — EULA notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
       </ul>
@@ -1651,6 +1668,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="SDK Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#daheng-sdk-galaxy-eula-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Daheng SDK (Galaxy) — EULA notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
       </ul>
@@ -2391,6 +2425,31 @@
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>mindtrace-stereo-basler<span class="w"> </span>install<span class="w">        </span><span class="c1"># Stereo supplementary package (required)</span>
 </span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>mindtrace-scanner-photoneo<span class="w"> </span>install<span class="w">     </span><span class="c1"># Matrix Vision mvGenTL Producer (required)</span>
 </span></code></pre></div></p>
+<h4 id="daheng-sdk-galaxy-eula-notes">Daheng SDK (Galaxy) — EULA notes</h4>
+<p>The <code>iai-gxipy</code> Python wheel is a ctypes wrapper around Daheng's
+native Galaxy library (<code>libgxiapi.so</code> on Linux / <code>GxIAPI.dll</code> on
+Windows). Importing <code>gxipy</code> without the native library raises an
+<code>OSError</code>/<code>NameError</code> from the upstream wheel — <code>DAHENG_AVAILABLE</code>
+reports <code>False</code> in that case and the rest of the camera stack
+continues to work; only Daheng-backed cameras are unavailable.</p>
+<p>Daheng's EULA does <strong>not</strong> grant redistribution rights, so the
+Galaxy SDK is never bundled in Mindtrace packages or Docker images.
+Two supported paths put it in place:</p>
+<ol>
+<li><strong>Interactive wizard (dev/lab):</strong> run
+   <code>mindtrace-camera-daheng install</code> — it prints the EULA, asks for
+   explicit acceptance, downloads from Daheng's site, and runs the
+   installer locally so <code>libgxiapi.so</code> lands in the expected
+   location. Use this on a workstation.</li>
+<li><strong>Pre-installed host (production):</strong> install Galaxy SDK once on
+   the host (Docker bind-mounts <code>/usr/lib/libgxiapi.so</code> and
+   <code>/opt/Galaxy_camera</code> into the container; bare-metal services pick
+   it up from the system path automatically). The container/image
+   stays clean of proprietary bits.</li>
+</ol>
+<p>The Mindtrace <code>mindtrace-camera</code> Docker image follows the same
+contract — see <code>docker/hardware/camera/README.md</code> for the
+container-side instructions.</p>
 <h2 id="camera-system">Camera System</h2>
 <h3 id="interface-hierarchy">Interface Hierarchy</h3>
 <table>
