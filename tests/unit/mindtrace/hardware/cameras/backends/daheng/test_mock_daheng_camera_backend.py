@@ -22,7 +22,6 @@ from mindtrace.hardware.core.exceptions import (
     CameraTimeoutError,
 )
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # Fixtures
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -553,8 +552,11 @@ class TestMockDahengLifecycle:
         """Test different synthetic image patterns."""
         for pattern in ["gradient", "checkerboard", "circular", "noise"]:
             camera = MockDahengCameraBackend(
-                "test_cam", fast_mode=True, synthetic_pattern=pattern,
-                synthetic_width=320, synthetic_height=240,
+                "test_cam",
+                fast_mode=True,
+                synthetic_pattern=pattern,
+                synthetic_width=320,
+                synthetic_height=240,
             )
             await camera.initialize()
             image = await camera.capture()
@@ -614,7 +616,8 @@ class TestMockDahengLifecycle:
         camera = MockDahengCameraBackend(
             "no_fixture_cam",
             synthetic_pattern="gradient",
-            synthetic_width=64, synthetic_height=48,
+            synthetic_width=64,
+            synthetic_height=48,
             fast_mode=True,
         )
         await camera.initialize()

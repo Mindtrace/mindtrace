@@ -626,12 +626,22 @@ class MockDahengCameraBackend(CameraBackend):
                 font_scale = min(width, height) / 1000.0
                 thickness = max(1, int(font_scale * 2))
                 cv2.putText(
-                    image, f"Mock Daheng {timestamp}", (50, 50),
-                    cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness,
+                    image,
+                    f"Mock Daheng {timestamp}",
+                    (50, 50),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    font_scale,
+                    (255, 255, 255),
+                    thickness,
                 )
                 cv2.putText(
-                    image, f"Frame: {self.image_counter}", (50, 90),
-                    cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness,
+                    image,
+                    f"Frame: {self.image_counter}",
+                    (50, 90),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    font_scale,
+                    (255, 255, 255),
+                    thickness,
                 )
 
             return image
