@@ -12,7 +12,7 @@ class TestDiscordServiceIntegration:
 
     def test_discord_service_status_endpoint(self, discord_service_manager):
         """Test the Discord service status endpoint."""
-        response = requests.post(f"{discord_service_manager.url}/discord.status", json={})
+        response = requests.post(f"{str(discord_service_manager.url).rstrip('/')}/discord.status", json={})
 
         assert response.status_code == 200
         data = response.json()
@@ -36,7 +36,7 @@ class TestDiscordServiceIntegration:
 
     def test_discord_service_commands_endpoint(self, discord_service_manager):
         """Test the Discord service commands endpoint."""
-        response = requests.post(f"{discord_service_manager.url}/discord.commands", json={})
+        response = requests.post(f"{str(discord_service_manager.url).rstrip('/')}/discord.commands", json={})
 
         assert response.status_code == 200
         data = response.json()
@@ -49,7 +49,7 @@ class TestDiscordServiceIntegration:
         """Test the Discord service execute endpoint."""
         payload = {"content": "!roll", "author_id": 123, "channel_id": 456, "guild_id": 789, "message_id": 101112}
 
-        response = requests.post(f"{discord_service_manager.url}/discord.execute", json=payload)
+        response = requests.post(f"{str(discord_service_manager.url).rstrip('/')}/discord.execute", json=payload)
 
         assert response.status_code == 200
         data = response.json()
@@ -63,15 +63,15 @@ class TestDiscordServiceIntegration:
     def test_discord_service_health_endpoints(self, discord_service_manager):
         """Test that standard service health endpoints work."""
         # Test status endpoint
-        response = requests.post(f"{discord_service_manager.url}/status", json={})
+        response = requests.post(f"{str(discord_service_manager.url).rstrip('/')}/status", json={})
         assert response.status_code == 200
 
         # Test heartbeat endpoint
-        response = requests.post(f"{discord_service_manager.url}/heartbeat", json={})
+        response = requests.post(f"{str(discord_service_manager.url).rstrip('/')}/heartbeat", json={})
         assert response.status_code == 200
 
         # Test endpoints endpoint
-        response = requests.post(f"{discord_service_manager.url}/endpoints", json={})
+        response = requests.post(f"{str(discord_service_manager.url).rstrip('/')}/endpoints", json={})
         assert response.status_code == 200
 
         data = response.json()
@@ -86,20 +86,20 @@ class TestDiscordServiceIntegration:
     def test_discord_service_mcp_endpoints(self, discord_service_manager):
         """Test that MCP endpoints are available."""
         # Test MCP tools endpoint
-        response = requests.get(f"{discord_service_manager.url}/mcp/tools")
+        response = requests.get(f"{str(discord_service_manager.url).rstrip('/')}/mcp/tools")
         # MCP endpoints may not be available if no tools are registered
         # This is acceptable for DiscordService as it doesn't require MCP tools
         assert response.status_code in [200, 404]
 
         # Test MCP resources endpoint
-        response = requests.get(f"{discord_service_manager.url}/mcp/resources")
+        response = requests.get(f"{str(discord_service_manager.url).rstrip('/')}/mcp/resources")
         # MCP endpoints may not be available if no tools are registered
         assert response.status_code in [200, 404]
 
     def test_discord_service_error_handling(self, discord_service_manager):
         """Test error handling in Discord service endpoints."""
         # Test execute endpoint with invalid payload (missing required content field)
-        response = requests.post(f"{discord_service_manager.url}/discord.execute", json={})
+        response = requests.post(f"{str(discord_service_manager.url).rstrip('/')}/discord.execute", json={})
         assert response.status_code == 422  # Validation error
 
         # Test execute endpoint with valid payload (content is the only required field)
@@ -107,7 +107,7 @@ class TestDiscordServiceIntegration:
             "content": "!test"
             # Other fields are optional
         }
-        response = requests.post(f"{discord_service_manager.url}/discord.execute", json=valid_payload)
+        response = requests.post(f"{str(discord_service_manager.url).rstrip('/')}/discord.execute", json=valid_payload)
         assert response.status_code == 200  # Should succeed since content is provided
 
     def test_discord_service_command_parsing(self, discord_service_manager):
@@ -118,7 +118,7 @@ class TestDiscordServiceIntegration:
         for command in test_commands:
             payload = {"content": command, "author_id": 123, "channel_id": 456, "guild_id": 789}
 
-            response = requests.post(f"{discord_service_manager.url}/discord.execute", json=payload)
+            response = requests.post(f"{str(discord_service_manager.url).rstrip('/')}/discord.execute", json=payload)
             assert response.status_code == 200
 
             data = response.json()
@@ -138,7 +138,7 @@ class TestDiscordServiceIntegration:
         for test_case in test_cases:
             payload = {"content": test_case["content"], "author_id": 123, "channel_id": 456, "guild_id": 789}
 
-            response = requests.post(f"{discord_service_manager.url}/discord.execute", json=payload)
+            response = requests.post(f"{str(discord_service_manager.url).rstrip('/')}/discord.execute", json=payload)
             assert response.status_code == 200
 
             data = response.json()
@@ -158,7 +158,9 @@ class TestDiscordServiceIntegration:
             # No guild_id
         }
 
-        response = requests.post(f"{discord_service_manager.url}/discord.execute", json=payload_no_guild)
+        response = requests.post(
+            f"{str(discord_service_manager.url).rstrip('/')}/discord.execute", json=payload_no_guild
+        )
         assert response.status_code == 200
 
         data = response.json()
@@ -168,7 +170,9 @@ class TestDiscordServiceIntegration:
         # Test command with guild
         payload_with_guild = {"content": "!info", "author_id": 123, "channel_id": 456, "guild_id": 789}
 
-        response = requests.post(f"{discord_service_manager.url}/discord.execute", json=payload_with_guild)
+        response = requests.post(
+            f"{str(discord_service_manager.url).rstrip('/')}/discord.execute", json=payload_with_guild
+        )
         assert response.status_code == 200
 
         data = response.json()
@@ -180,7 +184,7 @@ class TestDiscordServiceIntegration:
         # Test cleanup command (basic service doesn't have custom commands)
         payload = {"content": "!cleanup 5", "author_id": 123, "channel_id": 456, "guild_id": 789}
 
-        response = requests.post(f"{discord_service_manager.url}/discord.execute", json=payload)
+        response = requests.post(f"{str(discord_service_manager.url).rstrip('/')}/discord.execute", json=payload)
         assert response.status_code == 200
 
         data = response.json()
@@ -199,7 +203,9 @@ class TestDiscordServiceIntegration:
             payload = {"content": command, "author_id": author_id, "channel_id": 456, "guild_id": 789}
 
             try:
-                response = requests.post(f"{discord_service_manager.url}/discord.execute", json=payload)
+                response = requests.post(
+                    f"{str(discord_service_manager.url).rstrip('/')}/discord.execute", json=payload
+                )
                 results.put((command, response.status_code, response.json()))
             except Exception as e:
                 results.put((command, None, str(e)))
@@ -230,7 +236,7 @@ class TestDiscordServiceIntegration:
 
         payload = {"content": large_content, "author_id": 123, "channel_id": 456, "guild_id": 789}
 
-        response = requests.post(f"{discord_service_manager.url}/discord.execute", json=payload)
+        response = requests.post(f"{str(discord_service_manager.url).rstrip('/')}/discord.execute", json=payload)
         assert response.status_code == 200
 
         data = response.json()
@@ -243,7 +249,7 @@ class TestDiscordServiceIntegration:
         for command in unicode_commands:
             payload = {"content": command, "author_id": 123, "channel_id": 456, "guild_id": 789}
 
-            response = requests.post(f"{discord_service_manager.url}/discord.execute", json=payload)
+            response = requests.post(f"{str(discord_service_manager.url).rstrip('/')}/discord.execute", json=payload)
             assert response.status_code == 200
 
             data = response.json()

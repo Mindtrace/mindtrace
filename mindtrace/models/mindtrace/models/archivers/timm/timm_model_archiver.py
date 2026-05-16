@@ -6,13 +6,9 @@ configuration and weights.
 
 import json
 import os
-from typing import Any, ClassVar, Tuple, Type
+from typing import Any, Type
 
 import torch
-
-# Import timm at module level for ASSOCIATED_TYPES
-from torch import nn
-from zenml.enums import ArtifactType
 
 from mindtrace.registry import Archiver
 
@@ -40,10 +36,6 @@ class TimmModelArchiver(Archiver):
         >>> registry.save("resnet:v1", model)
         >>> loaded_model = registry.load("resnet:v1")
     """
-
-    # timm models are nn.Module but we identify them via pretrained_cfg attribute
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (nn.Module,)
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.MODEL
 
     def __init__(self, uri: str, **kwargs):
         super().__init__(uri=uri, **kwargs)
