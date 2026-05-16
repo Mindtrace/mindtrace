@@ -1,5 +1,7 @@
 import asyncio
 import json
+import threading
+import time
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
@@ -908,6 +910,41 @@ class TestAsyncDatalakeUnit:
         assert payload == b"payload"
         assert info == {"size": 123}
         assert copied.version == "v2"
+
+    @pytest.mark.asyncio
+    async def test_put_object_offloads_store_save_and_allows_concurrent_writes(self, async_datalake, mock_store):
+        active = 0
+        max_active = 0
+        lock = threading.Lock()
+        two_saves_active = threading.Event()
+
+        def save_side_effect(*args, **kwargs):
+            nonlocal active, max_active
+            with lock:
+                active += 1
+                max_active = max(max_active, active)
+                if active >= 2:
+                    two_saves_active.set()
+            try:
+                two_saves_active.wait(timeout=1.0)
+                time.sleep(0.01)
+                return "v1"
+            finally:
+                with lock:
+                    active -= 1
+
+        mock_store.save.side_effect = save_side_effect
+
+        refs = await asyncio.wait_for(
+            asyncio.gather(
+                async_datalake.put_object(name="images/cat-1.jpg", obj=b"bytes", mount="nas"),
+                async_datalake.put_object(name="images/cat-2.jpg", obj=b"bytes", mount="nas"),
+            ),
+            timeout=2.0,
+        )
+
+        assert [ref.version for ref in refs] == ["v1", "v1"]
+        assert max_active == 2
 
     @pytest.mark.asyncio
     async def test_object_exists_raises_when_mount_unknown(self, async_datalake):
