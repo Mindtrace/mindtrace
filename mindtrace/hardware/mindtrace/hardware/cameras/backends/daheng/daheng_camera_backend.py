@@ -17,7 +17,14 @@ try:
     import gxipy as gx  # type: ignore
 
     GXIPY_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except Exception:  # pragma: no cover
+    # ``gxipy`` is not importable unless the Galaxy SDK native library
+    # (``libgxiapi.so`` on Linux / ``GxIAPI.dll`` on Windows) is present.
+    # Its top-level module raises a bare ``NameError`` rather than a clean
+    # ``ImportError`` when the native lib is missing (it tries to use a
+    # ``dll`` symbol that was never bound), so we catch ``Exception`` to
+    # cover both the python-package-missing and native-lib-missing paths.
+    # The mock backend stays importable either way.
     GXIPY_AVAILABLE = False
     gx = None
 
