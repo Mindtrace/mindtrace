@@ -7,9 +7,7 @@ Handles saving and loading of:
 """
 
 import os
-from typing import Any, ClassVar, Tuple, Type
-
-from zenml.enums import ArtifactType
+from typing import Any, Type
 
 from mindtrace.registry import Archiver, Registry
 
@@ -40,9 +38,6 @@ class HuggingFaceModelArchiver(Archiver):
         >>> registry.save("vit:v1", model)
         >>> loaded_model = registry.load("vit:v1")
     """
-
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (PreTrainedModel,) if _HF_AVAILABLE else (object,)
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.MODEL
 
     def __init__(self, uri: str, **kwargs):
         super().__init__(uri=uri, **kwargs)

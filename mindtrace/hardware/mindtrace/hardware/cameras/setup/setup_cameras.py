@@ -56,6 +56,7 @@ import typer
 
 from mindtrace.core import Mindtrace
 from mindtrace.hardware.cameras.setup.setup_basler import PylonSDKInstaller
+from mindtrace.hardware.cameras.setup.setup_daheng import GalaxySDKInstaller
 from mindtrace.hardware.cameras.setup.setup_genicam import install_genicam_cti, uninstall_genicam_cti
 from mindtrace.hardware.core.config import get_hardware_config
 
@@ -104,7 +105,7 @@ class CameraSystemSetup(Mindtrace):
         self.logger.info("Starting installation of all camera SDKs")
 
         success_count = 0
-        total_sdks = 2
+        total_sdks = 3
 
         # Install Basler Pylon SDK
         self.logger.info("Installing Basler Pylon SDK")
@@ -126,6 +127,18 @@ class CameraSystemSetup(Mindtrace):
         else:
             self.logger.error("Matrix Vision GenICam CTI installation failed")
 
+        # Install Daheng Galaxy SDK
+        self.logger.info("Installing Daheng Galaxy SDK")
+        try:
+            galaxy_installer = GalaxySDKInstaller()
+            if galaxy_installer.install():
+                self.logger.info("Daheng Galaxy SDK installation completed successfully")
+                success_count += 1
+            else:
+                self.logger.error("Daheng Galaxy SDK installation failed")
+        except Exception as e:
+            self.logger.error(f"Daheng Galaxy SDK installation failed: {e}")
+
         # Log summary
         if success_count == total_sdks:
             self.logger.info(f"All {total_sdks} camera SDKs installed successfully")
@@ -146,7 +159,7 @@ class CameraSystemSetup(Mindtrace):
         self.logger.info("Starting uninstallation of all camera SDKs")
 
         success_count = 0
-        total_sdks = 2
+        total_sdks = 3
 
         # Uninstall Basler Pylon SDK
         self.logger.info("Uninstalling Basler Pylon SDK")
@@ -167,6 +180,18 @@ class CameraSystemSetup(Mindtrace):
             success_count += 1
         else:
             self.logger.error("Matrix Vision GenICam CTI uninstallation failed")
+
+        # Uninstall Daheng Galaxy SDK
+        self.logger.info("Uninstalling Daheng Galaxy SDK")
+        try:
+            galaxy_installer = GalaxySDKInstaller()
+            if galaxy_installer.uninstall():
+                self.logger.info("Daheng Galaxy SDK uninstallation completed successfully")
+                success_count += 1
+            else:
+                self.logger.error("Daheng Galaxy SDK uninstallation failed")
+        except Exception as e:
+            self.logger.error(f"Daheng Galaxy SDK uninstallation failed: {e}")
 
         # Log summary
         if success_count == total_sdks:
