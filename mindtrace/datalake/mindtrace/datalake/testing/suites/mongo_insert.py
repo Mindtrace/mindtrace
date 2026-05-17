@@ -27,6 +27,7 @@ from mindtrace.datalake.types import Asset, AssetAlias, StorageRef
 class DatalakeMongoInsertInput(BaseModel):
     mongo_backend: Literal["local", "atlas"] = Field("local", description="Mongo backend label to resolve.")
     batch_size: int = Field(100, ge=1, description="Number of assets and aliases inserted per operation.")
+    concurrency: int = Field(1, ge=1, description="Number of concurrent metadata writer tasks.")
 
 
 class DatalakeMongoInsertResources(BaseModel):
@@ -64,6 +65,7 @@ class DatalakeMongoInsertCeilingSuite(BenchTestSuite):
                 "duration_seconds": 10.0,
                 "mongo_backend": "local",
                 "batch_size": 100,
+                "concurrency": 1,
                 "resources": {"mongo_uri": "mongodb://127.0.0.1:27017"},
             },
         },
@@ -78,6 +80,7 @@ async def _run_async(config: BenchSuiteConfig, reporter: BenchReporter) -> Bench
     monotonic_start = time.perf_counter()
     mongo_backend, mongo_uri, mongo_db_name = resolve_mongo_triple(config)
     batch_size = int(config.parameters.get("batch_size", 100))
+    concurrency = int(config.parameters.get("concurrency", 1))
     asset_db = MongoMindtraceODM(model_cls=Asset, db_uri=mongo_uri, db_name=mongo_db_name)
     alias_db = MongoMindtraceODM(model_cls=AssetAlias, db_uri=mongo_uri, db_name=mongo_db_name)
 
@@ -85,26 +88,20 @@ async def _run_async(config: BenchSuiteConfig, reporter: BenchReporter) -> Bench
         await asset_db.initialize()
         await alias_db.initialize()
         deadline = reporter.deadline(config.duration_seconds)
-        while time.perf_counter() < deadline and not reporter.is_cancelled():
-            batch_id = uuid4().hex
-            assets = [_build_asset(config, batch_id, index) for index in range(batch_size)]
-            op_start = time.perf_counter()
-            try:
-                inserted_assets = await asset_db.insert_many(assets, ordered=False)
-                aliases = [
-                    AssetAlias(alias=asset.asset_id, asset_id=asset.asset_id, is_primary=True)
-                    for asset in inserted_assets
-                ]
-                await alias_db.insert_many(aliases, ordered=False)
-            except Exception as exc:  # noqa: BLE001
-                reporter.record_operation(success=False, latency_seconds=time.perf_counter() - op_start, error=exc)
-                continue
-            reporter.record_operation(
-                success=True,
-                latency_seconds=time.perf_counter() - op_start,
-                bytes_processed=0,
-                batch_size=batch_size,
+        await asyncio.gather(
+            *(
+                _run_worker(
+                    config,
+                    reporter,
+                    asset_db,
+                    alias_db,
+                    batch_size=batch_size,
+                    deadline=deadline,
+                    worker_id=worker_id,
+                )
+                for worker_id in range(concurrency)
             )
+        )
     finally:
         asset_db.close()
         alias_db.close()
@@ -125,10 +122,42 @@ async def _run_async(config: BenchSuiteConfig, reporter: BenchReporter) -> Bench
         metrics={
             **reporter.metrics,
             "batch_size": batch_size,
+            "concurrency": concurrency,
             "mongo_backend": mongo_backend,
             "mongo_db_name": mongo_db_name,
         },
     )
+
+
+async def _run_worker(
+    config: BenchSuiteConfig,
+    reporter: BenchReporter,
+    asset_db: MongoMindtraceODM,
+    alias_db: MongoMindtraceODM,
+    *,
+    batch_size: int,
+    deadline: float,
+    worker_id: int,
+) -> None:
+    while time.perf_counter() < deadline and not reporter.is_cancelled():
+        batch_id = f"worker-{worker_id}-{uuid4().hex}"
+        assets = [_build_asset(config, batch_id, index) for index in range(batch_size)]
+        op_start = time.perf_counter()
+        try:
+            inserted_assets = await asset_db.insert_many(assets, ordered=False)
+            aliases = [
+                AssetAlias(alias=asset.asset_id, asset_id=asset.asset_id, is_primary=True) for asset in inserted_assets
+            ]
+            await alias_db.insert_many(aliases, ordered=False)
+        except Exception as exc:  # noqa: BLE001
+            reporter.record_operation(success=False, latency_seconds=time.perf_counter() - op_start, error=exc)
+            continue
+        reporter.record_operation(
+            success=True,
+            latency_seconds=time.perf_counter() - op_start,
+            bytes_processed=0,
+            batch_size=batch_size,
+        )
 
 
 def _build_asset(config: BenchSuiteConfig, batch_id: str, index: int) -> Asset:
