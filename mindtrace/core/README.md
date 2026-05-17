@@ -13,7 +13,7 @@ The `Core` module provides the foundational abstractions, configuration, logging
 - **Task typing** with `TaskSchema`
 - **Logging and operation tracking** with standard and structured logging support
 - **Observability primitives** with `EventBus`, `ObservableContext`, and `ContextListener`
-- **Async-native NATS messaging** with `NatsClient`, JetStream, KV, and Object Store
+- **Minimal NATS shim** with `connect()`, Pydantic encode/decode, and scoped helpers
 - **Shared utility helpers** for dynamic loading, networking, timing, hashing, and metrics
 
 ## Quick Start
@@ -273,20 +273,21 @@ ctx.subscribe(ContextListener(autolog=["progress"]))
 ctx.progress = 50
 ```
 
-## Messaging (NATS)
+## NATS
 
-`mindtrace-core` ships an async-native NATS substrate built on `nats-py`. It's the distributed counterpart to `EventBus`: where `EventBus` is in-process pub/sub, `NatsClient` is a connection to a real NATS server and covers pub/sub, request/reply, durable JetStream streams, KV buckets, and Object Store.
+`mindtrace.core.nats` is a tiny shim over [`nats-py`](https://nats-io.github.io/nats.py/). It contributes exactly two ideas:
 
-The surface is intentionally Pydantic-aware — payloads accept `bytes`, `str`, `dict`, or any `pydantic.BaseModel` (auto-JSON-encoded), and you can decode received messages into a model by passing `model=`.
+1. `async with connect(...)` opens a NATS connection and drains on exit.
+2. `encode(payload)` / `decoded(msg, model)` handle Pydantic ⇄ JSON at the edges.
+
+Everything else — `nc.subscribe`, `nc.jetstream()`, `js.pull_subscribe`, `js.key_value`, `msg.ack`/`nak`/`term`, etc. — is plain `nats-py`. Learn it from the upstream docs; the names match.
 
 ### Pub/sub
 
 ```python
 import asyncio
-
 from pydantic import BaseModel
-
-from mindtrace.core import NatsClient
+from mindtrace.core.nats import connect, decoded, publish
 
 
 class Greeting(BaseModel):
@@ -294,90 +295,98 @@ class Greeting(BaseModel):
 
 
 async def main():
-    async with NatsClient.connect() as nc:
-        async with nc.subscribe("greet", model=Greeting) as sub:
-            await nc.publish("greet", Greeting(name="world"))
-            msg = await asyncio.wait_for(sub.__anext__(), timeout=2.0)
-            print(msg.data)  # Greeting(name='world')
+    async with connect() as nc:
+        sub = await nc.subscribe("greet")
+        try:
+            await publish(nc, "greet", Greeting(name="world"))
+            msg = await sub.next_msg(timeout=2.0)
+            print(decoded(msg, Greeting))  # Greeting(name='world')
+        finally:
+            await sub.unsubscribe()
 
 
 asyncio.run(main())
 ```
 
-### Callback workers
-
-For the "background worker" pattern, pass `handler=` to `subscribe`. The client runs your handler in a managed task and auto-acks on success / naks on exception (a no-op on core NATS, meaningful for JetStream).
-
-```python
-async def handle(msg):
-    process(msg.data)
-
-
-async with nc.subscribe("jobs.*", handler=handle, model=Job) as worker:
-    await asyncio.sleep(10)  # run for 10s, then drain on exit
-```
-
 ### Request/reply
 
 ```python
-reply = await nc.request("square", Q(n=9), timeout=2.0, model=A)
+from mindtrace.core.nats import request
+
+reply = await request(nc, "square", Q(n=9), timeout=2.0, model=A)
+```
+
+### Long-running consumer
+
+The shim doesn't own task lifecycle — you do. Run the consumer under `asyncio.TaskGroup` so exceptions propagate naturally:
+
+```python
+async def consume(nc):
+    sub = await nc.subscribe("jobs.*")
+    try:
+        while True:
+            msg = await sub.next_msg(timeout=5.0)
+            try:
+                await process(decoded(msg, Job))
+            except Exception:
+                logger.exception("job failed")
+
+    finally:
+        await sub.unsubscribe()
+
+
+async with connect() as nc, asyncio.TaskGroup() as tg:
+    tg.create_task(consume(nc))
+    await asyncio.sleep(10)  # let it run; group propagates any failure
 ```
 
 ### JetStream, KV, Object Store
 
-`nc.jetstream()` returns a context with `add_stream` / `delete_stream` / `scoped_stream`, plus `pull_subscribe` and `push_subscribe`. The convenience methods `nc.add_stream` / `nc.scoped_stream` are shortcuts for the JetStream context. KV and Object Store buckets are accessed via `nc.kv(...)` / `nc.create_kv(...)` (and the symmetric `scoped_kv` / `scoped_object_store` helpers that create on enter and destroy on exit).
+Use `nc.jetstream()` and the native nats-py methods (`add_stream`, `pull_subscribe`, `key_value`, `object_store`, …). For ephemeral test resources, the shim provides three `scoped_*` helpers that create on enter and destroy on exit:
 
 ```python
-async with nc.scoped_kv("settings") as kv:
-    await kv.put("greeting", "hello")
-    print(await kv.get("greeting"))
-    # KV.get raises nats.js.errors.KeyNotFoundError on a missing key
-    # unless you pass `default=`:
-    print(await kv.get("missing", default=None))  # → None
+from mindtrace.core.nats import scoped_kv
+
+async with connect() as nc:
+    async with scoped_kv(nc.jetstream(), "settings") as kv:
+        await kv.put("greeting", b"hello")
+        entry = await kv.get("greeting")
+        print(entry.value)
 ```
 
-JetStream `pull_subscribe` has both iterator and worker forms — pass `handler=` to get a managed fetch loop with auto-ack/nak, `batch=` and `fetch_timeout=` to tune the polling cadence. `push_subscribe` mirrors the same two shapes.
-
-KV `watch()` / `history()` (the streaming-update features of NATS KV) are not surfaced yet — drop to `kv.raw.watch(...)` if you need them.
+`scoped_stream(js, name, subjects=[...])` and `scoped_object_store(js, bucket)` are symmetric. Note `kv.get(...)` raises `nats.js.errors.KeyNotFoundError` on a missing key — handle it the way you'd handle any nats-py error.
 
 ### Configuration
 
-Defaults come from `MINDTRACE_NATS__*` env vars (nested-delimiter `__`, matching `CoreConfig`'s convention):
+`connect()` forwards every kwarg to `nats.connect`, so pass `servers=[...]`, `user=...`, etc. directly:
 
-- `MINDTRACE_NATS__URLS` — comma-separated server URLs (cluster failover supported).
-- `MINDTRACE_NATS__USER` / `__PASSWORD` / `__TOKEN` / `__USER_CREDENTIALS` / `__NKEYS_SEED` — auth.
-- `MINDTRACE_NATS__TLS` and `MINDTRACE_NATS__TLS_CA_FILE` / `__TLS_CERT_FILE` / `__TLS_KEY_FILE` — TLS.
+```python
+from mindtrace.core.nats import connect
 
-Or pass settings directly: `NatsClient.connect(urls=[...], settings=NatsSettings(...))`.
-
-### Observability
-
-`nc.health()` returns a typed `NatsHealth` snapshot with the connected URL, full server list, `stats` (in/out msg + byte counters from nats-py), and any `last_error` (plus `last_error_at` UTC timestamp) captured by the wrapped `error_cb`. Pydantic publishes auto-stamp `Content-Type: application/json` in headers so non-Python consumers can inspect the wire format; any headers you pass through (including `traceparent`) are forwarded verbatim.
-
-### Errors you'll catch
-
-The library is intentionally thin — most errors come from `nats-py` or `pydantic` and propagate as-is. The names worth knowing:
-
-- `mindtrace.core.NatsClientClosed` — any method called after the `connect()` async context manager has exited.
-- `asyncio.TimeoutError` — `request(timeout=...)`, JetStream pull `fetch(timeout=...)`, and `drain` exceeding their windows.
-- `nats.errors.NoRespondersError` — `request(...)` to a subject with no live responders.
-- `nats.errors.TimeoutError` — JetStream-specific timeout (`fetch` raises this and the worker loop treats it as "no work yet" rather than fatal).
-- `nats.js.errors.KeyNotFoundError` — `KeyValueHandle.get(key)` when the key is absent and no `default=` is supplied.
-- `pydantic.ValidationError` — `model=`-typed decode of a payload that doesn't validate.
-
-Worker forms (`subscribe(handler=...)`, `push_subscribe(handler=...)`, `pull_subscribe(handler=...)`) catch per-message handler exceptions and forward them to `on_error` without terminating the loop. A *fatal* loop exception (the message source itself raising) is captured on the `SubscriptionHandle` and re-raised when the async context manager exits — silent worker death is impossible.
-
-### CLI
-
-For quick ops smoke tests (uses the same `MINDTRACE_NATS__*` env vars; defaults to `nats://localhost:4222`):
-
-```bash
-uv run python -m mindtrace.core.messaging.nats publish my.subject 'hello'
-uv run python -m mindtrace.core.messaging.nats publish my.subject '{"n":1}' --json
-uv run python -m mindtrace.core.messaging.nats publish my.subject --file ./payload.bin
-uv run python -m mindtrace.core.messaging.nats subscribe 'events.>' --count 5
-uv run python -m mindtrace.core.messaging.nats request my.subject 'ping' --timeout 2.0
+async with connect(servers=["nats://broker:4222"], user="svc", password=os.environ["NATS_PASS"]) as nc:
+    ...
 ```
+
+For env-driven config, use `connect_from_env()` — it reads `MINDTRACE_NATS__URLS`, `__USER`, `__PASSWORD`, `__TOKEN`:
+
+```python
+from mindtrace.core.nats import connect_from_env
+
+async with connect_from_env() as nc:  # picks up MINDTRACE_NATS__URLS
+    ...
+```
+
+TLS works out of the box for `tls://...` URLs (nats-py auto-builds the context). For mTLS, build a `ssl.SSLContext` and pass it via `connect(tls=ctx)`.
+
+### Errors
+
+All errors come from `nats-py` or `pydantic` and propagate as-is — there is no custom exception hierarchy. The names you'll see:
+
+- `nats.errors.ConnectionClosedError` — method called after `connect()` has exited.
+- `nats.errors.NoRespondersError` — `request(...)` to a subject with no live responders.
+- `nats.errors.TimeoutError` / `asyncio.TimeoutError` — request, fetch, or drain windows expired.
+- `nats.js.errors.KeyNotFoundError` — KV `get(key)` on a missing key.
+- `pydantic.ValidationError` — `decoded(msg, Model)` on a payload that doesn't validate.
 
 ## Utility Helpers
 
@@ -441,7 +450,7 @@ See these examples and related docs in the repo for more end-to-end reference:
 - [Core configuration examples](samples/core/config)
 - [Core logging examples](samples/core/logging)
 - [Core observables examples](samples/core/observables)
-- [Core NATS messaging examples](samples/core/messaging)
+- [Core NATS samples](samples/core/nats)
 
 ## Testing
 
@@ -466,5 +475,5 @@ ds test: --unit core
 - Secret configuration values are masked on `repr()`; use `config.get_secret(...)` or `model_dump_json()` when you need the real value.
 - `TaskSchema` is a typed contract, not an execution engine by itself.
 - `track_operation()` attaches structured per-operation context (duration, start/completed/failed, system metrics).
-- `NatsClient` is async-only by design — the underlying `nats-py` is asyncio-native, and there is no sync facade.
+- `mindtrace.core.nats` is async-only by design — the underlying `nats-py` is asyncio-native, and there is no sync facade.
 - Many helpers in `core` are intentionally low-level building blocks; the README should help you discover them, while the code docs remain the detailed reference.

@@ -1,4 +1,4 @@
-"""JetStream durable pull subscribe — persistent work queue semantics.
+"""JetStream durable pull subscribe — persistent work-queue semantics.
 
 Requires a NATS server with JetStream enabled at nats://localhost:4222:
 
@@ -13,7 +13,7 @@ import uuid
 
 from pydantic import BaseModel
 
-from mindtrace.core import NatsClient
+from mindtrace.core.nats import connect, decoded, publish, scoped_stream
 
 
 class Event(BaseModel):
@@ -26,23 +26,21 @@ async def main() -> None:
     stream = f"sample-stream-{suffix}"
     subject = f"events.{suffix}.evt"
 
-    async with NatsClient.connect() as nc:
+    async with connect() as nc:
         js = nc.jetstream()
-        async with js.scoped_stream(stream, subjects=[f"events.{suffix}.>"]):
+        async with scoped_stream(js, stream, subjects=[f"events.{suffix}.>"]):
             for i in range(3):
-                ack = await js.publish(subject, Event(name="ping", seq=i))
+                ack = await publish(js, subject, Event(name="ping", seq=i))
                 print(f"published seq={ack.seq}")
 
-            async with js.pull_subscribe(
-                subject,
-                durable=f"worker-{suffix}",
-                stream=stream,
-                model=Event,
-            ) as psub:
+            psub = await js.pull_subscribe(subject, durable=f"worker-{suffix}", stream=stream)
+            try:
                 batch = await psub.fetch(3, timeout=1.0)
                 for msg in batch:
-                    print(f"got {msg.data}")
+                    print(f"got {decoded(msg, Event)}")
                     await msg.ack()
+            finally:
+                await psub.unsubscribe()
 
 
 if __name__ == "__main__":

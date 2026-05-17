@@ -1,4 +1,4 @@
-"""Integration-test fixtures for the NATS client.
+"""Integration-test fixtures for `mindtrace.core.nats`.
 
 Skips tests when no NATS server is reachable at the URL configured via
 `MINDTRACE_NATS__URLS` (set by `scripts/docker_up.sh` to `nats://localhost:4223`
@@ -14,8 +14,7 @@ import uuid
 import pytest
 import pytest_asyncio
 
-from mindtrace.core.messaging.nats.client import NatsClient
-from mindtrace.core.messaging.nats.settings import NatsSettings
+from mindtrace.core.nats import connect
 
 
 def _resolved_url() -> str:
@@ -56,14 +55,13 @@ async def nats_url() -> str:
 
 @pytest_asyncio.fixture
 async def nats_client(nats_url):
-    """Yield a connected NatsClient and drain on exit."""
-    async with NatsClient.connect(urls=[nats_url], settings=NatsSettings(urls=[nats_url])) as nc:
+    """Yield a connected nats-py client; drain on exit."""
+    async with connect(servers=[nats_url]) as nc:
         yield nc
 
 
 @pytest.fixture
 def subject_prefix() -> str:
-    """Per-test unique subject prefix to keep concurrent runs from colliding."""
     return f"mt.test.{uuid.uuid4().hex[:8]}"
 
 
