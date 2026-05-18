@@ -36,6 +36,7 @@ mindtrace-hw = "mindtrace.hardware.cli.__main__:main"
 mindtrace-camera-setup = "mindtrace.hardware.cameras.setup.setup_cameras:main"
 mindtrace-camera-basler = "mindtrace.hardware.cameras.setup.setup_basler:main"
 mindtrace-camera-genicam = "mindtrace.hardware.cameras.setup.setup_genicam:main"
+mindtrace-camera-daheng = "mindtrace.hardware.cameras.setup.setup_daheng:main"
 
 # Stereo camera setup CLI (Typer app with subcommands)
 mindtrace-stereo-basler = "mindtrace.hardware.stereo_cameras.setup.setup_stereo_ace:main"
@@ -46,7 +47,8 @@ mindtrace-scanner-photoneo = "mindtrace.hardware.scanners_3d.setup.setup_photone
 [project.optional-dependencies]
 cameras-basler = ["pypylon>=3.0.0"]
 cameras-genicam = ["harvesters>=1.4.0; sys_platform != 'darwin'", "genicam>=1.5.0; sys_platform != 'darwin'"]
-cameras-all = ["mindtrace-hardware[cameras-basler,cameras-genicam]>=0.11.0"]
+cameras-daheng = ["iai-gxipy>=2.0"]
+cameras-all = ["mindtrace-hardware[cameras-basler,cameras-genicam,cameras-daheng]>=0.11.0"]
 stereo-basler = ["pypylon>=3.0.0", "plyfile>=1.0.0"]
 stereo-all = ["mindtrace-hardware[stereo-basler]>=0.11.0"]
 scanners-photoneo = ["harvesters>=1.4.0; sys_platform != 'darwin'", "plyfile>=1.0.0"]

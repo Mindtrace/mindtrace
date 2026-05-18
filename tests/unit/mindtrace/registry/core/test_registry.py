@@ -10,10 +10,9 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 from pydantic import BaseModel
-from zenml.materializers import CloudpickleMaterializer
 
 from mindtrace.core import Config, compute_dir_hash
-from mindtrace.registry import LocalRegistryBackend, Registry, S3RegistryBackend
+from mindtrace.registry import CloudpickleMaterializer, LocalRegistryBackend, Registry, S3RegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
 from mindtrace.registry.core.exceptions import (
@@ -120,13 +119,14 @@ def test_registry_serialization_hints_for_object_uses_core_materializer_lookup(r
 
     assert hints == {
         "class": "builtins.bytes",
-        "materializer": "zenml.materializers.BytesMaterializer",
+        "materializer": "mindtrace.registry.archivers.builtin_materializers.BytesMaterializer",
     }
 
 
 def test_registry_materialize_from_bytes_delegates_to_core(registry):
     raw = b"hello-bytes"
 
+    # Verify legacy zenml materializer strings still resolve via the alias map.
     out = registry.materialize_from_bytes(
         raw,
         object_class="builtins.bytes",
@@ -452,23 +452,19 @@ def test_find_materializer_with_class_object(registry, test_config):
 
     Note: When a materializer class object is provided (not a string), it is converted
     to a string using type(materializer) which returns the class's metaclass.
-    Archiver inherits from BaseMaterializer, so its metaclass is BaseMaterializerMeta.
+    Without a custom metaclass, type(SomeClass) is the built-in ``type``.
     """
     from mindtrace.registry.archivers.config_archiver import ConfigArchiver
 
-    # Call _find_materializer with a materializer class object (not a string)
-    # This should trigger the conversion:
-    # return f"{type(materializer).__module__}.{type(materializer).__name__}"
     materializer_str = registry._find_materializer(test_config, provided_materializer=ConfigArchiver)
 
-    assert materializer_str == "zenml.materializers.base_materializer.BaseMaterializerMeta"
+    assert materializer_str == "builtins.type"
     assert isinstance(materializer_str, str)
 
     # Verify that if we pass a regular class, type() returns builtins.type
     class SimpleMaterializer:
         pass
 
-    # This should convert type(SimpleMaterializer) which is builtins.type
     simple_str = registry._find_materializer(test_config, provided_materializer=SimpleMaterializer)
     assert simple_str == "builtins.type"
     assert isinstance(simple_str, str)
@@ -651,8 +647,11 @@ def test_registered_materializers(registry):
     assert "mindtrace.core.config.config.Config" in materializers
 
     # Verify the materializer classes are correct
-    assert materializers["builtins.str"] == "zenml.materializers.built_in_materializer.BuiltInMaterializer"
-    assert materializers["builtins.list"] == "zenml.materializers.BuiltInContainerMaterializer"
+    assert materializers["builtins.str"] == "mindtrace.registry.archivers.builtin_materializers.BuiltInMaterializer"
+    assert (
+        materializers["builtins.list"]
+        == "mindtrace.registry.archivers.builtin_materializers.BuiltInContainerMaterializer"
+    )
     assert (
         materializers["mindtrace.core.config.config.Config"]
         == "mindtrace.registry.archivers.config_archiver.ConfigArchiver"

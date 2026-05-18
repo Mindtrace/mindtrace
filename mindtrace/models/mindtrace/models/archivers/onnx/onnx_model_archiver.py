@@ -5,9 +5,7 @@ Handles saving and loading of ONNX models with their metadata.
 
 import json
 import os
-from typing import Any, ClassVar, Tuple, Type
-
-from zenml.enums import ArtifactType
+from typing import Any, Type
 
 from mindtrace.registry import Archiver, Registry
 
@@ -37,11 +35,6 @@ class OnnxModelArchiver(Archiver):
         >>> registry.save("onnx_model:v1", model)
         >>> loaded_model = registry.load("onnx_model:v1")
     """
-
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (
-        (ModelProto,) if _ONNX_AVAILABLE else (object,)  # Fallback to prevent ZenML error
-    )
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.MODEL
 
     def __init__(self, uri: str, **kwargs):
         super().__init__(uri=uri, **kwargs)
