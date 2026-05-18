@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
-import os
-from unittest import mock
-
 import pytest
 from pydantic import BaseModel, ValidationError
 
 from mindtrace.core.nats import NatsSettings, decoded, encode
+
+
+@pytest.fixture(autouse=True)
+def _clear_nats_env(monkeypatch):
+    """Strip ambient `MINDTRACE_NATS__*` env vars so settings tests are hermetic.
+
+    The docker test harness exports `MINDTRACE_NATS__URLS=...` which would
+    otherwise leak into every `NatsSettings()` constructed here.
+    """
+    import os
+
+    for key in list(os.environ):
+        if key.startswith("MINDTRACE_NATS__"):
+            monkeypatch.delenv(key, raising=False)
 
 
 class _Sample(BaseModel):
@@ -77,20 +88,22 @@ def test_decoded_propagates_validation_error():
 
 
 def test_settings_defaults_to_localhost():
-    with mock.patch.dict(os.environ, {}, clear=False):
-        for k in list(os.environ):
-            if k.startswith("MINDTRACE_NATS__"):
-                del os.environ[k]
-        s = NatsSettings()
+    s = NatsSettings()
     assert s.urls == ["nats://localhost:4222"]
     assert s.user is None
     assert s.token is None
 
 
-def test_settings_env_url(monkeypatch):
-    monkeypatch.setenv("MINDTRACE_NATS__URLS", '["nats://broker:4222"]')
+def test_settings_env_single_url(monkeypatch):
+    monkeypatch.setenv("MINDTRACE_NATS__URLS", "nats://broker:4222")
     s = NatsSettings()
     assert s.urls == ["nats://broker:4222"]
+
+
+def test_settings_env_comma_separated_urls(monkeypatch):
+    monkeypatch.setenv("MINDTRACE_NATS__URLS", "nats://a:4222, nats://b:4222")
+    s = NatsSettings()
+    assert s.urls == ["nats://a:4222", "nats://b:4222"]
 
 
 def test_to_kwargs_minimal():

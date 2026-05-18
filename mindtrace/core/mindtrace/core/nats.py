@@ -16,12 +16,12 @@ from __future__ import annotations
 import json
 import logging
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, List, Optional, Type, TypeVar, Union
+from typing import Annotated, AsyncIterator, List, Optional, Type, TypeVar, Union
 
 import nats
 from nats.aio.client import Client as NC
-from pydantic import BaseModel, Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +37,20 @@ class NatsSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="MINDTRACE_NATS__", extra="ignore")
 
-    urls: List[str] = Field(default_factory=lambda: ["nats://localhost:4222"])
+    # `NoDecode` tells pydantic-settings to skip its JSON-decode pass on env
+    # values; the validator below accepts a bare URL or a comma-separated list.
+    urls: Annotated[List[str], NoDecode] = Field(default_factory=lambda: ["nats://localhost:4222"])
     user: Optional[str] = None
     password: Optional[SecretStr] = None
     token: Optional[SecretStr] = None
+
+    @field_validator("urls", mode="before")
+    @classmethod
+    def _split_urls(cls, v):
+        """Accept `MINDTRACE_NATS__URLS=a` or `=a,b` from env."""
+        if isinstance(v, str):
+            return [u.strip() for u in v.split(",") if u.strip()]
+        return v
 
     def to_kwargs(self) -> dict:
         """Translate fields into kwargs accepted by :func:`nats.connect`."""
