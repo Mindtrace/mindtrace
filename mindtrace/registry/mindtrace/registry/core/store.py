@@ -10,10 +10,9 @@ from pathlib import Path
 from tempfile import mkdtemp
 from typing import Any, Dict, List, Type
 
-from zenml.materializers.base_materializer import BaseMaterializer
-
 from mindtrace.core import Mindtrace
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
+from mindtrace.registry.core.base_materializer import Materializer
 from mindtrace.registry.core.exceptions import (
     RegistryObjectNotFound,
     StoreAmbiguousObjectError,
@@ -266,7 +265,7 @@ class Store(Mindtrace):
         key: str,
         obj: Any,
         *,
-        materializer: Type[BaseMaterializer] | None = None,
+        materializer: Type[Materializer] | None = None,
         version: str | None = None,
         init_params: Dict[str, Any] | None = None,
         metadata: Dict[str, Any] | None = None,
@@ -297,7 +296,7 @@ class Store(Mindtrace):
         name: str | List[str],
         obj: Any | List[Any],
         *,
-        materializer: Type[BaseMaterializer] | None = None,
+        materializer: Type[Materializer] | None = None,
         version: str | None | List[str | None] = None,
         init_params: Dict[str, Any] | List[Dict[str, Any]] | None = None,
         metadata: Dict[str, Any] | List[Dict[str, Any]] | None = None,

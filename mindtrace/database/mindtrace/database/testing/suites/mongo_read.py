@@ -11,7 +11,15 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from mindtrace.core import BenchReporter, BenchResult, BenchResultSchema, BenchSuiteConfig, BenchTestSuite, TaskSchema, utc_now_iso
+from mindtrace.core import (
+    BenchReporter,
+    BenchResult,
+    BenchResultSchema,
+    BenchSuiteConfig,
+    BenchTestSuite,
+    TaskSchema,
+    utc_now_iso,
+)
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.testing.suites._models import DatabaseBenchDocument
 from mindtrace.database.testing.suites._mongo import resolve_mongo_resources
@@ -21,7 +29,9 @@ class DatabaseMongoReadInput(BaseModel):
     mongo_backend: Literal["local", "atlas"] = Field("local", description="Mongo backend label to resolve.")
     dataset_size: int = Field(1000, ge=1, description="Documents to pre-seed before timed reads.")
     read_mode: Literal["get_by_id", "find_filter"] = Field("get_by_id", description="Read operation to benchmark.")
-    read_pattern: Literal["sequential", "random"] = Field("random", description="ID selection pattern for get_by_id reads.")
+    read_pattern: Literal["sequential", "random"] = Field(
+        "random", description="ID selection pattern for get_by_id reads."
+    )
 
 
 class DatabaseMongoReadResources(BaseModel):
@@ -29,7 +39,9 @@ class DatabaseMongoReadResources(BaseModel):
     mongo_db_name: str | None = Field(None, description="Optional Mongo database name for this run.")
     REMOTE_MONGO_DB_URI: str | None = Field(None, description="Atlas Mongo URI.", json_schema_extra={"secret": True})
     REMOTE_MONGO_DB_NAME: str | None = Field(None, description="Atlas Mongo database name.")
-    mongo_atlas_uri: str | None = Field(None, description="Alias for REMOTE_MONGO_DB_URI.", json_schema_extra={"secret": True})
+    mongo_atlas_uri: str | None = Field(
+        None, description="Alias for REMOTE_MONGO_DB_URI.", json_schema_extra={"secret": True}
+    )
     mongo_atlas_db_name: str | None = Field(None, description="Alias for REMOTE_MONGO_DB_NAME.")
 
 
@@ -70,7 +82,10 @@ async def _run_async(config: BenchSuiteConfig, reporter: BenchReporter) -> Bench
     try:
         await odm.initialize()
         seeded = await odm.insert_many(
-            [DatabaseBenchDocument(run_id=run_id, shard=index % 16, sequence=index, payload="read") for index in range(dataset_size)],
+            [
+                DatabaseBenchDocument(run_id=run_id, shard=index % 16, sequence=index, payload="read")
+                for index in range(dataset_size)
+            ],
             ordered=False,
         )
         ids = [doc.id for doc in seeded]

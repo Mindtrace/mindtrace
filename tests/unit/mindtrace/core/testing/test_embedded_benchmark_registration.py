@@ -82,3 +82,9 @@ def test_datalake_testing_registers_expected_ids_and_schemas() -> None:
 
     for suite_id in expected:
         _assert_suite_schema_contract(TestRunner.get_suite_schema(suite_id), suite_id=suite_id)
+
+    mongo_insert = TestRunner.get_suite_schema("datalake.stress.mongo_insert_ceiling")
+    input_properties = mongo_insert.task_schema["input_json_schema"]["properties"]
+    assert "concurrency" in input_properties
+    assert input_properties["concurrency"]["default"] == 1
+    assert mongo_insert.profiles["stress"]["concurrency"] == 1

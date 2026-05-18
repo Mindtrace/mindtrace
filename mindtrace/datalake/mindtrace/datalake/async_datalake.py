@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
+import os
 import warnings
 from collections.abc import AsyncIterator, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
+from functools import partial
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -89,6 +93,12 @@ def _default_datalake_store_path(mongo_db_uri: str, mongo_db_name: str) -> Path:
     return Path("~/.cache/mindtrace/temp").expanduser() / f"datalake-{digest}"
 
 
+def _default_store_save_workers() -> int:
+    """Return a conservative bounded worker count for blocking store writes."""
+
+    return min(32, max(4, (os.cpu_count() or 1) * 2))
+
+
 class AsyncDatalake(Mindtrace):
     """Async canonical data facade for payload storage, metadata, and dataset composition.
 
@@ -110,14 +120,21 @@ class AsyncDatalake(Mindtrace):
         mounts: list[Mount] | None = None,
         default_mount: str | None = None,
         slow_ops_policy: SlowOpsPolicy = SlowOpsPolicy.WARN,
+        store_save_max_workers: int | None = None,
     ) -> None:
+        if store is not None and mounts is not None:
+            raise ValueError("Provide either store or mounts, not both")
+        if store_save_max_workers is not None and store_save_max_workers < 1:
+            raise ValueError("store_save_max_workers must be at least 1")
+
         super().__init__()
         self.mongo_db_uri = mongo_db_uri
         self.mongo_db_name = mongo_db_name
         self.slow_ops_policy = SlowOpsPolicy(slow_ops_policy)
-
-        if store is not None and mounts is not None:
-            raise ValueError("Provide either store or mounts, not both")
+        self._store_save_executor = ThreadPoolExecutor(
+            max_workers=store_save_max_workers or _default_store_save_workers(),
+            thread_name_prefix="DatalakeStoreSave",
+        )
 
         if store is not None:
             self.store = store
@@ -199,6 +216,10 @@ class AsyncDatalake(Mindtrace):
                 pass
         try:
             self._mongo_client.close()
+        except Exception:
+            pass
+        try:
+            self._store_save_executor.shutdown(wait=True, cancel_futures=True)
         except Exception:
             pass
         self._closed = True
@@ -847,8 +868,17 @@ class AsyncDatalake(Mindtrace):
         on_conflict: str | None = None,
     ) -> StorageRef:
         target_mount = mount or self.store.default_mount
+        if not self.store.has_mount(target_mount):
+            configured = sorted(self.store.list_mounts())
+            raise StoreLocationNotFound(
+                f"Unknown store mount {target_mount!r} on datalake {self.mongo_db_name!r}; configured mounts: {configured}"
+            )
         key = self.store.build_key(target_mount, name, version)
-        saved_version = self.store.save(key, obj, version=version, metadata=metadata, on_conflict=on_conflict)
+        loop = asyncio.get_running_loop()
+        saved_version = await loop.run_in_executor(
+            self._store_save_executor,
+            partial(self.store.save, key, obj, version=version, metadata=metadata, on_conflict=on_conflict),
+        )
         resolved_version = saved_version if isinstance(saved_version, str) else version or "latest"
         return StorageRef(mount=target_mount, name=name, version=resolved_version)
 

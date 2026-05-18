@@ -12,12 +12,11 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Type, overload
 
-from zenml.materializers.base_materializer import BaseMaterializer
-
 from mindtrace.core import Mindtrace
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
+from mindtrace.registry.core.base_materializer import Materializer
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.registry.core.mount import (
     AmbientAuth,
@@ -483,7 +482,7 @@ class Registry(Mindtrace):
         name: str | List[str],
         obj: Any | List[Any],
         *,
-        materializer: Type[BaseMaterializer] | None = None,
+        materializer: Type[Materializer] | None = None,
         version: str | None | List[str | None] = None,
         init_params: Dict[str, Any] | List[Dict[str, Any]] | None = None,
         metadata: Dict[str, Any] | List[Dict[str, Any]] | None = None,
@@ -572,9 +571,9 @@ class Registry(Mindtrace):
         self,
         obj: Any,
         *,
-        materializer: Type[BaseMaterializer] | None = None,
+        materializer: Type[Materializer] | None = None,
     ) -> Dict[str, str]:
-        """Return ZenML ``class`` and ``materializer`` strings for embedding in other metadata (e.g. datalake assets)."""
+        """Return ``class`` and ``materializer`` strings for embedding in external metadata (e.g. datalake assets)."""
         return self._core.serialization_hints_for_object(obj, materializer=materializer)
 
     def materialize_from_bytes(
@@ -587,7 +586,7 @@ class Registry(Mindtrace):
         relative_path: str = "data.txt",
         **kwargs: Any,
     ) -> Any:
-        """Materialize *raw* bytes laid out as a single file (default ZenML bytes layout: ``data.txt``)."""
+        """Materialize *raw* bytes laid out as a single file (default bytes layout: ``data.txt``)."""
         return self._core.materialize_from_bytes(
             raw,
             object_class=object_class,

@@ -10,7 +10,15 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from mindtrace.core import BenchReporter, BenchResult, BenchResultSchema, BenchSuiteConfig, BenchTestSuite, TaskSchema, utc_now_iso
+from mindtrace.core import (
+    BenchReporter,
+    BenchResult,
+    BenchResultSchema,
+    BenchSuiteConfig,
+    BenchTestSuite,
+    TaskSchema,
+    utc_now_iso,
+)
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.testing.suites._models import DatabaseBenchDocument
 from mindtrace.database.testing.suites._mongo import resolve_mongo_resources
@@ -26,7 +34,9 @@ class DatabaseMongoInsertResources(BaseModel):
     mongo_db_name: str | None = Field(None, description="Optional Mongo database name for this run.")
     REMOTE_MONGO_DB_URI: str | None = Field(None, description="Atlas Mongo URI.", json_schema_extra={"secret": True})
     REMOTE_MONGO_DB_NAME: str | None = Field(None, description="Atlas Mongo database name.")
-    mongo_atlas_uri: str | None = Field(None, description="Alias for REMOTE_MONGO_DB_URI.", json_schema_extra={"secret": True})
+    mongo_atlas_uri: str | None = Field(
+        None, description="Alias for REMOTE_MONGO_DB_URI.", json_schema_extra={"secret": True}
+    )
     mongo_atlas_db_name: str | None = Field(None, description="Alias for REMOTE_MONGO_DB_NAME.")
 
 
@@ -75,7 +85,9 @@ async def _run_async(config: BenchSuiteConfig, reporter: BenchReporter) -> Bench
             except Exception as exc:  # noqa: BLE001
                 reporter.record_operation(success=False, latency_seconds=time.perf_counter() - op_start, error=exc)
                 continue
-            reporter.record_operation(success=True, latency_seconds=time.perf_counter() - op_start, batch_size=batch_size)
+            reporter.record_operation(
+                success=True, latency_seconds=time.perf_counter() - op_start, batch_size=batch_size
+            )
             sequence += batch_size
     finally:
         odm.close()
@@ -92,5 +104,10 @@ async def _run_async(config: BenchSuiteConfig, reporter: BenchReporter) -> Bench
         failures=reporter.failures,
         latency_seconds=reporter.latency_seconds,
         error_counts=reporter.error_counts,
-        metrics={**reporter.metrics, "batch_size": batch_size, "mongo_backend": mongo_backend, "mongo_db_name": mongo_db_name},
+        metrics={
+            **reporter.metrics,
+            "batch_size": batch_size,
+            "mongo_backend": mongo_backend,
+            "mongo_db_name": mongo_db_name,
+        },
     )
