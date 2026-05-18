@@ -20,9 +20,7 @@ echo_task = TaskSchema(name="echo", input_schema=EchoInput, output_schema=EchoOu
 
 
 class EchoService(Service):
-    def __init__(self, *args, use_structlog=True, **kwargs):
-        # Add use_structlog to kwargs to pass to parent Mindtrace class
-        kwargs["use_structlog"] = use_structlog
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.app.add_middleware(
             RequestLoggingMiddleware,

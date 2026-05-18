@@ -39,11 +39,11 @@ def setup_logger(
     *,
     log_dir: Optional[Path] = None,
     logger_level: int = logging.DEBUG,
-    stream_level: int = logging.ERROR,
+    stream_level: Optional[int] = None,
     add_stream_handler: bool = True,
     file_level: int = logging.DEBUG,
     file_mode: str = "a",
-    add_file_handler: bool = True,
+    add_file_handler: Optional[bool] = None,
     propagate: bool = False,
     max_bytes: int = 10 * 1024 * 1024,  # 10 MB
     backup_count: int = 5,
@@ -63,11 +63,13 @@ def setup_logger(
         name: Logger name, defaults to ``"mindtrace"``.
         log_dir: Custom directory for log file.
         logger_level: Overall logger level.
-        stream_level: StreamHandler level (e.g., ``ERROR``).
+        stream_level: StreamHandler level. Defaults to ``MINDTRACE_LOGGER__STREAM_LEVEL``
+            env var, or ``ERROR`` if not set.
         add_stream_handler: Whether to add a stream handler.
         file_level: FileHandler level (e.g., ``DEBUG``).
         file_mode: Mode for file handler, default is ``'a'`` (append).
-        add_file_handler: Whether to add a file handler.
+        add_file_handler: Whether to add a file handler. Defaults to
+            ``MINDTRACE_LOGGER__ADD_FILE_HANDLER`` env var, or ``True`` if not set.
         propagate: Whether the logger should propagate messages to ancestor loggers.
         max_bytes: Maximum size in bytes before rotating log file.
         backup_count: Number of backup files to retain.
@@ -86,9 +88,19 @@ def setup_logger(
     logger.setLevel(logger_level)
     logger.propagate = propagate
 
-    # Get config
+    # Get config — single instantiation reused for all config-driven defaults.
     default_config = Config()
-    use_structlog = ifnone(use_structlog, default_config.MINDTRACE_LOGGER.USE_STRUCTLOG)
+    _logger_cfg = default_config.MINDTRACE_LOGGER
+    if stream_level is None:
+        _stream_level_name = _logger_cfg.STREAM_LEVEL
+        stream_level = (
+            getattr(logging, _stream_level_name, logging.ERROR)
+            if isinstance(_stream_level_name, str)
+            else logging.ERROR
+        )
+    if add_file_handler is None:
+        add_file_handler = _logger_cfg.ADD_FILE_HANDLER
+    use_structlog = ifnone(use_structlog, _logger_cfg.USE_STRUCTLOG)
 
     # Determine log file path
     if name == "mindtrace":
