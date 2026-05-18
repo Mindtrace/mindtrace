@@ -199,6 +199,14 @@ class _DatasetVersionRowForFinalize(DatasetVersion):
     updated_at: datetime | None = None
 
 
+def _attach_import_session_bundle(session, bundle: DatasetSyncBundle):
+    """Attach a real inline bundle so tests do not rely on patching bundle loading."""
+
+    session.bundle_storage_ref = None
+    session.bundle_data = bundle.model_dump(mode="json")
+    return session
+
+
 @pytest.fixture(autouse=True)
 def _set_minimal_env(monkeypatch):
     monkeypatch.setenv("MINDTRACE_DEFAULT_HOST_URLS__SERVICE", "http://localhost:8000")
@@ -2005,6 +2013,7 @@ async def test_service_import_session_commit_metadata_uses_single_lake_manager(s
     session.expires_at = "2099-01-01T00:00:00Z"
 
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    _attach_import_session_bundle(session, bundle)
     commit_result = DatasetSyncCommitResult(dataset_version=datalake_objects.dataset_version, created_assets=1)
     service._datalake.dataset_import_session_database = SimpleNamespace(update=AsyncMock())
     with (
@@ -3105,12 +3114,14 @@ async def test_dataset_sync_import_graph_value_error_becomes_400(service, datala
     )
     imp_db = _import_session_db(mock_datalake)
     imp_db.find = AsyncMock(return_value=[session])
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    _attach_import_session_bundle(session, bundle)
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
     with (
         patch(
             "mindtrace.datalake.service._load_import_session_bundle",
-            new=AsyncMock(return_value=DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)),
+            new=AsyncMock(return_value=bundle),
         ),
         patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
     ):
@@ -3132,12 +3143,14 @@ async def test_dataset_sync_import_graph_non_value_error_reraises_after_failed_p
     )
     imp_db = _import_session_db(mock_datalake)
     imp_db.find = AsyncMock(return_value=[session])
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    _attach_import_session_bundle(session, bundle)
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
     with (
         patch(
             "mindtrace.datalake.service._load_import_session_bundle",
-            new=AsyncMock(return_value=DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)),
+            new=AsyncMock(return_value=bundle),
         ),
         patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
     ):
@@ -3166,6 +3179,7 @@ async def test_dataset_sync_hydrate_payload_unknown_asset_is_400(service, datala
             ),
         ],
     )
+    _attach_import_session_bundle(session, bundle)
     with patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)):
         with pytest.raises(HTTPException) as ei:
             await service.dataset_sync_hydrate_payload(
@@ -4230,6 +4244,7 @@ async def test_import_session_commit_metadata_commit_import_exceptions(service, 
     session.expires_at = datetime(2099, 1, 1, tzinfo=timezone.utc)
 
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    _attach_import_session_bundle(session, bundle)
     mock_dl_update = AsyncMock()
     mock_datalake.dataset_import_session_database = SimpleNamespace(update=mock_dl_update)
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
@@ -4283,6 +4298,7 @@ async def test_import_session_upload_payload_branches(service, datalake_objects,
         media_type="image/jpeg",
     )
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version, payloads=[desc])
+    _attach_import_session_bundle(sess, bundle)
     imp_db = _import_session_db(mock_datalake)
     imp_db.find = AsyncMock(return_value=[sess])
     imp_db.update = AsyncMock(return_value=sess)
@@ -4313,6 +4329,7 @@ async def test_import_session_upload_payload_branches(service, datalake_objects,
 
         imp_db.find = AsyncMock(return_value=[sess])
         sparse = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version, payloads=[])
+        _attach_import_session_bundle(sess, sparse)
         with patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=sparse)):
             with pytest.raises(HTTPException) as ei3:
                 await service.import_session_upload_payload(
@@ -4339,6 +4356,7 @@ async def test_import_session_upload_payload_ingest_value_error_wraps(service, d
         size_bytes=10,
     )
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version, payloads=[desc])
+    _attach_import_session_bundle(sess, bundle)
     imp_db = _import_session_db(mock_datalake)
     imp_db.find = AsyncMock(return_value=[sess])
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
@@ -4375,6 +4393,7 @@ async def test_import_session_upload_payload_duplicate_when_metadata_committed(
         media_type="image/jpeg",
     )
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version, payloads=[desc])
+    _attach_import_session_bundle(sess, bundle)
     imp_db = _import_session_db(mock_datalake)
     imp_db.find = AsyncMock(return_value=[sess])
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
@@ -4415,6 +4434,7 @@ async def test_import_session_upload_after_metadata_finalizes_and_tracks_verifie
         media_type="image/jpeg",
     )
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version, payloads=[desc])
+    _attach_import_session_bundle(sess, bundle)
     imp_db = _import_session_db(mock_datalake)
     imp_db.find = AsyncMock(return_value=[sess])
     imp_db.update = AsyncMock(return_value=sess)
@@ -4459,6 +4479,7 @@ async def test_import_session_upload_finalize_runtime_error_wraps_400(service, d
         media_type="image/jpeg",
     )
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version, payloads=[desc])
+    _attach_import_session_bundle(sess, bundle)
     imp_db = _import_session_db(mock_datalake)
     imp_db.find = AsyncMock(return_value=[sess])
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
@@ -4554,6 +4575,7 @@ async def test_import_session_commit_failure_paths(service, datalake_objects, mo
         status="open",
     )
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    _attach_import_session_bundle(stale, bundle)
     imp_db = _import_session_db(mock_datalake)
     imp_db.find = AsyncMock(return_value=[stale])
     mock_datalake.get_asset = AsyncMock(
@@ -4570,6 +4592,8 @@ async def test_import_session_commit_failure_paths(service, datalake_objects, mo
             "expires_at": datetime(2099, 1, 1, tzinfo=timezone.utc),
             "metadata_graph_committed": True,
             "required_asset_ids": [],
+            "bundle_data": bundle.model_dump(mode="json"),
+            "bundle_storage_ref": None,
         },
     )
     imp_db.find = AsyncMock(return_value=[good_meta])
@@ -4601,6 +4625,7 @@ async def test_import_session_commit_staged_refs_and_value_error(service, datala
         status="open",
     )
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    _attach_import_session_bundle(staged_session, bundle)
     imp_db = _import_session_db(mock_datalake)
     imp_db.find = AsyncMock(return_value=[staged_session])
     imp_db.update = AsyncMock()
@@ -4643,13 +4668,15 @@ async def test_dataset_sync_import_graph_success_updates_session(service, datala
     imp_db = _import_session_db(mock_datalake)
     imp_db.find = AsyncMock(return_value=[session])
     imp_db.update = AsyncMock(return_value=session)
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    _attach_import_session_bundle(session, bundle)
     fake_result = DatasetSyncCommitResult(dataset_version=datalake_objects.dataset_version)
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
     with (
         patch(
             "mindtrace.datalake.service._load_import_session_bundle",
-            new=AsyncMock(return_value=DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)),
+            new=AsyncMock(return_value=bundle),
         ),
         patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
     ):
@@ -4677,13 +4704,15 @@ async def test_dataset_sync_import_graph_without_required_assets_sets_ready_to_f
     imp_db = _import_session_db(mock_datalake)
     imp_db.find = AsyncMock(return_value=[session])
     imp_db.update = AsyncMock(return_value=session)
+    bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    _attach_import_session_bundle(session, bundle)
     fake_result = DatasetSyncCommitResult(dataset_version=datalake_objects.dataset_version)
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
     with (
         patch(
             "mindtrace.datalake.service._load_import_session_bundle",
-            new=AsyncMock(return_value=DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)),
+            new=AsyncMock(return_value=bundle),
         ),
         patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
     ):
@@ -4712,6 +4741,7 @@ async def test_dataset_sync_hydrate_payload_success_updates_verified_assets(serv
         size_bytes=3,
     )
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version, payloads=[desc])
+    _attach_import_session_bundle(session, bundle)
     imp_db = _import_session_db(mock_datalake)
     imp_db.find = AsyncMock(return_value=[session])
     imp_db.update = AsyncMock(return_value=session)
@@ -4749,6 +4779,7 @@ async def test_dataset_sync_finalize_graph_commits_session(service, datalake_obj
         verified_asset_ids=[aid],
     )
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    _attach_import_session_bundle(session, bundle)
     imp_db = _import_session_db(mock_datalake)
     imp_db.find = AsyncMock(return_value=[session])
     imp_db.update = AsyncMock(return_value=session)
@@ -4781,6 +4812,7 @@ async def test_dataset_sync_finalize_graph_400_when_required_payload_missing(ser
         required_asset_ids=[aid],
     )
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    _attach_import_session_bundle(session, bundle)
     imp_db = _import_session_db(mock_datalake)
     imp_db.find = AsyncMock(return_value=[session])
     mock_datalake.get_asset = AsyncMock(
@@ -4947,6 +4979,7 @@ async def test_import_session_commit_success_after_staged_payloads(service, data
         status="open",
     )
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
+    _attach_import_session_bundle(staged_session, bundle)
     imp_db = _import_session_db(mock_datalake)
     imp_db.find = AsyncMock(return_value=[staged_session])
     imp_db.update = AsyncMock(return_value=staged_session)
