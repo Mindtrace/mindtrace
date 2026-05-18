@@ -75,6 +75,9 @@ class TestRunner(Mindtrace):
     dispatches to ``TestRunner.default()`` for process-global convenience.
     """
 
+    # Keep pytest from trying to collect this production class as a test suite.
+    __test__ = False
+
     _default_runner: TestRunner | None = None
     _default_lock = threading.RLock()
 
