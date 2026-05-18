@@ -180,19 +180,39 @@ registry.save("model", obj, version="1.0.0", on_conflict="overwrite")
 
 ## Custom Materializers
 
-Register custom serialization handlers for your object types:
+A materializer is any class that exposes a `uri` attribute, a `save(data)` method, and a
+`load(data_type)` method. The contract is published as the runtime-checkable
+`mindtrace.registry.Materializer` Protocol — your class does **not** need to inherit from
+anything in mindtrace to be recognized. For convenience, you can inherit from
+`BaseMaterializer` (minimal) or `Archiver` (adds Mindtrace logging).
 
 ```python
-from mindtrace.registry import Registry
+from typing import Any, Type
+
+from mindtrace.registry import BaseMaterializer, Registry
+
+
+class MyMaterializer(BaseMaterializer):
+    def save(self, data: Any) -> None:
+        ...  # write to self.uri
+
+    def load(self, data_type: Type[Any]) -> Any:
+        ...  # read from self.uri
+
 
 registry = Registry()
 
-# Register a materializer for a custom class
+# Register a materializer for a custom class (by type or by fully-qualified string).
 registry.register_materializer("my_module.MyClass", "my_module.MyMaterializer")
 
-# Save with explicit materializer
+# Save with an explicit materializer override.
 registry.save("custom:obj", my_object, materializer=MyMaterializer)
 ```
+
+Built-in materializers cover scalars, container types, `bytes`, `pydantic.BaseModel`,
+`pathlib.Path`, numpy arrays, PIL images, PyTorch modules/dataloaders, and HuggingFace
+datasets. ML framework archivers for HuggingFace, ONNX, Ultralytics and timm models live
+in `mindtrace.models.archivers`.
 
 ## Metadata and Information
 

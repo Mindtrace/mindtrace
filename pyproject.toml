@@ -32,6 +32,7 @@ dependencies = [
 [project.optional-dependencies]
 cameras-basler = ["mindtrace-hardware[cameras-basler]>=0.11.0"]
 cameras-genicam = ["mindtrace-hardware[cameras-genicam]>=0.11.0"]
+cameras-daheng = ["mindtrace-hardware[cameras-daheng]>=0.11.0"]
 cameras-all = ["mindtrace-hardware[cameras-all]>=0.11.0"]
 stereo-basler = [
     "mindtrace-hardware[stereo-basler]>=0.11.0",

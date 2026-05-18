@@ -11,8 +11,6 @@ class TestArchiver:
 
         # Create a concrete implementation for testing
         class TestArchiverImpl(Archiver):
-            ASSOCIATED_TYPES = {str, int}
-
             def load(self, data_type: Type[Any]) -> Any:
                 return None
 
@@ -28,8 +26,6 @@ class TestArchiver:
         """Test that abstract methods raise NotImplementedError when not implemented."""
 
         class IncompleteArchiver(Archiver):
-            ASSOCIATED_TYPES = {str}
-
             def load(self, data_type: Type[Any]) -> Any:
                 return None
 
@@ -43,8 +39,6 @@ class TestArchiver:
         """Test that the load abstract method raises NotImplementedError when not implemented."""
 
         class IncompleteArchiver(Archiver):
-            ASSOCIATED_TYPES = {str}
-
             def save(self, data: Any) -> None:
                 pass
 
