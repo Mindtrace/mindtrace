@@ -93,7 +93,11 @@ def setup_logger(
     _logger_cfg = default_config.MINDTRACE_LOGGER
     if stream_level is None:
         _stream_level_name = _logger_cfg.STREAM_LEVEL
-        stream_level = getattr(logging, _stream_level_name, logging.ERROR) if isinstance(_stream_level_name, str) else logging.ERROR
+        stream_level = (
+            getattr(logging, _stream_level_name, logging.ERROR)
+            if isinstance(_stream_level_name, str)
+            else logging.ERROR
+        )
     if add_file_handler is None:
         add_file_handler = _logger_cfg.ADD_FILE_HANDLER
     use_structlog = ifnone(use_structlog, _logger_cfg.USE_STRUCTLOG)
