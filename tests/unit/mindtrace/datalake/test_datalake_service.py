@@ -2,6 +2,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
@@ -39,6 +40,8 @@ from mindtrace.datalake.service import (
     _ImportSessionProgressWriter,
     _load_import_session_bundle,
 )
+
+SERVICE_MODULE = sys.modules[DatalakeService.__module__]
 from mindtrace.datalake.service_types import (
     AddAliasInput,
     AddAnnotationRecordsInput,
@@ -370,7 +373,7 @@ def test_replication_task_purge_input_default_statuses_passes_validator():
 
 @pytest.mark.asyncio
 async def test_service_replication_task_purge_maps_value_error_to_400(service, mock_datalake):
-    with patch("mindtrace.datalake.service.ReplicationQueueManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "ReplicationQueueManager") as manager_cls:
         manager = manager_cls.return_value
         manager.purge_terminal_tasks = AsyncMock(side_effect=ValueError("bad statuses"))
         with pytest.raises(HTTPException) as exc_info:
@@ -402,7 +405,7 @@ async def test_service_replication_task_purge_accepts_matching_secret_when_confi
         deleted_count=0,
         deleted_task_ids=(),
     )
-    with patch("mindtrace.datalake.service.ReplicationQueueManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "ReplicationQueueManager") as manager_cls:
         manager = manager_cls.return_value
         manager.purge_terminal_tasks = AsyncMock(return_value=summary)
         out = await service_with_replication_purge_secret.replication_task_purge(
@@ -1414,7 +1417,7 @@ class TestDatalakeServiceInitialization:
         service._ensure_datalake = AsyncMock()
         service._run_upload_reconciler = AsyncMock()
 
-        with patch("mindtrace.datalake.service.asyncio.create_task") as create_task:
+        with patch.object(SERVICE_MODULE.asyncio, "create_task") as create_task:
             await service._startup_initialize()
 
         service._ensure_datalake.assert_awaited_once_with()
@@ -1482,7 +1485,7 @@ class TestDatalakeServiceInitialization:
             raise asyncio.CancelledError()
 
         with (
-            patch("mindtrace.datalake.service.asyncio.sleep", side_effect=_stop_after_first_sleep),
+            patch.object(SERVICE_MODULE.asyncio, "sleep", side_effect=_stop_after_first_sleep),
             pytest.raises(asyncio.CancelledError),
         ):
             await service._run_upload_reconciler()
@@ -1526,7 +1529,7 @@ class TestDatalakeServiceInitialization:
             initialize_on_startup=False,
         )
 
-        with patch("mindtrace.datalake.service.AsyncDatalake", return_value=created_datalake) as mock_async_datalake:
+        with patch.object(SERVICE_MODULE, "AsyncDatalake", return_value=created_datalake) as mock_async_datalake:
             result = await service._ensure_datalake()
 
         assert result is created_datalake
@@ -1900,7 +1903,7 @@ async def test_service_view_dataset_version_page_translates_invalid_cursor(servi
 @pytest.mark.asyncio
 async def test_service_export_dataset_version_uses_sync_manager(service, datalake_objects):
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
-    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "DatasetSyncManager") as manager_cls:
         manager = manager_cls.return_value
         manager.export_dataset_version = AsyncMock(return_value=bundle)
 
@@ -1914,7 +1917,7 @@ async def test_service_export_dataset_version_uses_sync_manager(service, datalak
 @pytest.mark.asyncio
 async def test_service_export_sync_graph_and_payload_manifest_delegate(service, datalake_objects):
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
-    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "DatasetSyncManager") as manager_cls:
         manager = manager_cls.return_value
         manager.export_dataset_version = AsyncMock(return_value=bundle)
 
@@ -1964,7 +1967,7 @@ async def test_service_import_dataset_version_prepare_uses_sync_manager(service,
         transfer_policy="copy_if_missing",
         ready_to_commit=True,
     )
-    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "DatasetSyncManager") as manager_cls:
         manager = manager_cls.return_value
         manager.plan_import = AsyncMock(return_value=plan)
 
@@ -1980,7 +1983,7 @@ async def test_service_import_dataset_version_commit_uses_sync_manager(service, 
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
     request = DatasetSyncImportRequest(bundle=bundle)
     commit_result = DatasetSyncCommitResult(dataset_version=datalake_objects.dataset_version, created_assets=1)
-    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "DatasetSyncManager") as manager_cls:
         manager = manager_cls.return_value
         manager.commit_import = AsyncMock(return_value=commit_result)
 
@@ -2017,11 +2020,11 @@ async def test_service_import_session_commit_metadata_uses_single_lake_manager(s
     commit_result = DatasetSyncCommitResult(dataset_version=datalake_objects.dataset_version, created_assets=1)
     service._datalake.dataset_import_session_database = SimpleNamespace(update=AsyncMock())
     with (
-        patch("mindtrace.datalake.service._import_session_expired", return_value=False),
-        patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)),
+        patch.object(SERVICE_MODULE, "_import_session_expired", return_value=False),
+        patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)),
         patch.object(service, "_require_open_import_session", new=AsyncMock(return_value=session)),
         patch.object(service, "_ensure_datalake", new=AsyncMock(return_value=service._datalake)),
-        patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls,
+        patch.object(SERVICE_MODULE, "DatasetSyncManager") as manager_cls,
     ):
         manager = manager_cls.return_value
         manager.commit_import = AsyncMock(return_value=commit_result)
@@ -2044,7 +2047,7 @@ async def test_service_import_prepare_start_runs_background_job(service, datalak
         transfer_policy="copy_if_missing",
         ready_to_commit=True,
     )
-    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "DatasetSyncManager") as manager_cls:
         manager = manager_cls.return_value
         manager.plan_import = AsyncMock(return_value=plan)
 
@@ -2070,7 +2073,7 @@ async def test_service_import_start_runs_background_job(service, datalake_object
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
     request = DatasetSyncImportRequest(bundle=bundle)
     commit_result = DatasetSyncCommitResult(dataset_version=datalake_objects.dataset_version, created_assets=1)
-    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "DatasetSyncManager") as manager_cls:
         manager = manager_cls.return_value
         manager.commit_import = AsyncMock(return_value=commit_result)
 
@@ -2091,7 +2094,7 @@ async def test_service_import_start_runs_background_job(service, datalake_object
 async def test_service_import_prepare_failure_surfaces_error_detail(service, datalake_objects):
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
     request = DatasetSyncImportRequest(bundle=bundle)
-    with patch("mindtrace.datalake.service.DatasetSyncManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "DatasetSyncManager") as manager_cls:
         manager = manager_cls.return_value
         manager.plan_import = AsyncMock(side_effect=KeyError("minio"))
 
@@ -2128,7 +2131,7 @@ async def test_service_replication_upsert_batch_uses_replication_manager(service
         assets=[datalake_objects.asset], datums=[datalake_objects.datum], origin_lake_id="source"
     )
     batch_result = ReplicationBatchResult(created_assets=1, created_datums=1)
-    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "ReplicationManager") as manager_cls:
         manager = manager_cls.return_value
         manager.upsert_metadata_batch = AsyncMock(return_value=batch_result)
 
@@ -2142,7 +2145,7 @@ async def test_service_replication_upsert_batch_uses_replication_manager(service
 @pytest.mark.asyncio
 async def test_service_replication_hydrate_asset_payload_uses_replication_manager(service, datalake_objects):
     request = ReplicationHydrateAssetPayloadInput(asset_id=datalake_objects.asset.asset_id, mount_map={"raw": "minio"})
-    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "ReplicationManager") as manager_cls:
         manager = manager_cls.return_value
         manager.hydrate_asset_payload = AsyncMock(return_value=datalake_objects.asset)
 
@@ -2164,7 +2167,7 @@ async def test_service_replication_reconcile_uses_replication_manager(service):
         failed_asset_ids=[],
         skipped_asset_ids=[],
     )
-    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "ReplicationManager") as manager_cls:
         manager = manager_cls.return_value
         manager.reconcile_pending_payloads = AsyncMock(return_value=reconcile_result)
 
@@ -2178,7 +2181,7 @@ async def test_service_replication_reconcile_uses_replication_manager(service):
 @pytest.mark.asyncio
 async def test_service_replication_mark_local_delete_eligible_uses_replication_manager(service, datalake_objects):
     request = ReplicationMarkLocalDeleteEligibleInput(asset_id=datalake_objects.asset.asset_id)
-    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "ReplicationManager") as manager_cls:
         manager = manager_cls.return_value
         manager.mark_local_delete_eligible = AsyncMock(return_value=datalake_objects.asset)
 
@@ -2192,7 +2195,7 @@ async def test_service_replication_mark_local_delete_eligible_uses_replication_m
 @pytest.mark.asyncio
 async def test_service_replication_delete_local_payload_uses_replication_manager(service, datalake_objects):
     request = GetByIdInput(id=datalake_objects.asset.asset_id)
-    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "ReplicationManager") as manager_cls:
         manager = manager_cls.return_value
         manager.delete_local_payload = AsyncMock(return_value=datalake_objects.asset)
 
@@ -2212,7 +2215,7 @@ async def test_service_replication_reclaim_verified_payloads_uses_replication_ma
         failed_asset_ids=[],
         skipped_asset_ids=[],
     )
-    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "ReplicationManager") as manager_cls:
         manager = manager_cls.return_value
         manager.reclaim_verified_payloads = AsyncMock(return_value=reclaim_result)
 
@@ -2230,7 +2233,7 @@ async def test_service_replication_status_uses_replication_manager(service):
         pending_asset_ids=["asset_1"],
         failed_asset_ids=[],
     )
-    with patch("mindtrace.datalake.service.ReplicationManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "ReplicationManager") as manager_cls:
         manager = manager_cls.return_value
         manager.status = AsyncMock(return_value=status_result)
 
@@ -2257,7 +2260,7 @@ async def test_service_replication_task_enqueue_uses_queue_manager(service):
         mount_map={"raw": "remote"},
         metadata={"reason": "unit"},
     )
-    with patch("mindtrace.datalake.service.ReplicationQueueManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "ReplicationQueueManager") as manager_cls:
         manager = manager_cls.return_value
         manager.enqueue_task = AsyncMock(return_value=(task, True))
 
@@ -2290,7 +2293,7 @@ async def test_service_replication_task_list_uses_queue_manager(service):
         dedupe_key="target:remote:root:annotation_record:annotation_1",
     )
     request = ReplicationTaskListInput(status="pending", target_lake_id="remote", root_kind="annotation_record")
-    with patch("mindtrace.datalake.service.ReplicationQueueManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "ReplicationQueueManager") as manager_cls:
         manager = manager_cls.return_value
         manager.list_tasks = AsyncMock(return_value=[task])
 
@@ -2310,7 +2313,7 @@ async def test_service_replication_task_list_uses_queue_manager(service):
 @pytest.mark.asyncio
 async def test_service_replication_task_get_maps_missing_to_404(service):
     request = ReplicationTaskIdInput(task_id="missing")
-    with patch("mindtrace.datalake.service.ReplicationQueueManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "ReplicationQueueManager") as manager_cls:
         manager = manager_cls.return_value
         manager.get_task = AsyncMock(side_effect=KeyError("missing"))
 
@@ -2345,7 +2348,7 @@ async def test_service_replication_task_claim_uses_queue_manager(service):
         dedupe_key="target:remote:root:datum:datum_1",
     )
     request = ReplicationTaskClaimInput(worker_id="worker-1", limit=2, lease_seconds=60)
-    with patch("mindtrace.datalake.service.ReplicationQueueManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "ReplicationQueueManager") as manager_cls:
         manager = manager_cls.return_value
         manager.claim_due_tasks = AsyncMock(return_value=[task])
 
@@ -2359,7 +2362,7 @@ async def test_service_replication_task_claim_uses_queue_manager(service):
 @pytest.mark.asyncio
 async def test_service_replication_task_update_status_maps_claim_conflict_to_409(service):
     request = ReplicationTaskStatusUpdateInput(task_id="task_1", status="syncing_metadata", worker_id="worker-1")
-    with patch("mindtrace.datalake.service.ReplicationQueueManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "ReplicationQueueManager") as manager_cls:
         manager = manager_cls.return_value
         manager.mark_status = AsyncMock(side_effect=RuntimeError("claimed by someone else"))
 
@@ -2434,7 +2437,7 @@ async def test_service_replication_task_fail_and_retry_use_queue_manager(service
         status="failed",
     )
     retried = failed.model_copy(update={"status": "pending"})
-    with patch("mindtrace.datalake.service.ReplicationQueueManager") as manager_cls:
+    with patch.object(SERVICE_MODULE, "ReplicationQueueManager") as manager_cls:
         manager = manager_cls.return_value
         manager.fail_task = AsyncMock(return_value=failed)
         manager.retry_task = AsyncMock(return_value=retried)
@@ -2624,7 +2627,7 @@ async def test_import_session_progress_writer_persists_and_throttles(monkeypatch
         ticks["t"] += 50.0
         return v
 
-    monkeypatch.setattr("mindtrace.datalake.service.time.monotonic", mono)
+    monkeypatch.setattr(SERVICE_MODULE.time, "monotonic", mono)
 
     p1 = DatasetSyncProgress(phase="planning", message="plan")
     await writer.persist(p1, force=False)
@@ -2645,7 +2648,7 @@ async def test_import_session_progress_writer_failed_truncates(monkeypatch):
     sess = DatasetImportSession(expires_at=datetime(2099, 1, 1, tzinfo=timezone.utc))
     writer = _ImportSessionProgressWriter(dl, sess)
 
-    monkeypatch.setattr("mindtrace.datalake.service.time.monotonic", lambda: 0.0)
+    monkeypatch.setattr(SERVICE_MODULE.time, "monotonic", lambda: 0.0)
     detail = "x" * 9000
     await writer.persist_failed(detail)
 
@@ -2660,7 +2663,7 @@ async def test_import_session_progress_writer_callable_aliases_persist(monkeypat
     dl.dataset_import_session_database = SimpleNamespace(update=AsyncMock())
     sess = DatasetImportSession(expires_at=datetime(2099, 1, 1, tzinfo=timezone.utc))
     writer = _ImportSessionProgressWriter(dl, sess)
-    monkeypatch.setattr("mindtrace.datalake.service.time.monotonic", lambda: 0.0)
+    monkeypatch.setattr(SERVICE_MODULE.time, "monotonic", lambda: 0.0)
 
     prog = DatasetSyncProgress(phase="failed", message="boom")
     await writer(prog)
@@ -2671,8 +2674,8 @@ async def test_import_session_progress_writer_callable_aliases_persist(monkeypat
 async def test_service_shutdown_cleanup_swallows_errors_from_super(mock_datalake):
     svc = DatalakeService(async_datalake=mock_datalake, live_service=False, initialize_on_startup=False)
     svc._owns_datalake = False
-    with patch(
-        "mindtrace.services.Service.shutdown_cleanup", new=AsyncMock(side_effect=RuntimeError("base shutdown boom"))
+    with patch.object(
+        SERVICE_MODULE.Service, "shutdown_cleanup", new=AsyncMock(side_effect=RuntimeError("base shutdown boom"))
     ):
         await svc.shutdown_cleanup()
 
@@ -2702,7 +2705,7 @@ async def test_service_shutdown_cleanup_cancels_dataset_sync_tasks(mock_datalake
     t = asyncio.create_task(blocker())
     svc._dataset_sync_jobs["jid"] = _DatasetSyncJobState(job_id="jid", mode="prepare", task=t)
 
-    with patch("mindtrace.services.Service.shutdown_cleanup", new=AsyncMock(side_effect=RuntimeError("ignore"))):
+    with patch.object(SERVICE_MODULE.Service, "shutdown_cleanup", new=AsyncMock(side_effect=RuntimeError("ignore"))):
         await asyncio.wait_for(svc.shutdown_cleanup(), timeout=3.0)
 
     assert svc._dataset_sync_jobs["jid"].task is t
@@ -3023,7 +3026,7 @@ async def test_import_session_progress_writer_complete_snapshots_span_stages(
     sess.verified_asset_ids = verified_asset_ids
     sess.required_asset_ids = required_asset_ids
     writer = _ImportSessionProgressWriter(dl, sess)
-    monkeypatch.setattr("mindtrace.datalake.service.time.monotonic", lambda: 0.0)
+    monkeypatch.setattr(SERVICE_MODULE.time, "monotonic", lambda: 0.0)
 
     async def persist_phase(phase: str) -> None:
         await writer.persist(DatasetSyncProgress(phase=phase, message="t"), force=True)
@@ -3119,11 +3122,12 @@ async def test_dataset_sync_import_graph_value_error_becomes_400(service, datala
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
     with (
-        patch(
-            "mindtrace.datalake.service._load_import_session_bundle",
+        patch.object(
+            SERVICE_MODULE,
+            "_load_import_session_bundle",
             new=AsyncMock(return_value=bundle),
         ),
-        patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
+        patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls,
     ):
         mgr_cls.return_value.fast_import_graph = AsyncMock(side_effect=ValueError("bad graph"))
         with pytest.raises(HTTPException) as ei:
@@ -3148,11 +3152,12 @@ async def test_dataset_sync_import_graph_non_value_error_reraises_after_failed_p
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
     with (
-        patch(
-            "mindtrace.datalake.service._load_import_session_bundle",
+        patch.object(
+            SERVICE_MODULE,
+            "_load_import_session_bundle",
             new=AsyncMock(return_value=bundle),
         ),
-        patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
+        patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls,
     ):
         mgr_cls.return_value.fast_import_graph = AsyncMock(side_effect=RuntimeError("boom"))
         with pytest.raises(RuntimeError, match="boom"):
@@ -3180,7 +3185,7 @@ async def test_dataset_sync_hydrate_payload_unknown_asset_is_400(service, datala
         ],
     )
     _attach_import_session_bundle(session, bundle)
-    with patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)):
+    with patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)):
         with pytest.raises(HTTPException) as ei:
             await service.dataset_sync_hydrate_payload(
                 DatasetSyncHydratePayloadsInput(
@@ -3259,7 +3264,7 @@ async def test_streaming_import_push_processes_asset_without_inline_payload(serv
     )
     mock_datalake.get_asset = AsyncMock(side_effect=[missing, present])
 
-    with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+    with patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls:
         mgr_cls.return_value.ingest_import_payload_bytes = ingest
         mgr_cls.return_value.finalize_pending_import_asset_payload = AsyncMock()
         empty_payload_batch = DatasetStreamingImportDatumBatchItem(
@@ -3342,7 +3347,7 @@ async def test_streaming_import_push_skips_reingest_when_target_payload_already_
     mock_datalake.get_asset = AsyncMock(side_effect=[missing_asset, present_asset])
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
-    with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+    with patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls:
         mgr_cls.return_value.ingest_import_payload_bytes = ingest
         mgr_cls.return_value.finalize_pending_import_asset_payload = AsyncMock()
         sid = sess.import_session_id
@@ -3430,7 +3435,7 @@ async def test_streaming_import_push_preserves_present_payload_when_repush_witho
     mock_datalake.get_asset = AsyncMock(side_effect=lambda _aid: bucket[0])
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
-    with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+    with patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls:
         mgr_cls.return_value.ingest_import_payload_bytes = ingest
         mgr_cls.return_value.finalize_pending_import_asset_payload = AsyncMock()
         sid = sess.import_session_id
@@ -3510,7 +3515,7 @@ async def test_streaming_import_push_updates_existing_asset_and_schema_rows(serv
         annotation_schemas=[datalake_objects.annotation_schema],
     )
 
-    with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+    with patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls:
         mgr_cls.return_value.ingest_import_payload_bytes = AsyncMock(return_value=datalake_objects.storage_ref)
         mgr_cls.return_value.finalize_pending_import_asset_payload = AsyncMock()
         await service.streaming_import_push_batch(
@@ -3653,7 +3658,7 @@ async def test_streaming_import_push_missing_inline_payload_keeps_asset_unverifi
 
     ingest = AsyncMock(return_value=datalake_objects.storage_ref)
     finalize_asset = AsyncMock()
-    with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+    with patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls:
         mgr_cls.return_value.ingest_import_payload_bytes = ingest
         mgr_cls.return_value.finalize_pending_import_asset_payload = finalize_asset
         out = await service.streaming_import_push_batch(
@@ -3750,10 +3755,10 @@ async def test_import_session_commit_metadata_promotes_staged_preflight_payloads
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
     with (
-        patch("mindtrace.datalake.service._import_session_expired", return_value=False),
-        patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)),
+        patch.object(SERVICE_MODULE, "_import_session_expired", return_value=False),
+        patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)),
         patch.object(service, "_require_open_import_session", new=AsyncMock(return_value=sess)),
-        patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
+        patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls,
     ):
         mgr_cls.return_value.commit_import = AsyncMock(return_value=commit_result)
         mgr_cls.return_value.finalize_pending_import_asset_payload = finalize_fn
@@ -3833,10 +3838,10 @@ async def test_import_session_commit_metadata_raises_when_staged_missing_descrip
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
     with (
-        patch("mindtrace.datalake.service._import_session_expired", return_value=False),
-        patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)),
+        patch.object(SERVICE_MODULE, "_import_session_expired", return_value=False),
+        patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)),
         patch.object(service, "_require_open_import_session", new=AsyncMock(return_value=sess)),
-        patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
+        patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls,
     ):
         mgr_cls.return_value.commit_import = AsyncMock(
             return_value=DatasetSyncCommitResult(dataset_version=datalake_objects.dataset_version),
@@ -3896,10 +3901,10 @@ async def test_import_session_commit_metadata_raises_when_reading_staged_object_
     imp_db.update = session_updates
 
     with (
-        patch("mindtrace.datalake.service._import_session_expired", return_value=False),
-        patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)),
+        patch.object(SERVICE_MODULE, "_import_session_expired", return_value=False),
+        patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)),
         patch.object(service, "_require_open_import_session", new=AsyncMock(return_value=sess)),
-        patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
+        patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls,
     ):
         mgr_cls.return_value.commit_import = AsyncMock(
             return_value=DatasetSyncCommitResult(dataset_version=datalake_objects.dataset_version),
@@ -3960,10 +3965,10 @@ async def test_import_session_commit_metadata_preflight_finalize_error_wraps_400
     imp_db.update = session_updates
 
     with (
-        patch("mindtrace.datalake.service._import_session_expired", return_value=False),
-        patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)),
+        patch.object(SERVICE_MODULE, "_import_session_expired", return_value=False),
+        patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)),
         patch.object(service, "_require_open_import_session", new=AsyncMock(return_value=sess)),
-        patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
+        patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls,
     ):
         mgr_cls.return_value.commit_import = AsyncMock(
             return_value=DatasetSyncCommitResult(dataset_version=datalake_objects.dataset_version),
@@ -4031,10 +4036,10 @@ async def test_import_session_commit_metadata_promotes_partial_staged_only(servi
     finalize_fn = AsyncMock(return_value=datalake_objects.asset)
     commit_result = DatasetSyncCommitResult(dataset_version=datalake_objects.dataset_version)
     with (
-        patch("mindtrace.datalake.service._import_session_expired", return_value=False),
-        patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)),
+        patch.object(SERVICE_MODULE, "_import_session_expired", return_value=False),
+        patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)),
         patch.object(service, "_require_open_import_session", new=AsyncMock(return_value=sess)),
-        patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
+        patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls,
     ):
         mgr_cls.return_value.commit_import = AsyncMock(return_value=commit_result)
         mgr_cls.return_value.finalize_pending_import_asset_payload = finalize_fn
@@ -4082,7 +4087,7 @@ async def test_import_session_start_plan_validation_and_storage_errors(service, 
     imp_db.insert = AsyncMock(return_value=None)
     mock_datalake.put_object = AsyncMock(return_value=datalake_objects.storage_ref)
 
-    with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+    with patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls:
         mgr_cls.return_value.plan_import = AsyncMock(side_effect=ValueError("bad plan"))
 
         with pytest.raises(HTTPException) as ei:
@@ -4120,7 +4125,7 @@ async def test_import_session_start_put_object_failure_is_500(service, datalake_
     bundle = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version)
     req = DatasetSyncImportRequest(bundle=bundle)
 
-    with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+    with patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls:
         mgr_cls.return_value.plan_import = AsyncMock(return_value=plan)
         with pytest.raises(HTTPException) as ei:
             await service.import_session_start(req)
@@ -4144,9 +4149,10 @@ async def test_import_session_start_document_too_large_cleans_bundle_and_413(ser
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
     with (
-        patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
-        patch(
-            "mindtrace.datalake.service._delete_import_session_bundle_blob",
+        patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls,
+        patch.object(
+            SERVICE_MODULE,
+            "_delete_import_session_bundle_blob",
             new=AsyncMock(),
         ) as del_blob,
     ):
@@ -4177,9 +4183,10 @@ async def test_import_session_start_generic_insert_failure_cleans_bundle(service
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
     with (
-        patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
-        patch(
-            "mindtrace.datalake.service._delete_import_session_bundle_blob",
+        patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls,
+        patch.object(
+            SERVICE_MODULE,
+            "_delete_import_session_bundle_blob",
             new=AsyncMock(),
         ) as del_blob,
     ):
@@ -4250,10 +4257,10 @@ async def test_import_session_commit_metadata_commit_import_exceptions(service, 
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
     with (
-        patch("mindtrace.datalake.service._import_session_expired", return_value=False),
-        patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)),
+        patch.object(SERVICE_MODULE, "_import_session_expired", return_value=False),
+        patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)),
         patch.object(service, "_require_open_import_session", new=AsyncMock(return_value=session)),
-        patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
+        patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls,
     ):
         mgr_cls.return_value.commit_import = AsyncMock(side_effect=ValueError("commit"))
 
@@ -4305,8 +4312,8 @@ async def test_import_session_upload_payload_branches(service, datalake_objects,
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
     with (
-        patch("mindtrace.datalake.service._import_session_expired", side_effect=[True]),
-        patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)),
+        patch.object(SERVICE_MODULE, "_import_session_expired", side_effect=[True]),
+        patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)),
     ):
         with pytest.raises(HTTPException) as ei:
             await service.import_session_upload_payload(
@@ -4314,9 +4321,9 @@ async def test_import_session_upload_payload_branches(service, datalake_objects,
             )
         assert ei.value.status_code == 400
 
-    with patch("mindtrace.datalake.service._import_session_expired", return_value=False):
+    with patch.object(SERVICE_MODULE, "_import_session_expired", return_value=False):
         imp_db.find = AsyncMock(return_value=[sess])
-        with patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)):
+        with patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)):
             with pytest.raises(HTTPException) as ei2:
                 await service.import_session_upload_payload(
                     DatasetImportSessionUploadInput(
@@ -4330,7 +4337,7 @@ async def test_import_session_upload_payload_branches(service, datalake_objects,
         imp_db.find = AsyncMock(return_value=[sess])
         sparse = DatasetSyncBundle(dataset_version=datalake_objects.dataset_version, payloads=[])
         _attach_import_session_bundle(sess, sparse)
-        with patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=sparse)):
+        with patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=sparse)):
             with pytest.raises(HTTPException) as ei3:
                 await service.import_session_upload_payload(
                     DatasetImportSessionUploadInput(
@@ -4361,8 +4368,8 @@ async def test_import_session_upload_payload_ingest_value_error_wraps(service, d
     imp_db.find = AsyncMock(return_value=[sess])
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
-    with patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)):
-        with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+    with patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)):
+        with patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls:
             mgr_cls.return_value.ingest_import_payload_bytes = AsyncMock(side_effect=ValueError("bytes"))
             with pytest.raises(HTTPException) as ei:
                 await service.import_session_upload_payload(
@@ -4398,8 +4405,8 @@ async def test_import_session_upload_payload_duplicate_when_metadata_committed(
     imp_db.find = AsyncMock(return_value=[sess])
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
-    with patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)):
-        with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+    with patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)):
+        with patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls:
             mgr_cls.return_value.ingest_import_payload_bytes = AsyncMock(return_value=datalake_objects.storage_ref)
             with pytest.raises(HTTPException) as ei:
                 await service.import_session_upload_payload(
@@ -4444,8 +4451,8 @@ async def test_import_session_upload_after_metadata_finalizes_and_tracks_verifie
     finalize_fn = AsyncMock(return_value=datalake_objects.asset)
     ingest_fn = AsyncMock(return_value=datalake_objects.storage_ref)
 
-    with patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)):
-        with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+    with patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)):
+        with patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls:
             mgr_cls.return_value.ingest_import_payload_bytes = ingest_fn
             mgr_cls.return_value.finalize_pending_import_asset_payload = finalize_fn
             out = await service.import_session_upload_payload(
@@ -4484,8 +4491,8 @@ async def test_import_session_upload_finalize_runtime_error_wraps_400(service, d
     imp_db.find = AsyncMock(return_value=[sess])
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
-    with patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)):
-        with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+    with patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)):
+        with patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls:
             mgr_cls.return_value.ingest_import_payload_bytes = AsyncMock(return_value=datalake_objects.storage_ref)
             mgr_cls.return_value.finalize_pending_import_asset_payload = AsyncMock(
                 side_effect=RuntimeError("bad finalize"),
@@ -4524,7 +4531,7 @@ async def test_import_session_commit_metadata_already_committed_deletes_bundle_a
     mock_datalake.get_dataset_version = AsyncMock(return_value=datalake_objects.dataset_version)
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
-    with patch("mindtrace.datalake.service._delete_import_session_bundle_blob", new=AsyncMock()):
+    with patch.object(SERVICE_MODULE, "_delete_import_session_bundle_blob", new=AsyncMock()):
         outcome = await service.import_session_commit(
             DatasetImportSessionCommitInput(session_id=sess.import_session_id),
         )
@@ -4599,8 +4606,9 @@ async def test_import_session_commit_failure_paths(service, datalake_objects, mo
     imp_db.find = AsyncMock(return_value=[good_meta])
     mock_datalake.store = MagicMock()
 
-    with patch(
-        "mindtrace.datalake.service._load_import_session_bundle",
+    with patch.object(
+        SERVICE_MODULE,
+        "_load_import_session_bundle",
         new=AsyncMock(return_value=bundle),
     ):
         with patch.object(
@@ -4632,7 +4640,7 @@ async def test_import_session_commit_staged_refs_and_value_error(service, datala
     mock_datalake.store = MagicMock()
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
-    with patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)):
+    with patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)):
         with pytest.raises(HTTPException) as ei:
             await service.import_session_commit(
                 DatasetImportSessionCommitInput(session_id=staged_session.import_session_id)
@@ -4644,9 +4652,10 @@ async def test_import_session_commit_staged_refs_and_value_error(service, datala
     imp_db.find = AsyncMock(return_value=[staged_session])
 
     with (
-        patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)),
-        patch(
-            "mindtrace.datalake.service.DatasetSyncManager",
+        patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)),
+        patch.object(
+            SERVICE_MODULE,
+            "DatasetSyncManager",
         ) as mgr_cls,
     ):
         mgr_cls.return_value.commit_import = AsyncMock(side_effect=ValueError("staging"))
@@ -4674,11 +4683,12 @@ async def test_dataset_sync_import_graph_success_updates_session(service, datala
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
     with (
-        patch(
-            "mindtrace.datalake.service._load_import_session_bundle",
+        patch.object(
+            SERVICE_MODULE,
+            "_load_import_session_bundle",
             new=AsyncMock(return_value=bundle),
         ),
-        patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
+        patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls,
     ):
         mgr_cls.return_value.fast_import_graph = AsyncMock(return_value=fake_result)
         out = await service.dataset_sync_import_graph(
@@ -4710,11 +4720,12 @@ async def test_dataset_sync_import_graph_without_required_assets_sets_ready_to_f
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
     with (
-        patch(
-            "mindtrace.datalake.service._load_import_session_bundle",
+        patch.object(
+            SERVICE_MODULE,
+            "_load_import_session_bundle",
             new=AsyncMock(return_value=bundle),
         ),
-        patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
+        patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls,
     ):
         mgr_cls.return_value.fast_import_graph = AsyncMock(return_value=fake_result)
         await service.dataset_sync_import_graph(DatasetSyncImportGraphInput(session_id=session.import_session_id))
@@ -4749,8 +4760,8 @@ async def test_dataset_sync_hydrate_payload_success_updates_verified_assets(serv
     payload_b64 = base64.b64encode(b"abc").decode("ascii")
 
     with (
-        patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)),
-        patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
+        patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)),
+        patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls,
     ):
         mgr_cls.return_value.ingest_import_payload_bytes = AsyncMock(return_value=datalake_objects.storage_ref)
         mgr_cls.return_value.finalize_pending_import_asset_payload = AsyncMock()
@@ -4790,8 +4801,8 @@ async def test_dataset_sync_finalize_graph_commits_session(service, datalake_obj
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
     with (
-        patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)),
-        patch("mindtrace.datalake.service._delete_import_session_bundle_blob", new=AsyncMock()),
+        patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)),
+        patch.object(SERVICE_MODULE, "_delete_import_session_bundle_blob", new=AsyncMock()),
     ):
         out = await service.dataset_sync_finalize_graph(
             DatasetSyncFinalizeGraphInput(session_id=session.import_session_id),
@@ -4820,7 +4831,7 @@ async def test_dataset_sync_finalize_graph_400_when_required_payload_missing(ser
     )
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
-    with patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)):
+    with patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)):
         with pytest.raises(HTTPException) as ei:
             await service.dataset_sync_finalize_graph(
                 DatasetSyncFinalizeGraphInput(session_id=session.import_session_id),
@@ -4878,7 +4889,7 @@ async def test_streaming_import_push_processes_annotation_records_and_annotation
     )
     mock_datalake.get_asset = AsyncMock(return_value=present)
 
-    with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+    with patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls:
         mgr_cls.return_value.ingest_import_payload_bytes = ingest
         mgr_cls.return_value.finalize_pending_import_asset_payload = AsyncMock()
         await service.streaming_import_push_batch(
@@ -4943,7 +4954,7 @@ async def test_import_session_start_success_returns_session_handles(service, dat
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
     mock_datalake.put_object = AsyncMock(return_value=datalake_objects.storage_ref)
 
-    with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+    with patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls:
         mgr_cls.return_value.plan_import = AsyncMock(return_value=plan)
         out = await service.import_session_start(req)
 
@@ -4988,9 +4999,9 @@ async def test_import_session_commit_success_after_staged_payloads(service, data
     fake_result = DatasetSyncCommitResult(dataset_version=datalake_objects.dataset_version)
 
     with (
-        patch("mindtrace.datalake.service._load_import_session_bundle", new=AsyncMock(return_value=bundle)),
-        patch("mindtrace.datalake.service._delete_import_session_bundle_blob", new=AsyncMock()),
-        patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls,
+        patch.object(SERVICE_MODULE, "_load_import_session_bundle", new=AsyncMock(return_value=bundle)),
+        patch.object(SERVICE_MODULE, "_delete_import_session_bundle_blob", new=AsyncMock()),
+        patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls,
     ):
         mgr_cls.return_value.commit_import = AsyncMock(return_value=fake_result)
         out = await service.import_session_commit(
@@ -5032,7 +5043,7 @@ async def test_run_dataset_sync_job_prepare_records_mid_run_progress_phase(servi
 
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
-    with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+    with patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls:
         mgr_cls.return_value.plan_import = AsyncMock(side_effect=intercept_plan_imp)
         await service._run_dataset_sync_job(job, request)
 
@@ -5048,7 +5059,7 @@ async def test_run_dataset_sync_job_import_records_failure_detail(service, datal
     job = _DatasetSyncJobState(job_id="imp-j", mode="import")
     service._ensure_datalake = AsyncMock(return_value=mock_datalake)
 
-    with patch("mindtrace.datalake.service.DatasetSyncManager") as mgr_cls:
+    with patch.object(SERVICE_MODULE, "DatasetSyncManager") as mgr_cls:
         mgr_cls.return_value.commit_import = AsyncMock(side_effect=RuntimeError("commit boom"))
         await service._run_dataset_sync_job(job, request)
 
