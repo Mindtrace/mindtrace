@@ -66,7 +66,8 @@ class TestCameraSystemSetup:
     @patch("mindtrace.hardware.cameras.setup.setup_cameras.get_hardware_config")
     @patch("mindtrace.hardware.cameras.setup.setup_cameras.PylonSDKInstaller")
     @patch("mindtrace.hardware.cameras.setup.setup_cameras.install_genicam_cti")
-    def test_install_all_sdks_success(self, mock_genicam_install, mock_pylon_class, mock_config):
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.GalaxySDKInstaller")
+    def test_install_all_sdks_success(self, mock_galaxy_class, mock_genicam_install, mock_pylon_class, mock_config):
         """Test successful installation of all SDKs."""
         # Mock hardware config
         mock_hw_config = Mock()
@@ -85,6 +86,11 @@ class TestCameraSystemSetup:
         # Mock successful GenICam CTI installation
         mock_genicam_install.return_value = True
 
+        # Mock successful Daheng Galaxy SDK installation
+        mock_galaxy_installer = Mock()
+        mock_galaxy_installer.install.return_value = True
+        mock_galaxy_class.return_value = mock_galaxy_installer
+
         setup = CameraSystemSetup()
         result = setup.install_all_sdks()
 
@@ -92,12 +98,15 @@ class TestCameraSystemSetup:
         mock_pylon_class.assert_called_once()
         mock_installer.install.assert_called_once()
         mock_genicam_install.assert_called_once()
-        assert result is True  # Both SDKs succeed
+        mock_galaxy_class.assert_called_once()
+        mock_galaxy_installer.install.assert_called_once()
+        assert result is True  # All three SDKs succeed
 
     @patch("mindtrace.hardware.cameras.setup.setup_cameras.get_hardware_config")
     @patch("mindtrace.hardware.cameras.setup.setup_cameras.PylonSDKInstaller")
     @patch("mindtrace.hardware.cameras.setup.setup_cameras.install_genicam_cti")
-    def test_install_all_sdks_failure(self, mock_genicam_install, mock_pylon_class, mock_config):
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.GalaxySDKInstaller")
+    def test_install_all_sdks_failure(self, mock_galaxy_class, mock_genicam_install, mock_pylon_class, mock_config):
         """Test failed installation of all SDKs."""
         # Mock hardware config
         mock_hw_config = Mock()
@@ -116,6 +125,11 @@ class TestCameraSystemSetup:
         # Mock failed GenICam CTI installation
         mock_genicam_install.return_value = False
 
+        # Mock failed Daheng Galaxy SDK installation
+        mock_galaxy_installer = Mock()
+        mock_galaxy_installer.install.return_value = False
+        mock_galaxy_class.return_value = mock_galaxy_installer
+
         setup = CameraSystemSetup()
         result = setup.install_all_sdks()
 
@@ -123,12 +137,15 @@ class TestCameraSystemSetup:
         mock_pylon_class.assert_called_once()
         mock_installer.install.assert_called_once()
         mock_genicam_install.assert_called_once()
+        mock_galaxy_class.assert_called_once()
+        mock_galaxy_installer.install.assert_called_once()
         assert result is False
 
     @patch("mindtrace.hardware.cameras.setup.setup_cameras.get_hardware_config")
     @patch("mindtrace.hardware.cameras.setup.setup_cameras.PylonSDKInstaller")
     @patch("mindtrace.hardware.cameras.setup.setup_cameras.uninstall_genicam_cti")
-    def test_uninstall_all_sdks_success(self, mock_genicam_uninstall, mock_pylon_class, mock_config):
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.GalaxySDKInstaller")
+    def test_uninstall_all_sdks_success(self, mock_galaxy_class, mock_genicam_uninstall, mock_pylon_class, mock_config):
         """Test successful uninstallation of all SDKs."""
         # Mock hardware config
         mock_hw_config = Mock()
@@ -147,6 +164,11 @@ class TestCameraSystemSetup:
         # Mock successful GenICam CTI uninstallation
         mock_genicam_uninstall.return_value = True
 
+        # Mock successful Daheng Galaxy SDK uninstallation
+        mock_galaxy_installer = Mock()
+        mock_galaxy_installer.uninstall.return_value = True
+        mock_galaxy_class.return_value = mock_galaxy_installer
+
         setup = CameraSystemSetup()
         result = setup.uninstall_all_sdks()
 
@@ -154,12 +176,15 @@ class TestCameraSystemSetup:
         mock_pylon_class.assert_called_once()
         mock_installer.uninstall.assert_called_once()
         mock_genicam_uninstall.assert_called_once()
-        assert result is True  # Both SDKs succeed
+        mock_galaxy_class.assert_called_once()
+        mock_galaxy_installer.uninstall.assert_called_once()
+        assert result is True  # All three SDKs succeed
 
     @patch("mindtrace.hardware.cameras.setup.setup_cameras.get_hardware_config")
     @patch("mindtrace.hardware.cameras.setup.setup_cameras.PylonSDKInstaller")
     @patch("mindtrace.hardware.cameras.setup.setup_cameras.uninstall_genicam_cti")
-    def test_uninstall_all_sdks_failure(self, mock_genicam_uninstall, mock_pylon_class, mock_config):
+    @patch("mindtrace.hardware.cameras.setup.setup_cameras.GalaxySDKInstaller")
+    def test_uninstall_all_sdks_failure(self, mock_galaxy_class, mock_genicam_uninstall, mock_pylon_class, mock_config):
         """Test failed uninstallation of all SDKs."""
         # Mock hardware config
         mock_hw_config = Mock()
@@ -177,6 +202,11 @@ class TestCameraSystemSetup:
 
         # Mock failed GenICam CTI uninstallation
         mock_genicam_uninstall.return_value = False
+
+        # Mock failed Daheng Galaxy SDK uninstallation
+        mock_galaxy_installer = Mock()
+        mock_galaxy_installer.uninstall.return_value = False
+        mock_galaxy_class.return_value = mock_galaxy_installer
 
         setup = CameraSystemSetup()
         result = setup.uninstall_all_sdks()

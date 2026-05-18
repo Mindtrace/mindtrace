@@ -10,7 +10,15 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from mindtrace.core import BenchReporter, BenchResult, BenchResultSchema, BenchSuiteConfig, BenchTestSuite, TaskSchema, utc_now_iso
+from mindtrace.core import (
+    BenchReporter,
+    BenchResult,
+    BenchResultSchema,
+    BenchSuiteConfig,
+    BenchTestSuite,
+    TaskSchema,
+    utc_now_iso,
+)
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.testing.suites._models import DatabaseBenchDocument
 from mindtrace.database.testing.suites._mongo import resolve_mongo_resources
@@ -25,7 +33,9 @@ class DatabaseMongoResources(BaseModel):
     mongo_db_name: str | None = Field(None, description="Optional Mongo database name for this run.")
     REMOTE_MONGO_DB_URI: str | None = Field(None, description="Atlas Mongo URI.", json_schema_extra={"secret": True})
     REMOTE_MONGO_DB_NAME: str | None = Field(None, description="Atlas Mongo database name.")
-    mongo_atlas_uri: str | None = Field(None, description="Alias for REMOTE_MONGO_DB_URI.", json_schema_extra={"secret": True})
+    mongo_atlas_uri: str | None = Field(
+        None, description="Alias for REMOTE_MONGO_DB_URI.", json_schema_extra={"secret": True}
+    )
     mongo_atlas_db_name: str | None = Field(None, description="Alias for REMOTE_MONGO_DB_NAME.")
 
 
@@ -53,6 +63,7 @@ class DatabaseMongoCrudSmokeSuite(BenchTestSuite):
         mongo_backend, mongo_uri, mongo_db_name = resolve_mongo_resources(config)
         odm = MongoMindtraceODM(model_cls=DatabaseBenchDocument, db_uri=mongo_uri, db_name=mongo_db_name)
         run_id = f"{config.run_id}-{uuid4().hex}"
+
         async def _crud_roundtrip() -> tuple[bool, float]:
             await odm.initialize()
             op_start = time.perf_counter()
