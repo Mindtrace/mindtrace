@@ -1,9 +1,7 @@
 import argparse
 import json
-import logging
 import platform
 from argparse import RawTextHelpFormatter
-from pathlib import Path
 
 from mindtrace.core import instantiate_target, setup_logger
 
@@ -48,12 +46,7 @@ if not IS_WINDOWS:
         def load(self):
             # Called in the worker process after fork (preload_app=False, the default).
             server = instantiate_target(self._server_class, pid_file=self._pid, **self._init_params)
-            server.logger = setup_logger(
-                name=server.unique_name,
-                stream_level=logging.INFO,
-                file_level=logging.DEBUG,
-                log_dir=Path(server.config["MINDTRACE_DIR_PATHS"]["LOGGER_DIR"]),
-            )
+            server.logger = setup_logger(name=server.unique_name)
             server.url = self._bind
             self.application = server.app
             return self.application
@@ -68,12 +61,7 @@ else:
 
             # Create server with initialization parameters
             server = instantiate_target(options.server_class, pid_file=options.pid, **init_params)
-            server.logger = setup_logger(
-                name=server.unique_name,
-                stream_level=logging.INFO,
-                file_level=logging.DEBUG,
-                log_dir=Path(server.config["MINDTRACE_DIR_PATHS"]["LOGGER_DIR"]),
-            )
+            server.logger = setup_logger(name=server.unique_name)
             self.application = server.app
 
             # Parse bind address
