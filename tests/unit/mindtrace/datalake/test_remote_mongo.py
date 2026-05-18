@@ -1,9 +1,9 @@
-"""Tests for stress-suite remote Mongo (Atlas) resolution."""
+"""Tests for datalake benchmark remote Mongo resolution helpers."""
 
 import pytest
 
-import tests.stress.lib.remote_mongo as remote_mongo
-from tests.stress.lib.remote_mongo import resolve_stress_atlas_mongo
+import mindtrace.datalake.testing.remote_mongo as remote_mongo
+from mindtrace.datalake.testing.remote_mongo import resolve_stress_atlas_mongo
 
 
 def test_resolve_stress_atlas_mongo_prefers_remote_keys():
