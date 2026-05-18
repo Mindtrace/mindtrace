@@ -10,7 +10,15 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from mindtrace.core import BenchReporter, BenchResult, BenchResultSchema, BenchSuiteConfig, BenchTestSuite, TaskSchema, utc_now_iso
+from mindtrace.core import (
+    BenchReporter,
+    BenchResult,
+    BenchResultSchema,
+    BenchSuiteConfig,
+    BenchTestSuite,
+    TaskSchema,
+    utc_now_iso,
+)
 from mindtrace.core.testing.workloads import deterministic_payload, parse_size_bytes, run_threaded_until_deadline
 from mindtrace.registry.testing.suites._backends import RegistryBackendResources, build_registry
 

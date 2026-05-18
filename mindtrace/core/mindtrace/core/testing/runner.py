@@ -12,7 +12,6 @@ from typing import Any, Generic, Type, TypeVar
 from pydantic import BaseModel
 
 from mindtrace.core.base import Mindtrace
-from mindtrace.core.types.task_schema import TaskSchema
 from mindtrace.core.testing.bench_framework import BenchResult
 from mindtrace.core.testing.bench_suite import build_bench_suite_config, coerce_bench_reporter
 from mindtrace.core.testing.test_suite import TestSuite
@@ -22,11 +21,12 @@ from mindtrace.core.testing.types import (
     RunOutcome,
     SuiteContribution,
     SuiteExecutionResult,
-    SuiteSchema,
     SuiteRun,
+    SuiteSchema,
     UnknownSuiteIdError,
     validate_suite_id,
 )
+from mindtrace.core.types.task_schema import TaskSchema
 
 _TS = TypeVar("_TS", bound=type[TestSuite])
 _T = TypeVar("_T")
