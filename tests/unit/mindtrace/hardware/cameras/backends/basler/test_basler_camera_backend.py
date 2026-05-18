@@ -402,7 +402,9 @@ class MockGenicam:
 
 @pytest.fixture
 def mock_pypylon(monkeypatch):
-    """Mock the pypylon module."""
+    """Mock the pypylon module and close any Basler backend instances created by the test."""
+    from mindtrace.hardware.cameras.backends.basler import basler_camera_backend as basler_module
+
     # Mock the imports
     mock_pylon = MockPylon()
     mock_genicam = MockGenicam()
@@ -414,11 +416,28 @@ def mock_pypylon(monkeypatch):
     tl_factory.CreateDevice.side_effect = lambda device_info: device_info  # Return the device_info as-is
     mock_pylon.TlFactory.GetInstance.return_value = tl_factory
 
+    tracked_cameras = []
+    original_init = basler_module.BaslerCameraBackend.__init__
+
+    def tracking_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        tracked_cameras.append(self)
+
+    monkeypatch.setattr(basler_module.BaslerCameraBackend, "__init__", tracking_init)
     monkeypatch.setattr("mindtrace.hardware.cameras.backends.basler.basler_camera_backend.pylon", mock_pylon)
     monkeypatch.setattr("mindtrace.hardware.cameras.backends.basler.basler_camera_backend.genicam", mock_genicam)
     monkeypatch.setattr("mindtrace.hardware.cameras.backends.basler.basler_camera_backend.PYPYLON_AVAILABLE", True)
 
-    return mock_pylon, mock_genicam
+    try:
+        yield mock_pylon, mock_genicam
+    finally:
+
+        async def close_tracked_cameras():
+            for camera in reversed(tracked_cameras):
+                if getattr(camera, "camera", None) is not None:
+                    await camera.close()
+
+        asyncio.run(close_tracked_cameras())
 
 
 @pytest_asyncio.fixture
