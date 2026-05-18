@@ -529,11 +529,11 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             .. code-block:: python
 
                 try:
-                    user = await backend.get("507f1f77bcf86cd799439011")
+                    user = await backend.get("507F1F77BCF86CD799439011")
                     print(f"Found user: {user.name}")
 
                     # With linked documents
-                    user = await backend.get("507f1f77bcf86cd799439011", fetch_links=True)
+                    user = await backend.get("507F1F77BCF86CD799439011", fetch_links=True)
                     print(f"User address: {user.address.street}")
                 except DocumentNotFoundError:
                     print("User not found")
@@ -583,7 +583,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             .. code-block:: python
 
                 # Get the document
-                user = await backend.get("507f1f77bcf86cd799439011")
+                user = await backend.get("507F1F77BCF86CD799439011")
                 # Modify it
                 user.age = 31
                 user.name = "John Updated"
@@ -658,7 +658,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             .. code-block:: python
 
                 try:
-                    await backend.delete("507f1f77bcf86cd799439011")
+                    await backend.delete("507F1F77BCF86CD799439011")
                     print("User deleted successfully")
                 except DocumentNotFoundError:
                     print("User not found")
@@ -1020,7 +1020,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             .. code-block:: python
 
                 try:
-                    user = backend.get_sync("507f1f77bcf86cd799439011")
+                    user = backend.get_sync("507F1F77BCF86CD799439011")
                     print(f"Found user: {user.name}")
                 except DocumentNotFoundError:
                     print("User not found")
@@ -1052,7 +1052,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             .. code-block:: python
 
                 try:
-                    backend.delete_sync("507f1f77bcf86cd799439011")
+                    backend.delete_sync("507F1F77BCF86CD799439011")
                     print("User deleted successfully")
                 except DocumentNotFoundError:
                     print("User not found")
@@ -1087,7 +1087,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             .. code-block:: python
 
                 # Get the document
-                user = backend.get_sync("507f1f77bcf86cd799439011")
+                user = backend.get_sync("507F1F77BCF86CD799439011")
                 # Modify it
                 user.age = 31
                 user.name = "John Updated"

@@ -118,7 +118,7 @@ def _build_exportable_item(
     annotation_sets, annotations, annotation_warnings = _annotation_sets_for_asset(resolved_datum, asset.asset_id)
     warnings.extend(annotation_warnings)
     return (
-        ExportableItem(
+        ExportableItem.model_construct(
             asset=asset,
             split=_mapped_split(resolved_datum.datum.split, split_map),
             metadata=dict(resolved_datum.datum.metadata or {}),
