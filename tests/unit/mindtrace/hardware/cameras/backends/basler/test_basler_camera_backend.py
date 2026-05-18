@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
 import pytest
+import pytest_asyncio
 
 from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
@@ -420,9 +421,9 @@ def mock_pypylon(monkeypatch):
     return mock_pylon, mock_genicam
 
 
-@pytest.fixture
-def basler_camera(mock_pypylon):
-    """Create a BaslerCameraBackend instance."""
+@pytest_asyncio.fixture
+async def basler_camera(mock_pypylon):
+    """Create a BaslerCameraBackend instance and close it after each test."""
     from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
 
     camera = BaslerCameraBackend(
@@ -434,7 +435,10 @@ def basler_camera(mock_pypylon):
         timeout_ms=1000,
     )
 
-    return camera
+    try:
+        yield camera
+    finally:
+        await camera.close()
 
 
 @pytest.fixture
@@ -4756,9 +4760,9 @@ def mock_pypylon_no_lens(monkeypatch):
     return mock_pylon, mock_genicam
 
 
-@pytest.fixture
-def basler_camera_with_lens(mock_pypylon_with_lens):
-    """Create a BaslerCameraBackend instance with lens-capable camera."""
+@pytest_asyncio.fixture
+async def basler_camera_with_lens(mock_pypylon_with_lens):
+    """Create a lens-capable BaslerCameraBackend instance and close it after each test."""
     from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
 
     camera = BaslerCameraBackend(
@@ -4769,12 +4773,15 @@ def basler_camera_with_lens(mock_pypylon_with_lens):
         buffer_count=10,
         timeout_ms=1000,
     )
-    return camera
+    try:
+        yield camera
+    finally:
+        await camera.close()
 
 
-@pytest.fixture
-def basler_camera_no_lens(mock_pypylon_no_lens):
-    """Create a BaslerCameraBackend instance without liquid lens."""
+@pytest_asyncio.fixture
+async def basler_camera_no_lens(mock_pypylon_no_lens):
+    """Create a BaslerCameraBackend instance without liquid lens and close it after each test."""
     from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
 
     camera = BaslerCameraBackend(
@@ -4785,7 +4792,10 @@ def basler_camera_no_lens(mock_pypylon_no_lens):
         buffer_count=10,
         timeout_ms=1000,
     )
-    return camera
+    try:
+        yield camera
+    finally:
+        await camera.close()
 
 
 class TestBaslerCameraBackendLiquidLensDetection:
