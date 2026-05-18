@@ -3,27 +3,26 @@ from pathlib import Path, PosixPath, WindowsPath
 from mindtrace.registry.archivers.path_archiver import PathArchiver
 from mindtrace.registry.core.registry import Registry
 
+_BUILTIN = "mindtrace.registry.archivers.builtin_materializers"
+_INTEGRATION = "mindtrace.registry.archivers.integration_materializers"
+
 
 def register_default_materializers():
-    # Core zenml materializers
-    Registry.register_default_materializer(
-        "builtins.str", "zenml.materializers.built_in_materializer.BuiltInMaterializer"
-    )
-    Registry.register_default_materializer(
-        "builtins.int", "zenml.materializers.built_in_materializer.BuiltInMaterializer"
-    )
-    Registry.register_default_materializer(
-        "builtins.float", "zenml.materializers.built_in_materializer.BuiltInMaterializer"
-    )
-    Registry.register_default_materializer(
-        "builtins.bool", "zenml.materializers.built_in_materializer.BuiltInMaterializer"
-    )
-    Registry.register_default_materializer("builtins.list", "zenml.materializers.BuiltInContainerMaterializer")
-    Registry.register_default_materializer("builtins.dict", "zenml.materializers.BuiltInContainerMaterializer")
-    Registry.register_default_materializer("builtins.tuple", "zenml.materializers.BuiltInContainerMaterializer")
-    Registry.register_default_materializer("builtins.set", "zenml.materializers.BuiltInContainerMaterializer")
-    Registry.register_default_materializer("builtins.bytes", "zenml.materializers.BytesMaterializer")
-    Registry.register_default_materializer("pydantic.BaseModel", "zenml.materializers.PydanticMaterializer")
+    # Core built-in materializers.
+    Registry.register_default_materializer("builtins.str", f"{_BUILTIN}.BuiltInMaterializer")
+    Registry.register_default_materializer("builtins.int", f"{_BUILTIN}.BuiltInMaterializer")
+    Registry.register_default_materializer("builtins.float", f"{_BUILTIN}.BuiltInMaterializer")
+    Registry.register_default_materializer("builtins.bool", f"{_BUILTIN}.BuiltInMaterializer")
+    Registry.register_default_materializer("builtins.list", f"{_BUILTIN}.BuiltInContainerMaterializer")
+    Registry.register_default_materializer("builtins.dict", f"{_BUILTIN}.BuiltInContainerMaterializer")
+    Registry.register_default_materializer("builtins.tuple", f"{_BUILTIN}.BuiltInContainerMaterializer")
+    Registry.register_default_materializer("builtins.set", f"{_BUILTIN}.BuiltInContainerMaterializer")
+    Registry.register_default_materializer("builtins.bytes", f"{_BUILTIN}.BytesMaterializer")
+    # Pydantic re-exports ``BaseModel`` from the package root, but the class's real
+    # ``__module__`` is ``pydantic.main`` — register both so MRO-based dispatch hits.
+    Registry.register_default_materializer("pydantic.BaseModel", f"{_BUILTIN}.PydanticMaterializer")
+    Registry.register_default_materializer("pydantic.main.BaseModel", f"{_BUILTIN}.PydanticMaterializer")
+
     # Path types - use PathArchiver to preserve original filenames
     Registry.register_default_materializer(Path, PathArchiver)
     Registry.register_default_materializer(PosixPath, PathArchiver)
@@ -34,65 +33,41 @@ def register_default_materializers():
         "mindtrace.core.config.config.Config", "mindtrace.registry.archivers.config_archiver.ConfigArchiver"
     )
 
-    # (Optional) Huggingface materializers
+    # (Optional) HuggingFace datasets — register both the public import path and
+    # the real ``__module__`` path so MRO-based dispatch hits.
+    Registry.register_default_materializer("datasets.Dataset", f"{_INTEGRATION}.HFDatasetMaterializer")
+    Registry.register_default_materializer("datasets.arrow_dataset.Dataset", f"{_INTEGRATION}.HFDatasetMaterializer")
+    Registry.register_default_materializer("datasets.DatasetDict", f"{_INTEGRATION}.HFDatasetMaterializer")
+    Registry.register_default_materializer("datasets.dataset_dict.DatasetDict", f"{_INTEGRATION}.HFDatasetMaterializer")
+    Registry.register_default_materializer("datasets.IterableDataset", f"{_INTEGRATION}.HFDatasetMaterializer")
     Registry.register_default_materializer(
-        "datasets.Dataset",
-        "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
-    )
-    Registry.register_default_materializer(
-        "datasets.DatasetDict",
-        "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
-    )
-    Registry.register_default_materializer(
-        "datasets.IterableDataset",
-        "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
-    )
-    Registry.register_default_materializer(
-        "transformers.PreTrainedModel",
-        "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer",
-    )
-    Registry.register_default_materializer(
-        "transformers.TFPreTrainedModel",
-        "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer",
+        "datasets.iterable_dataset.IterableDataset", f"{_INTEGRATION}.HFDatasetMaterializer"
     )
 
-    # (Optional) NumPy materializers
-    Registry.register_default_materializer(
-        "numpy.ndarray", "zenml.integrations.numpy.materializers.numpy_materializer.NumpyMaterializer"
-    )
+    # (Optional) NumPy
+    Registry.register_default_materializer("numpy.ndarray", f"{_INTEGRATION}.NumpyMaterializer")
 
-    # (Optional) Pillow materializers
-    Registry.register_default_materializer(
-        "PIL.Image.Image",
-        "zenml.integrations.pillow.materializers.pillow_image_materializer.PillowImageMaterializer",
-    )
+    # (Optional) Pillow
+    Registry.register_default_materializer("PIL.Image.Image", f"{_INTEGRATION}.PillowImageMaterializer")
 
-    # (Optional) PyTorch materializers
+    # (Optional) PyTorch
     Registry.register_default_materializer(
-        "torch.utils.data.DataLoader",
-        "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
+        "torch.utils.data.DataLoader", f"{_INTEGRATION}.PyTorchDataLoaderMaterializer"
+    )
+    Registry.register_default_materializer("torch.utils.data.Dataset", f"{_INTEGRATION}.PyTorchDataLoaderMaterializer")
+    Registry.register_default_materializer(
+        "torch.utils.data.IterableDataset", f"{_INTEGRATION}.PyTorchDataLoaderMaterializer"
     )
     Registry.register_default_materializer(
-        "torch.utils.data.Dataset",
-        "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
+        "torch.nn.modules.module.Module", f"{_INTEGRATION}.PyTorchModuleMaterializer"
     )
     Registry.register_default_materializer(
-        "torch.utils.data.IterableDataset",
-        "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
-    )
-    Registry.register_default_materializer(
-        "torch.nn.modules.module.Module",
-        "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
-    )
-    Registry.register_default_materializer(
-        "torch.jit._script.ScriptModule",
-        "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
+        "torch.jit._script.ScriptModule", f"{_INTEGRATION}.PyTorchModuleMaterializer"
     )
 
     # ── ML framework archivers (string-based for lazy loading) ──────────
-    # These override ZenML defaults from above. The archiver classes live in
-    # mindtrace.models.archivers and are only imported when instantiate_target()
-    # resolves them during save/load.
+    # The archiver classes live in mindtrace.models.archivers and are only
+    # imported when instantiate_target() resolves them during save/load.
 
     # Ultralytics
     Registry.register_default_materializer(
@@ -112,7 +87,13 @@ def register_default_materializers():
         "mindtrace.models.archivers.ultralytics.yoloe_archiver.YoloEArchiver",
     )
 
-    # HuggingFace models
+    # HuggingFace models. Both the public and ``__module__`` paths registered so
+    # MRO dispatch hits. ``TFPreTrainedModel`` is intentionally omitted —
+    # ``HuggingFaceModelArchiver`` is PyTorch-only.
+    Registry.register_default_materializer(
+        "transformers.PreTrainedModel",
+        "mindtrace.models.archivers.huggingface.hf_model_archiver.HuggingFaceModelArchiver",
+    )
     Registry.register_default_materializer(
         "transformers.modeling_utils.PreTrainedModel",
         "mindtrace.models.archivers.huggingface.hf_model_archiver.HuggingFaceModelArchiver",
