@@ -4,6 +4,7 @@
 # Build Args:
 #   INSTALL_BASLER: true|false (default: false)
 #   INSTALL_GENICAM: true|false (default: false)
+#   INSTALL_DAHENG: true|false (default: false)
 #
 # Examples (run from mindtrace repository root):
 #   # Basic with OpenCV only
@@ -12,8 +13,11 @@
 #   # With Basler SDK
 #   docker build -f docker/hardware/camera/Dockerfile --build-arg INSTALL_BASLER=true -t mindtrace-camera:basler .
 #
-#   # Full stack (Basler + GenICam)
-#   docker build -f docker/hardware/camera/Dockerfile --build-arg INSTALL_BASLER=true --build-arg INSTALL_GENICAM=true -t mindtrace-camera:full .
+#   # With Daheng Galaxy SDK
+#   docker build -f docker/hardware/camera/Dockerfile --build-arg INSTALL_DAHENG=true -t mindtrace-camera:daheng .
+#
+#   # Full stack (Basler + Daheng + GenICam)
+#   docker build -f docker/hardware/camera/Dockerfile --build-arg INSTALL_BASLER=true --build-arg INSTALL_DAHENG=true --build-arg INSTALL_GENICAM=true -t mindtrace-camera:full .
 # =============================================================================
 
 # syntax=docker/dockerfile:1
@@ -67,6 +71,7 @@ FROM base AS sdk
 
 ARG INSTALL_BASLER=false
 ARG INSTALL_GENICAM=false
+ARG INSTALL_DAHENG=false
 
 # Install camera system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -117,6 +122,16 @@ ENV GENICAM_GENTL64_PATH=/opt/pylon/lib64 \
 # Note: GenICam/Matrix Vision SDK installation handled by setup script at runtime
 RUN if [ "$INSTALL_GENICAM" = "true" ]; then \
         echo "==> GenICam SDK will be configured at runtime via setup script"; \
+    fi
+
+# Install Daheng Galaxy SDK (native libraries required by gxipy Python package)
+# Note: Galaxy SDK requires manual download from Daheng website due to EULA.
+# Pre-download the Galaxy SDK .run installer and place it in docker/hardware/camera/
+# or install at runtime via: mindtrace-camera-daheng install
+RUN if [ "$INSTALL_DAHENG" = "true" ]; then \
+        echo "==> Daheng Galaxy SDK will be configured at runtime via setup script"; \
+        echo "==> Run 'mindtrace-camera-daheng install' after container start, or"; \
+        echo "==> mount pre-installed Galaxy SDK libs into /usr/lib/"; \
     fi
 
 # =============================================================================
@@ -173,16 +188,17 @@ RUN for pkg in apps agents automation cluster database datalake jobs models regi
 # Install the hardware package with uv, including camera extras based on build args
 ARG INSTALL_BASLER=false
 ARG INSTALL_GENICAM=false
+ARG INSTALL_DAHENG=false
 
-RUN if [ "$INSTALL_BASLER" = "true" ] && [ "$INSTALL_GENICAM" = "true" ]; then \
-        echo "==> Installing mindtrace-hardware with all camera backends..." && \
-        uv sync --no-dev --extra cameras-all; \
-    elif [ "$INSTALL_BASLER" = "true" ]; then \
-        echo "==> Installing mindtrace-hardware with Basler backend..." && \
-        uv sync --no-dev --extra cameras-basler; \
-    elif [ "$INSTALL_GENICAM" = "true" ]; then \
-        echo "==> Installing mindtrace-hardware with GenICam backend..." && \
-        uv sync --no-dev --extra cameras-genicam; \
+# Build the list of extras dynamically — each backend is independent.
+# Adding a new backend means one line here, not a new branch.
+RUN EXTRAS=""; \
+    if [ "$INSTALL_BASLER"  = "true" ]; then EXTRAS="$EXTRAS --extra cameras-basler";  fi; \
+    if [ "$INSTALL_DAHENG"  = "true" ]; then EXTRAS="$EXTRAS --extra cameras-daheng";  fi; \
+    if [ "$INSTALL_GENICAM" = "true" ]; then EXTRAS="$EXTRAS --extra cameras-genicam"; fi; \
+    if [ -n "$EXTRAS" ]; then \
+        echo "==> Installing mindtrace-hardware with extras:$EXTRAS" && \
+        uv sync --no-dev $EXTRAS; \
     else \
         echo "==> Installing mindtrace-hardware (OpenCV only)..." && \
         uv sync --no-dev; \

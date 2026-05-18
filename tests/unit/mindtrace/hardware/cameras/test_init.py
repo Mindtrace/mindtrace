@@ -97,6 +97,7 @@ def test_all_exports():
         "BASLER_AVAILABLE",
         "OPENCV_AVAILABLE",
         "GENICAM_AVAILABLE",
+        "DAHENG_AVAILABLE",
         "SETUP_AVAILABLE",
         # Setup utilities
         "install_pylon_sdk",

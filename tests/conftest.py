@@ -63,11 +63,6 @@ def configure_logging_for_tests(caplog):
     original_level = root_logger.level
     root_logger.setLevel(logging.DEBUG)
 
-    # Remove third-party handlers (e.g. ZenML) from root logger that cause noise.
-    # caplog's handler is managed by pytest and re-added each test automatically.
-    original_root_handlers = root_logger.handlers[:]
-    root_logger.handlers = [h for h in root_logger.handlers if type(h).__module__.startswith("_pytest")]
-
     # Suppress noisy third-party DEBUG logs
     noisy_loggers = [
         "botocore",
@@ -101,7 +96,6 @@ def configure_logging_for_tests(caplog):
 
     # Restore original settings
     root_logger.setLevel(original_level)
-    root_logger.handlers = original_root_handlers
     mindtrace_logger.propagate = original_propagate
     for name, lvl in original_noisy_levels.items():
         logging.getLogger(name).setLevel(lvl)
