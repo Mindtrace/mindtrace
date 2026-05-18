@@ -9,8 +9,8 @@ from typing import Any, ClassVar, Type
 
 from pydantic import BaseModel
 
-from mindtrace.core.types.task_schema import TaskSchema
 from mindtrace.core.testing.types import SuiteContribution, validate_suite_id
+from mindtrace.core.types.task_schema import TaskSchema
 
 
 class TestSuite(ABC):

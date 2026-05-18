@@ -75,7 +75,9 @@ class DatalakeSmokeSuite(BenchTestSuite):
             lake.initialize()
             op_start = time.perf_counter()
             try:
-                storage_ref = lake.put_object(name=f"{prefix}/smoke", obj=payload, mount="stress", metadata={"run_id": config.run_id})
+                storage_ref = lake.put_object(
+                    name=f"{prefix}/smoke", obj=payload, mount="stress", metadata={"run_id": config.run_id}
+                )
                 loaded = lake.get_object(storage_ref)
                 lake.head_object(storage_ref)
                 if loaded != payload:
