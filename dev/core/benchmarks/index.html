@@ -1,0 +1,1610 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://mindtrace.ai/dev/core/benchmarks/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/favicon.ico">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Benchmark suites (mindtrace.core.testing) - Mindtrace Package Docs</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="green">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#benchmark-suites-mindtracecoretesting" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Mindtrace Package Docs" class="md-header__button md-logo" aria-label="Mindtrace Package Docs" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Mindtrace Package Docs
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Benchmark suites (mindtrace.core.testing)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="green"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="deep-orange"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Mindtrace/mindtrace" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  Mindtrace
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Mindtrace Package Docs" class="md-nav__button md-logo" aria-label="Mindtrace Package Docs" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    Mindtrace Package Docs
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Mindtrace/mindtrace" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mindtrace
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Mindtrace
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../services/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Services
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../hardware/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hardware
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../jobs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Jobs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../services/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Services
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../hardware/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hardware
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cluster/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../jobs/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Jobs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../database/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../storage/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#registration-primitives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Registration primitives
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mental-model-for-suites-and-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mental model for suites and profiles
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#discovering-suite-schemas-for-rest-ui-callers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Discovering suite schemas for REST / UI callers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-mindtrace-shipped-benches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running Mindtrace shipped benches
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Running Mindtrace shipped benches">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#first-party-suite-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First-party suite coverage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#package-layout-mindtrace-wheels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Package layout (Mindtrace wheels)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#integrating-benchmarks-in-a-downstream-application" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integrating benchmarks in a downstream application
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Integrating benchmarks in a downstream application">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dependencies
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#registering-mindtrace-suites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Registering Mindtrace suites
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-application-specific-suites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding application-specific suites
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-downstream-project-with-one-custom-suite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: downstream project with one custom suite
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#entry-point-for-operators-and-ci" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Entry point for operators and CI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resources-and-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resources and configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recommended-tagging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended tagging
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mindtrace-maintainers-backlog-for-downstream-ergonomics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mindtrace maintainers: backlog for downstream ergonomics
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Mindtrace maintainers: backlog for downstream ergonomics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#documentation-and-api-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation and API contract
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#registration-and-safety" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Registration and safety
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#observability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Observability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tests-and-packaging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tests and packaging
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="benchmark-suites-mindtracecoretesting">Benchmark suites (<code>mindtrace.core.testing</code>)</h1>
+<p>This document covers <strong>library-embedded benchmark workloads</strong> (timed “stress” style checks) shipped with Mindtrace and <strong>how downstream applications</strong> register and run them—including <strong>adding their own suites</strong> on top.</p>
+<p>The integration surface is <strong><code>TestRunner</code></strong> and <strong><code>BenchTestSuite</code></strong>. Discovery is <strong>entry-point driven</strong> for installed packages, with explicit package registration still available for tests and tightly controlled application flows.</p>
+<hr />
+<h2 id="registration-primitives">Registration primitives</h2>
+<ul>
+<li>
+<p><strong><code>TestRunner</code></strong>: instantiable suite registry. Use <strong><code>runner = TestRunner()</code></strong> for an empty isolated application/test registry, <strong><code>TestRunner(discover_benchmark_suites=True)</code></strong> to discover all installed benchmark-suite entry points on construction, or <strong><code>TestRunner(discover_benchmark_suites={"registry"})</code></strong> to load selected entry point names. Class-level <strong><code>TestRunner.register_test_suite(MySuite)</code></strong> / <strong><code>TestRunner.register_suite(SuiteContribution(...))</code></strong> calls target the process-global default runner.</p>
+</li>
+<li>
+<p><strong><code>TestSuite</code></strong>: minimal hook for custom runners; implement <strong><code>run(config, reporter)</code></strong>.</p>
+</li>
+<li>
+<p><strong><code>BenchTestSuite</code></strong>: library-embedded timed workloads. Subclasses implement <strong><code>execute_bench(config, reporter)</code></strong> and receive <strong><code>BenchSuiteConfig</code></strong> / <strong><code>BenchReporter</code></strong>. Class-level <strong><code>profiles</code></strong> maps profile names (typically <strong><code>smoke</code></strong> and <strong><code>stress</code></strong>) to <strong><code>duration_seconds</code></strong>, workload kwargs, and nested <strong><code>resources</code></strong> merged into the resolved config.</p>
+</li>
+<li>
+<p><strong><code>TaskSchema</code></strong>: optional class-level input/output contract for a suite. Set <strong><code>task_schema = TaskSchema(name=suite_id, input_schema=..., output_schema=...)</code></strong> with Pydantic models so REST/UI callers can inspect accepted benchmark parameters and serialized outputs.</p>
+</li>
+<li>
+<p><strong><code>resource_schema</code></strong>: optional class-level Pydantic model for environment/resource config such as Mongo URIs, MinIO credentials, or GCS settings. Resource schemas are separate from task inputs because resource values often need redaction or secret handling.</p>
+</li>
+<li>
+<p><strong>Tags</strong>: tag suites with <strong><code>smoke</code></strong> or <strong><code>stress</code></strong> so <strong><code>runner.suite_ids_for_profile("smoke")</code></strong> and <strong><code>mindtrace-bench --profile …</code></strong> can filter them. Additional domain tags (<strong><code>api</code></strong>, <strong><code>ingest</code></strong>, etc.) may be useful for future multi-tag selection if the **<code>TestRunner</code> API grows.</p>
+</li>
+</ul>
+<hr />
+<h2 id="mental-model-for-suites-and-profiles">Mental model for suites and profiles</h2>
+<table>
+<thead>
+<tr>
+<th>Concept</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Suite</strong></td>
+<td>Named workload: stable <strong><code>suite_id</code></strong>, <strong><code>tags</code></strong>, <strong><code>requires</code></strong>, safety text, parameter definitions, <strong><code>profiles</code></strong>.</td>
+</tr>
+<tr>
+<td><strong>Profile</strong></td>
+<td>Named preset (<strong><code>smoke</code></strong>, <strong><code>stress</code></strong>, …): <strong><code>duration_seconds</code></strong>, defaults for parameters, optional nested <strong><code>resources</code></strong>.</td>
+</tr>
+<tr>
+<td><strong>Registry</strong></td>
+<td>Each <strong><code>TestRunner</code></strong> instance holds <strong><code>SuiteContribution</code></strong> entries. Class-level calls use the process-global default runner. Installed packages can advertise registration hooks through the <strong><code>mindtrace.benchmark_suites</code></strong> entry point group.</td>
+</tr>
+<tr>
+<td><strong>Execution</strong></td>
+<td>A CLI or script calls <strong><code>runner.run_registered_benches(...)</code></strong> with <strong><code>suite_id</code></strong> strings and a <strong>profile tag</strong> (<strong><code>smoke</code></strong> or <strong><code>stress</code></strong> for built-in tooling).</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="discovering-suite-schemas-for-rest-ui-callers">Discovering suite schemas for REST / UI callers</h2>
+<p>For installed packages, use benchmark-suite entry points to register all available suites into a runner without importing each package explicitly:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">TestRunner</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">runner</span> <span class="o">=</span> <span class="n">TestRunner</span><span class="p">(</span><span class="n">discover_benchmark_suites</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">suite_schema</span> <span class="o">=</span> <span class="n">runner</span><span class="o">.</span><span class="n">get_suite_schema</span><span class="p">(</span><span class="s2">&quot;registry.stress.write_ceiling&quot;</span><span class="p">)</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">all_stress_schemas</span> <span class="o">=</span> <span class="n">runner</span><span class="o">.</span><span class="n">list_suite_schemas</span><span class="p">(</span><span class="n">tags</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;stress&quot;</span><span class="p">})</span>
+</span></code></pre></div>
+<p>For applications that want a fixed set of packages, call the package registration hooks directly:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">TestRunner</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">mindtrace.database.testing</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">mindtrace.registry.testing</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="kn">import</span><span class="w"> </span><span class="nn">mindtrace.datalake.testing</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">runner</span> <span class="o">=</span> <span class="n">TestRunner</span><span class="p">()</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">mindtrace</span><span class="o">.</span><span class="n">database</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">register_benchmark_suites</span><span class="p">(</span><span class="n">runner</span><span class="o">=</span><span class="n">runner</span><span class="p">)</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="n">mindtrace</span><span class="o">.</span><span class="n">registry</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">register_benchmark_suites</span><span class="p">(</span><span class="n">runner</span><span class="o">=</span><span class="n">runner</span><span class="p">)</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="n">mindtrace</span><span class="o">.</span><span class="n">datalake</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">register_benchmark_suites</span><span class="p">(</span><span class="n">runner</span><span class="o">=</span><span class="n">runner</span><span class="p">)</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="n">suite_schema</span> <span class="o">=</span> <span class="n">runner</span><span class="o">.</span><span class="n">get_suite_schema</span><span class="p">(</span><span class="s2">&quot;registry.stress.write_ceiling&quot;</span><span class="p">)</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="n">all_stress_schemas</span> <span class="o">=</span> <span class="n">runner</span><span class="o">.</span><span class="n">list_suite_schemas</span><span class="p">(</span><span class="n">tags</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;stress&quot;</span><span class="p">})</span>
+</span></code></pre></div>
+<p>The returned <strong><code>SuiteSchema</code></strong> is a Pydantic model intended to be easy to return from REST endpoints. It includes:</p>
+<ul>
+<li><strong><code>suite_id</code></strong>, <strong><code>title</code></strong>, <strong><code>description</code></strong>, <strong><code>tags</code></strong>, <strong><code>requires</code></strong>, and <strong><code>safety</code></strong></li>
+<li><strong><code>profiles</code></strong> and legacy/default <strong><code>parameters</code></strong> metadata</li>
+<li><strong><code>task_schema</code></strong>, a JSON-schema payload generated from the suite's <strong><code>TaskSchema</code></strong> input/output Pydantic models</li>
+<li><strong><code>resource_json_schema</code></strong>, generated from the suite's resource Pydantic model</li>
+</ul>
+<p>For example, a UI can render form controls from <strong><code>suite_schema.task_schema["input_json_schema"]</code></strong>, display expected result fields from <strong><code>output_json_schema</code></strong>, and handle resource configuration separately from <strong><code>resource_json_schema</code></strong>.</p>
+<hr />
+<h2 id="running-mindtrace-shipped-benches">Running Mindtrace shipped benches</h2>
+<p>After installing <strong><code>mindtrace-core</code></strong> and any Mindtrace libraries whose benches you need, discover benchmark suites from package entry points:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">TestRunner</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">runner</span> <span class="o">=</span> <span class="n">TestRunner</span><span class="p">(</span><span class="n">discover_benchmark_suites</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span></code></pre></div>
+<p>CLI (console script <strong><code>mindtrace-bench</code></strong> from <strong><code>mindtrace-core</code></strong>):</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>mindtrace-bench<span class="w"> </span>--profile<span class="w"> </span>smoke<span class="w"> </span>--list
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>mindtrace-bench<span class="w"> </span>--profile<span class="w"> </span>smoke
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>mindtrace-bench<span class="w"> </span>--profile<span class="w"> </span>stress<span class="w"> </span>--list
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>mindtrace-bench<span class="w"> </span>datalake<span class="w"> </span>--profile<span class="w"> </span>stress<span class="w"> </span>--run-id<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>date<span class="w"> </span>-u<span class="w"> </span>+%Y-%m-%dT%H-%M-%SZ<span class="k">)</span><span class="s2">&quot;</span>
+</span></code></pre></div>
+<ul>
+<li><strong><code>--profile smoke|stress</code></strong> selects suites whose <strong>tags include that literal string</strong>.</li>
+<li><strong><code>--list</code></strong> prints matching <strong><code>suite_id</code></strong> values.</li>
+<li>Positional arguments, when supplied, are benchmark entry point names to load (for example <strong><code>registry</code></strong> or <strong><code>datalake</code></strong>). With no positional arguments, all installed benchmark-suite entry points are loaded.</li>
+</ul>
+<p><strong>Programmatic helpers</strong>: <strong><code>runner.suite_ids_for_profile</code></strong> and <strong><code>runner.run_registered_benches</code></strong>. Config building: <strong><code>build_bench_suite_config</code></strong>, <strong><code>expand_param_matrix</code></strong>.</p>
+<p>Example (run explicit suites after registration):</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">TestRunner</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">runner</span> <span class="o">=</span> <span class="n">TestRunner</span><span class="p">(</span><span class="n">discover_benchmark_suites</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;database&quot;</span><span class="p">,</span> <span class="s2">&quot;registry&quot;</span><span class="p">,</span> <span class="s2">&quot;datalake&quot;</span><span class="p">})</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="c1"># Optional: discovery</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;stress-tagged suites:&quot;</span><span class="p">,</span> <span class="n">runner</span><span class="o">.</span><span class="n">suite_ids_for_profile</span><span class="p">(</span><span class="s2">&quot;stress&quot;</span><span class="p">))</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="n">bench_results</span><span class="p">,</span> <span class="n">exec_rows</span> <span class="o">=</span> <span class="n">runner</span><span class="o">.</span><span class="n">run_registered_benches</span><span class="p">(</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="p">[</span><span class="s2">&quot;registry.stress.write_ceiling&quot;</span><span class="p">],</span>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>    <span class="n">profile</span><span class="o">=</span><span class="s2">&quot;stress&quot;</span><span class="p">,</span>
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>    <span class="n">run_id</span><span class="o">=</span><span class="s2">&quot;dev-run-1&quot;</span><span class="p">,</span>
+</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>    <span class="n">resources</span><span class="o">=</span><span class="p">{},</span>  <span class="c1"># optional: e.g. mongo_uri, minio_endpoint from your environment</span>
+</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="p">)</span>
+</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">bench_results</span><span class="p">:</span>
+</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">suite_id</span><span class="p">,</span> <span class="n">row</span><span class="o">.</span><span class="n">status</span><span class="p">,</span> <span class="n">row</span><span class="o">.</span><span class="n">operations</span><span class="p">,</span> <span class="n">row</span><span class="o">.</span><span class="n">failures</span><span class="p">)</span>
+</span></code></pre></div>
+<p>Use <strong><code>runner = TestRunner()</code></strong> in unit tests or applications when you need isolation between cases. Class-level calls such as <strong><code>TestRunner.clear_registry()</code></strong> operate on the process-global default runner.</p>
+<h3 id="first-party-suite-coverage">First-party suite coverage</h3>
+<p>Tier 1 smoke suites verify local wiring and one end-to-end operation:</p>
+<ul>
+<li><strong><code>database.smoke.mongo_crud</code></strong> — Mongo ODM insert/get/update/find/delete.</li>
+<li><strong><code>registry.smoke.local_crud</code></strong> — local Registry save/load/delete.</li>
+<li><strong><code>datalake.smoke.local_object</code></strong> — local Datalake put/get/head object with Mongo metadata initialization.</li>
+</ul>
+<p>Tier 2 stress suites are designed for overhead comparisons across layers and parameter sweeps such as concurrency, object size, backend, and local-vs-remote Mongo:</p>
+<ul>
+<li><strong>Database</strong>: <strong><code>database.stress.mongo_insert_ceiling</code></strong>, <strong><code>database.stress.mongo_read_ceiling</code></strong>, <strong><code>database.stress.mongo_update_ceiling</code></strong>.</li>
+<li><strong>Registry</strong>: <strong><code>registry.stress.write_ceiling</code></strong>, <strong><code>registry.stress.read_ceiling</code></strong>, <strong><code>registry.stress.mixed_rw</code></strong>, <strong><code>registry.stress.version_churn</code></strong>.</li>
+<li><strong>Datalake</strong>: <strong><code>datalake.stress.payload_write_ceiling</code></strong>, <strong><code>datalake.stress.payload_read_ceiling</code></strong>, <strong><code>datalake.stress.payload_mixed_rw</code></strong>, <strong><code>datalake.stress.mongo_insert_ceiling</code></strong>, <strong><code>datalake.stress.create_asset_from_object</code></strong>, <strong><code>datalake.stress.collection_item</code></strong>, <strong><code>datalake.stress.retention</code></strong>.</li>
+</ul>
+<p>Tier 3, intentionally left for a follow-on PR, should cover broader package areas and operational scenarios such as hardware packages, replication, large import sessions, and long-haul soak runs.</p>
+<hr />
+<h2 id="package-layout-mindtrace-wheels">Package layout (Mindtrace wheels)</h2>
+<p>Each first-party wheel that ships benchmarks exposes <strong><code>mindtrace.&lt;pkg&gt;.testing</code></strong> with <strong><code>register_benchmark_suites()</code></strong> and declares an entry point in <strong><code>pyproject.toml</code></strong> under <strong><code>mindtrace.benchmark_suites</code></strong>. Workload implementations live beside library code under that package’s <strong><code>testing/</code></strong> subtree.</p>
+<div class="language-toml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">[project.entry-points.</span><span class="s2">&quot;mindtrace.benchmark_suites&quot;</span><span class="k">]</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">database</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;mindtrace.database.testing:register_benchmark_suites&quot;</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">registry</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;mindtrace.registry.testing:register_benchmark_suites&quot;</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">datalake</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;mindtrace.datalake.testing:register_benchmark_suites&quot;</span>
+</span></code></pre></div>
+<hr />
+<h2 id="integrating-benchmarks-in-a-downstream-application">Integrating benchmarks in a downstream application</h2>
+<p>Downstream services that depend on Mindtrace can <strong>reuse</strong> the same <strong><code>BenchTestSuite</code></strong> model and execute registered suites with <strong><code>runner.run_registered_benches</code></strong>.</p>
+<h3 id="dependencies">Dependencies</h3>
+<ul>
+<li><strong><code>mindtrace-core</code></strong> (required for <strong><code>mindtrace.core.testing</code></strong> and <strong><code>mindtrace-bench</code></strong>).</li>
+<li>Any Mindtrace libraries whose benches you import (e.g. <strong><code>mindtrace-registry</code></strong>, <strong><code>mindtrace-datalake</code></strong>), via the meta <strong><code>mindtrace</code></strong> package or explicit pins aligned with production.</li>
+</ul>
+<h3 id="registering-mindtrace-suites">Registering Mindtrace suites</h3>
+<ol>
+<li>Create <strong><code>runner = TestRunner()</code></strong> when a clean isolated registry is required (recommended for applications, tests, and repeated runs in one process).</li>
+<li>Call <strong><code>runner.register_entrypoint_benchmark_suites()</code></strong> to load all installed benchmark-suite plugins, or pass <strong><code>names={...}</code></strong> to load only selected entry points. For convenience, <strong><code>TestRunner(discover_benchmark_suites=True)</code></strong> discovers all installed plugins on construction, while <strong><code>TestRunner(discover_benchmark_suites={"registry", "datalake"})</code></strong> loads only those entry point names.</li>
+<li>For tests or source-checkout workflows, call <strong><code>mindtrace.&lt;pkg&gt;.testing.register_benchmark_suites(runner=runner)</code></strong> directly when entry points are not installed.</li>
+<li>Choose <strong><code>suite_id</code></strong> values to run (static allowlist or <strong><code>runner.suite_ids_for_profile</code></strong>).</li>
+</ol>
+<h3 id="adding-application-specific-suites">Adding application-specific suites</h3>
+<ol>
+<li>Subclass <strong><code>BenchTestSuite</code></strong> from <strong><code>mindtrace.core</code></strong> (or contribute a <strong><code>SuiteContribution</code></strong> for non-class implementations).</li>
+<li>Set:</li>
+<li><strong><code>suite_id</code></strong>: stable, namespaced string (e.g. <strong><code>my_service.orders.write_ceiling</code></strong>).</li>
+<li><strong><code>tags</code></strong>: include <strong><code>smoke</code></strong> and/or <strong><code>stress</code></strong> so <strong><code>runner.suite_ids_for_profile</code></strong> and <strong><code>mindtrace-bench --profile</code></strong> can match.</li>
+<li><strong><code>task_schema</code></strong>: a <strong><code>TaskSchema</code></strong> with Pydantic <strong><code>input_schema</code></strong> / <strong><code>output_schema</code></strong> models. The input model documents accepted benchmark parameters; the output model documents serialized results.</li>
+<li><strong><code>resource_schema</code></strong>: optional Pydantic model for externally supplied resource config.</li>
+<li><strong><code>profiles</code></strong>: <strong><code>MappingProxyType</code></strong> from profile name to <strong><code>duration_seconds</code></strong>, parameters, and optional <strong><code>resources</code></strong>.</li>
+<li>Implement <strong><code>execute_bench(self, config: BenchSuiteConfig, reporter: BenchReporter) -&gt; BenchResult</code></strong>:</li>
+<li>Loop until <strong><code>reporter.deadline(config.duration_seconds)</code></strong>; respect <strong><code>reporter.is_cancelled()</code></strong>.</li>
+<li>Record work via <strong><code>reporter.record_operation(...)</code></strong>.</li>
+<li>Return <strong><code>BenchResult</code></strong> with status, operation counts, and <strong><code>metrics</code></strong>.</li>
+<li>Register with <strong><code>runner.register_test_suite(MySuite)</code></strong>, usually from <strong><code>def register_benchmark_suites(*, runner=None, replace=True): ...</code></strong> in <strong><code>your_package.testing</code></strong>.</li>
+<li>Advertise that hook through <strong><code>[project.entry-points."mindtrace.benchmark_suites"]</code></strong> so <strong><code>mindtrace-bench</code></strong> and applications can discover it automatically.</li>
+</ol>
+<h3 id="example-downstream-project-with-one-custom-suite">Example: downstream project with one custom suite</h3>
+<p>Assume an application package <strong><code>example_app</code></strong> that depends on <strong><code>mindtrace-core</code></strong>. Bench code typically lives beside the app code (layout and names are illustrative):</p>
+<p><strong><code>example_app/testing/benches.py</code></strong> — defines a suite tagged <strong><code>smoke</code></strong> and <strong><code>stress</code></strong> so both short and longer runs resolve from <strong><code>profiles</code></strong>:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># example_app/testing/benches.py</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="kn">from</span><span class="w"> </span><span class="nn">types</span><span class="w"> </span><span class="kn">import</span> <span class="n">MappingProxyType</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pydantic</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseModel</span><span class="p">,</span> <span class="n">Field</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.core</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>    <span class="n">BenchReporter</span><span class="p">,</span>
+</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>    <span class="n">BenchResult</span><span class="p">,</span>
+</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>    <span class="n">BenchResultSchema</span><span class="p">,</span>
+</span><span id="__span-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>    <span class="n">BenchSuiteConfig</span><span class="p">,</span>
+</span><span id="__span-6-14"><a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>    <span class="n">BenchTestSuite</span><span class="p">,</span>
+</span><span id="__span-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>    <span class="n">TaskSchema</span><span class="p">,</span>
+</span><span id="__span-6-16"><a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>    <span class="n">utc_now_iso</span><span class="p">,</span>
+</span><span id="__span-6-17"><a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="p">)</span>
+</span><span id="__span-6-18"><a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>
+</span><span id="__span-6-19"><a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a>
+</span><span id="__span-6-20"><a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="k">class</span><span class="w"> </span><span class="nc">EchoLoopInput</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+</span><span id="__span-6-21"><a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a>    <span class="n">iter_chunk</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="mi">50</span><span class="p">,</span> <span class="n">ge</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Inner loop iterations per recorded operation.&quot;</span><span class="p">)</span>
+</span><span id="__span-6-22"><a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a>
+</span><span id="__span-6-23"><a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a>
+</span><span id="__span-6-24"><a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a><span class="k">class</span><span class="w"> </span><span class="nc">EchoLoopResources</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+</span><span id="__span-6-25"><a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;No external resources are required.&quot;&quot;&quot;</span>
+</span><span id="__span-6-26"><a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a>
+</span><span id="__span-6-27"><a id="__codelineno-6-27" name="__codelineno-6-27" href="#__codelineno-6-27"></a>
+</span><span id="__span-6-28"><a id="__codelineno-6-28" name="__codelineno-6-28" href="#__codelineno-6-28"></a><span class="k">class</span><span class="w"> </span><span class="nc">EchoLoopThroughputSuite</span><span class="p">(</span><span class="n">BenchTestSuite</span><span class="p">):</span>
+</span><span id="__span-6-29"><a id="__codelineno-6-29" name="__codelineno-6-29" href="#__codelineno-6-29"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Replace the inner loop with real work (HTTP, queues, persistence, …).&quot;&quot;&quot;</span>
+</span><span id="__span-6-30"><a id="__codelineno-6-30" name="__codelineno-6-30" href="#__codelineno-6-30"></a>
+</span><span id="__span-6-31"><a id="__codelineno-6-31" name="__codelineno-6-31" href="#__codelineno-6-31"></a>    <span class="n">suite_id</span> <span class="o">=</span> <span class="s2">&quot;example.echo.loop_throughput&quot;</span>
+</span><span id="__span-6-32"><a id="__codelineno-6-32" name="__codelineno-6-32" href="#__codelineno-6-32"></a>    <span class="n">title</span> <span class="o">=</span> <span class="s2">&quot;Example — iterative throughput&quot;</span>
+</span><span id="__span-6-33"><a id="__codelineno-6-33" name="__codelineno-6-33" href="#__codelineno-6-33"></a>    <span class="n">description</span> <span class="o">=</span> <span class="s2">&quot;Measures how often a bounded chunk of work completes within the allotted window.&quot;</span>
+</span><span id="__span-6-34"><a id="__codelineno-6-34" name="__codelineno-6-34" href="#__codelineno-6-34"></a>    <span class="n">tags</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">&quot;smoke&quot;</span><span class="p">,</span> <span class="s2">&quot;stress&quot;</span><span class="p">,</span> <span class="s2">&quot;example&quot;</span><span class="p">})</span>
+</span><span id="__span-6-35"><a id="__codelineno-6-35" name="__codelineno-6-35" href="#__codelineno-6-35"></a>    <span class="n">requires</span> <span class="o">=</span> <span class="p">()</span>
+</span><span id="__span-6-36"><a id="__codelineno-6-36" name="__codelineno-6-36" href="#__codelineno-6-36"></a>    <span class="n">safety</span> <span class="o">=</span> <span class="s2">&quot;Synthetic CPU loop only; trivial load.&quot;</span>
+</span><span id="__span-6-37"><a id="__codelineno-6-37" name="__codelineno-6-37" href="#__codelineno-6-37"></a>    <span class="n">task_schema</span> <span class="o">=</span> <span class="n">TaskSchema</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">suite_id</span><span class="p">,</span> <span class="n">input_schema</span><span class="o">=</span><span class="n">EchoLoopInput</span><span class="p">,</span> <span class="n">output_schema</span><span class="o">=</span><span class="n">BenchResultSchema</span><span class="p">)</span>
+</span><span id="__span-6-38"><a id="__codelineno-6-38" name="__codelineno-6-38" href="#__codelineno-6-38"></a>    <span class="n">resource_schema</span> <span class="o">=</span> <span class="n">EchoLoopResources</span>
+</span><span id="__span-6-39"><a id="__codelineno-6-39" name="__codelineno-6-39" href="#__codelineno-6-39"></a>    <span class="n">profiles</span> <span class="o">=</span> <span class="n">MappingProxyType</span><span class="p">(</span>
+</span><span id="__span-6-40"><a id="__codelineno-6-40" name="__codelineno-6-40" href="#__codelineno-6-40"></a>        <span class="p">{</span>
+</span><span id="__span-6-41"><a id="__codelineno-6-41" name="__codelineno-6-41" href="#__codelineno-6-41"></a>            <span class="s2">&quot;smoke&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;duration_seconds&quot;</span><span class="p">:</span> <span class="mf">0.75</span><span class="p">,</span> <span class="s2">&quot;iter_chunk&quot;</span><span class="p">:</span> <span class="mi">50</span><span class="p">},</span>
+</span><span id="__span-6-42"><a id="__codelineno-6-42" name="__codelineno-6-42" href="#__codelineno-6-42"></a>            <span class="s2">&quot;stress&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;duration_seconds&quot;</span><span class="p">:</span> <span class="mf">5.0</span><span class="p">,</span> <span class="s2">&quot;iter_chunk&quot;</span><span class="p">:</span> <span class="mi">2000</span><span class="p">},</span>
+</span><span id="__span-6-43"><a id="__codelineno-6-43" name="__codelineno-6-43" href="#__codelineno-6-43"></a>        <span class="p">},</span>
+</span><span id="__span-6-44"><a id="__codelineno-6-44" name="__codelineno-6-44" href="#__codelineno-6-44"></a>    <span class="p">)</span>
+</span><span id="__span-6-45"><a id="__codelineno-6-45" name="__codelineno-6-45" href="#__codelineno-6-45"></a>
+</span><span id="__span-6-46"><a id="__codelineno-6-46" name="__codelineno-6-46" href="#__codelineno-6-46"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">execute_bench</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">BenchSuiteConfig</span><span class="p">,</span> <span class="n">reporter</span><span class="p">:</span> <span class="n">BenchReporter</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BenchResult</span><span class="p">:</span>
+</span><span id="__span-6-47"><a id="__codelineno-6-47" name="__codelineno-6-47" href="#__codelineno-6-47"></a>        <span class="n">started</span> <span class="o">=</span> <span class="n">utc_now_iso</span><span class="p">()</span>
+</span><span id="__span-6-48"><a id="__codelineno-6-48" name="__codelineno-6-48" href="#__codelineno-6-48"></a>        <span class="n">monotonic_start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+</span><span id="__span-6-49"><a id="__codelineno-6-49" name="__codelineno-6-49" href="#__codelineno-6-49"></a>        <span class="n">chunk</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;iter_chunk&quot;</span><span class="p">,</span> <span class="mi">100</span><span class="p">))</span>
+</span><span id="__span-6-50"><a id="__codelineno-6-50" name="__codelineno-6-50" href="#__codelineno-6-50"></a>        <span class="n">deadline</span> <span class="o">=</span> <span class="n">reporter</span><span class="o">.</span><span class="n">deadline</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">duration_seconds</span><span class="p">)</span>
+</span><span id="__span-6-51"><a id="__codelineno-6-51" name="__codelineno-6-51" href="#__codelineno-6-51"></a>
+</span><span id="__span-6-52"><a id="__codelineno-6-52" name="__codelineno-6-52" href="#__codelineno-6-52"></a>        <span class="k">while</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">&lt;</span> <span class="n">deadline</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">reporter</span><span class="o">.</span><span class="n">is_cancelled</span><span class="p">():</span>
+</span><span id="__span-6-53"><a id="__codelineno-6-53" name="__codelineno-6-53" href="#__codelineno-6-53"></a>            <span class="n">op_start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+</span><span id="__span-6-54"><a id="__codelineno-6-54" name="__codelineno-6-54" href="#__codelineno-6-54"></a>            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">chunk</span><span class="p">):</span>
+</span><span id="__span-6-55"><a id="__codelineno-6-55" name="__codelineno-6-55" href="#__codelineno-6-55"></a>                <span class="k">pass</span>  <span class="c1"># application work goes here</span>
+</span><span id="__span-6-56"><a id="__codelineno-6-56" name="__codelineno-6-56" href="#__codelineno-6-56"></a>            <span class="n">latency</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">op_start</span>
+</span><span id="__span-6-57"><a id="__codelineno-6-57" name="__codelineno-6-57" href="#__codelineno-6-57"></a>            <span class="n">reporter</span><span class="o">.</span><span class="n">record_operation</span><span class="p">(</span>
+</span><span id="__span-6-58"><a id="__codelineno-6-58" name="__codelineno-6-58" href="#__codelineno-6-58"></a>                <span class="n">success</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="__span-6-59"><a id="__codelineno-6-59" name="__codelineno-6-59" href="#__codelineno-6-59"></a>                <span class="n">latency_seconds</span><span class="o">=</span><span class="n">latency</span><span class="p">,</span>
+</span><span id="__span-6-60"><a id="__codelineno-6-60" name="__codelineno-6-60" href="#__codelineno-6-60"></a>                <span class="n">bytes_processed</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+</span><span id="__span-6-61"><a id="__codelineno-6-61" name="__codelineno-6-61" href="#__codelineno-6-61"></a>                <span class="n">inner_iterations</span><span class="o">=</span><span class="n">chunk</span><span class="p">,</span>
+</span><span id="__span-6-62"><a id="__codelineno-6-62" name="__codelineno-6-62" href="#__codelineno-6-62"></a>            <span class="p">)</span>
+</span><span id="__span-6-63"><a id="__codelineno-6-63" name="__codelineno-6-63" href="#__codelineno-6-63"></a>
+</span><span id="__span-6-64"><a id="__codelineno-6-64" name="__codelineno-6-64" href="#__codelineno-6-64"></a>        <span class="n">elapsed</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">monotonic_start</span>
+</span><span id="__span-6-65"><a id="__codelineno-6-65" name="__codelineno-6-65" href="#__codelineno-6-65"></a>        <span class="k">return</span> <span class="n">BenchResult</span><span class="p">(</span>
+</span><span id="__span-6-66"><a id="__codelineno-6-66" name="__codelineno-6-66" href="#__codelineno-6-66"></a>            <span class="n">suite_id</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">suite_id</span><span class="p">,</span>
+</span><span id="__span-6-67"><a id="__codelineno-6-67" name="__codelineno-6-67" href="#__codelineno-6-67"></a>            <span class="n">status</span><span class="o">=</span><span class="s2">&quot;passed&quot;</span> <span class="k">if</span> <span class="n">reporter</span><span class="o">.</span><span class="n">failures</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="s2">&quot;failed&quot;</span><span class="p">,</span>
+</span><span id="__span-6-68"><a id="__codelineno-6-68" name="__codelineno-6-68" href="#__codelineno-6-68"></a>            <span class="n">started_at</span><span class="o">=</span><span class="n">started</span><span class="p">,</span>
+</span><span id="__span-6-69"><a id="__codelineno-6-69" name="__codelineno-6-69" href="#__codelineno-6-69"></a>            <span class="n">ended_at</span><span class="o">=</span><span class="n">utc_now_iso</span><span class="p">(),</span>
+</span><span id="__span-6-70"><a id="__codelineno-6-70" name="__codelineno-6-70" href="#__codelineno-6-70"></a>            <span class="n">duration_seconds</span><span class="o">=</span><span class="n">elapsed</span><span class="p">,</span>
+</span><span id="__span-6-71"><a id="__codelineno-6-71" name="__codelineno-6-71" href="#__codelineno-6-71"></a>            <span class="n">operations</span><span class="o">=</span><span class="n">reporter</span><span class="o">.</span><span class="n">operations</span><span class="p">,</span>
+</span><span id="__span-6-72"><a id="__codelineno-6-72" name="__codelineno-6-72" href="#__codelineno-6-72"></a>            <span class="n">successes</span><span class="o">=</span><span class="n">reporter</span><span class="o">.</span><span class="n">successes</span><span class="p">,</span>
+</span><span id="__span-6-73"><a id="__codelineno-6-73" name="__codelineno-6-73" href="#__codelineno-6-73"></a>            <span class="n">failures</span><span class="o">=</span><span class="n">reporter</span><span class="o">.</span><span class="n">failures</span><span class="p">,</span>
+</span><span id="__span-6-74"><a id="__codelineno-6-74" name="__codelineno-6-74" href="#__codelineno-6-74"></a>            <span class="n">bytes_processed</span><span class="o">=</span><span class="n">reporter</span><span class="o">.</span><span class="n">bytes_processed</span><span class="p">,</span>
+</span><span id="__span-6-75"><a id="__codelineno-6-75" name="__codelineno-6-75" href="#__codelineno-6-75"></a>            <span class="n">latency_seconds</span><span class="o">=</span><span class="n">reporter</span><span class="o">.</span><span class="n">latency_seconds</span><span class="p">,</span>
+</span><span id="__span-6-76"><a id="__codelineno-6-76" name="__codelineno-6-76" href="#__codelineno-6-76"></a>            <span class="n">error_counts</span><span class="o">=</span><span class="n">reporter</span><span class="o">.</span><span class="n">error_counts</span><span class="p">,</span>
+</span><span id="__span-6-77"><a id="__codelineno-6-77" name="__codelineno-6-77" href="#__codelineno-6-77"></a>            <span class="n">metrics</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">reporter</span><span class="o">.</span><span class="n">metrics</span><span class="p">,</span> <span class="n">iter_chunk</span><span class="o">=</span><span class="n">chunk</span><span class="p">),</span>
+</span><span id="__span-6-78"><a id="__codelineno-6-78" name="__codelineno-6-78" href="#__codelineno-6-78"></a>        <span class="p">)</span>
+</span></code></pre></div>
+<p><strong><code>example_app/testing/__init__.py</code></strong> — expose the benchmark-suite entry point target:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># example_app/testing/__init__.py</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">TestRunner</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">example_app.testing.benches</span><span class="w"> </span><span class="kn">import</span> <span class="n">EchoLoopThroughputSuite</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="k">def</span><span class="w"> </span><span class="nf">register_benchmark_suites</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">runner</span><span class="p">:</span> <span class="n">TestRunner</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">replace</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>    <span class="n">target</span> <span class="o">=</span> <span class="n">runner</span> <span class="ow">or</span> <span class="n">TestRunner</span><span class="o">.</span><span class="n">default</span><span class="p">()</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>    <span class="n">target</span><span class="o">.</span><span class="n">register_test_suite</span><span class="p">(</span><span class="n">EchoLoopThroughputSuite</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="n">replace</span><span class="p">)</span>
+</span></code></pre></div>
+<p><strong>Running it</strong> — create an isolated runner, register your suites and optionally Mindtrace’s, and call <strong><code>runner.run_registered_benches</code></strong> with the suite ID and <strong><code>profile</code></strong>:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># e.g. example_app/bench_run.py or a small __main__.py CLI</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">TestRunner</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">runner</span> <span class="o">=</span> <span class="n">TestRunner</span><span class="p">(</span><span class="n">discover_benchmark_suites</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;example_app&quot;</span><span class="p">})</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="n">bench_results</span><span class="p">,</span> <span class="n">exec_rows</span> <span class="o">=</span> <span class="n">runner</span><span class="o">.</span><span class="n">run_registered_benches</span><span class="p">(</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>    <span class="p">[</span><span class="s2">&quot;example.echo.loop_throughput&quot;</span><span class="p">],</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>    <span class="n">profile</span><span class="o">=</span><span class="s2">&quot;smoke&quot;</span><span class="p">,</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>    <span class="n">run_id</span><span class="o">=</span><span class="s2">&quot;2026-03-09Tbench-local&quot;</span><span class="p">,</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>    <span class="n">resources</span><span class="o">=</span><span class="p">{},</span>  <span class="c1"># e.g. merge API base URLs / DB URIs from your config here</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="p">)</span>
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>
+</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="k">for</span> <span class="n">bench</span> <span class="ow">in</span> <span class="n">bench_results</span><span class="p">:</span>
+</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">bench</span><span class="o">.</span><span class="n">suite_id</span><span class="p">,</span> <span class="n">bench</span><span class="o">.</span><span class="n">status</span><span class="p">,</span> <span class="n">bench</span><span class="o">.</span><span class="n">to_dict</span><span class="p">())</span>
+</span><span id="__span-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a>
+</span><span id="__span-8-16"><a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="k">assert</span> <span class="nb">all</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">status</span> <span class="o">==</span> <span class="s2">&quot;passed&quot;</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">exec_rows</span><span class="p">)</span>
+</span></code></pre></div>
+<p>To list only your <strong><code>example.</code></strong> suites among those tagged <strong><code>stress</code></strong>:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nb">print</span><span class="p">([</span><span class="n">sid</span> <span class="k">for</span> <span class="n">sid</span> <span class="ow">in</span> <span class="n">runner</span><span class="o">.</span><span class="n">suite_ids_for_profile</span><span class="p">(</span><span class="s2">&quot;stress&quot;</span><span class="p">)</span> <span class="k">if</span> <span class="n">sid</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;example.&quot;</span><span class="p">)])</span>
+</span></code></pre></div>
+<hr />
+<h3 id="entry-point-for-operators-and-ci">Entry point for operators and CI</h3>
+<p>For most packages, declaring the entry point is enough for <strong><code>mindtrace-bench</code></strong>. For example:</p>
+<div class="language-toml highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="k">[project.entry-points.</span><span class="s2">&quot;mindtrace.benchmark_suites&quot;</span><span class="k">]</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="n">example_app</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;example_app.testing:register_benchmark_suites&quot;</span>
+</span></code></pre></div>
+<p>Ship a custom CLI only when you need application-specific resource loading, authorization, or reporting. Keep CI non-interactive with fixed suite lists or tag-based discovery.</p>
+<h3 id="resources-and-configuration">Resources and configuration</h3>
+<p>Pass secrets and service endpoints via your normal config layer; at bench time merge them into <strong><code>runner.run_registered_benches(..., resources={...})</code></strong> so <strong><code>build_bench_suite_config</code></strong> can unify Mindtrace defaults with overrides. Document which <strong><code>resources</code></strong> keys your suites consume.</p>
+<h3 id="recommended-tagging">Recommended tagging</h3>
+<table>
+<thead>
+<tr>
+<th>Tag</th>
+<th>Typical use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code>smoke</code></strong></td>
+<td>Short wiring checks; minimal infrastructure; suited to PR gates.</td>
+</tr>
+<tr>
+<td><strong><code>stress</code></strong></td>
+<td>Longer throughput workloads; may need real backends or fuller stacks.</td>
+</tr>
+</tbody>
+</table>
+<p>Domain-specific tags (<strong><code>billing</code></strong>, <strong><code>api</code></strong>, …) reserve room for finer filtering if listing APIs evolve.</p>
+<h2 id="mindtrace-maintainers-backlog-for-downstream-ergonomics">Mindtrace maintainers: backlog for downstream ergonomics</h2>
+<p>Checklist toward stronger third‑party integration:</p>
+<h3 id="documentation-and-api-contract">Documentation and API contract</h3>
+<ul>
+<li>[ ] Treat <strong><code>mindtrace.core.testing</code></strong>’s <strong><code>TestRunner.run_registered_benches</code></strong>, <strong><code>BenchTestSuite</code></strong>, and <strong><code>BenchResult</code></strong> as explicitly versioned <strong>public surface</strong> where stability is promised.</li>
+<li>[ ] Document <strong><code>resources</code></strong> keys read by first-party <strong><code>BenchTestSuite</code></strong> implementations (Mongo, MinIO, GCS, …).</li>
+<li>[ ] Publish <strong><code>suite_id</code> naming</strong> guidance to reduce collisions across teams and packages.</li>
+</ul>
+<h3 id="cli">CLI</h3>
+<ul>
+<li>[ ] Repeatable <strong><code>--suite &lt;id&gt;</code></strong> and optional multi-tag filters once <strong><code>TestRunner.list_suite_ids</code></strong> supports them.</li>
+<li>[ ] Machine-readable listing (JSON) for CI matrix generation.</li>
+</ul>
+<h3 id="registration-and-safety">Registration and safety</h3>
+<ul>
+<li>[ ] Document when to use isolated <strong><code>TestRunner()</code></strong> instances vs the global default runner and idempotent <strong><code>register_benchmark_suites(replace=False)</code></strong>.</li>
+<li>[ ] Clarify whether <strong><code>requires</code></strong> is advisory, validated, or enforced; align implementation with docs.</li>
+</ul>
+<h3 id="observability">Observability</h3>
+<ul>
+<li>[ ] Optional hooks or patterns for writing <strong><code>BenchResult</code></strong> / <strong><code>SuiteExecutionResult</code></strong> to structured artifacts (JSON) under a stable directory layout.</li>
+<li>[ ] Logging field contract: <strong><code>run_id</code></strong>, <strong><code>suite_id</code></strong>, profile, counts, durations, failures.</li>
+</ul>
+<h3 id="tests-and-packaging">Tests and packaging</h3>
+<ul>
+<li>[ ] Contract tests that register a synthetic third-party <strong><code>BenchTestSuite</code></strong> next to Mindtrace benches and run <strong><code>runner.run_registered_benches</code></strong> after refactors.</li>
+<li>[ ] Document optional extras for backends (S3, GCS, …) needed for specific benches.</li>
+<li>[ ] Decide whether <strong><code>mindtrace-bench</code></strong> stays in <strong><code>mindtrace-core</code></strong> if optional dependencies grow.</li>
+</ul>
+<hr />
+<h2 id="quick-reference">Quick reference</h2>
+<table>
+<thead>
+<tr>
+<th>Goal</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Run installed benches</td>
+<td><code>runner = TestRunner(discover_benchmark_suites=True)</code> → <strong><code>runner.run_registered_benches(...)</code></strong></td>
+</tr>
+<tr>
+<td>Add custom benches</td>
+<td>Subclass <strong><code>BenchTestSuite</code></strong>, expose <strong><code>register_benchmark_suites</code></strong>, declare a <strong><code>mindtrace.benchmark_suites</code></strong> entry point</td>
+</tr>
+<tr>
+<td>CI / ops</td>
+<td>Thin app CLI; pass <strong><code>resources</code></strong> from environment / config</td>
+</tr>
+</tbody>
+</table>
+<p>For high-level context, see the <strong>Stress / benchmark plugins</strong> section in <strong><a href="../">README.md</a></strong> (this file is the detailed reference).</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2025 Mindtrace
+    </div>
+  
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.linkedin.com/company/mindtrace-ai" target="_blank" rel="noopener" title="www.linkedin.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3M135.4 416H69V202.2h66.5V416zM102.2 96a38.5 38.5 0 1 1 0 77 38.5 38.5 0 1 1 0-77m282.1 320h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9z"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.footer", "navigation.top", "navigation.expand", "navigation.tabs.sticky", "search.suggest", "search.highlight", "search.share"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
