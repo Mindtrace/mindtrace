@@ -46,6 +46,7 @@ from mindtrace.datalake.service_types import (
     GetAssetByAliasInput,
     GetByIdInput,
     GetDatasetVersionInput,
+    GetObjectInput,
     ListAnnotationRecordsForAssetInput,
     ListInput,
     ObjectDataOutput,
@@ -193,6 +194,54 @@ async def test_datalake_service_async_backend_get_object_rejects_kwargs():
 
     with pytest.raises(TypeError, match="does not support extra kwargs"):
         await backend.get_object(ref, foo=1)
+
+
+@pytest.mark.asyncio
+async def test_datalake_service_async_backend_get_asset_payload_uses_payload_storage_ref():
+    payload_ref = StorageRef(mount="payloads", name="n", version="2")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="catalog", name="n", version="1"),
+        payload_storage_ref=payload_ref,
+        asset_id="a1",
+    )
+    cm = Mock()
+    cm.aassets_get = AsyncMock(return_value=AssetOutput(asset=asset))
+    cm.aobjects_get = AsyncMock(
+        return_value=ObjectDataOutput(storage_ref=payload_ref, data_base64=base64.b64encode(b"xyz").decode("ascii"))
+    )
+
+    backend = DatalakeServiceAsyncDataVaultBackend(cm)
+    assert await backend.get_asset_payload("a1") == b"xyz"
+    obj_input = cm.aobjects_get.await_args.args[0]
+    assert isinstance(obj_input, GetObjectInput)
+    assert obj_input.storage_ref == payload_ref
+
+
+@pytest.mark.asyncio
+async def test_datalake_service_async_backend_get_asset_payload_rejects_missing_payload_status():
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="catalog", name="n", version="1"),
+        payload_status="missing",
+        asset_id="a1",
+    )
+    cm = Mock()
+    cm.aassets_get = AsyncMock(return_value=AssetOutput(asset=asset))
+
+    backend = DatalakeServiceAsyncDataVaultBackend(cm)
+    with pytest.raises(FileNotFoundError, match="payload is not available"):
+        await backend.get_asset_payload("a1")
+
+
+@pytest.mark.asyncio
+async def test_datalake_service_async_backend_get_asset_payload_rejects_kwargs():
+    backend = DatalakeServiceAsyncDataVaultBackend(Mock())
+
+    with pytest.raises(TypeError, match="does not support extra kwargs"):
+        await backend.get_asset_payload("a1", mmap=True)
 
 
 @pytest.mark.asyncio
@@ -346,6 +395,51 @@ def test_datalake_service_sync_backend_get_object_rejects_kwargs():
 
     with pytest.raises(TypeError, match="does not support extra kwargs"):
         backend.get_object(ref, version_hint="latest")
+
+
+def test_datalake_service_sync_backend_get_asset_payload_uses_payload_storage_ref():
+    payload_ref = StorageRef(mount="payloads", name="n", version="2")
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="catalog", name="n", version="1"),
+        payload_storage_ref=payload_ref,
+        asset_id="a1",
+    )
+    cm = Mock()
+    cm.assets_get = Mock(return_value=AssetOutput(asset=asset))
+    cm.objects_get = Mock(
+        return_value=ObjectDataOutput(storage_ref=payload_ref, data_base64=base64.b64encode(b"hi").decode("ascii"))
+    )
+
+    backend = DatalakeServiceDataVaultBackend(cm)
+    assert backend.get_asset_payload("a1") == b"hi"
+    obj_input = cm.objects_get.call_args.args[0]
+    assert isinstance(obj_input, GetObjectInput)
+    assert obj_input.storage_ref == payload_ref
+
+
+def test_datalake_service_sync_backend_get_asset_payload_rejects_missing_payload_status():
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="catalog", name="n", version="1"),
+        payload_status="missing",
+        asset_id="a1",
+    )
+    cm = Mock()
+    cm.assets_get = Mock(return_value=AssetOutput(asset=asset))
+
+    backend = DatalakeServiceDataVaultBackend(cm)
+    with pytest.raises(FileNotFoundError, match="payload is not available"):
+        backend.get_asset_payload("a1")
+
+
+def test_datalake_service_sync_backend_get_asset_payload_rejects_kwargs():
+    backend = DatalakeServiceDataVaultBackend(Mock())
+
+    with pytest.raises(TypeError, match="does not support extra kwargs"):
+        backend.get_asset_payload("a1", mmap=True)
 
 
 def test_datalake_service_sync_backend_create_and_add_alias():
@@ -583,11 +677,24 @@ async def test_local_async_backend_delegates_list_and_get_asset():
     dl = AsyncMock()
     dl.list_assets = AsyncMock(return_value=[asset])
     dl.get_asset = AsyncMock(return_value=asset)
+    dl.get_asset_payload = AsyncMock(return_value=b"payload")
     backend = LocalAsyncDataVaultBackend(dl)
     assert await backend.list_assets() == [asset]
     dl.list_assets.assert_awaited_once_with(None)
     assert await backend.get_asset("a1") is asset
     dl.get_asset.assert_awaited_once_with("a1")
+    assert await backend.get_asset_payload("a1") == b"payload"
+    dl.get_asset_payload.assert_awaited_once_with("a1")
+
+
+@pytest.mark.asyncio
+async def test_local_async_backend_get_object_forwards_optional_kwargs():
+    ref = StorageRef(mount="m", name="n", version="1")
+    dl = AsyncMock()
+    dl.get_object = AsyncMock(return_value=b"blob")
+    backend = LocalAsyncDataVaultBackend(dl)
+    assert await backend.get_object(ref, mmap=True) == b"blob"
+    dl.get_object.assert_awaited_once_with(ref, mmap=True)
 
 
 @pytest.mark.asyncio
@@ -630,11 +737,23 @@ def test_local_sync_backend_delegates_list_and_get_asset():
     dl = Mock()
     dl.list_assets = Mock(return_value=[asset])
     dl.get_asset = Mock(return_value=asset)
+    dl.get_asset_payload = Mock(return_value=b"payload")
     backend = LocalDataVaultBackend(dl)
     assert backend.list_assets() == [asset]
     dl.list_assets.assert_called_once_with(None)
     assert backend.get_asset("a1") is asset
     dl.get_asset.assert_called_once_with("a1")
+    assert backend.get_asset_payload("a1") == b"payload"
+    dl.get_asset_payload.assert_called_once_with("a1")
+
+
+def test_local_sync_backend_get_object_forwards_optional_kwargs():
+    ref = StorageRef(mount="m", name="n", version="1")
+    dl = Mock()
+    dl.get_object = Mock(return_value=b"blob")
+    backend = LocalDataVaultBackend(dl)
+    assert backend.get_object(ref, version_hint="latest") == b"blob"
+    dl.get_object.assert_called_once_with(ref, version_hint="latest")
 
 
 def test_local_sync_backend_delegates_page_and_iterator_methods():

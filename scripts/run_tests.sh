@@ -101,29 +101,29 @@ fi
 # If specific paths are provided, run just those paths and exit
 if [ ${#SPECIFIC_PATHS[@]} -gt 0 ]; then
     echo "Running tests for specific paths: ${SPECIFIC_PATHS[*]}"
-    
+
     # Start docker containers if any integration tests are included
     if [ "$NEEDS_DOCKER" = true ]; then
         echo "Starting docker containers for integration tests..."
         . scripts/docker_up.sh
     fi
-    
+
     # Clear any existing coverage data
     coverage erase
-    
+
     # Run pytest on the specific paths with coverage
     # Use --rootdir to ensure tests/conftest.py fixtures are discoverable
     echo "Running: coverage run --rcfile=\"$COVERAGE_CONFIG\" --parallel-mode -m pytest -rs -W ignore::DeprecationWarning --rootdir=\"$PROJECT_ROOT\" ${PYTEST_ARGS[*]} ${SPECIFIC_PATHS[*]}"
     run_pytest_with_coverage -rs -W ignore::DeprecationWarning --rootdir="$PROJECT_ROOT" "${PYTEST_ARGS[@]}" "${SPECIFIC_PATHS[@]}"
     EXIT_CODE=$?
     finalize_coverage
-    
+
     # Stop docker containers if they were started
     if [ "$NEEDS_DOCKER" = true ]; then
         echo "Stopping docker containers..."
         $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
     fi
-    
+
     echo "Exiting with code: $EXIT_CODE"
     exit $EXIT_CODE
 fi
@@ -247,37 +247,37 @@ fi
 # Run stress tests if requested
 if [ "$RUN_STRESS" = true ]; then
     echo "Running stress tests from mindtrace directory for proper imports..."
-    
+
     # Get absolute path for stress tests
     PROJECT_ROOT=$(pwd)
     STRESS_TEST_PATH="$PROJECT_ROOT/tests/stress"
-    
+
     # For stress tests, use coverage only if other tests are also running
     if [ "$RUN_UNIT" = true ] || [ "$RUN_INTEGRATION" = true ]; then
         # Copy coverage data to mindtrace directory for proper combining
         if [ -f .coverage ]; then
             cp .coverage mindtrace/
         fi
-        
+
         cd mindtrace
-        
+
         # Include coverage to combine with other test results
         coverage run --rcfile="$COVERAGE_CONFIG" --parallel-mode -m pytest -rs -s --rootdir="$PROJECT_ROOT" -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" "$STRESS_TEST_PATH"
-        
+
         # Copy the combined coverage data back to project root
         if [ -f .coverage ]; then
             cp .coverage ../
         fi
     else
         cd mindtrace
-        
+
         # Stress tests only - skip coverage for performance testing
         pytest -rs -s --rootdir="$PROJECT_ROOT" -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" "$STRESS_TEST_PATH"
     fi
-    
+
     STRESS_EXIT_CODE=$?
     cd ..
-    
+
     if [ $STRESS_EXIT_CODE -ne 0 ]; then
         echo "Stress tests failed. Stopping test execution."
         OVERALL_EXIT_CODE=1
@@ -302,4 +302,4 @@ if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER"
 fi
 
 # Exit with overall status
-exit $OVERALL_EXIT_CODE 
+exit $OVERALL_EXIT_CODE

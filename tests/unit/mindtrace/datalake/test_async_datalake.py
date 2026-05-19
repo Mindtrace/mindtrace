@@ -1,11 +1,21 @@
 import asyncio
 import json
+import threading
+import time
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from datalake_unit_mongo_uri import DATALAKE_UNIT_MONGO_URI
+from export_test_utils import (
+    png_bytes as export_fixture_png_bytes,
+)
+from export_test_utils import (
+    resolved_dataset_version as export_fixture_resolved_dataset_version,
+)
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake import AsyncDatalake
@@ -30,12 +40,14 @@ from mindtrace.datalake.types import (
     AnnotationSchema,
     AnnotationSet,
     Asset,
+    AssetAlias,
     AssetRetention,
     Collection,
     CollectionItem,
     DatasetVersion,
     Datum,
     DirectUploadSession,
+    DuplicateAliasError,
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
@@ -81,89 +93,9 @@ class TestAsyncDatalakeUnit:
         assert path.parent == Path("~/.cache/mindtrace/temp").expanduser()
         assert path.name.startswith("datalake-")
 
-    @pytest.fixture(autouse=True)
-    def _mock_motor_client(self):
-        """Stub ``AsyncIOMotorClient`` so AsyncDatalake's shared client never tries to talk to a real Mongo."""
-        with patch("mindtrace.datalake.async_datalake.AsyncIOMotorClient") as mock_cls:
-            mock_cls.return_value = MagicMock()
-            yield mock_cls
-
-    @pytest.fixture
-    def mock_odm(self):
-        mock = AsyncMock()
-        mock.initialize = AsyncMock()
-        mock.insert = AsyncMock(side_effect=lambda obj: obj)
-        mock.find = AsyncMock(return_value=[])
-        mock.find_iter = AsyncMock()
-        mock.find_window = AsyncMock(return_value=[])
-        mock.count_documents = AsyncMock(return_value=0)
-        mock.update = AsyncMock(side_effect=lambda obj: obj)
-        mock.delete = AsyncMock()
-        mock.close = MagicMock()
-        return mock
-
-    @pytest.fixture
-    def mock_store(self):
-        store = MagicMock()
-        store.default_mount = "temp"
-        store.list_mount_info.return_value = {
-            "temp": {
-                "read_only": False,
-                "backend": "file:///tmp/mindtrace-store-test",
-                "version_objects": False,
-                "mutable": True,
-                "version_digits": 6,
-            },
-            "nas": {
-                "read_only": False,
-                "backend": "file:///tmp/mindtrace-nas",
-                "version_objects": False,
-                "mutable": True,
-                "version_digits": 6,
-            },
-            "archive": {
-                "read_only": False,
-                "backend": "file:///tmp/mindtrace-archive",
-                "version_objects": False,
-                "mutable": True,
-                "version_digits": 6,
-            },
-        }
-        store.has_mount.side_effect = lambda mount: mount in store.list_mount_info.return_value
-        store.list_mounts.side_effect = lambda: sorted(store.list_mount_info.return_value.keys())
-        store.build_key.side_effect = lambda mount, name, version=None: (
-            f"{mount}/{name}" if version is None else f"{mount}/{name}@{version}"
-        )
-        store.save.return_value = "v1"
-        store.copy.return_value = "v2"
-        store.load.return_value = b"payload"
-        store.info.return_value = {"size": 123}
-        store.has_object.return_value = True
-        store.create_direct_upload_target.return_value = {
-            "upload_method": "local_path",
-            "upload_url": None,
-            "upload_path": "/tmp/direct-upload/data.txt",
-            "upload_headers": {},
-            "staged_target": {"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
-        }
-        store.inspect_direct_upload_target.return_value = {"exists": True, "size_bytes": 7}
-        store.commit_direct_upload.return_value = "v5"
-        store.cleanup_direct_upload_target.return_value = True
-        return store
-
-    @pytest.fixture
-    def async_datalake(self, mock_odm, mock_store):
-        with patch("mindtrace.datalake.async_datalake.MongoMindtraceODM", return_value=mock_odm):
-            return AsyncDatalake(
-                "mongodb://test:27017",
-                "test_db",
-                store=mock_store,
-                slow_ops_policy=SlowOpsPolicy.ALLOW,
-            )
-
     def test_init_raises_when_store_and_mounts_both_provided(self, mock_store):
         with pytest.raises(ValueError, match="Provide either store or mounts, not both"):
-            AsyncDatalake("mongodb://test:27017", "test_db", store=mock_store, mounts=[MagicMock()])
+            AsyncDatalake(DATALAKE_UNIT_MONGO_URI, "test_db", store=mock_store, mounts=[MagicMock()])
 
     def test_init_builds_store_from_mounts(self, mock_odm):
         fake_store = MagicMock()
@@ -171,7 +103,7 @@ class TestAsyncDatalakeUnit:
             patch("mindtrace.datalake.async_datalake.MongoMindtraceODM", return_value=mock_odm),
             patch("mindtrace.datalake.async_datalake.Store.from_mounts", return_value=fake_store) as from_mounts,
         ):
-            datalake = AsyncDatalake("mongodb://test:27017", "test_db", mounts=[MagicMock()], default_mount="nas")
+            datalake = AsyncDatalake(DATALAKE_UNIT_MONGO_URI, "test_db", mounts=[MagicMock()], default_mount="nas")
         assert datalake.store == fake_store
         from_mounts.assert_called_once()
 
@@ -185,9 +117,9 @@ class TestAsyncDatalakeUnit:
             ) as default_path,
             patch("mindtrace.datalake.async_datalake.Store.from_mounts", return_value=fake_store) as from_mounts,
         ):
-            datalake = AsyncDatalake("mongodb://test:27017", "test_db", default_mount="nas")
+            datalake = AsyncDatalake(DATALAKE_UNIT_MONGO_URI, "test_db", default_mount="nas")
         assert datalake.store == fake_store
-        default_path.assert_called_once_with("mongodb://test:27017", "test_db")
+        default_path.assert_called_once_with(DATALAKE_UNIT_MONGO_URI, "test_db")
         fake_path.mkdir.assert_called_once_with(parents=True, exist_ok=True)
         from_mounts.assert_called_once()
         mounts = from_mounts.call_args.args[0]
@@ -197,39 +129,79 @@ class TestAsyncDatalakeUnit:
 
     @pytest.mark.asyncio
     async def test_initialize_initializes_all_odms(self, async_datalake, mock_odm):
+        expected_inits = len(async_datalake._all_odms())
         await async_datalake.initialize()
-        assert mock_odm.initialize.await_count == 11
+        assert mock_odm.initialize.await_count == expected_inits
 
     @pytest.mark.asyncio
     async def test_create_classmethod_initializes_instance(self, mock_odm, mock_store):
-        with patch("mindtrace.datalake.async_datalake.MongoMindtraceODM", return_value=mock_odm):
-            created = await AsyncDatalake.create("mongodb://test:27017", "test_db", store=mock_store)
+        created = await AsyncDatalake.create(DATALAKE_UNIT_MONGO_URI, "test_db", store=mock_store)
         assert isinstance(created, AsyncDatalake)
         assert created.store == mock_store
-        assert mock_odm.initialize.await_count == 11
+        assert mock_odm.initialize.await_count == len(created._all_odms())
+
+    @pytest.mark.asyncio
+    async def test_wipe_requires_payload_or_metadata_deletion(self, async_datalake):
+        with pytest.raises(ValueError, match="delete_payloads and/or delete_metadata"):
+            await async_datalake.wipe(delete_payloads=False, delete_metadata=False)
+
+    @pytest.mark.asyncio
+    async def test_wipe_clears_mounts_and_drops_database(self, async_datalake, mock_odm, mock_store):
+        result = await async_datalake.wipe(clear_registry_metadata=True)
+        wipe_odm_count = len(async_datalake._all_odms())
+
+        assert result == {
+            "database": "test_db",
+            "deleted_payloads": True,
+            "deleted_metadata": True,
+            "clear_registry_metadata": True,
+            "cleared_mounts": ["archive", "nas", "temp"],
+        }
+        for mount_name in ["archive", "nas", "temp"]:
+            mock_store.get_mount(mount_name).registry.clear.assert_called_once_with(clear_registry_metadata=True)
+        mock_store.clear_location_cache.assert_called_once_with()
+        mock_odm.client.drop_database.assert_awaited_once_with("test_db")
+        assert mock_odm.initialize.await_count == wipe_odm_count
+        assert mock_odm._is_initialized is True
+
+    @pytest.mark.asyncio
+    async def test_wipe_can_leave_payloads_intact(self, async_datalake, mock_odm, mock_store):
+        result = await async_datalake.wipe(delete_payloads=False, delete_metadata=True)
+
+        assert result["cleared_mounts"] == []
+        mock_store.get_mount.assert_not_called()
+        mock_store.clear_location_cache.assert_not_called()
+        mock_odm.client.drop_database.assert_awaited_once_with("test_db")
+        assert mock_odm.initialize.await_count == len(async_datalake._all_odms())
+
+    @pytest.mark.asyncio
+    async def test_wipe_can_leave_metadata_intact(self, async_datalake, mock_odm, mock_store):
+        result = await async_datalake.wipe(delete_payloads=True, delete_metadata=False)
+
+        assert result["cleared_mounts"] == ["archive", "nas", "temp"]
+        mock_odm.client.drop_database.assert_not_awaited()
+        assert mock_odm.initialize.await_count == 0
+        mock_store.clear_location_cache.assert_called_once_with()
 
     def test_init_defaults_slow_ops_policy_to_warn(self, mock_odm, mock_store):
-        with patch("mindtrace.datalake.async_datalake.MongoMindtraceODM", return_value=mock_odm):
-            datalake = AsyncDatalake("mongodb://test:27017", "test_db", store=mock_store)
+        datalake = AsyncDatalake(DATALAKE_UNIT_MONGO_URI, "test_db", store=mock_store)
 
         assert datalake.slow_ops_policy == SlowOpsPolicy.WARN
 
     @pytest.mark.asyncio
     async def test_guard_slow_list_operation_warns_or_forbids(self, mock_odm, mock_store):
-        with patch("mindtrace.datalake.async_datalake.MongoMindtraceODM", return_value=mock_odm):
-            warn_datalake = AsyncDatalake(
-                "mongodb://test:27017",
-                "test_db",
-                store=mock_store,
-                slow_ops_policy=SlowOpsPolicy.WARN,
-            )
-            forbid_datalake = AsyncDatalake(
-                "mongodb://test:27017",
-                "test_db",
-                store=mock_store,
-                slow_ops_policy=SlowOpsPolicy.FORBID,
-            )
-
+        warn_datalake = AsyncDatalake(
+            DATALAKE_UNIT_MONGO_URI,
+            "test_db",
+            store=mock_store,
+            slow_ops_policy=SlowOpsPolicy.WARN,
+        )
+        forbid_datalake = AsyncDatalake(
+            DATALAKE_UNIT_MONGO_URI,
+            "test_db",
+            store=mock_store,
+            slow_ops_policy=SlowOpsPolicy.FORBID,
+        )
         with pytest.warns(SlowOperationWarning, match="list_assets\\(\\).*iter_assets\\(\\) or list_assets_page\\(\\)"):
             assert await warn_datalake.list_assets() == []
 
@@ -938,6 +910,41 @@ class TestAsyncDatalakeUnit:
         assert payload == b"payload"
         assert info == {"size": 123}
         assert copied.version == "v2"
+
+    @pytest.mark.asyncio
+    async def test_put_object_offloads_store_save_and_allows_concurrent_writes(self, async_datalake, mock_store):
+        active = 0
+        max_active = 0
+        lock = threading.Lock()
+        two_saves_active = threading.Event()
+
+        def save_side_effect(*args, **kwargs):
+            nonlocal active, max_active
+            with lock:
+                active += 1
+                max_active = max(max_active, active)
+                if active >= 2:
+                    two_saves_active.set()
+            try:
+                two_saves_active.wait(timeout=1.0)
+                time.sleep(0.01)
+                return "v1"
+            finally:
+                with lock:
+                    active -= 1
+
+        mock_store.save.side_effect = save_side_effect
+
+        refs = await asyncio.wait_for(
+            asyncio.gather(
+                async_datalake.put_object(name="images/cat-1.jpg", obj=b"bytes", mount="nas"),
+                async_datalake.put_object(name="images/cat-2.jpg", obj=b"bytes", mount="nas"),
+            ),
+            timeout=2.0,
+        )
+
+        assert [ref.version for ref in refs] == ["v1", "v1"]
+        assert max_active == 2
 
     @pytest.mark.asyncio
     async def test_object_exists_raises_when_mount_unknown(self, async_datalake):
@@ -2534,6 +2541,140 @@ class TestAsyncDatalakeUnit:
         assert out[1].subject == explicit
 
     @pytest.mark.asyncio
+    async def test_close_swallows_errors_from_odm_close_and_motor_client_close(
+        self, async_datalake, mock_odm, _mock_motor_client
+    ):
+        shared_client = async_datalake._mongo_client
+        mock_odm.close.side_effect = RuntimeError("odm close failed")
+        shared_client.close.side_effect = RuntimeError("motor client close failed")
+
+        await async_datalake.close()
+
+        assert mock_odm.close.call_count == len(async_datalake._all_odms())
+        shared_client.close.assert_called_once()
+        assert async_datalake._closed is True
+
+    @pytest.mark.asyncio
+    async def test_get_asset_payload_raises_when_payload_not_present(self, async_datalake, mock_odm):
+        bad_asset = Asset(
+            asset_id="a_uploading",
+            kind="image",
+            media_type="image/png",
+            storage_ref=StorageRef(mount="temp", name="x.png", version="v1"),
+            payload_status="uploading",
+        )
+
+        async def find_side_effect(query=None):
+            if (query or {}).get("asset_id") == "a_uploading":
+                return [bad_asset]
+            return []
+
+        mock_odm.find = AsyncMock(side_effect=find_side_effect)
+        with pytest.raises(FileNotFoundError, match="payload is not available"):
+            await async_datalake.get_asset_payload("a_uploading")
+
+    @pytest.mark.asyncio
+    async def test_get_asset_payload_marks_corrupt_and_re_raises_on_read_failure(
+        self, async_datalake, mock_odm, mock_store
+    ):
+        live_asset = Asset(
+            asset_id="a_live",
+            kind="image",
+            media_type="image/png",
+            storage_ref=StorageRef(mount="temp", name="obj.bin", version="v1"),
+            payload_status="present",
+        )
+
+        async def find_side_effect(query=None):
+            if (query or {}).get("asset_id") == "a_live":
+                return [live_asset]
+            return []
+
+        mock_odm.find = AsyncMock(side_effect=find_side_effect)
+        mock_store.load.side_effect = OSError("read failed")
+
+        with pytest.raises(OSError, match="read failed"):
+            await async_datalake.get_asset_payload("a_live")
+
+        assert live_asset.payload_status == "corrupt"
+        assert live_asset.payload_status_reason is not None
+        mock_odm.update.assert_awaited_once_with(live_asset)
+
+    @pytest.mark.asyncio
+    async def test_delete_object_normalizes_storage_ref_and_deletes_via_store(self, async_datalake, mock_store):
+        ref = StorageRef(mount="temp", name="junk.dat", version="v3")
+        await async_datalake.delete_object(ref)
+        mock_store.build_key.assert_called_once_with("temp", "junk.dat", "v3")
+        mock_store.delete.assert_called_once_with("temp/junk.dat@v3", None)
+
+    @pytest.mark.asyncio
+    async def test_ensure_primary_asset_aliases_empty_returns_empty_list(self, async_datalake):
+        assert await async_datalake.ensure_primary_asset_aliases([]) == []
+
+    @pytest.mark.asyncio
+    async def test_ensure_primary_asset_aliases_inserts_missing_only(self, async_datalake, mock_odm):
+        row_a = AssetAlias(alias="asset_a", asset_id="asset_a", is_primary=True)
+        inserted_b = AssetAlias(alias="asset_b", asset_id="asset_b", is_primary=True)
+
+        async def find_side_effect(query=None):
+            alias_filter = (query or {}).get("alias")
+            if isinstance(alias_filter, dict) and "$in" in alias_filter:
+                aliases = alias_filter["$in"]
+                out: list[AssetAlias] = []
+                if "asset_a" in aliases:
+                    out.append(row_a)
+                return out
+            return []
+
+        mock_odm.find = AsyncMock(side_effect=find_side_effect)
+        mock_odm.insert_many = AsyncMock(return_value=[inserted_b])
+
+        asset_a = Asset(
+            asset_id="asset_a",
+            kind="image",
+            media_type="image/png",
+            storage_ref=StorageRef(mount="temp", name="a.png", version="v1"),
+        )
+        asset_b = Asset(
+            asset_id="asset_b",
+            kind="image",
+            media_type="image/png",
+            storage_ref=StorageRef(mount="temp", name="b.png", version="v1"),
+        )
+
+        aliases = await async_datalake.ensure_primary_asset_aliases([asset_a, asset_b])
+
+        mock_odm.insert_many.assert_awaited_once()
+        call = mock_odm.insert_many.await_args
+        docs = call.args[0]
+        assert call.kwargs.get("ordered") is False
+        assert len(docs) == 1
+        assert docs[0].alias == "asset_b"
+
+        assert aliases == [row_a, inserted_b]
+
+    @pytest.mark.asyncio
+    async def test_ensure_primary_asset_aliases_raises_when_alias_maps_elsewhere(self, async_datalake, mock_odm):
+        row_conflict = AssetAlias(alias="asset_a", asset_id="OTHER", is_primary=True)
+
+        async def find_side_effect(query=None):
+            alias_filter = (query or {}).get("alias")
+            if isinstance(alias_filter, dict) and "$in" in alias_filter:
+                return [row_conflict]
+            return []
+
+        mock_odm.find = AsyncMock(side_effect=find_side_effect)
+        asset_a = Asset(
+            asset_id="asset_a",
+            kind="image",
+            media_type="image/png",
+            storage_ref=StorageRef(mount="temp", name="a.png", version="v1"),
+        )
+
+        with pytest.raises(DuplicateAliasError, match="already mapped"):
+            await async_datalake.ensure_primary_asset_aliases([asset_a])
+
+    @pytest.mark.asyncio
     async def test_close_releases_shared_motor_client_exactly_once(self, async_datalake, mock_odm, _mock_motor_client):
         """AsyncDatalake closes its owning motor client once, regardless of ODM count."""
         shared_client = async_datalake._mongo_client
@@ -2542,7 +2683,7 @@ class TestAsyncDatalakeUnit:
         await async_datalake.close()
         shared_client.close.assert_called_once()
         # Every ODM got close() called (idempotent; they don't own the shared client)
-        assert mock_odm.close.call_count == 11
+        assert mock_odm.close.call_count == len(async_datalake._all_odms())
 
         # Idempotent: a second close() is a no-op
         await async_datalake.close()
@@ -2551,7 +2692,260 @@ class TestAsyncDatalakeUnit:
     @pytest.mark.asyncio
     async def test_async_context_manager_closes_on_exit(self, mock_odm, mock_store, _mock_motor_client):
         """`async with AsyncDatalake(...)` closes on exit."""
-        with patch("mindtrace.datalake.async_datalake.MongoMindtraceODM", return_value=mock_odm):
-            async with AsyncDatalake("mongodb://test:27017", "test_db", store=mock_store) as dl:
-                shared_client = dl._mongo_client
+        async with AsyncDatalake(DATALAKE_UNIT_MONGO_URI, "test_db", store=mock_store) as dl:
+            shared_client = dl._mongo_client
         shared_client.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_export_dataset_version_to_format_writes_coco(self, tmp_path: Path):
+        resolved_dataset_version_mock = export_fixture_resolved_dataset_version()
+        fake_datalake = SimpleNamespace(
+            resolve_dataset_version=AsyncMock(return_value=resolved_dataset_version_mock),
+            get_asset_payload=AsyncMock(return_value=export_fixture_png_bytes()),
+        )
+
+        result = await AsyncDatalake.export_dataset_version_to_format(
+            fake_datalake,
+            "dataset-a",
+            "1.0.0",
+            format="coco",
+            destination=tmp_path / "coco",
+        )
+
+        assert result.format == "coco"
+        assert (tmp_path / "coco" / "annotations" / "train.json").exists()
+        fake_datalake.resolve_dataset_version.assert_awaited_once_with("dataset-a", "1.0.0")
+
+
+def _alias_fixture_make_store():
+    store = MagicMock()
+    store.default_mount = "temp"
+    store.list_mount_info.return_value = {"temp": {"backend": "file:///tmp", "mutable": True}}
+    store.build_key.side_effect = lambda mount, name, version=None: (
+        f"{mount}/{name}" if version is None else f"{mount}/{name}@{version}"
+    )
+    store.save.return_value = "v1"
+    store.load.return_value = b"x"
+    return store
+
+
+def _alias_fixture_asset(aid: str = "asset_one") -> Asset:
+    return Asset.model_construct(
+        asset_id=aid,
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="temp", name="o", version="1"),
+    )
+
+
+def _alias_fixture_row(alias: str, asset_id: str, *, is_primary: bool = False) -> AssetAlias:
+    return AssetAlias.model_construct(
+        alias_id="alias_id_1",
+        alias=alias,
+        asset_id=asset_id,
+        is_primary=is_primary,
+        created_at=datetime.now(timezone.utc),
+    )
+
+
+@pytest.fixture
+def alias_datalake_fixture():
+    asset_db = AsyncMock()
+    asset_db.initialize = AsyncMock()
+    asset_db.insert = AsyncMock(side_effect=lambda obj: obj)
+    asset_db.find = AsyncMock(return_value=[])
+    asset_db.update = AsyncMock(side_effect=lambda obj: obj)
+    asset_db.delete = AsyncMock()
+
+    alias_db = AsyncMock()
+    alias_db.initialize = AsyncMock()
+    alias_db.insert = AsyncMock(side_effect=lambda obj: obj)
+    alias_db.find = AsyncMock(return_value=[])
+    alias_db.delete = AsyncMock()
+
+    generic = AsyncMock()
+    generic.initialize = AsyncMock()
+    generic.insert = AsyncMock(side_effect=lambda obj: obj)
+    generic.find = AsyncMock(return_value=[])
+    generic.update = AsyncMock(side_effect=lambda obj: obj)
+    generic.delete = AsyncMock()
+
+    def mongo_odm(*args, **kwargs):
+        model_cls = kwargs.get("model_cls")
+        if model_cls is Asset:
+            return asset_db
+        if model_cls is AssetAlias:
+            return alias_db
+        return generic
+
+    store = _alias_fixture_make_store()
+    with patch("mindtrace.datalake.async_datalake.MongoMindtraceODM", side_effect=mongo_odm):
+        dl = AsyncDatalake(DATALAKE_UNIT_MONGO_URI, "test_db", store=store)
+        yield dl, asset_db, alias_db
+
+
+class TestAsyncDatalakeRowLevelAliases:
+    @pytest.mark.asyncio
+    async def test_ensure_primary_returns_existing_matching_row(self, alias_datalake_fixture):
+        dl, _asset_db, alias_db = alias_datalake_fixture
+        asset = _alias_fixture_asset("same")
+        existing = _alias_fixture_row("same", "same", is_primary=True)
+        alias_db.find.return_value = [existing]
+
+        out = await dl.ensure_primary_asset_alias(asset)
+
+        assert out is existing
+        alias_db.insert.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_ensure_primary_raises_when_alias_maps_elsewhere(self, alias_datalake_fixture):
+        dl, _asset_db, alias_db = alias_datalake_fixture
+        asset = _alias_fixture_asset("wanted")
+        wrong = _alias_fixture_row("wanted", "other_id", is_primary=True)
+        alias_db.find.return_value = [wrong]
+
+        with pytest.raises(DuplicateAliasError, match="other_id"):
+            await dl.ensure_primary_asset_alias(asset)
+
+    @pytest.mark.asyncio
+    async def test_ensure_primary_inserts_when_missing(self, alias_datalake_fixture):
+        dl, _asset_db, alias_db = alias_datalake_fixture
+        asset = _alias_fixture_asset("new_a")
+        alias_db.find.return_value = []
+
+        await dl.ensure_primary_asset_alias(asset)
+
+        alias_db.insert.assert_awaited_once()
+        inserted = alias_db.insert.await_args.args[0]
+        assert inserted.alias == "new_a"
+        assert inserted.asset_id == "new_a"
+        assert inserted.is_primary is True
+
+    @pytest.mark.asyncio
+    async def test_resolve_alias_not_found(self, alias_datalake_fixture):
+        dl, _, alias_db = alias_datalake_fixture
+        alias_db.find.return_value = []
+
+        with pytest.raises(DocumentNotFoundError, match="nick"):
+            await dl.resolve_alias("nick")
+
+    @pytest.mark.asyncio
+    async def test_resolve_alias_returns_asset_id(self, alias_datalake_fixture):
+        dl, _, alias_db = alias_datalake_fixture
+        alias_db.find.return_value = [_alias_fixture_row("nick", "real_id", is_primary=False)]
+
+        assert await dl.resolve_alias("nick") == "real_id"
+
+    @pytest.mark.asyncio
+    async def test_add_alias_delegates_to_ensure_when_alias_equals_asset_id(self, alias_datalake_fixture):
+        dl, asset_db, alias_db = alias_datalake_fixture
+        asset = _alias_fixture_asset("same")
+        asset_db.find.return_value = [asset]
+        alias_db.find.return_value = []
+
+        await dl.add_alias("same", "same")
+
+        alias_db.insert.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_add_alias_returns_existing_same_target(self, alias_datalake_fixture):
+        dl, asset_db, alias_db = alias_datalake_fixture
+        asset = _alias_fixture_asset("aid")
+        asset_db.find.return_value = [asset]
+        row = _alias_fixture_row("nick", "aid", is_primary=False)
+        alias_db.find.return_value = [row]
+
+        out = await dl.add_alias("aid", "nick")
+
+        assert out is row
+        alias_db.insert.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_add_alias_conflict_when_alias_taken(self, alias_datalake_fixture):
+        dl, asset_db, alias_db = alias_datalake_fixture
+        asset_db.find.return_value = [_alias_fixture_asset("mine")]
+        alias_db.find.return_value = [_alias_fixture_row("nick", "other", is_primary=False)]
+
+        with pytest.raises(DuplicateAliasError, match="other"):
+            await dl.add_alias("mine", "nick")
+
+    @pytest.mark.asyncio
+    async def test_add_alias_inserts_new_row(self, alias_datalake_fixture):
+        dl, asset_db, alias_db = alias_datalake_fixture
+        asset_db.find.return_value = [_alias_fixture_asset("mine")]
+        alias_db.find.return_value = []
+
+        await dl.add_alias("mine", "nick")
+
+        alias_db.insert.assert_awaited_once()
+        ins = alias_db.insert.await_args.args[0]
+        assert ins.alias == "nick"
+        assert ins.asset_id == "mine"
+        assert ins.is_primary is False
+
+    @pytest.mark.asyncio
+    async def test_add_alias_wraps_duplicate_insert(self, alias_datalake_fixture):
+        dl, asset_db, alias_db = alias_datalake_fixture
+        asset_db.find.return_value = [_alias_fixture_asset("mine")]
+        alias_db.find.return_value = []
+        alias_db.insert = AsyncMock(side_effect=DuplicateInsertError("dup"))
+
+        with pytest.raises(DuplicateAliasError, match="already exists"):
+            await dl.add_alias("mine", "nick")
+
+    @pytest.mark.asyncio
+    async def test_remove_alias_not_found(self, alias_datalake_fixture):
+        dl, _, alias_db = alias_datalake_fixture
+        alias_db.find.return_value = []
+
+        with pytest.raises(DocumentNotFoundError):
+            await dl.remove_alias("missing")
+
+    @pytest.mark.asyncio
+    async def test_remove_alias_refuses_primary(self, alias_datalake_fixture):
+        dl, _, alias_db = alias_datalake_fixture
+        row = _alias_fixture_row("aid", "aid", is_primary=True)
+        alias_db.find.return_value = [row]
+
+        with pytest.raises(ValueError, match="primary alias"):
+            await dl.remove_alias("aid")
+
+    @pytest.mark.asyncio
+    async def test_remove_alias_deletes_secondary(self, alias_datalake_fixture):
+        dl, _, alias_db = alias_datalake_fixture
+        row = _alias_fixture_row("nick", "aid", is_primary=False)
+        row.id = "oid123"
+        alias_db.find.return_value = [row]
+
+        await dl.remove_alias("nick")
+
+        alias_db.delete.assert_awaited_once_with("oid123")
+
+    @pytest.mark.asyncio
+    async def test_list_aliases_for_asset(self, alias_datalake_fixture):
+        dl, _, alias_db = alias_datalake_fixture
+        alias_db.find.return_value = [
+            _alias_fixture_row("a", "x", is_primary=True),
+            _alias_fixture_row("b", "x", is_primary=False),
+        ]
+
+        assert await dl.list_aliases_for_asset("x") == ["a", "b"]
+
+    @pytest.mark.asyncio
+    async def test_get_asset_by_alias(self, alias_datalake_fixture):
+        dl, asset_db, alias_db = alias_datalake_fixture
+        asset = _alias_fixture_asset("target")
+        alias_db.find.return_value = [_alias_fixture_row("nick", "target", is_primary=False)]
+        asset_db.find.return_value = [asset]
+
+        out = await dl.get_asset_by_alias("nick")
+
+        assert out.asset_id == "target"
+
+    @pytest.mark.asyncio
+    async def test_get_asset_by_alias_propagates_resolve_failure(self, alias_datalake_fixture):
+        dl, _, alias_db = alias_datalake_fixture
+        alias_db.find.return_value = []
+
+        with pytest.raises(DocumentNotFoundError):
+            await dl.get_asset_by_alias("none")

@@ -33,7 +33,6 @@ from mindtrace.datalake.replication_types import (
     ReplicationReclaimRequest,
     ReplicationReconcileRequest,
 )
-from mindtrace.registry import StoreLocationNotFound
 from tests.integration.mindtrace.datalake.conftest import MONGO_URL, MONGO_URL_SECONDARY
 
 _MOUNT_MAP_LOCAL_TO_MINIO = {"local": "minio"}
@@ -87,7 +86,7 @@ async def _drain_pending_payloads(
 ) -> None:
     for _ in range(max_rounds):
         st = await manager.status()
-        pending = st.asset_counts_by_payload_status.get("pending", 0)
+        still_missing = st.asset_counts_by_payload_status.get("missing", 0)
         if st.failed_asset_ids:
             details: list[str] = []
             for aid in st.failed_asset_ids[:5]:
@@ -97,7 +96,7 @@ async def _drain_pending_payloads(
             raise AssertionError(
                 f"Payload hydration failed for assets {st.failed_asset_ids!r}; samples: {'; '.join(details)}"
             )
-        if pending == 0:
+        if still_missing == 0:
             return
         await manager.reconcile_pending_payloads(ReplicationReconcileRequest(mount_map=mount_map))
         await asyncio.sleep(0.05)
@@ -114,7 +113,7 @@ async def _assert_target_bytes_match_source(
     for aid in asset_ids:
         src_asset = await source.get_asset(aid)
         tgt_asset = await target.get_asset(aid)
-        assert ReplicationManager.get_payload_status(tgt_asset) == "verified"
+        assert ReplicationManager.get_payload_status(tgt_asset) == "present"
         src_bytes = await source.get_object(src_asset.storage_ref)
         tgt_bytes = await target.get_object(tgt_asset.storage_ref)
         assert src_bytes == tgt_bytes, f"byte mismatch for asset {aid}"
@@ -139,7 +138,7 @@ async def _replicate_asset_to_verified(
     await manager.reconcile_pending_payloads(ReplicationReconcileRequest(mount_map=_MOUNT_MAP_LOCAL_TO_MINIO))
     await _drain_pending_payloads(manager, _MOUNT_MAP_LOCAL_TO_MINIO)
     target_asset = await target.get_asset(asset.asset_id)
-    assert ReplicationManager.get_payload_status(target_asset) == "verified"
+    assert ReplicationManager.get_payload_status(target_asset) == "present"
     return asset, target_asset
 
 
@@ -231,7 +230,7 @@ async def test_replication_concurrent_hydration_gather_local_to_minio(
     )
 
     st0 = await manager.status()
-    assert st0.asset_counts_by_payload_status.get("pending", 0) == len(assets)
+    assert st0.asset_counts_by_payload_status.get("missing", 0) == len(assets)
 
     await asyncio.gather(
         *[manager.hydrate_asset_payload(a.asset_id, mount_map=_MOUNT_MAP_LOCAL_TO_MINIO) for a in assets]
@@ -268,7 +267,7 @@ async def test_replication_reupsert_preserves_verified_payload_state(
     )
 
     refreshed_target_asset = await target.get_asset(asset.asset_id)
-    assert ReplicationManager.get_payload_status(refreshed_target_asset) == "verified"
+    assert ReplicationManager.get_payload_status(refreshed_target_asset) == "present"
     assert ReplicationManager.is_payload_available(refreshed_target_asset) is True
     assert refreshed_target_asset.storage_ref == verified_storage_ref
     assert await target.get_object(refreshed_target_asset.storage_ref) == verified_bytes
@@ -327,7 +326,7 @@ async def test_replication_mark_local_delete_eligible_requires_verified_target_p
     )
 
     target_asset = await target.get_asset(asset.asset_id)
-    assert ReplicationManager.get_payload_status(target_asset) == "pending"
+    assert ReplicationManager.get_payload_status(target_asset) == "missing"
 
     with pytest.raises(RuntimeError, match="not delete-eligible until target payload is verified"):
         await manager.mark_local_delete_eligible(asset.asset_id)
@@ -364,14 +363,14 @@ async def test_replication_reclaim_verified_payloads_tombstones_source_and_keeps
     assert reclaim_result.failed_asset_ids == []
 
     source_asset = await source.get_asset(asset.asset_id)
-    assert source_asset.storage_ref == LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF
+    assert source_asset.payload_storage_ref == LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF
     assert ReplicationManager.is_local_deleted(source_asset) is True
 
-    with pytest.raises(StoreLocationNotFound):
-        await source.get_object(source_asset.storage_ref)
+    with pytest.raises(FileNotFoundError):
+        await source.get_asset_payload(asset.asset_id)
 
     target_asset = await target.get_asset(asset.asset_id)
-    assert ReplicationManager.get_payload_status(target_asset) == "verified"
+    assert ReplicationManager.get_payload_status(target_asset) == "present"
     target_bytes = await target.get_object(target_asset.storage_ref)
     assert target_bytes == source_bytes
 
@@ -406,6 +405,6 @@ async def test_replication_reclaim_is_idempotent_after_source_tombstoned(
     assert second.skipped_asset_ids == [asset.asset_id]
 
     source_asset = await source.get_asset(asset.asset_id)
-    assert source_asset.storage_ref == LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF
+    assert source_asset.payload_storage_ref == LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF
     assert ReplicationManager.is_local_deleted(source_asset) is True
     assert await target.get_object(target_asset.storage_ref) == target_bytes

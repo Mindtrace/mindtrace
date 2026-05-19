@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import logging
 import mimetypes
+import time
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -11,6 +13,8 @@ from urllib import request as urllib_request
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake.async_datalake import AsyncDatalake
+from mindtrace.datalake.blocking_payload_io import mkdir_and_write_bytes
+from mindtrace.datalake.replication import ReplicationManager
 from mindtrace.datalake.sync_types import (
     DatasetSyncBundle,
     DatasetSyncCommitResult,
@@ -28,7 +32,16 @@ from mindtrace.datalake.types import (
     DatasetVersion,
     Datum,
     StorageRef,
+    utc_now,
 )
+
+
+def _blocking_presigned_put(req: urllib_request.Request) -> None:
+    """Synchronous presigned PUT using :mod:`urllib.request` (run via :func:`asyncio.to_thread`)."""
+    with urllib_request.urlopen(req) as response:
+        if response.status >= 400:
+            raise RuntimeError(f"Presigned upload failed with status {response.status}")
+
 
 _METADATA_ONLY_CROSS_LAKE = (
     "transfer_policy='metadata_only' is only supported when source and target are the same AsyncDatalake instance. "
@@ -66,8 +79,63 @@ def _head_object_size_bytes(meta: dict[str, Any]) -> int | None:
     return None
 
 
+def _head_object_checksum(meta: dict[str, Any]) -> str | None:
+    for key in ("checksum", "sha256", "etag", "ETag"):
+        val = meta.get(key)
+        if isinstance(val, str) and val:
+            return val.strip('"')
+    metadata = meta.get("metadata")
+    if isinstance(metadata, dict):
+        for key in ("checksum", "sha256", "etag", "ETag"):
+            val = metadata.get(key)
+            if isinstance(val, str) and val:
+                return val.strip('"')
+    return None
+
+
 def _chunked[T](items: Sequence[T], size: int) -> list[Sequence[T]]:
     return [items[index : index + size] for index in range(0, len(items), size)]
+
+
+def _chunk_count(total_items: int, chunk_size: int) -> int:
+    return max((total_items + chunk_size - 1) // chunk_size, 1) if total_items else 0
+
+
+def _commit_import_phase_item_count(bundle: DatasetSyncBundle) -> int:
+    """Units for granular ``committing`` progress: each bundle row examined plus dataset version."""
+
+    return (
+        len(bundle.annotation_schemas)
+        + len(bundle.assets)
+        + len(bundle.annotation_records)
+        + len(bundle.annotation_sets)
+        + len(bundle.datums)
+        + 1
+    )
+
+
+def _commit_import_should_emit_commit_progress(
+    *,
+    force: bool,
+    commit_done: int,
+    commit_phase_total: int,
+    seconds_since_last_emit: float,
+    commit_progress_every_items: int,
+    commit_progress_every_seconds: float,
+) -> bool:
+    """Throttle ``commit_import`` granular progress emits (covers fast paths + divisors + timers)."""
+
+    if force:
+        return True
+    if commit_done == 0:
+        return True
+    if commit_done == commit_phase_total:
+        return True
+    if commit_progress_every_items and commit_done % commit_progress_every_items == 0:
+        return True
+    if seconds_since_last_emit >= commit_progress_every_seconds:
+        return True
+    return False
 
 
 def collect_bundle_mount_names(bundle: DatasetSyncBundle) -> set[str]:
@@ -103,6 +171,17 @@ def validate_cross_lake_target_mount_resolution(
                 "Map bundle mounts to mounts that exist on the target datalake; unmapped mounts pass through "
                 "when source and mount names match on both sides."
             )
+
+
+FAST_SYNC_PROGRESS_PHASES = (
+    "importing_schemas",
+    "importing_assets",
+    "importing_annotation_records",
+    "importing_annotation_sets",
+    "importing_datums",
+    "finalizing_graph",
+    "hydrating_payloads",
+)
 
 
 class DatasetSyncManager:
@@ -158,12 +237,16 @@ class DatasetSyncManager:
         payloads = [
             ObjectPayloadDescriptor(
                 asset_id=asset.asset_id,
-                storage_ref=asset.storage_ref,
+                storage_ref=asset.payload_storage_ref or asset.storage_ref,
                 media_type=asset.media_type,
-                size_bytes=asset.size_bytes,
-                checksum=asset.checksum,
+                size_bytes=asset.payload_size_bytes if asset.payload_size_bytes is not None else asset.size_bytes,
+                checksum=asset.payload_checksum if asset.payload_checksum is not None else asset.checksum,
                 content_type=asset.media_type,
-                metadata=dict(asset.metadata or {}),
+                metadata={
+                    **dict(asset.metadata or {}),
+                    "payload_status": asset.payload_status,
+                    "payload_status_reason": asset.payload_status_reason,
+                },
             )
             for asset in assets.values()
         ]
@@ -194,16 +277,24 @@ class DatasetSyncManager:
 
         bundle = request.bundle
         mount_map = request.mount_map
-        if self.source is not self.target:
-            validate_cross_lake_target_mount_resolution(self.target, bundle, mount_map)
+        validate_cross_lake_target_mount_resolution(self.target, bundle, mount_map)
+        greenfield_skip = (
+            request.transfer_policy == "copy_if_missing"
+            and request.greenfield_skip_target_object_probes
+            and await self._get_existing_dataset_version(
+                bundle.dataset_version.dataset_name, bundle.dataset_version.version
+            )
+            is None
+        )
         payload_plans: list[DatasetSyncPayloadPlan] = []
 
         payloads = bundle.payloads
         total_payloads = len(payloads)
+        total_payload_bytes = sum(payload.size_bytes or 0 for payload in payloads)
+        planned_payload_bytes = 0
         batches = _chunked(payloads, request.planning_batch_size)
         total_batches = len(batches)
         semaphore = asyncio.Semaphore(request.planning_concurrency)
-
         for batch_index, batch in enumerate(batches, start=1):
             batch_start = (batch_index - 1) * request.planning_batch_size
             _logger.info(
@@ -220,6 +311,8 @@ class DatasetSyncManager:
                         transfer_policy=request.transfer_policy,
                         mount_map=mount_map,
                         semaphore=semaphore,
+                        skip_target_probe=greenfield_skip,
+                        match_policy=request.target_object_match_policy,
                     )
                     for payload in batch
                 ]
@@ -227,6 +320,7 @@ class DatasetSyncManager:
             payload_plans.extend(batch_plans)
 
             completed_items = min(batch_index * request.planning_batch_size, total_payloads)
+            planned_payload_bytes += sum(payload.size_bytes or 0 for payload in batch)
             progress = DatasetSyncProgress(
                 phase="planning",
                 batch_index=batch_index,
@@ -234,6 +328,8 @@ class DatasetSyncManager:
                 completed_items=completed_items,
                 total_items=total_payloads,
                 message=f"Planning import batch {batch_index}/{total_batches}",
+                bytes_completed=planned_payload_bytes,
+                bytes_total=total_payload_bytes,
             )
             _logger.info(
                 "%s: checked %s/%s payloads",
@@ -245,12 +341,30 @@ class DatasetSyncManager:
 
         missing_payload_count = sum(1 for plan in payload_plans if not plan.target_exists)
         transfer_required_count = sum(1 for plan in payload_plans if plan.transfer_required)
+        transfer_required_bytes = sum(
+            payload.size_bytes or 0
+            for payload, row in zip(payloads, payload_plans, strict=True)
+            if row.transfer_required
+        )
+        embedded_blocked = False
+        if self.source is self.target:
+            for payload, row in zip(payloads, payload_plans, strict=True):
+                if row.transfer_required:
+                    target_mount = _apply_mount_map_to_storage_ref(payload.storage_ref, mount_map).mount
+                    if not self.target.store.has_mount(target_mount):
+                        embedded_blocked = True
+                        break
+        if request.target_metadata_commit:
+            # Phase A: caller will stage bytes; target must not be gated on reading bundle source mount names.
+            embedded_blocked = False
         if request.transfer_policy == "metadata_only":
             ready_to_commit = True
         elif request.transfer_policy == "fail_if_missing_payload":
             ready_to_commit = missing_payload_count == 0
         else:
             ready_to_commit = True
+        if embedded_blocked:
+            ready_to_commit = False
 
         return DatasetSyncImportPlan(
             dataset_name=bundle.dataset_version.dataset_name,
@@ -260,7 +374,19 @@ class DatasetSyncManager:
             missing_payload_count=missing_payload_count,
             transfer_required_count=transfer_required_count,
             ready_to_commit=ready_to_commit,
+            total_payload_bytes=total_payload_bytes,
+            transfer_required_bytes=transfer_required_bytes,
         )
+
+    @staticmethod
+    def _staged_covers_required_transfers(
+        plan: DatasetSyncImportPlan,
+        staged: dict[str, StorageRef],
+    ) -> bool:
+        for row in plan.payloads:
+            if row.transfer_required and row.asset_id not in staged:
+                return False
+        return True
 
     async def _plan_payload(
         self,
@@ -269,7 +395,10 @@ class DatasetSyncManager:
         transfer_policy: str,
         mount_map: dict[str, str],
         semaphore: asyncio.Semaphore,
+        skip_target_probe: bool = False,
+        match_policy: str = "exists",
     ) -> DatasetSyncPayloadPlan:
+        del semaphore, skip_target_probe, match_policy
         target_storage_ref = _apply_mount_map_to_storage_ref(payload.storage_ref, mount_map)
         if transfer_policy == "copy":
             return DatasetSyncPayloadPlan(
@@ -281,18 +410,45 @@ class DatasetSyncManager:
                 reason="policy_copy",
             )
 
-        async with semaphore:
-            target_exists = await self.target.object_exists(target_storage_ref)
+        target_asset = await self._get_existing_asset(payload.asset_id)
+        payload_checksum = payload.checksum
+        payload_size = payload.size_bytes
+        status = getattr(target_asset, "payload_status", None) if target_asset is not None else None
+        target_payload_ref = None
+        if target_asset is not None:
+            target_payload_ref = target_asset.payload_storage_ref or target_asset.storage_ref
+
+        db_says_present = (
+            target_asset is not None
+            and status == "present"
+            and (
+                payload_checksum is None
+                or target_asset.payload_checksum == payload_checksum
+                or target_asset.checksum == payload_checksum
+            )
+            and (
+                payload_size is None
+                or target_asset.payload_size_bytes == payload_size
+                or target_asset.size_bytes == payload_size
+            )
+            and target_payload_ref is not None
+            and _storage_refs_equivalent(target_payload_ref, target_storage_ref)
+        )
 
         if transfer_policy == "copy_if_missing":
-            transfer_required = not target_exists
-            reason = "missing_on_target" if transfer_required else "already_present"
+            transfer_required = not db_says_present
+            if target_asset is None:
+                reason = "missing_asset_in_db"
+            elif db_says_present:
+                reason = "db_payload_present"
+            else:
+                reason = f"db_payload_status_{status or 'unknown'}"
         elif transfer_policy == "metadata_only":
             transfer_required = False
             reason = "metadata_only"
         elif transfer_policy == "fail_if_missing_payload":
             transfer_required = False
-            reason = "already_present" if target_exists else "missing_payload"
+            reason = "db_payload_present" if db_says_present else "missing_payload"
         else:
             raise ValueError(f"Unsupported transfer policy: {transfer_policy}")
 
@@ -300,10 +456,16 @@ class DatasetSyncManager:
             asset_id=payload.asset_id,
             source_storage_ref=payload.storage_ref,
             target_storage_ref=target_storage_ref,
-            target_exists=target_exists,
+            target_exists=db_says_present,
             transfer_required=transfer_required,
             reason=reason,
         )
+
+    async def _get_existing_asset(self, asset_id: str) -> Asset | None:
+        try:
+            return await self.target.get_asset(asset_id)
+        except DocumentNotFoundError:
+            return None
 
     @staticmethod
     async def _emit_progress(
@@ -344,10 +506,43 @@ class DatasetSyncManager:
         progress_callback: ProgressCallback | None = None,
     ) -> DatasetSyncCommitResult:
         plan = await self.plan_import(request, progress_callback=progress_callback)
+        if request.metadata_first:
+            if self.source is self.target:
+                raise ValueError("metadata_first=True requires distinct source and target AsyncDatalake instances.")
+            if request.staged_payload_storage_refs is not None:
+                raise ValueError(
+                    "metadata_first cannot be combined with staged_payload_storage_refs on the same request."
+                )
+        if request.target_metadata_commit:
+            if self.source is not self.target:
+                raise ValueError(
+                    "target_metadata_commit=True commits pending payloads on one lake only "
+                    "(source and target AsyncDatalake instances must be the same)."
+                )
+            if request.staged_payload_storage_refs is not None:
+                raise ValueError(
+                    "target_metadata_commit cannot be combined with staged_payload_storage_refs on the same request."
+                )
+        staged = request.staged_payload_storage_refs
+        if staged is not None and not request.metadata_first and not request.target_metadata_commit:
+            if not self._staged_covers_required_transfers(plan, staged):
+                raise ValueError(
+                    "staged_payload_storage_refs must include a StorageRef for every import-plan payload with "
+                    "transfer_required=True."
+                )
+
         if not plan.ready_to_commit:
-            raise ValueError(
-                f"Import plan for {plan.dataset_name}@{plan.version} is not ready to commit under policy {plan.transfer_policy}"
-            )
+            if request.transfer_policy == "fail_if_missing_payload":
+                raise ValueError(
+                    f"Import plan for {plan.dataset_name}@{plan.version} is not ready to commit under policy "
+                    f"{plan.transfer_policy}"
+                )
+            if staged is None:
+                raise ValueError(
+                    "Import plan is not ready to commit without caller-staged payload bytes. Use "
+                    "dataset_versions.import_session_start, import_session_upload_payload, and "
+                    "import_session_commit when this datalake cannot read the bundle's original StorageRef mounts."
+                )
 
         bundle = request.bundle
         origin_lake_id = request.origin_lake_id or self.source.mongo_db_name
@@ -355,146 +550,410 @@ class DatasetSyncManager:
         payload_by_asset_id = {payload.asset_id: payload for payload in bundle.payloads}
         plan_by_asset_id = {plan.asset_id: plan for plan in plan.payloads}
 
+        replication_manager: ReplicationManager | None = None
+        if request.metadata_first:
+            replication_manager = ReplicationManager(self.source, self.target)
+        elif request.target_metadata_commit:
+            replication_manager = ReplicationManager(self.target)
+
+        defer_inline_transfers = request.metadata_first or request.target_metadata_commit
+
         resolved_storage_refs, transferred_payloads, skipped_payloads = await self._resolve_payload_transfers(
             bundle.assets,
             payload_by_asset_id=payload_by_asset_id,
             plan_by_asset_id=plan_by_asset_id,
             request=request,
             progress_callback=progress_callback,
+            defer_inline_transfers=defer_inline_transfers,
         )
+
+        commit_phase_total = _commit_import_phase_item_count(bundle)
+        commit_done = 0
+        last_commit_progress_mono = 0.0
 
         await self._emit_progress(
             progress_callback,
             DatasetSyncProgress(
                 phase="committing",
                 completed_items=0,
-                total_items=1,
-                message="Committing dataset import metadata",
+                total_items=commit_phase_total,
+                message="Preparing metadata import",
+                entity_kind="metadata",
+                entity_completed_items=0,
+                entity_total_items=commit_phase_total,
+                phase_detail="metadata",
+                batch_index=0,
+                total_batches=0,
             ),
         )
-
-        created_annotation_schemas = 0
-        for schema in bundle.annotation_schemas:
-            if await self._annotation_schema_exists(schema.annotation_schema_id):
-                continue
-            created = AnnotationSchema.model_validate(
-                {
-                    **schema.model_dump(),
-                    "metadata": self._merge_origin_metadata(
-                        schema.metadata,
-                        lake_id=origin_lake_id,
-                        bundle=bundle,
-                        entity_id=schema.annotation_schema_id,
-                        annotation_schema_id=schema.annotation_schema_id,
-                    ),
-                }
-            )
-            await self.target.annotation_schema_database.insert(created)
-            created_annotation_schemas += 1
-
-        created_assets = 0
-        for asset in bundle.assets:
-            storage_ref = _apply_mount_map_to_storage_ref(
-                resolved_storage_refs.get(asset.asset_id, asset.storage_ref),
-                mount_map,
-            )
-            created = Asset.model_validate(
-                {
-                    **asset.model_dump(),
-                    "storage_ref": storage_ref.model_dump(),
-                    "metadata": self._merge_origin_metadata(
-                        asset.metadata,
-                        lake_id=origin_lake_id,
-                        bundle=bundle,
-                        entity_id=asset.asset_id,
-                        asset_id=asset.asset_id,
-                    ),
-                }
-            )
-            if self.source is self.target:
-                if await self._asset_exists(asset.asset_id):
-                    continue
-                await self.target.asset_database.insert(created)
-                await self.target.ensure_primary_asset_alias(created)
-                created_assets += 1
-                continue
-
-            if await self._asset_exists(asset.asset_id):
-                existing = await self.target.get_asset(asset.asset_id)
-                if _storage_refs_equivalent(existing.storage_ref, created.storage_ref):
-                    continue
-                await self._refresh_target_asset_for_cross_lake_import(created)
-                continue
-
-            try:
-                await self.target.asset_database.insert(created)
-                await self.target.ensure_primary_asset_alias(created)
-                created_assets += 1
-            except DuplicateInsertError:
-                await self._refresh_target_asset_for_cross_lake_import(created)
-
-        created_annotation_records = 0
-        for record in bundle.annotation_records:
-            if await self._annotation_record_exists(record.annotation_id):
-                continue
-            created = AnnotationRecord.model_validate(
-                {
-                    **record.model_dump(),
-                    "metadata": self._merge_origin_metadata(
-                        record.metadata,
-                        lake_id=origin_lake_id,
-                        bundle=bundle,
-                        entity_id=record.annotation_id,
-                        annotation_id=record.annotation_id,
-                    ),
-                }
-            )
-            await self.target.annotation_record_database.insert(created)
-            created_annotation_records += 1
-
-        created_annotation_sets = 0
-        for annotation_set in bundle.annotation_sets:
-            if await self._annotation_set_exists(annotation_set.annotation_set_id):
-                continue
-            created = AnnotationSet.model_validate(
-                {
-                    **annotation_set.model_dump(),
-                    "metadata": self._merge_origin_metadata(
-                        annotation_set.metadata,
-                        lake_id=origin_lake_id,
-                        bundle=bundle,
-                        entity_id=annotation_set.annotation_set_id,
-                        annotation_set_id=annotation_set.annotation_set_id,
-                    ),
-                }
-            )
-            await self.target.annotation_set_database.insert(created)
-            created_annotation_sets += 1
-
-        created_datums = 0
-        for datum in bundle.datums:
-            if await self._datum_exists(datum.datum_id):
-                continue
-            mapped_asset_refs = {role: asset_id for role, asset_id in datum.asset_refs.items()}
-            created = Datum.model_validate(
-                {
-                    **datum.model_dump(),
-                    "asset_refs": mapped_asset_refs,
-                    "metadata": self._merge_origin_metadata(
-                        datum.metadata,
-                        lake_id=origin_lake_id,
-                        bundle=bundle,
-                        entity_id=datum.datum_id,
-                        datum_id=datum.datum_id,
-                    ),
-                }
-            )
-            await self.target.datum_database.insert(created)
-            created_datums += 1
 
         existing_dataset_version = await self._get_existing_dataset_version(
             bundle.dataset_version.dataset_name, bundle.dataset_version.version
         )
+        greenfield_metadata = request.greenfield_skip_target_metadata_probes and existing_dataset_version is None
+        existing_annotation_schema_ids = await self._prefetch_existing_annotation_schema_ids(
+            [schema.annotation_schema_id for schema in bundle.annotation_schemas],
+            skip_lookup=greenfield_metadata,
+        )
+        existing_asset_ids = await self._prefetch_existing_asset_ids(
+            [asset.asset_id for asset in bundle.assets],
+            skip_lookup=greenfield_metadata,
+        )
+        existing_annotation_record_ids = await self._prefetch_existing_annotation_record_ids(
+            [record.annotation_id for record in bundle.annotation_records],
+            skip_lookup=greenfield_metadata,
+        )
+        existing_annotation_set_ids = await self._prefetch_existing_annotation_set_ids(
+            [annotation_set.annotation_set_id for annotation_set in bundle.annotation_sets],
+            skip_lookup=greenfield_metadata,
+        )
+        existing_datum_ids = await self._prefetch_existing_datum_ids(
+            [datum.datum_id for datum in bundle.datums],
+            skip_lookup=greenfield_metadata,
+        )
+
+        async def emit_commit_progress(
+            *,
+            entity_kind: str,
+            message: str,
+            entity_completed_items: int,
+            entity_total_items: int,
+            batch_index: int = 0,
+            total_batches: int = 0,
+            force: bool = False,
+        ) -> None:
+            nonlocal last_commit_progress_mono
+            now_mono = time.monotonic()
+            if not _commit_import_should_emit_commit_progress(
+                force=force,
+                commit_done=commit_done,
+                commit_phase_total=commit_phase_total,
+                seconds_since_last_emit=now_mono - last_commit_progress_mono,
+                commit_progress_every_items=request.commit_progress_every_items,
+                commit_progress_every_seconds=request.commit_progress_every_seconds,
+            ):
+                return
+            await self._emit_progress(
+                progress_callback,
+                DatasetSyncProgress(
+                    phase="committing",
+                    completed_items=commit_done,
+                    total_items=commit_phase_total,
+                    message=message,
+                    entity_kind=entity_kind,
+                    entity_completed_items=entity_completed_items,
+                    entity_total_items=entity_total_items,
+                    phase_detail=entity_kind,
+                    batch_index=batch_index,
+                    total_batches=total_batches,
+                ),
+            )
+            last_commit_progress_mono = now_mono
+
+        async def insert_models_chunk[T](
+            database: Any,
+            docs: list[T],
+            *,
+            existing_ids: set[str],
+            id_getter: Callable[[T], str],
+            on_duplicate: Callable[[T], Awaitable[None] | None] | None = None,
+        ) -> int:
+            inserted_count = 0
+            if not docs:
+                return inserted_count
+            if hasattr(database, "insert_many"):
+                try:
+                    inserted = await database.insert_many(docs, ordered=False)
+                    inserted_count = len(inserted)
+                    for row in inserted:
+                        existing_ids.add(id_getter(row))
+                    return inserted_count
+                except DuplicateInsertError:
+                    pass
+            for doc in docs:
+                try:
+                    inserted = await database.insert(doc)
+                    inserted_count += 1
+                    existing_ids.add(id_getter(inserted))
+                except DuplicateInsertError:
+                    existing_ids.add(id_getter(doc))
+                    if on_duplicate is not None:
+                        maybe = on_duplicate(doc)
+                        if inspect.isawaitable(maybe):
+                            await maybe
+            return inserted_count
+
+        await emit_commit_progress(
+            entity_kind="metadata",
+            message="Persisting import metadata",
+            entity_completed_items=0,
+            entity_total_items=commit_phase_total,
+            force=True,
+        )
+
+        commit_batch_size = request.commit_batch_size
+
+        created_annotation_schemas = 0
+        processed_annotation_schemas = 0
+        schema_batches = _chunked(bundle.annotation_schemas, commit_batch_size)
+        total_schema_batches = len(schema_batches)
+        for batch_index, batch in enumerate(schema_batches, start=1):
+            new_docs: list[AnnotationSchema] = []
+            for schema in batch:
+                if schema.annotation_schema_id in existing_annotation_schema_ids:
+                    continue
+                new_docs.append(
+                    AnnotationSchema.model_validate(
+                        {
+                            **schema.model_dump(),
+                            "metadata": self._merge_origin_metadata(
+                                schema.metadata,
+                                lake_id=origin_lake_id,
+                                bundle=bundle,
+                                entity_id=schema.annotation_schema_id,
+                                annotation_schema_id=schema.annotation_schema_id,
+                            ),
+                        }
+                    )
+                )
+            created_annotation_schemas += await insert_models_chunk(
+                self.target.annotation_schema_database,
+                new_docs,
+                existing_ids=existing_annotation_schema_ids,
+                id_getter=lambda row: row.annotation_schema_id,
+            )
+            processed_annotation_schemas += len(batch)
+            commit_done += len(batch)
+            await emit_commit_progress(
+                entity_kind="annotation_schema",
+                message=f"Persisting annotation schemas batch {batch_index}/{total_schema_batches}",
+                entity_completed_items=processed_annotation_schemas,
+                entity_total_items=len(bundle.annotation_schemas),
+                batch_index=batch_index,
+                total_batches=total_schema_batches,
+                force=False,
+            )
+
+        created_assets = 0
+        processed_assets = 0
+        inserted_assets: list[Asset] = []
+        asset_batches = _chunked(bundle.assets, commit_batch_size)
+        total_asset_batches = len(asset_batches)
+        for batch_index, batch in enumerate(asset_batches, start=1):
+            batch_asset_ids = [asset.asset_id for asset in batch if asset.asset_id in existing_asset_ids]
+            existing_rows = []
+            existing_by_asset_id: dict[str, Asset] = {}
+            if batch_asset_ids and self.source is not self.target:
+                existing_rows = await self.target.asset_database.find(
+                    {"asset_id": {"$in": list(dict.fromkeys(batch_asset_ids))}}
+                )
+                existing_by_asset_id = {row.asset_id: row for row in existing_rows}
+
+            new_docs: list[Asset] = []
+            refresh_docs: list[Asset] = []
+            for asset in batch:
+                storage_ref = _apply_mount_map_to_storage_ref(
+                    resolved_storage_refs.get(asset.asset_id, asset.storage_ref),
+                    mount_map,
+                )
+                merged_origin = self._merge_origin_metadata(
+                    asset.metadata,
+                    lake_id=origin_lake_id,
+                    bundle=bundle,
+                    entity_id=asset.asset_id,
+                    asset_id=asset.asset_id,
+                )
+                payload_status = "present"
+                payload_status_reason = None
+                payload_verified_at = utc_now()
+                if replication_manager is not None:
+                    merged_origin = replication_manager.build_asset_replication_metadata(
+                        merged_origin,
+                        origin_lake_id=origin_lake_id,
+                        origin_asset_id=asset.asset_id,
+                        replication_mode="metadata_first",
+                        payload_status="missing",
+                    )
+                    payload_status = "missing"
+                    payload_status_reason = "metadata_first_pending_payload"
+                    payload_verified_at = None
+                created = Asset.model_validate(
+                    {
+                        **asset.model_dump(),
+                        "storage_ref": storage_ref.model_dump(),
+                        "payload_status": payload_status,
+                        "payload_status_updated_at": utc_now(),
+                        "payload_status_reason": payload_status_reason,
+                        "payload_storage_ref": storage_ref.model_dump(),
+                        "payload_checksum": asset.checksum,
+                        "payload_size_bytes": asset.size_bytes,
+                        "payload_verified_at": payload_verified_at,
+                        "metadata": merged_origin,
+                    }
+                )
+                if asset.asset_id not in existing_asset_ids:
+                    new_docs.append(created)
+                    continue
+                if self.source is self.target:
+                    continue
+                existing = existing_by_asset_id.get(asset.asset_id)
+                if existing is None:
+                    refresh_docs.append(created)
+                    continue
+                if not _storage_refs_equivalent(existing.storage_ref, created.storage_ref):
+                    refresh_docs.append(created)
+
+            created_assets += await insert_models_chunk(
+                self.target.asset_database,
+                new_docs,
+                existing_ids=existing_asset_ids,
+                id_getter=lambda row: row.asset_id,
+                on_duplicate=(None if self.source is self.target else self._refresh_target_asset_for_cross_lake_import),
+            )
+            inserted_assets.extend(new_docs)
+            for doc in refresh_docs:
+                await self._refresh_target_asset_for_cross_lake_import(doc)
+                existing_asset_ids.add(doc.asset_id)
+            processed_assets += len(batch)
+            commit_done += len(batch)
+            await emit_commit_progress(
+                entity_kind="asset",
+                message=f"Persisting assets batch {batch_index}/{total_asset_batches}",
+                entity_completed_items=processed_assets,
+                entity_total_items=len(bundle.assets),
+                batch_index=batch_index,
+                total_batches=total_asset_batches,
+                force=False,
+            )
+
+        if inserted_assets:
+            await self.target.ensure_primary_asset_aliases(inserted_assets)
+
+        created_annotation_records = 0
+        processed_annotation_records = 0
+        record_batches = _chunked(bundle.annotation_records, commit_batch_size)
+        total_record_batches = len(record_batches)
+        for batch_index, batch in enumerate(record_batches, start=1):
+            new_docs: list[AnnotationRecord] = []
+            for record in batch:
+                if record.annotation_id in existing_annotation_record_ids:
+                    continue
+                new_docs.append(
+                    AnnotationRecord.model_validate(
+                        {
+                            **record.model_dump(),
+                            "metadata": self._merge_origin_metadata(
+                                record.metadata,
+                                lake_id=origin_lake_id,
+                                bundle=bundle,
+                                entity_id=record.annotation_id,
+                                annotation_id=record.annotation_id,
+                            ),
+                        }
+                    )
+                )
+            created_annotation_records += await insert_models_chunk(
+                self.target.annotation_record_database,
+                new_docs,
+                existing_ids=existing_annotation_record_ids,
+                id_getter=lambda row: row.annotation_id,
+            )
+            processed_annotation_records += len(batch)
+            commit_done += len(batch)
+            await emit_commit_progress(
+                entity_kind="annotation_record",
+                message=f"Persisting annotation records batch {batch_index}/{total_record_batches}",
+                entity_completed_items=processed_annotation_records,
+                entity_total_items=len(bundle.annotation_records),
+                batch_index=batch_index,
+                total_batches=total_record_batches,
+                force=False,
+            )
+
+        created_annotation_sets = 0
+        processed_annotation_sets = 0
+        set_batches = _chunked(bundle.annotation_sets, commit_batch_size)
+        total_set_batches = len(set_batches)
+        for batch_index, batch in enumerate(set_batches, start=1):
+            new_docs: list[AnnotationSet] = []
+            for annotation_set in batch:
+                if annotation_set.annotation_set_id in existing_annotation_set_ids:
+                    continue
+                new_docs.append(
+                    AnnotationSet.model_validate(
+                        {
+                            **annotation_set.model_dump(),
+                            "metadata": self._merge_origin_metadata(
+                                annotation_set.metadata,
+                                lake_id=origin_lake_id,
+                                bundle=bundle,
+                                entity_id=annotation_set.annotation_set_id,
+                                annotation_set_id=annotation_set.annotation_set_id,
+                            ),
+                        }
+                    )
+                )
+            created_annotation_sets += await insert_models_chunk(
+                self.target.annotation_set_database,
+                new_docs,
+                existing_ids=existing_annotation_set_ids,
+                id_getter=lambda row: row.annotation_set_id,
+            )
+            processed_annotation_sets += len(batch)
+            commit_done += len(batch)
+            await emit_commit_progress(
+                entity_kind="annotation_set",
+                message=f"Persisting annotation sets batch {batch_index}/{total_set_batches}",
+                entity_completed_items=processed_annotation_sets,
+                entity_total_items=len(bundle.annotation_sets),
+                batch_index=batch_index,
+                total_batches=total_set_batches,
+                force=False,
+            )
+
+        created_datums = 0
+        processed_datums = 0
+        datum_batches = _chunked(bundle.datums, commit_batch_size)
+        total_datum_batches = len(datum_batches)
+        for batch_index, batch in enumerate(datum_batches, start=1):
+            new_docs: list[Datum] = []
+            for datum in batch:
+                if datum.datum_id in existing_datum_ids:
+                    continue
+                mapped_asset_refs = {role: asset_id for role, asset_id in datum.asset_refs.items()}
+                new_docs.append(
+                    Datum.model_validate(
+                        {
+                            **datum.model_dump(),
+                            "asset_refs": mapped_asset_refs,
+                            "metadata": self._merge_origin_metadata(
+                                datum.metadata,
+                                lake_id=origin_lake_id,
+                                bundle=bundle,
+                                entity_id=datum.datum_id,
+                                datum_id=datum.datum_id,
+                            ),
+                        }
+                    )
+                )
+            created_datums += await insert_models_chunk(
+                self.target.datum_database,
+                new_docs,
+                existing_ids=existing_datum_ids,
+                id_getter=lambda row: row.datum_id,
+            )
+            processed_datums += len(batch)
+            commit_done += len(batch)
+            await emit_commit_progress(
+                entity_kind="datum",
+                message=f"Persisting datums batch {batch_index}/{total_datum_batches}",
+                entity_completed_items=processed_datums,
+                entity_total_items=len(bundle.datums),
+                batch_index=batch_index,
+                total_batches=total_datum_batches,
+                force=False,
+            )
+
         if existing_dataset_version is None:
             dataset_version = DatasetVersion.model_validate(
                 {
@@ -510,6 +969,16 @@ class DatasetSyncManager:
             dataset_version = await self.target.dataset_version_database.insert(dataset_version)
         else:
             dataset_version = existing_dataset_version
+        commit_done += 1
+        await emit_commit_progress(
+            entity_kind="dataset_version",
+            message="Persisting dataset version",
+            entity_completed_items=1,
+            entity_total_items=1,
+            batch_index=1,
+            total_batches=1,
+            force=True,
+        )
 
         result = DatasetSyncCommitResult(
             dataset_version=dataset_version,
@@ -525,12 +994,159 @@ class DatasetSyncManager:
             progress_callback,
             DatasetSyncProgress(
                 phase="complete",
-                completed_items=1,
-                total_items=1,
+                completed_items=commit_phase_total,
+                total_items=commit_phase_total,
                 message=f"Completed dataset import {result.dataset_version.dataset_name}@{result.dataset_version.version}",
+                entity_kind="dataset_version",
+                entity_completed_items=1,
+                entity_total_items=1,
+                bytes_completed=plan.transfer_required_bytes,
+                bytes_total=plan.transfer_required_bytes,
+                skipped_items=skipped_payloads,
             ),
         )
         return result
+
+    async def finalize_pending_import_asset_payload(
+        self,
+        *,
+        asset_id: str,
+        payload_descriptor: ObjectPayloadDescriptor,
+        staged_storage_ref: StorageRef,
+        payload_bytes: bytes,
+    ) -> Asset:
+        """After caller-staged bytes land on the target store, verify and mark the asset payload verified.
+
+        Used with :data:`DatasetSyncImportRequest.target_metadata_commit` imports (e.g. ``import_session_*`` flow)
+        where Phase A committed graph rows with pending replication state.
+        """
+
+        await self._verify_transferred_payload(payload_descriptor, payload_bytes, staged_storage_ref)
+        asset = await self.target.get_asset(asset_id)
+        now = utc_now()
+        asset.storage_ref = staged_storage_ref
+        asset.size_bytes = len(payload_bytes)
+        if payload_descriptor.checksum:
+            asset.checksum = payload_descriptor.checksum
+        asset.payload_status = "present"
+        asset.payload_status_updated_at = now
+        asset.payload_status_reason = None
+        asset.payload_storage_ref = staged_storage_ref
+        asset.payload_size_bytes = len(payload_bytes)
+        asset.payload_checksum = payload_descriptor.checksum or asset.checksum
+        asset.payload_verified_at = now
+        asset.media_type = payload_descriptor.media_type or asset.media_type
+        asset.updated_at = now
+        rm = ReplicationManager(self.target)
+        await rm._set_asset_replication_state(
+            asset,
+            payload_status="present",
+            payload_verified_at=utc_now(),
+            payload_last_error=None,
+        )
+        return await self.target.get_asset(asset_id)
+
+    async def _target_payload_matches(
+        self,
+        payload: ObjectPayloadDescriptor,
+        target_storage_ref: StorageRef,
+        *,
+        match_policy: str,
+    ) -> tuple[bool, str]:
+        exists = await self.target.object_exists(target_storage_ref)
+        if not exists:
+            return False, "missing_on_target"
+        if match_policy == "exists":
+            return True, "already_present"
+
+        meta = await self.target.head_object(target_storage_ref)
+        if match_policy in {"size", "checksum"} and payload.size_bytes is not None:
+            target_size = _head_object_size_bytes(meta)
+            if target_size is None or target_size != payload.size_bytes:
+                return False, "size_mismatch"
+            if match_policy == "size":
+                return True, "already_present_size_match"
+
+        if match_policy == "checksum" and payload.checksum:
+            target_checksum = _head_object_checksum(meta)
+            if not target_checksum or target_checksum != payload.checksum:
+                return False, "checksum_mismatch"
+            return True, "already_present_checksum_match"
+
+        return True, "already_present"
+
+    async def _prefetch_existing_ids(
+        self,
+        database: Any,
+        field: str,
+        ids: Sequence[str],
+        *,
+        skip_lookup: bool = False,
+    ) -> set[str]:
+        if skip_lookup or not ids:
+            return set()
+        rows = await database.find({field: {"$in": list(dict.fromkeys(ids))}})
+        found: set[str] = set()
+        for row in rows:
+            value = getattr(row, field, None)
+            if isinstance(value, str):
+                found.add(value)
+        return found
+
+    async def _prefetch_existing_asset_ids(self, asset_ids: Sequence[str], *, skip_lookup: bool = False) -> set[str]:
+        return await self._prefetch_existing_ids(
+            self.target.asset_database,
+            "asset_id",
+            asset_ids,
+            skip_lookup=skip_lookup,
+        )
+
+    async def _prefetch_existing_annotation_schema_ids(
+        self,
+        annotation_schema_ids: Sequence[str],
+        *,
+        skip_lookup: bool = False,
+    ) -> set[str]:
+        return await self._prefetch_existing_ids(
+            self.target.annotation_schema_database,
+            "annotation_schema_id",
+            annotation_schema_ids,
+            skip_lookup=skip_lookup,
+        )
+
+    async def _prefetch_existing_annotation_record_ids(
+        self,
+        annotation_ids: Sequence[str],
+        *,
+        skip_lookup: bool = False,
+    ) -> set[str]:
+        return await self._prefetch_existing_ids(
+            self.target.annotation_record_database,
+            "annotation_id",
+            annotation_ids,
+            skip_lookup=skip_lookup,
+        )
+
+    async def _prefetch_existing_annotation_set_ids(
+        self,
+        annotation_set_ids: Sequence[str],
+        *,
+        skip_lookup: bool = False,
+    ) -> set[str]:
+        return await self._prefetch_existing_ids(
+            self.target.annotation_set_database,
+            "annotation_set_id",
+            annotation_set_ids,
+            skip_lookup=skip_lookup,
+        )
+
+    async def _prefetch_existing_datum_ids(self, datum_ids: Sequence[str], *, skip_lookup: bool = False) -> set[str]:
+        return await self._prefetch_existing_ids(
+            self.target.datum_database,
+            "datum_id",
+            datum_ids,
+            skip_lookup=skip_lookup,
+        )
 
     async def _resolve_payload_transfers(
         self,
@@ -540,9 +1156,43 @@ class DatasetSyncManager:
         plan_by_asset_id: dict[str, DatasetSyncPayloadPlan],
         request: DatasetSyncImportRequest,
         progress_callback: ProgressCallback | None,
+        defer_inline_transfers: bool = False,
     ) -> tuple[dict[str, StorageRef], int, int]:
         mount_map = request.mount_map
         resolved_storage_refs: dict[str, StorageRef] = {}
+
+        if defer_inline_transfers:
+            for asset in assets:
+                payload = payload_by_asset_id.get(asset.asset_id)
+                if payload is not None:
+                    resolved_storage_refs[asset.asset_id] = self.map_storage_ref_for_target(
+                        payload.storage_ref, mount_map
+                    )
+                else:
+                    resolved_storage_refs[asset.asset_id] = self.map_storage_ref_for_target(
+                        asset.storage_ref, mount_map
+                    )
+            pending = sum(1 for a in assets if payload_by_asset_id.get(a.asset_id) is not None)
+            pending_bytes = sum(
+                (payload_by_asset_id[a.asset_id].size_bytes or 0)
+                for a in assets
+                if payload_by_asset_id.get(a.asset_id) is not None
+            )
+            if pending:
+                await self._emit_progress(
+                    progress_callback,
+                    DatasetSyncProgress(
+                        phase="transferring",
+                        completed_items=0,
+                        total_items=pending,
+                        message="Payload transfer deferred; metadata-first import marked payloads pending",
+                        bytes_completed=0,
+                        bytes_total=pending_bytes,
+                        phase_detail="deferred",
+                    ),
+                )
+            return resolved_storage_refs, 0, pending
+
         transfer_items: list[tuple[ObjectPayloadDescriptor, DatasetSyncPayloadPlan]] = []
 
         for asset in assets:
@@ -557,12 +1207,15 @@ class DatasetSyncManager:
         if total_payload_items == 0:
             return resolved_storage_refs, 0, 0
 
+        total_payload_bytes = sum((payload.size_bytes or 0) for payload, row in transfer_items if row.transfer_required)
         transferred_payloads = 0
         skipped_payloads = 0
         processed_payload_items = 0
+        processed_payload_bytes = 0
         batches = _chunked(transfer_items, request.transfer_batch_size)
         total_transfer_batches = len(batches)
         semaphore = asyncio.Semaphore(request.transfer_concurrency)
+        transfer_started_mono = time.monotonic()
 
         for batch_index, batch in enumerate(batches, start=1):
             batch_results = await asyncio.gather(
@@ -573,18 +1226,22 @@ class DatasetSyncManager:
                         transfer_policy=request.transfer_policy,
                         mount_map=mount_map,
                         semaphore=semaphore,
+                        request=request,
                     )
                     for payload, asset_plan in batch
                 ]
             )
-            for asset_id, storage_ref, transferred in batch_results:
+            for payload, (asset_id, storage_ref, transferred) in zip(batch, batch_results, strict=True):
+                payload_desc, _asset_plan = payload
                 resolved_storage_refs[asset_id] = storage_ref
                 if transferred:
                     transferred_payloads += 1
+                    processed_payload_bytes += payload_desc.size_bytes or 0
                 else:
                     skipped_payloads += 1
 
             processed_payload_items += len(batch)
+            elapsed = max(time.monotonic() - transfer_started_mono, 1e-9)
             progress = DatasetSyncProgress(
                 phase="transferring",
                 batch_index=batch_index,
@@ -592,6 +1249,11 @@ class DatasetSyncManager:
                 completed_items=processed_payload_items,
                 total_items=total_payload_items,
                 message=f"Transferring import payload batch {batch_index}/{total_transfer_batches}",
+                bytes_completed=processed_payload_bytes,
+                bytes_total=total_payload_bytes,
+                skipped_items=skipped_payloads,
+                items_per_second=processed_payload_items / elapsed,
+                bytes_per_second=processed_payload_bytes / elapsed,
             )
             _logger.info(
                 "%s: processed %s/%s payloads",
@@ -603,6 +1265,150 @@ class DatasetSyncManager:
 
         return resolved_storage_refs, transferred_payloads, skipped_payloads
 
+    async def fast_import_graph(
+        self,
+        request: DatasetSyncImportRequest,
+        *,
+        progress_callback: ProgressCallback | None = None,
+    ) -> DatasetSyncCommitResult:
+        bundle = request.bundle
+        commit_batch_size = request.commit_batch_size
+        commit_phase_total = _commit_import_phase_item_count(bundle)
+        completed_rows = 0
+
+        async def emit_phase(*, phase_name: str, entity_kind: str, items: list[Any], inserter, detail: str) -> int:
+            nonlocal completed_rows
+            total = len(items)
+            created = 0
+            if total == 0:
+                return 0
+            batches = _chunked(items, commit_batch_size)
+            total_batches = len(batches)
+            processed = 0
+            for batch_index, batch in enumerate(batches, start=1):
+                for item in batch:
+                    try:
+                        await inserter(item)
+                        created += 1
+                    except DuplicateInsertError:
+                        pass
+                processed += len(batch)
+                completed_rows += len(batch)
+                await self._emit_progress(
+                    progress_callback,
+                    DatasetSyncProgress(
+                        phase="committing",
+                        message=f"{detail} batch {batch_index}/{total_batches}",
+                        entity_kind=entity_kind,
+                        phase_detail=phase_name,
+                        completed_items=completed_rows,
+                        total_items=commit_phase_total,
+                        entity_completed_items=processed,
+                        entity_total_items=total,
+                        batch_index=batch_index,
+                        total_batches=total_batches,
+                    ),
+                )
+            return created
+
+        mapped_assets = [
+            Asset.model_validate(
+                {
+                    **asset.model_dump(),
+                    "storage_ref": _apply_mount_map_to_storage_ref(asset.storage_ref, request.mount_map).model_dump(),
+                    "payload_status": "missing",
+                    "payload_status_updated_at": utc_now(),
+                    "payload_status_reason": "fast_sync_pending_payload",
+                    "payload_storage_ref": _apply_mount_map_to_storage_ref(
+                        asset.storage_ref, request.mount_map
+                    ).model_dump(),
+                    "payload_checksum": asset.checksum,
+                    "payload_size_bytes": asset.size_bytes,
+                    "payload_verified_at": None,
+                }
+            )
+            for asset in bundle.assets
+        ]
+
+        created_annotation_schemas = await emit_phase(
+            phase_name="importing_schemas",
+            entity_kind="annotation_schema",
+            items=bundle.annotation_schemas,
+            inserter=self.target.annotation_schema_database.insert,
+            detail="Persisting annotation schemas",
+        )
+        created_assets = await emit_phase(
+            phase_name="importing_assets",
+            entity_kind="asset",
+            items=mapped_assets,
+            inserter=self.target.asset_database.insert,
+            detail="Persisting assets",
+        )
+        created_annotation_records = await emit_phase(
+            phase_name="importing_annotation_records",
+            entity_kind="annotation_record",
+            items=bundle.annotation_records,
+            inserter=self.target.annotation_record_database.insert,
+            detail="Persisting annotation records",
+        )
+        created_annotation_sets = await emit_phase(
+            phase_name="importing_annotation_sets",
+            entity_kind="annotation_set",
+            items=bundle.annotation_sets,
+            inserter=self.target.annotation_set_database.insert,
+            detail="Persisting annotation sets",
+        )
+        created_datums = await emit_phase(
+            phase_name="importing_datums",
+            entity_kind="datum",
+            items=bundle.datums,
+            inserter=self.target.datum_database.insert,
+            detail="Persisting datums",
+        )
+        await self._emit_progress(
+            progress_callback,
+            DatasetSyncProgress(
+                phase="committing",
+                message="Finalizing graph",
+                entity_kind="dataset_version",
+                phase_detail="finalizing_graph",
+                completed_items=completed_rows,
+                total_items=commit_phase_total,
+                entity_completed_items=0,
+                entity_total_items=1,
+                batch_index=1,
+                total_batches=1,
+            ),
+        )
+        await self.target.dataset_version_database.insert(bundle.dataset_version)
+        completed_rows += 1
+        await self._emit_progress(
+            progress_callback,
+            DatasetSyncProgress(
+                phase="complete",
+                message="Finalizing graph",
+                entity_kind="dataset_version",
+                phase_detail="finalizing_graph",
+                completed_items=completed_rows,
+                total_items=commit_phase_total,
+                entity_completed_items=1,
+                entity_total_items=1,
+                batch_index=1,
+                total_batches=1,
+            ),
+        )
+        dv = await self.target.get_dataset_version(bundle.dataset_version.dataset_name, bundle.dataset_version.version)
+        return DatasetSyncCommitResult(
+            dataset_version=dv,
+            created_assets=created_assets,
+            created_annotation_schemas=created_annotation_schemas,
+            created_annotation_records=created_annotation_records,
+            created_annotation_sets=created_annotation_sets,
+            created_datums=created_datums,
+            transferred_payloads=0,
+            skipped_payloads=0,
+        )
+
     async def _resolve_payload_transfer_item(
         self,
         payload: ObjectPayloadDescriptor,
@@ -611,13 +1417,44 @@ class DatasetSyncManager:
         transfer_policy: str,
         mount_map: dict[str, str],
         semaphore: asyncio.Semaphore,
+        request: DatasetSyncImportRequest,
     ) -> tuple[str, StorageRef, bool]:
+        staged = request.staged_payload_storage_refs
+        if staged is not None and payload.asset_id in staged:
+            return payload.asset_id, staged[payload.asset_id], True
+
         if transfer_policy == "metadata_only" or not asset_plan.transfer_required:
             return payload.asset_id, _apply_mount_map_to_storage_ref(payload.storage_ref, mount_map), False
 
         async with semaphore:
+            if self.source is self.target and not self.source.store.has_mount(payload.storage_ref.mount):
+                raise ValueError(
+                    "Cannot read payload bytes on this datalake: bundle StorageRef mount "
+                    f"{payload.storage_ref.mount!r} is not configured. "
+                    "Use caller-orchestrated import (dataset_versions.import_session_start, "
+                    "import_session_upload_payload, import_session_commit) when importing bundles whose "
+                    "original object mounts are not available in this process."
+                )
             storage_ref = await self._transfer_payload(payload, mount_map)
         return payload.asset_id, storage_ref, True
+
+    async def ingest_import_payload_bytes(
+        self,
+        payload: ObjectPayloadDescriptor,
+        mount_map: dict[str, str],
+        data: bytes,
+    ) -> StorageRef:
+        """Write pre-read payload bytes to the target store (same logic as :meth:`_transfer_payload`).
+
+        Used by import-session upload APIs so callers read from the origin lake and the target only ever
+        opens its own mounts.
+        """
+        if payload.size_bytes is not None and len(data) != payload.size_bytes:
+            raise ValueError(
+                f"Payload byte size mismatch for asset {payload.asset_id}: "
+                f"descriptor declares {payload.size_bytes} bytes, received {len(data)}"
+            )
+        return await self._finalize_payload_write(payload, mount_map, data)
 
     async def _transfer_payload(self, payload: ObjectPayloadDescriptor, mount_map: dict[str, str]) -> StorageRef:
         data = await self.source.get_object(payload.storage_ref)
@@ -626,6 +1463,14 @@ class DatasetSyncManager:
                 f"Source read size mismatch for asset {payload.asset_id}: "
                 f"descriptor declares {payload.size_bytes} bytes, read {len(data)}"
             )
+        return await self._finalize_payload_write(payload, mount_map, data)
+
+    async def _finalize_payload_write(
+        self,
+        payload: ObjectPayloadDescriptor,
+        mount_map: dict[str, str],
+        data: bytes,
+    ) -> StorageRef:
         target_write_ref = _apply_mount_map_to_storage_ref(payload.storage_ref, mount_map)
         session = await self.target.create_object_upload_session(
             name=target_write_ref.name,
@@ -641,17 +1486,14 @@ class DatasetSyncManager:
             if not session.upload_path:
                 raise ValueError(f"Upload session {session.upload_session_id} is missing upload_path")
             upload_path = Path(session.upload_path)
-            upload_path.parent.mkdir(parents=True, exist_ok=True)
-            upload_path.write_bytes(data)
+            await asyncio.to_thread(mkdir_and_write_bytes, upload_path, data)
         elif session.upload_method == "presigned_url":
             if not session.upload_url:
                 raise ValueError(f"Upload session {session.upload_session_id} is missing upload_url")
             req = urllib_request.Request(session.upload_url, data=data, method="PUT")
             for key, value in session.upload_headers.items():
                 req.add_header(key, value)
-            with urllib_request.urlopen(req) as response:
-                if response.status >= 400:
-                    raise RuntimeError(f"Presigned upload failed with status {response.status}")
+            await asyncio.to_thread(_blocking_presigned_put, req)
         else:
             raise ValueError(f"Unsupported upload method: {session.upload_method}")
         completed = await self.target.complete_object_upload_session(
@@ -683,6 +1525,13 @@ class DatasetSyncManager:
         current.media_type = new_asset.media_type
         current.kind = new_asset.kind
         current.metadata = new_asset.metadata
+        current.payload_status = new_asset.payload_status
+        current.payload_status_updated_at = new_asset.payload_status_updated_at
+        current.payload_status_reason = new_asset.payload_status_reason
+        current.payload_storage_ref = new_asset.payload_storage_ref
+        current.payload_checksum = new_asset.payload_checksum
+        current.payload_size_bytes = new_asset.payload_size_bytes
+        current.payload_verified_at = new_asset.payload_verified_at
         current.updated_at = new_asset.updated_at
         await self.target.asset_database.update(current)
 
@@ -770,12 +1619,18 @@ class DatasetSyncManager:
         source_bytes: bytes,
         target_ref: StorageRef,
     ) -> None:
+        # Cheap target signal only (no full object GET); checksum applies to staged/source bytes callers already hold.
         head = await self.target.head_object(target_ref)
         remote_size = _head_object_size_bytes(head)
         if remote_size is not None and remote_size != len(source_bytes):
             raise RuntimeError(
                 f"Post-upload size mismatch for asset {payload.asset_id}: "
                 f"target head reports {remote_size} bytes, transferred {len(source_bytes)}"
+            )
+        if payload.size_bytes is not None and len(source_bytes) != payload.size_bytes:
+            raise RuntimeError(
+                f"Post-upload size mismatch for asset {payload.asset_id}: "
+                f"staged payload is {len(source_bytes)} bytes, expected {payload.size_bytes}"
             )
         if payload.checksum and not self._payload_checksum_matches(source_bytes, payload.checksum):
             raise RuntimeError(f"Post-upload checksum mismatch for asset {payload.asset_id}")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import mimetypes
 from datetime import datetime, timezone
@@ -9,6 +10,7 @@ from urllib import request as urllib_request
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.async_datalake import AsyncDatalake
+from mindtrace.datalake.blocking_payload_io import mkdir_and_write_bytes
 from mindtrace.datalake.replication_types import (
     PayloadStatus,
     ReplicatedAssetState,
@@ -34,6 +36,17 @@ def _storage_refs_equivalent(a: StorageRef, b: StorageRef) -> bool:
     av = a.version if a.version is not None else "latest"
     bv = b.version if b.version is not None else "latest"
     return a.mount == b.mount and a.name == b.name and av == bv
+
+
+def _asset_payload_storage_ref(asset: Asset) -> StorageRef:
+    return asset.payload_storage_ref or asset.storage_ref
+
+
+def _blocking_presigned_put(req: urllib_request.Request) -> None:
+    """Synchronous presigned PUT using :mod:`urllib.request` (run via :func:`asyncio.to_thread`)."""
+    with urllib_request.urlopen(req) as response:
+        if response.status >= 400:
+            raise RuntimeError(f"Presigned upload failed with status {response.status}")
 
 
 def _head_object_size_bytes(meta: dict[str, Any]) -> int | None:
@@ -84,19 +97,12 @@ class ReplicationManager:
 
     @staticmethod
     def get_payload_status(asset: Asset) -> PayloadStatus | None:
-        replication = (asset.metadata or {}).get("replication")
-        if not isinstance(replication, dict):
-            return None
-        status = replication.get("payload_status")
+        status = getattr(asset, "payload_status", None)
         return status if isinstance(status, str) else None
 
     @staticmethod
     def is_payload_available(asset: Asset) -> bool:
-        replication = (asset.metadata or {}).get("replication")
-        if not isinstance(replication, dict):
-            return False
-        available = replication.get("payload_available")
-        return bool(available)
+        return ReplicationManager.get_payload_status(asset) == "present"
 
     def build_asset_replication_metadata(
         self,
@@ -105,7 +111,7 @@ class ReplicationManager:
         origin_lake_id: str,
         origin_asset_id: str,
         replication_mode: str,
-        payload_status: PayloadStatus = "pending",
+        payload_status: PayloadStatus = "missing",
     ) -> dict[str, Any]:
         merged = dict(metadata or {})
 
@@ -124,7 +130,7 @@ class ReplicationManager:
             origin_asset_id=origin_asset_id,
             replication_mode=replication_mode,
             payload_status=payload_status,
-            payload_available=payload_status == "verified",
+            payload_available=payload_status == "present",
             payload_last_error=replication.get("payload_last_error"),
             payload_last_attempt_at=replication.get("payload_last_attempt_at"),
             payload_verified_at=replication.get("payload_verified_at"),
@@ -138,7 +144,7 @@ class ReplicationManager:
     def _should_preserve_verified_payload(
         existing_asset: Asset, new_asset: Asset, mapped_storage_ref: StorageRef
     ) -> bool:
-        if ReplicationManager.get_payload_status(existing_asset) != "verified":
+        if ReplicationManager.get_payload_status(existing_asset) != "present":
             return False
         if not _storage_refs_equivalent(existing_asset.storage_ref, mapped_storage_ref):
             return False
@@ -176,19 +182,26 @@ class ReplicationManager:
                 pass
 
             metadata_for_replication = dict(asset.metadata or {})
-            payload_status: PayloadStatus = "pending"
+            payload_status: PayloadStatus = "missing"
             if existing_asset is not None and self._should_preserve_verified_payload(
                 existing_asset, asset, mapped_storage_ref
             ):
                 existing_replication = (existing_asset.metadata or {}).get("replication")
                 if isinstance(existing_replication, dict):
                     metadata_for_replication["replication"] = dict(existing_replication)
-                payload_status = "verified"
+                payload_status = "present"
 
             replicated = Asset.model_validate(
                 {
                     **asset.model_dump(),
                     "storage_ref": mapped_storage_ref.model_dump(),
+                    "payload_status": payload_status,
+                    "payload_status_updated_at": self._utc_now(),
+                    "payload_status_reason": None if payload_status == "present" else "metadata_first_pending_payload",
+                    "payload_storage_ref": mapped_storage_ref.model_dump(),
+                    "payload_checksum": asset.checksum,
+                    "payload_size_bytes": asset.size_bytes,
+                    "payload_verified_at": self._utc_now() if payload_status == "present" else None,
                     "metadata": self.build_asset_replication_metadata(
                         metadata_for_replication,
                         origin_lake_id=request.origin_lake_id,
@@ -278,7 +291,7 @@ class ReplicationManager:
 
         await self._set_asset_replication_state(
             target_asset,
-            payload_status="transferring",
+            payload_status="uploading",
             payload_last_attempt_at=self._utc_now(),
             payload_last_error=None,
         )
@@ -290,7 +303,7 @@ class ReplicationManager:
             refreshed_target_asset.storage_ref = completed_ref
             await self._set_asset_replication_state(
                 refreshed_target_asset,
-                payload_status="verified",
+                payload_status="present",
                 payload_available=True,
                 payload_last_attempt_at=self._utc_now(),
                 payload_verified_at=self._utc_now(),
@@ -301,7 +314,7 @@ class ReplicationManager:
             failed_asset = await self.target.get_asset(asset_id)
             await self._set_asset_replication_state(
                 failed_asset,
-                payload_status="failed",
+                payload_status="corrupt",
                 payload_available=False,
                 payload_last_attempt_at=self._utc_now(),
                 payload_last_error=str(exc),
@@ -324,10 +337,10 @@ class ReplicationManager:
             if candidate_ids and asset.asset_id not in candidate_ids:
                 continue
             status = self.get_payload_status(asset)
-            if status not in {"pending", "failed"}:
+            if status not in {"missing", "corrupt"}:
                 skipped_asset_ids.append(asset.asset_id)
                 continue
-            if status == "failed" and not request.include_failed:
+            if status == "corrupt" and not request.include_failed:
                 skipped_asset_ids.append(asset.asset_id)
                 continue
             attempted_asset_ids.append(asset.asset_id)
@@ -352,7 +365,7 @@ class ReplicationManager:
         target_asset = await self._get_target_asset_for_source_asset(asset_id)
         if target_asset is None:
             raise RuntimeError(f"No replicated target asset found for source asset {asset_id}")
-        if self.get_payload_status(target_asset) != "verified":
+        if self.get_payload_status(target_asset) != "present":
             raise RuntimeError(f"Source asset {asset_id} is not delete-eligible until target payload is verified")
         await self._set_source_asset_reclaim_state(
             source_asset,
@@ -367,11 +380,15 @@ class ReplicationManager:
             return source_asset
         if not self.is_local_delete_eligible(source_asset):
             raise RuntimeError(f"Source asset {asset_id} is not delete-eligible")
-        storage_ref = source_asset.storage_ref
-        key = self.source.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
-        version = storage_ref.version if storage_ref.version is not None else "latest"
+        payload_ref = _asset_payload_storage_ref(source_asset)
+        key = self.source.store.build_key(payload_ref.mount, payload_ref.name, payload_ref.version)
+        version = payload_ref.version if payload_ref.version is not None else "latest"
         self.source.store.delete(key, version=version)
-        source_asset.storage_ref = LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF
+        source_asset.payload_status = "missing"
+        source_asset.payload_status_updated_at = self._utc_now()
+        source_asset.payload_status_reason = "local payload deleted"
+        source_asset.payload_storage_ref = LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF
+        source_asset.payload_verified_at = None
         await self._set_source_asset_reclaim_state(
             source_asset,
             local_deleted_at=self._utc_now(),
@@ -425,11 +442,10 @@ class ReplicationManager:
     async def status(self) -> ReplicationStatusResult:
         assets = await self.target.asset_database.find({})
         counts: dict[PayloadStatus, int] = {
-            "pending": 0,
-            "transferring": 0,
-            "uploaded": 0,
-            "verified": 0,
-            "failed": 0,
+            "missing": 0,
+            "uploading": 0,
+            "present": 0,
+            "corrupt": 0,
         }
         pending_asset_ids: list[str] = []
         failed_asset_ids: list[str] = []
@@ -440,9 +456,9 @@ class ReplicationManager:
             if status is None or status not in counts:
                 continue
             counts[status] += 1
-            if status == "pending":
+            if status == "missing":
                 pending_asset_ids.append(asset.asset_id)
-            elif status == "failed":
+            elif status == "corrupt":
                 failed_asset_ids.append(asset.asset_id)
         source_assets = (
             await self.source.asset_database.find({}) if getattr(self.source, "asset_database", None) else []
@@ -518,7 +534,7 @@ class ReplicationManager:
             origin_asset_id=origin_asset_id,
             replication_mode=replication.get("replication_mode", "metadata_first"),
             payload_status=payload_status,
-            payload_available=(payload_status == "verified") if payload_available is None else payload_available,
+            payload_available=(payload_status == "present") if payload_available is None else payload_available,
             payload_last_error=payload_last_error,
             payload_last_attempt_at=payload_last_attempt_at or replication.get("payload_last_attempt_at"),
             payload_verified_at=payload_verified_at or replication.get("payload_verified_at"),
@@ -528,6 +544,14 @@ class ReplicationManager:
         metadata["origin"] = origin
         metadata["replication"] = state.model_dump(mode="json")
         asset.metadata = metadata
+        asset.payload_status = payload_status
+        asset.payload_status_updated_at = self._utc_now()
+        asset.payload_status_reason = payload_last_error
+        if payload_status == "present":
+            asset.payload_verified_at = payload_verified_at or self._utc_now()
+            asset.payload_storage_ref = asset.storage_ref
+            asset.payload_checksum = asset.checksum
+            asset.payload_size_bytes = asset.size_bytes
         await self._update_asset(asset)
 
     async def _set_source_asset_reclaim_state(
@@ -569,7 +593,7 @@ class ReplicationManager:
 
         if merged.get("payload_status") is None:
             if replication_was_empty:
-                merged["payload_status"] = "verified"
+                merged["payload_status"] = "present"
                 merged.setdefault("payload_available", True)
             else:
                 raise ValueError(
@@ -588,6 +612,13 @@ class ReplicationManager:
         current.storage_ref = asset.storage_ref
         current.checksum = asset.checksum
         current.size_bytes = asset.size_bytes
+        current.payload_status = asset.payload_status
+        current.payload_status_updated_at = asset.payload_status_updated_at
+        current.payload_status_reason = asset.payload_status_reason
+        current.payload_storage_ref = asset.payload_storage_ref
+        current.payload_checksum = asset.payload_checksum
+        current.payload_size_bytes = asset.payload_size_bytes
+        current.payload_verified_at = asset.payload_verified_at
         current.media_type = asset.media_type
         current.kind = asset.kind
         current.metadata = asset.metadata
@@ -595,36 +626,35 @@ class ReplicationManager:
         await self.source.asset_database.update(current)
 
     async def _transfer_payload(self, source_asset: Asset, mount_map: dict[str, str]) -> StorageRef:
-        data = await self.source.get_object(source_asset.storage_ref)
-        if source_asset.size_bytes is not None and len(data) != source_asset.size_bytes:
+        payload_ref = _asset_payload_storage_ref(source_asset)
+        data = await self.source.get_object(payload_ref)
+        expected_size = source_asset.payload_size_bytes or source_asset.size_bytes
+        if expected_size is not None and len(data) != expected_size:
             raise ValueError(
                 f"Source read size mismatch for asset {source_asset.asset_id}: "
-                f"expected {source_asset.size_bytes} bytes, read {len(data)}"
+                f"expected {expected_size} bytes, read {len(data)}"
             )
-        target_write_ref = _apply_mount_map_to_storage_ref(source_asset.storage_ref, mount_map)
+        target_write_ref = _apply_mount_map_to_storage_ref(payload_ref, mount_map)
         session = await self.target.create_object_upload_session(
             name=target_write_ref.name,
             mount=target_write_ref.mount,
             version=target_write_ref.version,
             metadata=source_asset.metadata,
             on_conflict="skip",
-            content_type=source_asset.media_type or self._guess_content_type(source_asset.storage_ref.name),
+            content_type=source_asset.media_type or self._guess_content_type(payload_ref.name),
         )
         if session.upload_method == "local_path":
             if not session.upload_path:
                 raise ValueError(f"Upload session {session.upload_session_id} is missing upload_path")
             upload_path = Path(session.upload_path)
-            upload_path.parent.mkdir(parents=True, exist_ok=True)
-            upload_path.write_bytes(data)
+            await asyncio.to_thread(mkdir_and_write_bytes, upload_path, data)
         elif session.upload_method == "presigned_url":
             if not session.upload_url:
                 raise ValueError(f"Upload session {session.upload_session_id} is missing upload_url")
             req = urllib_request.Request(session.upload_url, data=data, method="PUT")
             for key, value in session.upload_headers.items():
                 req.add_header(key, value)
-            with urllib_request.urlopen(req) as response:
-                if response.status >= 400:
-                    raise RuntimeError(f"Presigned upload failed with status {response.status}")
+            await asyncio.to_thread(_blocking_presigned_put, req)
         else:
             raise ValueError(f"Unsupported upload method: {session.upload_method}")
         completed = await self.target.complete_object_upload_session(
@@ -636,7 +666,9 @@ class ReplicationManager:
         return completed.storage_ref
 
     async def _verify_transferred_payload(self, source_asset: Asset, target_ref: StorageRef) -> None:
-        source_bytes = await self.source.get_object(source_asset.storage_ref)
+        # Avoid downloading the full target object: verify HEAD size + checksum the source read only.
+        # Wrong bytes at the destination with identical size/checksum-vs-source ambiguity remains a known gap.
+        source_bytes = await self.source.get_object(_asset_payload_storage_ref(source_asset))
         head = await self.target.head_object(target_ref)
         remote_size = _head_object_size_bytes(head)
         if remote_size is not None and remote_size != len(source_bytes):
@@ -644,7 +676,8 @@ class ReplicationManager:
                 f"Post-upload size mismatch for asset {source_asset.asset_id}: "
                 f"target head reports {remote_size} bytes, transferred {len(source_bytes)}"
             )
-        if source_asset.checksum and not self._payload_checksum_matches(source_bytes, source_asset.checksum):
+        digest = source_asset.payload_checksum or source_asset.checksum
+        if digest and not self._payload_checksum_matches(source_bytes, digest):
             raise RuntimeError(f"Post-upload checksum mismatch for asset {source_asset.asset_id}")
 
     def _payload_checksum_matches(self, data: bytes, declared: str) -> bool:
@@ -716,7 +749,7 @@ class ReplicationManager:
         asset = await self._get_target_asset_for_source_asset(source_asset_id)
         if asset is None:
             return False
-        return self.get_payload_status(asset) == "verified"
+        return self.get_payload_status(asset) == "present"
 
     async def _update_asset(self, new_asset: Asset) -> None:
         existing = await self.target.asset_database.find({"asset_id": new_asset.asset_id})
@@ -728,6 +761,13 @@ class ReplicationManager:
         current.storage_ref = new_asset.storage_ref
         current.checksum = new_asset.checksum
         current.size_bytes = new_asset.size_bytes
+        current.payload_status = new_asset.payload_status
+        current.payload_status_updated_at = new_asset.payload_status_updated_at
+        current.payload_status_reason = new_asset.payload_status_reason
+        current.payload_storage_ref = new_asset.payload_storage_ref
+        current.payload_checksum = new_asset.payload_checksum
+        current.payload_size_bytes = new_asset.payload_size_bytes
+        current.payload_verified_at = new_asset.payload_verified_at
         current.media_type = new_asset.media_type
         current.kind = new_asset.kind
         current.metadata = new_asset.metadata

@@ -31,6 +31,9 @@ export-all = [
 [project.scripts]
 mindtrace-datalake-import-pascal-voc = "mindtrace.datalake.importers.pascal_voc:main"
 
+[project.entry-points."mindtrace.benchmark_suites"]
+datalake = "mindtrace.datalake.testing:register_benchmark_suites"
+
 [project.urls]
 Homepage = "https://mindtrace.ai"
 Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/datalake"
