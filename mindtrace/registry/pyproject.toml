@@ -20,6 +20,9 @@ dependencies = [
     "pyyaml>=6.0.1",
 ]
 
+[project.entry-points."mindtrace.benchmark_suites"]
+registry = "mindtrace.registry.testing:register_benchmark_suites"
+
 [project.urls]
 Homepage = "https://mindtrace.ai"
 Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/registry"

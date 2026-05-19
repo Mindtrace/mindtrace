@@ -319,6 +319,21 @@ class Datalake(Mindtrace):
     def get_mounts(self) -> dict[str, Any]:
         return self._backend.get_mounts()
 
+    def wipe(
+        self,
+        *,
+        delete_payloads: bool = True,
+        delete_metadata: bool = True,
+        clear_registry_metadata: bool = False,
+    ) -> dict[str, Any]:
+        return self._submit_coro(
+            self._backend.wipe(
+                delete_payloads=delete_payloads,
+                delete_metadata=delete_metadata,
+                clear_registry_metadata=clear_registry_metadata,
+            )
+        )
+
     def put_object(self, **kwargs: Any):
         return self._submit_coro(self._backend.put_object(**kwargs))
 
@@ -330,6 +345,9 @@ class Datalake(Mindtrace):
 
     def copy_object(self, source, **kwargs: Any):
         return self._submit_coro(self._backend.copy_object(source, **kwargs))
+
+    def delete_object(self, storage_ref):
+        return self._submit_coro(self._backend.delete_object(storage_ref))
 
     def create_object_upload_session(self, **kwargs: Any):
         return self._submit_coro(self._backend.create_object_upload_session(**kwargs))
@@ -409,6 +427,9 @@ class Datalake(Mindtrace):
 
     def get_asset_by_alias(self, alias: str):
         return self._submit_coro(self._backend.get_asset_by_alias(alias))
+
+    def get_asset_payload(self, asset_id: str, **kwargs: Any):
+        return self._submit_coro(self._backend.get_asset_payload(asset_id, **kwargs))
 
     def create_collection(self, **kwargs: Any):
         return self._submit_coro(self._backend.create_collection(**kwargs))

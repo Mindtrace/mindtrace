@@ -1,8 +1,10 @@
 import asyncio
+import threading
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
+from datalake_unit_mongo_uri import DATALAKE_UNIT_MONGO_URI
 
 from mindtrace.datalake import Datalake
 from mindtrace.datalake.async_datalake import SlowOpsPolicy
@@ -39,7 +41,7 @@ class TestDatalakeSyncFacade:
     def test_init_with_existing_async_datalake_and_loop(self):
         backend = MagicMock()
         backend.store = MagicMock()
-        backend.mongo_db_uri = "mongodb://test:27017"
+        backend.mongo_db_uri = DATALAKE_UNIT_MONGO_URI
         backend.mongo_db_name = "test_db"
         backend.slow_ops_policy = SlowOpsPolicy.FORBID
         loop = asyncio.new_event_loop()
@@ -48,7 +50,7 @@ class TestDatalakeSyncFacade:
             assert datalake._backend is backend
             assert datalake._loop is loop
             assert datalake.store is backend.store
-            assert datalake.mongo_db_uri == "mongodb://test:27017"
+            assert datalake.mongo_db_uri == DATALAKE_UNIT_MONGO_URI
             assert datalake.mongo_db_name == "test_db"
             assert datalake.slow_ops_policy == SlowOpsPolicy.FORBID
         finally:
@@ -59,10 +61,10 @@ class TestDatalakeSyncFacade:
             patch.object(Datalake, "__init__", return_value=None) as init_mock,
             patch.object(Datalake, "initialize", return_value=None) as initialize_mock,
         ):
-            result = Datalake.create("mongodb://test:27017", "test_db")
+            result = Datalake.create(DATALAKE_UNIT_MONGO_URI, "test_db")
 
         init_mock.assert_called_once_with(
-            mongo_db_uri="mongodb://test:27017",
+            mongo_db_uri=DATALAKE_UNIT_MONGO_URI,
             mongo_db_name="test_db",
             store=None,
             mounts=None,
@@ -82,7 +84,7 @@ class TestDatalakeSyncFacade:
             "default_mount": "temp",
             "mounts": [{"name": "temp", "backend": "file:///tmp", "mutable": True}],
         }
-        backend.mongo_db_uri = "mongodb://test:27017"
+        backend.mongo_db_uri = DATALAKE_UNIT_MONGO_URI
         backend.mongo_db_name = "test_db"
         upload_session = DirectUploadSession(
             upload_session_id="upload_session_1",
@@ -95,6 +97,7 @@ class TestDatalakeSyncFacade:
             expires_at=datetime.now(timezone.utc),
         )
         for name, value in {
+            "close": None,
             "initialize": None,
             "get_health": {"status": "ok", "database": "test_db", "default_mount": "temp"},
             "put_object": StorageRef(mount="temp", name="hopper.png", version="v1"),
@@ -216,16 +219,62 @@ class TestDatalakeSyncFacade:
             "get_asset_by_alias": Asset(
                 kind="image", media_type="image/png", storage_ref=StorageRef(mount="temp", name="hopper.png")
             ),
+            "wipe": {
+                "database": "test_db",
+                "deleted_payloads": True,
+                "deleted_metadata": False,
+                "clear_registry_metadata": False,
+                "cleared_mounts": [],
+            },
+            "delete_object": None,
+            "get_asset_payload": b"asset-payload",
         }.items():
             setattr(backend, name, AsyncMock(return_value=value))
         return backend
 
     @pytest.fixture
     def datalake(self, mock_backend):
-        with patch("mindtrace.datalake.datalake.AsyncDatalake", return_value=mock_backend):
-            dl = Datalake("mongodb://test:27017", "test_db")
+        loop = asyncio.new_event_loop()
+        thread_ready = threading.Event()
+
+        def _run_forever() -> None:
+            asyncio.set_event_loop(loop)
+            thread_ready.set()
+            loop.run_forever()
+
+        thread = threading.Thread(target=_run_forever, name="DatalakeTestLoop", daemon=True)
+        thread.start()
+        assert thread_ready.wait(timeout=10.0), "datalake fixture event loop failed to start"
+
+        dl = Datalake(
+            mongo_db_uri="ignored",
+            mongo_db_name="ignored",
+            async_datalake=mock_backend,
+            loop=loop,
+        )
+        dl._owns_loop_thread = True
+        dl._loop_thread = thread
+
+        try:
             yield dl
-            dl.close()
+        finally:
+            try:
+                backend = getattr(dl, "_backend", None)
+                owns_loop = getattr(dl, "_owns_loop_thread", False)
+                if backend is not None or owns_loop:
+                    dl.close()
+            except Exception:
+                pass
+            # Tests may replace datalake._loop with a MagicMock while the real loop
+            # still runs in ``thread``; always tear down ``loop`` regardless.
+            if loop.is_running():
+                loop.call_soon_threadsafe(loop.stop)
+            thread.join(timeout=5.0)
+            try:
+                if not loop.is_closed():
+                    loop.close()
+            except Exception:
+                pass
 
     def test_sync_facade_rejects_calls_inside_running_loop(self, datalake):
         async def inner():
@@ -675,3 +724,44 @@ class TestDatalakeSyncFacade:
         assert datalake.__enter__() is datalake
         assert datalake.__exit__(None, None, None) is False
         assert datalake._owns_loop_thread is False
+
+    def test_close_swallows_exceptions_from_backend_close_future(self, datalake, mock_backend):
+        datalake.initialize()
+        fake_future = MagicMock()
+        fake_future.result.side_effect = RuntimeError("backend close failed")
+        with patch("mindtrace.datalake.datalake.asyncio.run_coroutine_threadsafe", return_value=fake_future):
+            datalake.close()
+        assert datalake._backend is None
+        assert datalake._owns_loop_thread is False
+
+    def test_wipe_delete_object_and_get_asset_payload_delegate(self, datalake, mock_backend):
+        ref = StorageRef(mount="temp", name="x.bin", version="v1")
+
+        wiped = datalake.wipe(delete_metadata=False)
+        assert wiped["deleted_metadata"] is False
+        mock_backend.wipe.assert_awaited_once_with(
+            delete_payloads=True, delete_metadata=False, clear_registry_metadata=False
+        )
+
+        datalake.delete_object(ref)
+        mock_backend.delete_object.assert_awaited_once_with(ref)
+
+        assert datalake.get_asset_payload("asset_1", mmap=True) == b"asset-payload"
+        mock_backend.get_asset_payload.assert_awaited_once_with("asset_1", mmap=True)
+
+    def test_export_dataset_version_to_format_delegates_to_async_backend(self, tmp_path):
+        datalake = object.__new__(Datalake)
+        datalake._backend = Mock()
+        datalake._submit_coro = Mock(return_value="exported")
+
+        result = Datalake.export_dataset_version_to_format(
+            datalake,
+            "dataset-a",
+            "1.0.0",
+            format="huggingface",
+            destination=tmp_path / "hf",
+        )
+
+        assert result == "exported"
+        datalake._backend.export_dataset_version_to_format.assert_called_once()
+        datalake._submit_coro.assert_called_once()
