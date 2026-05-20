@@ -28,6 +28,9 @@ dependencies = [
     "aiomqtt>=2.4.0",
 ]
 
+[project.entry-points."mindtrace.benchmark_suites"]
+hardware = "mindtrace.hardware.testing:register_benchmark_suites"
+
 [project.scripts]
 # Main CLI
 mindtrace-hw = "mindtrace.hardware.cli.__main__:main"
