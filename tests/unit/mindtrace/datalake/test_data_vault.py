@@ -1,14 +1,19 @@
 """Unit tests for :mod:`mindtrace.datalake.data_vault`."""
 
 import base64
+import json
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 from PIL import Image
+from urllib3.util import parse_url
 
+from mindtrace.core import CoreConfig
 from mindtrace.database.core.exceptions import DocumentNotFoundError
+from mindtrace.datalake import AsyncDatalake, DatalakeService
+from mindtrace.datalake.annotations import BboxAnnotation, ClassificationAnnotation, PolygonAnnotation
 from mindtrace.datalake.async_datalake import SlowOperationDisabledError, SlowOperationWarning, SlowOpsPolicy
 from mindtrace.datalake.data_vault import (
     _DATASET_ANNOTATIONS_CURSOR_KIND,
@@ -26,14 +31,22 @@ from mindtrace.datalake.data_vault import (
     _encode_dataset_cursor,
     _extract_annotation_asset_id,
     _guard_slow_list_operation,
+    _normalize_async_backend,
+    _normalize_sync_backend,
     _pil_image_to_png_bytes,
     _resolve_slow_ops_policy,
     _resolved_primary_asset,
+    _sanitize_object_name_component,
 )
 from mindtrace.datalake.data_vault_backends import (
+    AsyncDataVaultBackend,
     DatalakeServiceAsyncDataVaultBackend,
     DatalakeServiceDataVaultBackend,
+    DataVaultBackend,
+    LocalAsyncDataVaultBackend,
+    LocalDataVaultBackend,
 )
+from mindtrace.datalake.datalake import Datalake
 from mindtrace.datalake.pagination_types import CursorPage, PageInfo
 from mindtrace.datalake.service_types import (
     AddedAnnotationRecordsOutput,
@@ -56,6 +69,7 @@ from mindtrace.datalake.types import (
     CollectionItem,
     DatasetVersion,
     Datum,
+    DuplicateAliasError,
     ResolvedDatasetVersion,
     ResolvedDatum,
     StorageRef,
@@ -66,6 +80,8 @@ from mindtrace.datalake.vault_serialization import (
     direct_bytes_serialization_block,
 )
 from mindtrace.registry import Registry
+from mindtrace.services import Service
+from mindtrace.services.core.utils import generate_connection_manager
 
 
 def test_annotations_bound_to_asset_rejects_non_dict_non_record():
@@ -327,7 +343,7 @@ def test_data_vault_from_url(monkeypatch):
         return fake_cm
 
     monkeypatch.setattr(
-        "mindtrace.datalake.data_vault.DatalakeService.connect",
+        "mindtrace.datalake.service.DatalakeService.connect",
         classmethod(fake_connect),
     )
     vault = DataVault.from_url("http://example:8080", timeout=30, object_name_prefix="prefix")
@@ -346,7 +362,7 @@ def test_async_data_vault_from_url(monkeypatch):
         return fake_cm
 
     monkeypatch.setattr(
-        "mindtrace.datalake.data_vault.DatalakeService.connect",
+        "mindtrace.datalake.service.DatalakeService.connect",
         classmethod(fake_connect),
     )
     vault = AsyncDataVault.from_url("http://async:9090", timeout=45, object_name_prefix="av")
@@ -437,6 +453,7 @@ async def test_async_data_vault_load_by_asset_id_materializes_bytes(tmp_path: Pa
     )
     backend = Mock()
     backend.get_asset = AsyncMock(return_value=asset)
+    backend.get_asset_payload = AsyncMock(return_value=b"by-asset-id-payload")
     backend.get_object = AsyncMock(return_value=b"by-asset-id-payload")
     vault = AsyncDataVault(backend, registry=reg)
     assert await vault.load_by_asset_id("by-id") == b"by-asset-id-payload"
@@ -454,6 +471,7 @@ async def test_async_data_vault_load_by_asset_id_skips_materialize_when_disabled
     )
     backend = Mock()
     backend.get_asset = AsyncMock(return_value=asset)
+    backend.get_asset_payload = AsyncMock(return_value=b"raw")
     backend.get_object = AsyncMock(return_value=b"raw")
     vault = AsyncDataVault(backend, registry=reg)
     assert await vault.load_by_asset_id("id-1", materialize=False) == b"raw"
@@ -470,6 +488,7 @@ async def test_async_data_vault_load_by_asset_id_skips_materialize_without_hints
     )
     backend = Mock()
     backend.get_asset = AsyncMock(return_value=asset)
+    backend.get_asset_payload = AsyncMock(return_value=b"nop")
     backend.get_object = AsyncMock(return_value=b"nop")
     vault = AsyncDataVault(backend, registry=reg)
     assert await vault.load_by_asset_id("id-2") == b"nop"
@@ -487,6 +506,7 @@ async def test_async_data_vault_load_image_by_asset_id():
     )
     backend = Mock()
     backend.get_asset = AsyncMock(return_value=asset)
+    backend.get_asset_payload = AsyncMock(return_value=png)
     backend.get_object = AsyncMock(return_value=png)
     vault = AsyncDataVault(backend)
     out = await vault.load_image_by_asset_id("img-async")
@@ -568,6 +588,7 @@ def test_sync_data_vault_load_image_by_asset_id():
     )
     backend = Mock()
     backend.get_asset = Mock(return_value=asset)
+    backend.get_asset_payload = Mock(return_value=png)
     backend.get_object = Mock(return_value=png)
     vault = DataVault(backend, slow_ops_policy=SlowOpsPolicy.ALLOW)
     out = vault.load_image_by_asset_id("img-1")
@@ -585,6 +606,7 @@ def test_sync_data_vault_load_by_asset_id_skips_materialize_when_disabled(tmp_pa
     )
     backend = Mock()
     backend.get_asset = Mock(return_value=asset)
+    backend.get_asset_payload = Mock(return_value=b"raw")
     backend.get_object = Mock(return_value=b"raw")
     vault = DataVault(backend, registry=reg)
     assert vault.load_by_asset_id("id-1", materialize=False) == b"raw"
@@ -600,6 +622,7 @@ def test_sync_data_vault_load_by_asset_id_skips_materialize_without_hints(tmp_pa
     )
     backend = Mock()
     backend.get_asset = Mock(return_value=asset)
+    backend.get_asset_payload = Mock(return_value=b"nop")
     backend.get_object = Mock(return_value=b"nop")
     vault = DataVault(backend, registry=reg)
     assert vault.load_by_asset_id("id-2") == b"nop"
@@ -616,6 +639,7 @@ def test_sync_data_vault_load_by_asset_id_materializes_bytes(tmp_path: Path):
     )
     backend = Mock()
     backend.get_asset = Mock(return_value=asset)
+    backend.get_asset_payload = Mock(return_value=b"sync-payload")
     backend.get_object = Mock(return_value=b"sync-payload")
     vault = DataVault(backend, registry=reg)
     assert vault.load_by_asset_id("by-id") == b"sync-payload"
@@ -2254,6 +2278,7 @@ def test_sync_data_vault_export_dataset_uses_service_backend(tmp_path: Path):
     )
     png_b64 = base64.b64encode(_pil_image_to_png_bytes(Image.new("RGB", (1, 1), color=(255, 0, 0)))).decode("ascii")
     cm = Mock()
+    cm.assets_get = Mock(return_value=SimpleNamespace(asset=asset))
     cm.objects_get = Mock(
         return_value=ObjectDataOutput(
             storage_ref=asset.storage_ref,
@@ -2830,3 +2855,444 @@ async def test_async_data_vault_freeze_dataset_returns_resolved_snapshot_when_no
 
     assert result == resolved
     vault._freeze_dataset.assert_awaited_once()
+
+
+# --- Normalization and alias-indexing behavior (``data_vault`` + backends) ---
+
+
+@pytest.fixture
+def datalake_service_connection_manager(monkeypatch):
+    monkeypatch.setenv("MINDTRACE_DEFAULT_HOST_URLS__SERVICE", "http://localhost:8000")
+    monkeypatch.setenv("MINDTRACE_DIR_PATHS__LOGGER_DIR", "/tmp/logs")
+    monkeypatch.setenv("MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR", "/tmp/pids")
+    Service.config = CoreConfig()
+    CM = generate_connection_manager(DatalakeService)
+    return CM(url=parse_url("http://127.0.0.1:8080"))
+
+
+@pytest.fixture
+def mock_async_datalake_for_alias_indexing():
+    dl = Mock(spec=AsyncDatalake)
+    dl.ensure_primary_asset_alias = AsyncMock()
+    dl.resolve_alias = AsyncMock(return_value="asset_target")
+    dl.get_asset_by_alias = AsyncMock()
+    dl.get_asset = AsyncMock()
+    dl.add_alias = AsyncMock()
+    dl.create_asset_from_object = AsyncMock()
+    dl.get_object = AsyncMock(return_value=b"payload")
+    dl.get_asset_payload = AsyncMock(return_value=b"payload")
+    return dl
+
+
+@pytest.fixture
+def mock_sync_datalake_for_alias_indexing():
+    dl = Mock()
+    dl.get_asset_by_alias = Mock()
+    dl.get_object = Mock(return_value=b"sync-payload")
+    dl.get_asset_payload = Mock(return_value=b"sync-payload")
+    dl.create_asset_from_object = Mock()
+    dl.add_alias = Mock()
+    return dl
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_load_delegates(mock_async_datalake_for_alias_indexing):
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="asset_target",
+    )
+    mock_async_datalake_for_alias_indexing.get_asset_by_alias = AsyncMock(return_value=asset)
+
+    vault = AsyncDataVault(mock_async_datalake_for_alias_indexing)
+    out = await vault.load("my-alias")
+
+    mock_async_datalake_for_alias_indexing.get_asset_by_alias.assert_awaited_once_with("my-alias")
+    mock_async_datalake_for_alias_indexing.get_asset_payload.assert_awaited_once_with(asset.asset_id)
+    assert out == b"payload"
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_save_registers_secondary_alias(mock_async_datalake_for_alias_indexing):
+    created = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="vault/x", version="1"),
+        asset_id="asset_new123",
+    )
+    mock_async_datalake_for_alias_indexing.create_asset_from_object = AsyncMock(return_value=created)
+
+    vault = AsyncDataVault(mock_async_datalake_for_alias_indexing)
+    asset = await vault.save("friendly", b"data", kind="image", media_type="image/png")
+
+    assert asset.asset_id == "asset_new123"
+    mock_async_datalake_for_alias_indexing.create_asset_from_object.assert_awaited()
+    mock_async_datalake_for_alias_indexing.add_alias.assert_awaited_once_with("asset_new123", "friendly")
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_save_skips_add_alias_when_same_as_asset_id(mock_async_datalake_for_alias_indexing):
+    created = Asset(
+        kind="artifact",
+        media_type="application/octet-stream",
+        storage_ref=StorageRef(mount="m", name="vault/x", version="1"),
+        asset_id="same_id",
+    )
+    mock_async_datalake_for_alias_indexing.create_asset_from_object = AsyncMock(return_value=created)
+
+    vault = AsyncDataVault(mock_async_datalake_for_alias_indexing)
+    await vault.save("same_id", b"data", kind="artifact", media_type="application/octet-stream")
+
+    mock_async_datalake_for_alias_indexing.add_alias.assert_not_called()
+
+
+def test_data_vault_load(mock_sync_datalake_for_alias_indexing):
+    asset = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="n", version="1"),
+        asset_id="a1",
+    )
+    mock_sync_datalake_for_alias_indexing.get_asset_by_alias.return_value = asset
+
+    vault = DataVault(mock_sync_datalake_for_alias_indexing)
+    out = vault.load("alias1")
+
+    mock_sync_datalake_for_alias_indexing.get_asset_by_alias.assert_called_once_with("alias1")
+    mock_sync_datalake_for_alias_indexing.get_asset_payload.assert_called_once_with(asset.asset_id)
+    assert out == b"sync-payload"
+
+
+def test_data_vault_save_adds_secondary_alias(mock_sync_datalake_for_alias_indexing):
+    created = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="vault/x", version="1"),
+        asset_id="new_asset",
+    )
+    mock_sync_datalake_for_alias_indexing.create_asset_from_object = Mock(return_value=created)
+
+    vault = DataVault(mock_sync_datalake_for_alias_indexing)
+    vault.save("friendly", b"bytes", kind="image", media_type="image/png")
+
+    mock_sync_datalake_for_alias_indexing.add_alias.assert_called_once_with("new_asset", "friendly")
+
+
+def test_data_vault_rejects_incomplete_duck():
+    class BadDuck:
+        get_asset_by_alias = Mock()
+
+    with pytest.raises(TypeError, match="list_assets"):
+        DataVault(BadDuck())
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_rejects_incomplete_duck():
+    class BadDuck:
+        get_asset_by_alias = AsyncMock()
+
+    with pytest.raises(TypeError, match="list_assets"):
+        AsyncDataVault(BadDuck())
+
+
+def test_normalize_async_backend_wraps_async_datalake_instance():
+    raw = AsyncDatalake.__new__(AsyncDatalake)
+    backend = _normalize_async_backend(raw)
+    assert isinstance(backend, LocalAsyncDataVaultBackend)
+    assert isinstance(backend, AsyncDataVaultBackend)
+    assert backend._datalake is raw
+
+
+def test_normalize_async_backend_passes_through_explicit_backend(mock_async_datalake_for_alias_indexing):
+    inner = LocalAsyncDataVaultBackend(mock_async_datalake_for_alias_indexing)
+    assert _normalize_async_backend(inner) is inner
+
+
+def test_normalize_sync_backend_wraps_datalake_instance():
+    raw = Datalake.__new__(Datalake)
+    backend = _normalize_sync_backend(raw)
+    assert isinstance(backend, LocalDataVaultBackend)
+    assert isinstance(backend, DataVaultBackend)
+    assert backend._datalake is raw
+
+
+def test_normalize_sync_backend_passes_through_explicit_backend(mock_sync_datalake_for_alias_indexing):
+    inner = LocalDataVaultBackend(mock_sync_datalake_for_alias_indexing)
+    assert _normalize_sync_backend(inner) is inner
+
+
+def test_normalize_sync_backend_wraps_datalake_service_client(datalake_service_connection_manager):
+    cm = datalake_service_connection_manager
+    backend = _normalize_sync_backend(cm)
+    assert isinstance(backend, DatalakeServiceDataVaultBackend)
+    assert backend._cm is cm
+
+
+@pytest.mark.asyncio
+async def test_normalize_async_backend_wraps_datalake_service_client(datalake_service_connection_manager):
+    cm = datalake_service_connection_manager
+    backend = _normalize_async_backend(cm)
+    assert isinstance(backend, DatalakeServiceAsyncDataVaultBackend)
+    assert backend._cm is cm
+
+
+def test_data_vault_accepts_service_connection_manager(datalake_service_connection_manager):
+    vault = DataVault(datalake_service_connection_manager)
+    assert isinstance(vault._backend, DatalakeServiceDataVaultBackend)
+
+
+def test_sanitize_object_name_component():
+    assert ".." not in _sanitize_object_name_component("a/../b")
+    assert _sanitize_object_name_component("ok-name_1") == "ok-name_1"
+
+
+class _BrokenSuffixPath(Path):
+    @property
+    def suffix(self) -> str:  # type: ignore[override]
+        raise RuntimeError("boom")
+
+
+@pytest.mark.parametrize(
+    "obj,kind,media,expected_kind,expected_media",
+    [
+        (b"x", "image", "image/png", "image", "image/png"),
+        (bytearray(b"x"), None, None, "artifact", "application/octet-stream"),
+    ],
+)
+def test_infer_kind_media_direct(obj, kind, media, expected_kind, expected_media):
+    from mindtrace.datalake.data_vault import _infer_kind_media
+
+    k, m = _infer_kind_media(obj, kind, media)
+    assert k == expected_kind
+    assert m == expected_media
+
+
+def test_infer_kind_media_path_suffix_exception(tmp_path):
+    from mindtrace.datalake.data_vault import _infer_kind_media
+
+    bp = _BrokenSuffixPath(tmp_path / "x.png")
+    k, m = _infer_kind_media(bp, None, None)
+    assert k == "artifact"
+    assert m == "application/octet-stream"
+
+
+def test_infer_kind_media_path_png(tmp_path):
+    from mindtrace.datalake.data_vault import _infer_kind_media
+
+    p = tmp_path / "f.png"
+    p.write_bytes(b"\x89PNG")
+    k, m = _infer_kind_media(p, None, None)
+    assert k == "image"
+    assert m == "image/png"
+
+
+def test_infer_kind_media_path_jpg(tmp_path):
+    from mindtrace.datalake.data_vault import _infer_kind_media
+
+    p = tmp_path / "f.jpeg"
+    p.write_bytes(b"")
+    k, m = _infer_kind_media(p, None, None)
+    assert k == "image"
+    assert m == "image/jpeg"
+
+
+def test_infer_kind_media_path_gif_webp_artifact(tmp_path):
+    from mindtrace.datalake.data_vault import _infer_kind_media
+
+    for ext, mt in [(".gif", "image/gif"), (".webp", "image/webp"), (".bin", "application/octet-stream")]:
+        p = tmp_path / f"a{ext}"
+        p.write_bytes(b"1")
+        k, m = _infer_kind_media(p, None, None)
+        assert k == "image" if ext != ".bin" else "artifact"
+        assert m == mt if ext != ".bin" else "application/octet-stream"
+
+
+def test_infer_kind_media_non_bytes_uses_defaults():
+    from mindtrace.datalake.data_vault import _infer_kind_media
+
+    k, m = _infer_kind_media(object(), None, None)
+    assert k == "artifact"
+    assert m == "application/octet-stream"
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_re_raises_duplicate_alias():
+    dl = MagicMock()
+    dl.create_asset_from_object = AsyncMock(
+        return_value=Asset.model_construct(
+            asset_id="new",
+            kind="image",
+            media_type="image/png",
+            storage_ref=StorageRef(mount="m", name="n", version="1"),
+        )
+    )
+    dl.add_alias = AsyncMock(side_effect=DuplicateAliasError("taken"))
+    dl.get_asset_by_alias = AsyncMock()
+
+    vault = AsyncDataVault(dl)
+    with pytest.raises(DuplicateAliasError, match="taken"):
+        await vault.save("friendly", b"x", kind="image", media_type="image/png")
+
+
+def test_data_vault_re_raises_duplicate_alias():
+    dl = MagicMock()
+    dl.create_asset_from_object = MagicMock(
+        return_value=Asset.model_construct(
+            asset_id="new",
+            kind="image",
+            media_type="image/png",
+            storage_ref=StorageRef(mount="m", name="n", version="1"),
+        )
+    )
+    dl.add_alias = MagicMock(side_effect=DuplicateAliasError("taken"))
+    dl.get_asset_by_alias = MagicMock()
+
+    vault = DataVault(dl)
+    with pytest.raises(DuplicateAliasError, match="taken"):
+        vault.save("friendly", b"x", kind="image", media_type="image/png")
+
+
+def test_data_vault_export_dataset_writes_split_aware_coco(tmp_path: Path):
+    from export_test_utils import (
+        png_bytes as export_png_bytes,
+    )
+    from export_test_utils import (
+        sample_annotation_set_export,
+        sample_collection_export,
+    )
+    from export_test_utils import (
+        sample_asset as export_sample_asset,
+    )
+
+    asset = export_sample_asset()
+    item = CollectionItem(collection_id="collection_1", asset_id=asset.asset_id, split="val")
+    bbox = BboxAnnotation(
+        label="dog",
+        x=1,
+        y=2,
+        width=3,
+        height=4,
+        source={"type": "human", "name": "annotator"},
+    ).to_payload()
+    polygon = PolygonAnnotation(
+        label="cat",
+        vertices=[[0, 0], [10, 0], [10, 10]],
+        source={"type": "human", "name": "annotator"},
+    ).to_payload()
+    classification = ClassificationAnnotation(
+        label="scene",
+        source={"type": "human", "name": "annotator"},
+    ).to_payload()
+
+    backend = Mock()
+    backend.list_collections.return_value = [sample_collection_export()]
+    backend.list_collection_items.return_value = [item]
+    backend.list_annotation_sets.return_value = [
+        sample_annotation_set_export(asset.asset_id, ["ann_bbox", "ann_poly", "ann_cls"])
+    ]
+    backend.get_annotation_record.side_effect = [
+        AnnotationRecord(**bbox, annotation_id="ann_bbox"),
+        AnnotationRecord(**polygon, annotation_id="ann_poly"),
+        AnnotationRecord(**classification, annotation_id="ann_cls"),
+    ]
+    backend.get_asset.return_value = asset
+    backend.get_asset_payload = Mock(return_value=export_png_bytes())
+
+    result = DataVault(backend).export_dataset(
+        "dataset-a",
+        format="coco",
+        destination=tmp_path / "coco",
+        split_map={"val": "validation"},
+    )
+
+    payload = json.loads((tmp_path / "coco" / "annotations" / "validation.json").read_text())
+    assert result.format == "coco"
+    assert payload["images"][0]["file_name"] == "images/validation/asset_img.png"
+    assert {category["name"] for category in payload["categories"]} == {"cat", "dog"}
+    assert len(payload["annotations"]) == 2
+    assert (tmp_path / "coco" / "images" / "validation" / "asset_img.png").exists()
+    assert any("unsupported COCO annotation kind 'classification'" in warning for warning in result.warnings)
+
+
+class _FakeHfDataset:
+    def __init__(self, rows):
+        self.rows = rows
+
+    @classmethod
+    def from_list(cls, rows):
+        return cls(rows)
+
+    def save_to_disk(self, path: str):
+        target = Path(path)
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "dataset.json").write_text(json.dumps(self.rows, sort_keys=True))
+
+
+class _FakeHfDatasetDict(dict):
+    def save_to_disk(self, path: str):
+        target = Path(path)
+        target.mkdir(parents=True, exist_ok=True)
+        serialized = {name: dataset.rows for name, dataset in self.items()}
+        (target / "dataset_dict.json").write_text(json.dumps(serialized, sort_keys=True))
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_export_dataset_writes_huggingface_directory(tmp_path: Path, monkeypatch):
+    from export_test_utils import (
+        png_bytes as export_png_bytes,
+    )
+    from export_test_utils import (
+        sample_annotation_set_export,
+        sample_collection_export,
+    )
+    from export_test_utils import (
+        sample_asset as export_sample_asset,
+    )
+
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+
+    asset = export_sample_asset()
+    item = CollectionItem(collection_id="collection_1", asset_id=asset.asset_id, split="train")
+    annotation = BboxAnnotation(
+        label="dog",
+        x=1,
+        y=2,
+        width=3,
+        height=4,
+        source={"type": "human", "name": "annotator"},
+    ).to_payload()
+
+    fake_module = SimpleNamespace(Dataset=_FakeHfDataset, DatasetDict=_FakeHfDatasetDict)
+    monkeypatch.setattr(huggingface_exporter.importlib, "import_module", lambda name: fake_module)
+
+    backend = AsyncMock()
+    backend.list_collections.return_value = [sample_collection_export()]
+    backend.list_collection_items.return_value = [item]
+    backend.list_annotation_sets.return_value = [sample_annotation_set_export(asset.asset_id, ["ann_bbox"])]
+    backend.get_annotation_record.return_value = AnnotationRecord(**annotation, annotation_id="ann_bbox")
+    backend.get_asset.return_value = asset
+    backend.get_asset_payload = AsyncMock(return_value=export_png_bytes())
+
+    result = await AsyncDataVault(backend).export_dataset(
+        "dataset-a",
+        format="huggingface",
+        destination=tmp_path / "hf",
+        include_media=False,
+    )
+
+    payload = json.loads((tmp_path / "hf" / "dataset_dict.json").read_text())
+    assert result.format == "huggingface"
+    assert payload["train"][0]["asset_id"] == asset.asset_id
+    assert payload["train"][0]["image_path"] is None
+    assert payload["train"][0]["annotations"][0]["label"] == "dog"
+
+
+def test_data_vault_export_dataset_rejects_unknown_format(tmp_path: Path):
+    backend = Mock()
+    backend.list_collections.return_value = [Collection(collection_id="collection_1", name="dataset-a")]
+    backend.list_collection_items.return_value = []
+    backend.list_annotation_sets.return_value = []
+
+    with pytest.raises(ValueError, match="Unsupported dataset export format"):
+        DataVault(backend).export_dataset("dataset-a", format="unknown", destination=tmp_path / "export")

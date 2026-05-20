@@ -9,10 +9,10 @@ from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 from pymongo import MongoClient
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import BulkWriteError, DocumentTooLarge, DuplicateKeyError
 
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
-from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
+from mindtrace.database.core.exceptions import DocumentNotFoundError, DocumentTooLargeError, DuplicateInsertError
 
 
 class MindtraceDocument(Document):
@@ -402,6 +402,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
 
         Raises:
             DuplicateInsertError: If the document violates unique constraints.
+            DocumentTooLargeError: If the BSON document exceeds server size limits.
             ValueError: If in multi-model mode (use db.model_name.insert() instead).
 
         Example:
@@ -457,6 +458,57 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             return await doc.insert()
         except DuplicateKeyError as e:
             raise DuplicateInsertError(f"Duplicate key error: {str(e)}")
+        except DocumentTooLarge as e:
+            raise DocumentTooLargeError(str(e)) from e
+
+    async def insert_many(self, objs: list[BaseModel | dict], ordered: bool = False) -> list[T]:
+        """Insert many documents efficiently and return the inserted models.
+
+        Uses raw Motor writes so bulk import paths can avoid per-row Beanie overhead.
+        """
+        if self._models is not None:
+            raise ValueError("Cannot use insert_many() in multi-model mode. Use db.model_name.insert_many() instead.")
+        if not objs:
+            return []
+        if not self._is_initialized:
+            await self.initialize()
+
+        raw_docs: list[dict[str, Any]] = []
+        for obj in objs:
+            if isinstance(obj, dict):
+                data = obj.copy()
+            else:
+                data = obj.model_dump(mode="python", by_alias=True, serialize_as_any=True)
+            data.pop("id", None)
+            data.pop("_id", None)
+            doc = self.model_cls(**data)
+            doc.id = None
+            raw = self._motor_model_dump(doc)
+            raw.pop("_id", None)
+            if raw.get("id") is None:
+                raw.pop("id", None)
+            raw_docs.append(raw)
+
+        try:
+            result = await self._motor_collection().insert_many(raw_docs, ordered=ordered)
+            inserted = (
+                await self._motor_collection().find({"_id": {"$in": list(result.inserted_ids)}}).to_list(length=None)
+            )
+            inserted_by_id = {row["_id"]: row for row in inserted}
+            out: list[T] = []
+            for inserted_id in result.inserted_ids:
+                row = inserted_by_id.get(inserted_id)
+                model = self._mongo_doc_to_model(row)
+                if model is None:
+                    raise DuplicateInsertError("Could not deserialize inserted document")
+                out.append(model)
+            return out
+        except DuplicateKeyError as e:
+            raise DuplicateInsertError(f"Duplicate key error: {str(e)}")
+        except BulkWriteError as e:
+            raise DuplicateInsertError(str(e)) from e
+        except DocumentTooLarge as e:
+            raise DocumentTooLargeError(str(e)) from e
 
     async def get(self, id: str | PydanticObjectId, fetch_links: bool = False) -> T:
         """
@@ -477,11 +529,11 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             .. code-block:: python
 
                 try:
-                    user = await backend.get("507f1f77bcf86cd799439011")
+                    user = await backend.get("507F1F77BCF86CD799439011")
                     print(f"Found user: {user.name}")
 
                     # With linked documents
-                    user = await backend.get("507f1f77bcf86cd799439011", fetch_links=True)
+                    user = await backend.get("507F1F77BCF86CD799439011", fetch_links=True)
                     print(f"User address: {user.address.street}")
                 except DocumentNotFoundError:
                     print("User not found")
@@ -531,7 +583,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             .. code-block:: python
 
                 # Get the document
-                user = await backend.get("507f1f77bcf86cd799439011")
+                user = await backend.get("507F1F77BCF86CD799439011")
                 # Modify it
                 user.age = 31
                 user.name = "John Updated"
@@ -606,7 +658,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             .. code-block:: python
 
                 try:
-                    await backend.delete("507f1f77bcf86cd799439011")
+                    await backend.delete("507F1F77BCF86CD799439011")
                     print("User deleted successfully")
                 except DocumentNotFoundError:
                     print("User not found")
@@ -968,7 +1020,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             .. code-block:: python
 
                 try:
-                    user = backend.get_sync("507f1f77bcf86cd799439011")
+                    user = backend.get_sync("507F1F77BCF86CD799439011")
                     print(f"Found user: {user.name}")
                 except DocumentNotFoundError:
                     print("User not found")
@@ -1000,7 +1052,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             .. code-block:: python
 
                 try:
-                    backend.delete_sync("507f1f77bcf86cd799439011")
+                    backend.delete_sync("507F1F77BCF86CD799439011")
                     print("User deleted successfully")
                 except DocumentNotFoundError:
                     print("User not found")
@@ -1035,7 +1087,7 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
             .. code-block:: python
 
                 # Get the document
-                user = backend.get_sync("507f1f77bcf86cd799439011")
+                user = backend.get_sync("507F1F77BCF86CD799439011")
                 # Modify it
                 user.age = 31
                 user.name = "John Updated"
