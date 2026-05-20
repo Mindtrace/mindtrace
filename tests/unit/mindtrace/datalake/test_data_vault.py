@@ -2932,6 +2932,27 @@ async def test_async_data_vault_save_registers_secondary_alias(mock_async_datala
 
 
 @pytest.mark.asyncio
+async def test_async_data_vault_save_image_records_png_size(mock_async_datalake_for_alias_indexing):
+    created = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="vault/image", version="1"),
+        asset_id="asset_img",
+    )
+    mock_async_datalake_for_alias_indexing.create_asset_from_object = AsyncMock(return_value=created)
+
+    image = Image.new("RGB", (2, 2), color=(12, 34, 56))
+    expected_size = len(_pil_image_to_png_bytes(image))
+
+    vault = AsyncDataVault(mock_async_datalake_for_alias_indexing)
+    await vault.save_image("friendly-image", image)
+
+    kwargs = mock_async_datalake_for_alias_indexing.create_asset_from_object.await_args.kwargs
+    assert kwargs["media_type"] == "image/png"
+    assert kwargs["size_bytes"] == expected_size
+
+
+@pytest.mark.asyncio
 async def test_async_data_vault_save_skips_add_alias_when_same_as_asset_id(mock_async_datalake_for_alias_indexing):
     created = Asset(
         kind="artifact",
@@ -2977,6 +2998,26 @@ def test_data_vault_save_adds_secondary_alias(mock_sync_datalake_for_alias_index
     vault.save("friendly", b"bytes", kind="image", media_type="image/png")
 
     mock_sync_datalake_for_alias_indexing.add_alias.assert_called_once_with("new_asset", "friendly")
+
+
+def test_data_vault_save_image_records_png_size(mock_sync_datalake_for_alias_indexing):
+    created = Asset(
+        kind="image",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="m", name="vault/image", version="1"),
+        asset_id="asset_img",
+    )
+    mock_sync_datalake_for_alias_indexing.create_asset_from_object = Mock(return_value=created)
+
+    image = Image.new("RGB", (2, 2), color=(12, 34, 56))
+    expected_size = len(_pil_image_to_png_bytes(image))
+
+    vault = DataVault(mock_sync_datalake_for_alias_indexing)
+    vault.save_image("friendly-image", image)
+
+    kwargs = mock_sync_datalake_for_alias_indexing.create_asset_from_object.call_args.kwargs
+    assert kwargs["media_type"] == "image/png"
+    assert kwargs["size_bytes"] == expected_size
 
 
 def test_data_vault_rejects_incomplete_duck():

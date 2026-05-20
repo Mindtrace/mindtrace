@@ -1523,6 +1523,7 @@ class AsyncDataVault:
             mount=mount,
             object_metadata=object_metadata,
             asset_metadata=merged_asset_metadata,
+            size_bytes=len(png_bytes),
             created_by=created_by,
             on_conflict=on_conflict,
         )
@@ -2604,6 +2605,7 @@ class DataVault:
             mount=mount,
             object_metadata=object_metadata,
             asset_metadata=merged_asset_metadata,
+            size_bytes=len(png_bytes),
             created_by=created_by,
             on_conflict=on_conflict,
         )
