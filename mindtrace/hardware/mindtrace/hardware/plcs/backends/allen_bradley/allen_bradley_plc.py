@@ -6,6 +6,8 @@ using CIPDriver, LogixDriver, and SLCDriver from pycomm3 library.
 """
 
 import asyncio
+import ipaddress
+import socket
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -976,29 +978,32 @@ class AllenBradleyPLC(BasePLC):
                 # CIP discovery failed, continue with fallback methods
                 pass
 
-            # Fallback: Check common IP addresses using CIPDriver.list_identity()
+            # Fallback: probe the host's actual local subnets via CIPDriver.list_identity()
             if not discovered_devices:
-                common_ips = [
-                    "192.168.1.10",
-                    "192.168.1.11",
-                    "192.168.1.12",
-                    "192.168.0.10",
-                    "192.168.0.11",
-                    "192.168.0.12",
-                    "10.0.0.10",
-                    "10.0.0.11",
-                    "10.0.0.12",
+                subnets: set[str] = set()
+                try:
+                    for info in socket.getaddrinfo("", None, socket.AF_INET):
+                        addr = info[4][0]
+                        if not addr.startswith("127."):
+                            network = ipaddress.IPv4Network(f"{addr}/24", strict=False)
+                            subnets.add(".".join(str(network.network_address).split(".")[:3]))
+                except Exception:
+                    pass
+
+                if not subnets:
+                    subnets = {"192.168.1", "192.168.0", "10.0.0"}
+
+                candidate_ips: List[str] = [
+                    f"{prefix}.{i}" for prefix in subnets for i in range(1, 51)
                 ]
 
-                for ip in common_ips:
+                for ip in candidate_ips:
                     try:
-                        # Use official CIPDriver.list_identity() class method
                         device_info = CIPDriver.list_identity(ip)
                         if device_info:
                             product_name = device_info.get("product_name", "")
                             product_type = device_info.get("product_type", "")
 
-                            # Determine device type
                             device_type = "CIP"
                             if "ControlLogix" in product_name or "CompactLogix" in product_name:
                                 device_type = "Logix"
