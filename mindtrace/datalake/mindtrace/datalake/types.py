@@ -117,6 +117,66 @@ class DirectUploadSession(DatalakeDocument):
         ]
 
 
+class DatasetImportSession(DatalakeDocument):
+    """Tracks caller-orchestrated dataset import: metadata in Mongo, bytes staged per asset on the target."""
+
+    import_session_id: Annotated[str, Indexed(unique=True)] = Field(
+        default_factory=lambda: new_id("dataset_import_session"),
+    )
+    status: Literal["open", "committed", "failed"] = "open"
+    bundle_data: dict[str, Any] = Field(default_factory=dict)
+    bundle_storage_ref: StorageRef | None = None
+    bundle_sha256: str | None = None
+    transfer_policy: str = "copy_if_missing"
+    target_object_match_policy: str = "exists"
+    preserve_ids: bool = True
+    mount_map: dict[str, str] = Field(default_factory=dict)
+    origin_lake_id: str | None = None
+    planning_batch_size: int = 500
+    planning_concurrency: int = 32
+    transfer_batch_size: int = 100
+    transfer_concurrency: int = 8
+    greenfield_skip_target_object_probes: bool = True
+    greenfield_skip_target_metadata_probes: bool = True
+    commit_progress_every_items: int = 100
+    commit_progress_every_seconds: float = 0.25
+    required_asset_ids: list[str] = Field(default_factory=list)
+    staged_refs: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    metadata_graph_committed: bool = False
+    verified_asset_ids: list[str] = Field(default_factory=list)
+    dataset_name: str | None = None
+    dataset_version: str | None = None
+    expected_manifest_total: int = 0
+    ordered_manifest_ids: list[str] = Field(default_factory=list)
+    import_stage: str | None = None
+    metadata_commit_cursor_entity_kind: str | None = None
+    metadata_commit_cursor_completed_items: int | None = None
+    metadata_commit_cursor_total_items: int | None = None
+    #: Last persisted progress snapshot during ``import_session_commit_metadata`` (poll via ``dataset_versions.import_session_status``).
+    import_progress_phase: str | None = None
+    import_progress_batch_index: int = 0
+    import_progress_total_batches: int = 0
+    import_progress_completed_items: int | None = None
+    import_progress_total_items: int | None = None
+    import_progress_message: str | None = None
+    import_progress_entity_kind: str | None = None
+    import_progress_phase_detail: str | None = None
+    import_progress_entity_completed_items: int | None = None
+    import_progress_entity_total_items: int | None = None
+    import_progress_bytes_completed: int | None = None
+    import_progress_bytes_total: int | None = None
+    import_progress_skipped_items: int | None = None
+    import_progress_failed_items: int | None = None
+    import_progress_updated_at: datetime | None = None
+    import_progress_error: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    expires_at: datetime
+
+    class Settings:
+        name = "datalake_dataset_import_sessions"
+        indexes = ["status", "expires_at"]
+
+
 class AnnotationSource(BaseModel):
     """Provenance for an annotation record."""
 
@@ -143,6 +203,128 @@ class AnnotationLabelDefinition(BaseModel):
         return f"AnnotationLabelDefinition(name={self.name}, id={self.id})"
 
 
+PayloadStatus = Literal["missing", "uploading", "present", "corrupt"]
+
+ReplicationEntityKind = Literal[
+    "asset",
+    "asset_alias",
+    "asset_retention",
+    "annotation_record",
+    "annotation_schema",
+    "annotation_set",
+    "collection",
+    "collection_item",
+    "datum",
+    "dataset_version",
+    "storage_object",
+]
+ReplicationTaskStatus = Literal[
+    "pending",
+    "claimed",
+    "syncing_metadata",
+    "hydrating_payloads",
+    "complete",
+    "failed",
+    "dead",
+    "cancelled",
+]
+ReplicationHydratePolicy = Literal["manual", "async", "immediate"]
+
+REPLICATION_TASK_PURGEABLE_STATUSES: frozenset[ReplicationTaskStatus] = frozenset(
+    ("complete", "dead", "cancelled"),
+)
+DEFAULT_REPLICATION_TASK_PURGE_STATUSES: tuple[ReplicationTaskStatus, ...] = (
+    "complete",
+    "dead",
+    "cancelled",
+)
+
+
+class ReplicationRule(DatalakeDocument):
+    """Persistent policy describing which datalake entities should be replicated.
+
+    A rule selects root entities and enqueues :class:`ReplicationTask` rows. Rules intentionally describe
+    metadata selection only; payload bytes are controlled separately by ``hydrate_policy`` so metadata can keep
+    syncing even when payload bandwidth is constrained.
+    """
+
+    rule_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("replication_rule"))
+    name: str
+    enabled: bool = True
+    target_lake_id: str
+    root_kinds: list[ReplicationEntityKind] = Field(default_factory=lambda: ["asset"])
+    selector: dict[str, Any] = Field(default_factory=dict)
+    include_graph: bool = True
+    hydrate_policy: ReplicationHydratePolicy = "async"
+    transfer_policy: Literal["metadata_first"] = "metadata_first"
+    mount_map: dict[str, str] = Field(default_factory=dict)
+    batch_size: int = 100
+    max_attempts: int = 5
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    class Settings:
+        name = "datalake_replication_rules"
+        indexes = [
+            "enabled",
+            "target_lake_id",
+            "root_kinds",
+            [("enabled", 1), ("target_lake_id", 1)],
+        ]
+
+
+class ReplicationTask(DatalakeDocument):
+    """Durable outbox item for one-way source -> target metadata/payload replication work."""
+
+    task_id: Annotated[str, Indexed(unique=True)] = Field(default_factory=lambda: new_id("replication_task"))
+    rule_id: str | None = None
+    target_lake_id: str
+    root_kind: ReplicationEntityKind
+    root_id: str
+    dedupe_key: Annotated[str, Indexed(unique=True)]
+    status: ReplicationTaskStatus = "pending"
+    hydrate_policy: ReplicationHydratePolicy = "async"
+    mount_map: dict[str, str] = Field(default_factory=dict)
+    include_graph: bool = True
+    attempts: int = 0
+    max_attempts: int = 5
+    next_attempt_at: datetime = Field(default_factory=utc_now)
+    claimed_by: str | None = None
+    claimed_at: datetime | None = None
+    lease_expires_at: datetime | None = None
+    last_error: str | None = None
+    last_progress_phase: str | None = None
+    last_progress_message: str | None = None
+    last_progress_completed_items: int | None = None
+    last_progress_total_items: int | None = None
+    last_progress_bytes_completed: int | None = None
+    last_progress_bytes_total: int | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+    completed_at: datetime | None = None
+
+    class Settings:
+        name = "datalake_replication_tasks"
+        indexes = [
+            "status",
+            "next_attempt_at",
+            "target_lake_id",
+            "root_kind",
+            "root_id",
+            "rule_id",
+            "claimed_by",
+            "lease_expires_at",
+            "completed_at",
+            [("status", 1), ("next_attempt_at", 1)],
+            [("claimed_by", 1), ("lease_expires_at", 1)],
+            [("target_lake_id", 1), ("root_kind", 1), ("root_id", 1)],
+            [("rule_id", 1), ("status", 1)],
+            [("status", 1), ("completed_at", 1)],
+        ]
+
+
 class Asset(DatalakeDocument):
     """Canonical metadata row for a payload-bearing object."""
 
@@ -155,6 +337,13 @@ class Asset(DatalakeDocument):
     storage_ref: StorageRef
     checksum: str | None = None
     size_bytes: int | None = None
+    payload_status: PayloadStatus = "present"
+    payload_status_updated_at: datetime | None = Field(default_factory=utc_now)
+    payload_status_reason: str | None = None
+    payload_storage_ref: StorageRef | None = None
+    payload_checksum: str | None = None
+    payload_size_bytes: int | None = None
+    payload_verified_at: datetime | None = None
     subject: SubjectRef | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
@@ -168,6 +357,10 @@ class Asset(DatalakeDocument):
             "storage_ref.mount",
             "storage_ref.name",
             "storage_ref.version",
+            "payload_status",
+            "payload_checksum",
+            "payload_storage_ref.mount",
+            "payload_storage_ref.name",
             "subject.kind",
             "subject.id",
             "metadata.origin.asset_id",

@@ -8,14 +8,14 @@ from pydantic import BaseModel, Field, field_validator
 from mindtrace.datalake.types import AnnotationRecord, AnnotationSchema, AnnotationSet, Asset, Datum
 
 ReplicationMode = Literal["metadata_first"]
-PayloadStatus = Literal["pending", "transferring", "uploaded", "verified", "failed"]
+PayloadStatus = Literal["missing", "uploading", "present", "corrupt"]
 
 
 class ReplicatedAssetState(BaseModel):
     origin_lake_id: str
     origin_asset_id: str
     replication_mode: ReplicationMode = "metadata_first"
-    payload_status: PayloadStatus = "pending"
+    payload_status: PayloadStatus = "missing"
     payload_available: bool = False
     payload_last_error: str | None = None
     payload_last_attempt_at: datetime | None = None

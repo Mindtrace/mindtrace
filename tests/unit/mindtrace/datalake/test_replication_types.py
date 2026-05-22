@@ -27,7 +27,7 @@ def test_replication_types_defaults():
 
     assert req.replication_mode == "metadata_first"
     assert req.mount_map == {}
-    assert state.payload_status == "pending"
+    assert state.payload_status == "missing"
     assert state.payload_available is False
     assert result.created_assets == 0
     assert result.updated_datums == 0
