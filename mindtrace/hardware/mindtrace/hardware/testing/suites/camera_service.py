@@ -27,7 +27,9 @@ class _CameraServiceCaptureMixin(BenchTestSuite):
 
     async def _open_cameras(self, client: Any, cameras: list[str], *, test_connection: bool) -> Any:
         if isinstance(client, CameraManagerService):
-            return await client.open_cameras_batch(CameraOpenBatchRequest(cameras=cameras, test_connection=test_connection))
+            return await client.open_cameras_batch(
+                CameraOpenBatchRequest(cameras=cameras, test_connection=test_connection)
+            )
         return await client.open_cameras_batch(cameras=cameras, test_connection=test_connection)
 
     async def _capture_batch(self, client: Any, cameras: list[str], *, output_format: str) -> Any:
@@ -99,7 +101,11 @@ class _CameraServiceCaptureMixin(BenchTestSuite):
                 bytes_processed = 0
                 if isinstance(data, dict):
                     for camera, result in data.items():
-                        result_success = bool(result.get("success", True)) if isinstance(result, dict) else bool(getattr(result, "success", True))
+                        result_success = (
+                            bool(result.get("success", True))
+                            if isinstance(result, dict)
+                            else bool(getattr(result, "success", True))
+                        )
                         if result_success:
                             per_camera_successes[str(camera)] += 1
                         else:
@@ -146,7 +152,9 @@ class _CameraServiceCaptureMixin(BenchTestSuite):
 class HardwareCameraServiceCaptureSmokeSuite(_CameraServiceCaptureMixin):
     suite_id = "hardware.smoke.camera_service_capture"
     title = "Hardware smoke — CameraManagerService capture"
-    description = "Opens configured cameras through CameraManagerService, captures one image from each, and closes them."
+    description = (
+        "Opens configured cameras through CameraManagerService, captures one image from each, and closes them."
+    )
     safety = "Defaults to mock cameras and in-process service; physical cameras are touched only when explicitly named."
     task_schema = TaskSchema(name=suite_id, input_schema=HardwareCameraInput, output_schema=BenchResultSchema)
     profiles = MappingProxyType(
