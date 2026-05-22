@@ -1,12 +1,12 @@
 """Hardware benchmark suite implementations."""
 
 from mindtrace.hardware.testing.suites.camera_manager import (
-    HardwareCameraManagerCaptureStressSuite,
     HardwareCameraManagerCaptureSmokeSuite,
+    HardwareCameraManagerCaptureStressSuite,
 )
 from mindtrace.hardware.testing.suites.camera_service import (
-    HardwareCameraServiceCaptureStressSuite,
     HardwareCameraServiceCaptureSmokeSuite,
+    HardwareCameraServiceCaptureStressSuite,
 )
 
 __all__ = [

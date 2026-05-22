@@ -15,12 +15,12 @@ def register_benchmark_suites(*, runner: TestRunner | None = None, replace: bool
     target = runner or TestRunner.default()
 
     from mindtrace.hardware.testing.suites.camera_manager import (
-        HardwareCameraManagerCaptureStressSuite,
         HardwareCameraManagerCaptureSmokeSuite,
+        HardwareCameraManagerCaptureStressSuite,
     )
     from mindtrace.hardware.testing.suites.camera_service import (
-        HardwareCameraServiceCaptureStressSuite,
         HardwareCameraServiceCaptureSmokeSuite,
+        HardwareCameraServiceCaptureStressSuite,
     )
 
     for cls in (
