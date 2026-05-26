@@ -41,3 +41,14 @@ def test_hardware_testing_registers_expected_ids_and_schemas() -> None:
     input_properties = manager_smoke.task_schema["input_json_schema"]["properties"]
     assert "cameras" in input_properties
     assert manager_smoke.profiles["smoke"]["cameras"] == ["MockBasler:mock_basler_1"]
+
+    smoke_suites = set(TestRunner.suite_ids_for_profile("smoke"))
+    stress_suites = set(TestRunner.suite_ids_for_profile("stress"))
+    assert {
+        "hardware.smoke.camera_manager_capture",
+        "hardware.smoke.camera_service_capture",
+    }.issubset(smoke_suites)
+    assert {
+        "hardware.stress.camera_manager_capture_ceiling",
+        "hardware.stress.camera_service_capture_ceiling",
+    }.issubset(stress_suites)

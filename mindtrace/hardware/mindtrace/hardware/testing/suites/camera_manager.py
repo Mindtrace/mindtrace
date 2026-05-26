@@ -88,6 +88,7 @@ class _CameraManagerCaptureMixin(BenchTestSuite):
 
 class HardwareCameraManagerCaptureSmokeSuite(_CameraManagerCaptureMixin):
     suite_id = "hardware.smoke.camera_manager_capture"
+    tags = frozenset({"smoke", "hardware", "camera"})
     title = "Hardware smoke — CameraManager capture"
     description = "Opens configured cameras through CameraManager, captures one image from each, and closes them."
     safety = "Defaults to mock cameras; physical cameras are touched only when explicitly named."
@@ -117,6 +118,7 @@ class HardwareCameraManagerCaptureSmokeSuite(_CameraManagerCaptureMixin):
 
 class HardwareCameraManagerCaptureStressSuite(_CameraManagerCaptureMixin):
     suite_id = "hardware.stress.camera_manager_capture_ceiling"
+    tags = frozenset({"stress", "hardware", "camera"})
     title = "Hardware stress — CameraManager capture ceiling"
     description = "Measures repeated CameraManager capture throughput and latency for configured cameras."
     safety = "Defaults to mock cameras; physical cameras are touched only when explicitly named."
