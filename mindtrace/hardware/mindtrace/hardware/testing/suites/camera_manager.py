@@ -27,6 +27,7 @@ class _CameraManagerCaptureMixin(BenchTestSuite):
         reporter: BenchReporter,
         *,
         capture_once: bool,
+        batch_capture: bool,
     ) -> BenchResult:
         started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         monotonic_start = time.perf_counter()
@@ -46,26 +47,58 @@ class _CameraManagerCaptureMixin(BenchTestSuite):
             while not reporter.is_cancelled():
                 if not capture_once and time.perf_counter() >= deadline:
                     break
-                for camera in cameras:
+                if batch_capture:
                     op_start = time.perf_counter()
                     try:
-                        image = manager.open(camera, test_connection=False).capture(output_format=output_format)
+                        results = manager.batch_capture(cameras, output_format=output_format)
                     except Exception as exc:  # noqa: BLE001 - benchmark records failures and continues.
-                        per_camera_failures[camera] += 1
+                        for camera in cameras:
+                            per_camera_failures[camera] += 1
                         reporter.record_operation(
                             success=False,
                             latency_seconds=time.perf_counter() - op_start,
                             error=exc,
+                            cameras=cameras,
+                        )
+                    else:
+                        bytes_processed = 0
+                        failed_cameras: list[str] = []
+                        for camera in cameras:
+                            image = results.get(camera)
+                            if image is None:
+                                per_camera_failures[camera] += 1
+                                failed_cameras.append(camera)
+                                continue
+                            per_camera_successes[camera] += 1
+                            bytes_processed += image_bytes_processed(image)
+                        reporter.record_operation(
+                            success=not failed_cameras,
+                            latency_seconds=time.perf_counter() - op_start,
+                            bytes_processed=bytes_processed,
+                            cameras=cameras,
+                            failed_cameras=failed_cameras,
+                        )
+                else:
+                    for camera in cameras:
+                        op_start = time.perf_counter()
+                        try:
+                            image = manager.open(camera, test_connection=False).capture(output_format=output_format)
+                        except Exception as exc:  # noqa: BLE001 - benchmark records failures and continues.
+                            per_camera_failures[camera] += 1
+                            reporter.record_operation(
+                                success=False,
+                                latency_seconds=time.perf_counter() - op_start,
+                                error=exc,
+                                camera=camera,
+                            )
+                            continue
+                        per_camera_successes[camera] += 1
+                        reporter.record_operation(
+                            success=True,
+                            latency_seconds=time.perf_counter() - op_start,
+                            bytes_processed=image_bytes_processed(image),
                             camera=camera,
                         )
-                        continue
-                    per_camera_successes[camera] += 1
-                    reporter.record_operation(
-                        success=True,
-                        latency_seconds=time.perf_counter() - op_start,
-                        bytes_processed=image_bytes_processed(image),
-                        camera=camera,
-                    )
                 if capture_once:
                     break
         finally:
@@ -82,6 +115,8 @@ class _CameraManagerCaptureMixin(BenchTestSuite):
                 "per_camera_successes": dict(per_camera_successes),
                 "per_camera_failures": dict(per_camera_failures),
                 "output_format": output_format,
+                "batch_capture": batch_capture,
+                "max_concurrent_captures": max_concurrent_captures,
             },
         )
 
@@ -113,7 +148,7 @@ class HardwareCameraManagerCaptureSmokeSuite(_CameraManagerCaptureMixin):
     )
 
     def execute_bench(self, config: BenchSuiteConfig, reporter: BenchReporter) -> BenchResult:
-        return self._run_capture_loop(config, reporter, capture_once=True)
+        return self._run_capture_loop(config, reporter, capture_once=True, batch_capture=False)
 
 
 class HardwareCameraManagerCaptureStressSuite(_CameraManagerCaptureMixin):
@@ -143,4 +178,4 @@ class HardwareCameraManagerCaptureStressSuite(_CameraManagerCaptureMixin):
     )
 
     def execute_bench(self, config: BenchSuiteConfig, reporter: BenchReporter) -> BenchResult:
-        return self._run_capture_loop(config, reporter, capture_once=False)
+        return self._run_capture_loop(config, reporter, capture_once=False, batch_capture=True)
