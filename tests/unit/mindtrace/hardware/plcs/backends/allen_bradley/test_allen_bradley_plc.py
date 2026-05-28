@@ -1324,10 +1324,11 @@ class TestAllenBradleyPLCTagDiscovery:
         LogixDriver.return_value = mock_logix_driver
         await plc.connect()
 
-        tags = await plc.get_all_tags()
-
-        assert isinstance(tags, list)
-        assert len(tags) == 0
+        # An empty tag dict from a *connected* Logix controller means the
+        # tag-list upload failed (a real controller always has tags), so it's
+        # surfaced as an error rather than silently reported as "no tags".
+        with pytest.raises(PLCTagError):
+            await plc.get_all_tags()
 
     @pytest.mark.asyncio
     async def test_get_all_tags_slc(self, mock_pycomm3_available, mock_slc_driver):
@@ -1657,7 +1658,9 @@ class TestAllenBradleyPLCTagInfo:
             LogixDriver,
         )
 
-        mock_logix_driver.tags = {}
+        # A *populated* tag list that simply lacks the queried tag — the genuine
+        # "not found" case, distinct from an empty/failed upload (PLCTagError).
+        mock_logix_driver.tags = {"ExistingTag": MagicMock()}
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
