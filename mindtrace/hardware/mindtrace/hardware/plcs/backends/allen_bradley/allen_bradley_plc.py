@@ -556,17 +556,7 @@ class AllenBradleyPLC(BasePLC):
             if self.driver_type == "LogixDriver":
                 # LogixDriver has built-in tag list functionality
                 tags_dict = await asyncio.to_thread(lambda: self.plc.tags)
-                if not tags_dict:
-                    # We're connected, but the controller tag list came back
-                    # empty/None — for a Logix controller that means the upload
-                    # failed, not that the PLC is tag-less. Caching [] here would
-                    # silently report "no tags" and make every later lookup look
-                    # like a missing tag. Fail loudly instead.
-                    raise PLCTagError(
-                        f"Tag list upload from Allen Bradley PLC at {self.ip_address} "
-                        "returned empty; the controller tag list could not be read"
-                    )
-                self._tags_cache = list(tags_dict.keys())
+                self._tags_cache = list(tags_dict.keys()) if tags_dict else []
 
             elif self.driver_type == "SLCDriver":
                 # Enhanced SLCDriver tag discovery with comprehensive data file mapping
@@ -786,10 +776,6 @@ class AllenBradleyPLC(BasePLC):
             self._cache_timestamp = current_time
             return self._tags_cache
 
-        except PLCTagError:
-            # Already a clear, intentional error (e.g. empty tag-list upload) —
-            # don't re-wrap it.
-            raise
         except Exception as e:
             self.logger.error(f"Failed to get tags: {e}")
             raise PLCTagError(f"Failed to get tags from Allen Bradley PLC: {e}")
@@ -811,15 +797,6 @@ class AllenBradleyPLC(BasePLC):
         try:
             if self.driver_type == "LogixDriver":
                 tags_dict = await asyncio.to_thread(lambda: self.plc.tags)
-                if not tags_dict:
-                    # Connected, but the controller tag list is empty/None — the
-                    # upload failed. We CANNOT conclude the tag is absent; raising
-                    # "not found" here is the long-standing bug that mislabels a
-                    # tag-list-fetch failure as a missing tag. Surface it honestly.
-                    raise PLCTagError(
-                        f"Could not read the tag list from Allen Bradley PLC at "
-                        f"{self.ip_address}; cannot verify whether tag '{tag_name}' exists"
-                    )
                 if tag_name in tags_dict:
                     tag_info = tags_dict[tag_name]
                     return {
@@ -852,9 +829,6 @@ class AllenBradleyPLC(BasePLC):
                 }
 
         except PLCTagNotFoundError:
-            raise
-        except PLCTagError:
-            # Intentional, already-clear error (e.g. tag list couldn't be read).
             raise
         except Exception as e:
             self.logger.error(f"Failed to get tag info: {e}")
@@ -1002,11 +976,41 @@ class AllenBradleyPLC(BasePLC):
                 # CIP discovery failed, continue with fallback methods
                 pass
 
-            # No hardcoded-IP fallback. Probing a fixed list of "common" IPs is
-            # noisy, almost always wrong, and looks like reconnaissance to OT
-            # security tooling. Broadcast (above) is the only segment-wide
-            # method here; for a known device use the targeted, unicast
-            # ``identify(host)`` instead.
+            # Fallback: Check common IP addresses using CIPDriver.list_identity()
+            if not discovered_devices:
+                common_ips = [
+                    "192.168.1.10",
+                    "192.168.1.11",
+                    "192.168.1.12",
+                    "192.168.0.10",
+                    "192.168.0.11",
+                    "192.168.0.12",
+                    "10.0.0.10",
+                    "10.0.0.11",
+                    "10.0.0.12",
+                ]
+
+                for ip in common_ips:
+                    try:
+                        # Use official CIPDriver.list_identity() class method
+                        device_info = CIPDriver.list_identity(ip)
+                        if device_info:
+                            product_name = device_info.get("product_name", "")
+                            product_type = device_info.get("product_type", "")
+
+                            # Determine device type
+                            device_type = "CIP"
+                            if "ControlLogix" in product_name or "CompactLogix" in product_name:
+                                device_type = "Logix"
+                            elif "MicroLogix" in product_name or "SLC" in product_name:
+                                device_type = "SLC"
+                            elif product_type == "Programmable Logic Controller":
+                                device_type = "Logix"
+
+                            discovered_devices.append(f"AllenBradley:{ip}:{device_type}")
+
+                    except Exception:
+                        continue
 
             # Remove duplicates while preserving order
             seen = set()
@@ -1032,51 +1036,6 @@ class AllenBradleyPLC(BasePLC):
             List[str]: List of discovered PLC IP addresses.
         """
         return await asyncio.to_thread(cls.get_available_plcs)
-
-    @classmethod
-    async def identify(cls, host: str, *, port: "int | None" = None, timeout: float = 1.0) -> "Dict[str, Any] | None":
-        """Identify a single Allen-Bradley / EtherNet-IP device by unicast.
-
-        Sends ONE EtherNet/IP ListIdentity (CIP ``0x63``) to ``host`` on TCP/UDP
-        44818 via ``CIPDriver.list_identity`` — a targeted, read-only request to
-        the device's own management port. No broadcast, no scanning, no
-        fixed-IP probing, so it crosses routers/VLANs/containers and doesn't
-        look like recon. Returns the device identity plus the matching driver
-        (``logix`` / ``slc`` / ``cip``), or ``None`` if nothing answers as an
-        EtherNet/IP device at ``host``.
-        """
-        if not PYCOMM3_AVAILABLE:
-            return None
-        try:
-            info = await asyncio.wait_for(
-                asyncio.to_thread(CIPDriver.list_identity, host),
-                timeout=max(timeout, 0.5),
-            )
-        except Exception:
-            return None
-        if not info:
-            return None
-        product_name = info.get("product_name", "") or ""
-        product_type = info.get("product_type", "") or ""
-        driver = "cip"
-        if "ControlLogix" in product_name or "CompactLogix" in product_name:
-            driver = "logix"
-        elif "MicroLogix" in product_name or "SLC" in product_name:
-            driver = "slc"
-        elif product_type == "Programmable Logic Controller":
-            driver = "logix"
-        return {
-            "backend": "AllenBradley",
-            "driver": driver,
-            "ip": host,
-            "port": port or 44818,
-            "vendor": info.get("vendor", "") or "",
-            "product": product_name,
-            "product_type": product_type,
-            "revision": str(info.get("revision", "") or ""),
-            "serial": str(info.get("serial", "") or ""),
-            "reachable": True,
-        }
 
     @staticmethod
     def get_backend_info() -> Dict[str, Any]:

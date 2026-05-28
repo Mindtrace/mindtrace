@@ -267,32 +267,6 @@ class BasePLC(MindtraceABC):
         """
         pass
 
-    @classmethod
-    async def identify(cls, host: str, *, port: "int | None" = None, timeout: float = 1.0) -> "Dict[str, Any] | None":
-        """Probe a SINGLE host for its device identity (unicast, read-only).
-
-        The targeted, firewall-safe counterpart to ``get_available_plcs``:
-        rather than broadcasting or scanning, send ONE native identity request
-        to a host the operator named — on the device's own service port,
-        read-only — and return the device identity plus the driver that fits,
-        or ``None`` if the host doesn't answer as this backend's device type.
-
-        Backends override this with their protocol-native primitive (EtherNet/IP
-        ListIdentity, Siemens S7 SZL read, Modbus Read-Device-Identification).
-        The default is "not supported", so a backend that hasn't implemented it
-        never claims a host (the manager moves on to the next backend).
-
-        Args:
-            host: IP / hostname to probe.
-            port: Optional service-port override (backend default otherwise).
-            timeout: Per-probe timeout in seconds.
-
-        Returns:
-            Identity dict with keys ``backend, driver, ip, port, vendor,
-            product, revision, serial, reachable`` — or ``None``.
-        """
-        return None
-
     @staticmethod
     @abstractmethod
     def get_backend_info() -> Dict[str, Any]:
