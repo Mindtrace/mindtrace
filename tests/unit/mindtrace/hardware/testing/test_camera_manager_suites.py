@@ -38,6 +38,10 @@ class FakeCameraManager:
             return {name: FakeCamera() for name in names}
         return FakeCamera()
 
+    def batch_capture(self, names, output_format: str = "numpy"):
+        assert output_format == "numpy"
+        return {name: np.zeros((4, 5, 3), dtype=np.uint8) for name in names}
+
     def close(self, names=None):  # noqa: ARG002
         self.closed = True
 
