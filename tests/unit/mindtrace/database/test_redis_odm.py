@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import Field
+from redis.exceptions import ResponseError
 
 from mindtrace.database import MindtraceRedisDocument, RedisMindtraceODM
 from mindtrace.database.backends.redis_odm import _ensure_redis_model_indexed
@@ -1817,10 +1818,12 @@ def test_redis_do_initialize_connection_error():
 
 
 def test_redis_all_no_such_index_retry_succeeds():
-    """Test all() when 'No such index' error and retry succeeds."""
+    """Test all() when the index is missing and retry succeeds."""
     with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
+        # _is_index_missing probes FT.INFO; ResponseError signals "missing".
+        mock_redis.execute_command.side_effect = ResponseError("Index not found")
 
         backend = RedisMindtraceODM(RedisDocTest, "redis://localhost:6379")
         backend.logger = MagicMock()
@@ -1830,14 +1833,14 @@ def test_redis_all_no_such_index_retry_succeeds():
         # Set Meta.database
         RedisDocTest.Meta.database = mock_redis
 
-        # Mock find() to raise "No such index" error first, then succeed
+        # First find() fails, second succeeds.
         call_count = [0]
 
         def mock_find():
             mock_query = MagicMock()
             if call_count[0] == 0:
                 call_count[0] += 1
-                mock_query.all.side_effect = Exception("No such index")
+                mock_query.all.side_effect = Exception("index error")
             else:
                 mock_query.all.return_value = [MagicMock()]
             return mock_query
@@ -3863,10 +3866,12 @@ def test_redis_all_not_initialized_retry():
 
 
 def test_redis_all_no_such_index_retry_fails():
-    """Test all() when 'No such index' error and retry fails."""
+    """Test all() when index is missing and retry fails."""
     with patch("mindtrace.database.backends.redis_odm.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
+        # _is_index_missing probes FT.INFO; ResponseError signals "missing".
+        mock_redis.execute_command.side_effect = ResponseError("Index not found")
 
         backend = RedisMindtraceODM(RedisDocTest, "redis://localhost:6379")
         backend.logger = MagicMock()
@@ -3876,9 +3881,9 @@ def test_redis_all_no_such_index_retry_fails():
         # Set Meta.database
         RedisDocTest.Meta.database = mock_redis
 
-        # Mock find() to raise "No such index" error
+        # find() fails
         mock_query = MagicMock()
-        mock_query.all.side_effect = Exception("No such index")
+        mock_query.all.side_effect = Exception("index error")
         RedisDocTest.find = MagicMock(return_value=mock_query)
 
         # Mock _create_index_for_model to raise exception
