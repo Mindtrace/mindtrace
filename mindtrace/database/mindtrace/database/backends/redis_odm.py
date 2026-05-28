@@ -955,7 +955,8 @@ class RedisMindtraceODM(MindtraceODM):
             return self.model_cls.find().all()
         except Exception as e:
             # If "No such index" error, try to create index and retry
-            if "No such index" in str(e):
+            err = str(e)
+            if "No such index" in err or "Index not found" in err:
                 try:
                     # Try to create the index manually
                     self._create_index_for_model(self.model_cls)
@@ -1066,7 +1067,8 @@ class RedisMindtraceODM(MindtraceODM):
             return results
         except Exception as e:
             # If query fails due to missing index, try to create it and retry
-            if "No such index" in str(e):
+            err = str(e)
+            if "No such index" in err or "Index not found" in err:
                 try:
                     # Try to create the index using Migrator with environment variable set
                     import os
