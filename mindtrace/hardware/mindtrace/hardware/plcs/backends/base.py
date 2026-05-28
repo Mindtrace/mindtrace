@@ -343,8 +343,10 @@ class BasePLC(MindtraceABC):
 
                 if attempt < self.retry_count - 1:
                     await asyncio.sleep(self.retry_delay)
-                    if not await self.is_connected():
-                        await self.reconnect()
+                    # Always reconnect after a send failure — pycomm3's connected
+                    # property stays True on a stale/broken TCP socket, so checking
+                    # is_connected() alone would never trigger the reconnect.
+                    await self.reconnect()
 
         raise PLCTagError(f"Failed to read tags after {self.retry_count} attempts: {last_exception}")
 
@@ -372,8 +374,8 @@ class BasePLC(MindtraceABC):
 
                 if attempt < self.retry_count - 1:
                     await asyncio.sleep(self.retry_delay)
-                    if not await self.is_connected():
-                        await self.reconnect()
+                    # Always reconnect after a send failure — same reason as read_tag_with_retry.
+                    await self.reconnect()
 
         raise PLCTagError(f"Failed to write tags after {self.retry_count} attempts: {last_exception}")
 
