@@ -385,7 +385,13 @@ class AllenBradleyPLC(BasePLC):
                     self.logger.warning(f"Error reading tag {tag_name}: {tag_result.error}")
                     tag_values[tag_name] = None
                 elif hasattr(tag_result, "value"):
-                    tag_values[tag_name] = tag_result.value
+                    value = tag_result.value
+                    # ControlLogix STRING tags have a fixed 82-byte DATA buffer.
+                    # A partial/torn write leaves stale bytes beyond the new LEN,
+                    # which pycomm3 returns verbatim. Strip at the first null byte.
+                    if isinstance(value, str):
+                        value = value.split("\x00")[0]
+                    tag_values[tag_name] = value
                 else:
                     tag_values[tag_name] = tag_result
 
