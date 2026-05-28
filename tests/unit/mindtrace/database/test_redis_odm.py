@@ -3168,11 +3168,14 @@ def test_redis_ensure_index_outer_exception_handler():
         # Set Meta.database
         RedisDocTest.Meta.database = mock_redis
 
-        # Mock getattr to raise exception when accessing __module__
+        # Bind the real getattr before patching so the fall-through branch
+        # doesn't recurse into the patched version.
+        real_getattr = getattr
+
         def mock_getattr(obj, name, default=None):
-            if obj == RedisDocTest and name == "__module__":
+            if obj is RedisDocTest and name == "__module__":
                 raise Exception("Module access failed")
-            return getattr(obj, name, default)
+            return real_getattr(obj, name, default)
 
         with patch("builtins.getattr", side_effect=mock_getattr):
             backend._ensure_index_has_documents(RedisDocTest)
@@ -3487,11 +3490,14 @@ def test_redis_ensure_index_outer_exception_getattr():
         # Set Meta.database
         RedisDocTest.Meta.database = mock_redis
 
-        # Mock getattr to raise exception when accessing __module__
+        # Bind the real getattr before patching so the fall-through branch
+        # doesn't recurse into the patched version.
+        real_getattr = getattr
+
         def mock_getattr(obj, name, default=None):
-            if obj == RedisDocTest and name == "__module__":
+            if obj is RedisDocTest and name == "__module__":
                 raise Exception("Module access failed")
-            return getattr(obj, name, default)
+            return real_getattr(obj, name, default)
 
         with patch("builtins.getattr", side_effect=mock_getattr):
             backend._ensure_index_has_documents(RedisDocTest)
@@ -5950,11 +5956,15 @@ def test_redis_ensure_index_key_patterns_main_module():
         model_module_after = getattr(ModelMain, "__module__", "")
         assert model_module_after == "__main__", f"Expected __main__, got {model_module_after}"
 
-        # redis-om may set model_key_prefix automatically during initialization
-        # We need to patch getattr to return None for model_key_prefix to ensure else branch
+        # redis-om may set model_key_prefix automatically during initialization;
+        # force it to None to exercise the else branch. Bind the real getattr
+        # before patching so other lookups don't recurse into the patched version.
+        real_getattr = getattr
+
         def mock_getattr(obj, name, default=None):
             if obj is ModelMain.Meta and name == "model_key_prefix":
-                return None  # Force else branch at return original_getattr(obj, name, default)
+                return None
+            return real_getattr(obj, name, default)
 
         with patch("builtins.getattr", side_effect=mock_getattr):
             # Call the method - should execute# are executed when:
