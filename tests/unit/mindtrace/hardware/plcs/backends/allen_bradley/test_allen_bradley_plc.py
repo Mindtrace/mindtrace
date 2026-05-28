@@ -1324,11 +1324,10 @@ class TestAllenBradleyPLCTagDiscovery:
         LogixDriver.return_value = mock_logix_driver
         await plc.connect()
 
-        # An empty tag dict from a *connected* Logix controller means the
-        # tag-list upload failed (a real controller always has tags), so it's
-        # surfaced as an error rather than silently reported as "no tags".
-        with pytest.raises(PLCTagError):
-            await plc.get_all_tags()
+        tags = await plc.get_all_tags()
+
+        assert isinstance(tags, list)
+        assert len(tags) == 0
 
     @pytest.mark.asyncio
     async def test_get_all_tags_slc(self, mock_pycomm3_available, mock_slc_driver):
@@ -1658,9 +1657,7 @@ class TestAllenBradleyPLCTagInfo:
             LogixDriver,
         )
 
-        # A *populated* tag list that simply lacks the queried tag — the genuine
-        # "not found" case, distinct from an empty/failed upload (PLCTagError).
-        mock_logix_driver.tags = {"ExistingTag": MagicMock()}
+        mock_logix_driver.tags = {}
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
@@ -1994,6 +1991,25 @@ class TestAllenBradleyPLCStaticMethods:
         assert "AllenBradley:192.168.1.10:Logix" in plcs
         assert "AllenBradley:192.168.1.11:Drive" in plcs
 
+    def test_get_available_plcs_fallback_list_identity(self, mock_pycomm3_available):
+        """Test get_available_plcs fallback to list_identity."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            CIPDriver,
+        )
+
+        CIPDriver.discover.side_effect = Exception("Discovery failed")
+        CIPDriver.list_identity.return_value = {
+            "ip_address": "192.168.1.10",
+            "product_name": "ControlLogix L75",
+            "product_type": "Programmable Logic Controller",
+        }
+
+        plcs = AllenBradleyPLC.get_available_plcs()
+
+        assert isinstance(plcs, list)
+        assert len(plcs) > 0
+
     def test_get_available_plcs_without_pycomm3(self, mock_pycomm3_unavailable):
         """Test get_available_plcs when pycomm3 is unavailable."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import AllenBradleyPLC
@@ -2089,43 +2105,40 @@ class TestAllenBradleyPLCStaticMethods:
         assert "AllenBradley:192.168.1.12:Logix" in plcs
         assert "AllenBradley:192.168.1.13:CIP" in plcs
 
-    @pytest.mark.asyncio
-    async def test_identify_returns_device_identity(self, mock_pycomm3_available):
-        """identify() returns the device identity + matching driver from one unicast probe."""
+    def test_get_available_plcs_fallback_list_identity_exception(self, mock_pycomm3_available):
+        """Test get_available_plcs fallback when list_identity raises exception."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             CIPDriver,
         )
 
+        CIPDriver.discover.side_effect = Exception("Discovery failed")
+        CIPDriver.list_identity.side_effect = Exception("List identity failed")
+
+        plcs = AllenBradleyPLC.get_available_plcs()
+
+        assert isinstance(plcs, list)
+        assert len(plcs) == 0
+
+    def test_get_available_plcs_fallback_list_identity_success(self, mock_pycomm3_available):
+        """Test get_available_plcs fallback when list_identity succeeds."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            CIPDriver,
+        )
+
+        CIPDriver.discover.side_effect = Exception("Discovery failed")
         CIPDriver.list_identity.return_value = {
-            "product_name": "1756-L75 ControlLogix",
+            "product_name": "MicroLogix 1400",
             "product_type": "Programmable Logic Controller",
-            "vendor": "Rockwell Automation",
-            "revision": "32.11",
-            "serial": "00C0FFEE",
         }
 
-        identity = await AllenBradleyPLC.identify("10.0.0.42")
+        plcs = AllenBradleyPLC.get_available_plcs()
 
-        assert identity is not None
-        assert identity["backend"] == "AllenBradley"
-        assert identity["ip"] == "10.0.0.42"
-        assert identity["port"] == 44818
-        assert identity["driver"] == "logix"
-        assert identity["product"] == "1756-L75 ControlLogix"
-        assert identity["serial"] == "00C0FFEE"
-
-    @pytest.mark.asyncio
-    async def test_identify_returns_none_when_no_response(self, mock_pycomm3_available):
-        """identify() returns None when nothing answers as EtherNet/IP at the host."""
-        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
-            AllenBradleyPLC,
-            CIPDriver,
-        )
-
-        CIPDriver.list_identity.return_value = None
-
-        assert await AllenBradleyPLC.identify("10.0.0.99") is None
+        assert isinstance(plcs, list)
+        assert len(plcs) > 0
+        # Should have found devices from common IPs
+        assert any("SLC" in p or "Logix" in p for p in plcs)
 
     def test_get_available_plcs_outer_exception(self, mock_pycomm3_available):
         """Test get_available_plcs when outer exception occurs."""

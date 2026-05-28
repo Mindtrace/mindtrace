@@ -202,47 +202,6 @@ class PLCManager(Mindtrace):
 
         return discovered_plcs
 
-    async def identify(
-        self,
-        host: str,
-        *,
-        backend: "str | None" = None,
-        port: "int | None" = None,
-        timeout: float = 1.0,
-    ) -> "Dict[str, Any] | None":
-        """Identify the device at ``host`` with one unicast probe per backend.
-
-        Targeted counterpart to :meth:`discover_plcs`: instead of broadcasting,
-        try the enabled backends' ``identify`` (optionally just ``backend``) in
-        priority order and return the first that answers. No broadcast, no
-        scanning, no fixed-IP probing — only a unicast to ``host`` on each
-        backend's own service port. Works across routed/VLAN/container networks
-        and doesn't trip OT intrusion detection.
-
-        Returns the identity dict (with ``backend`` filled in) or ``None`` if
-        no enabled backend recognizes the host.
-        """
-
-        def _norm(s: str) -> str:
-            return s.strip().lower().replace("_", "").replace("-", "").replace(" ", "")
-
-        backends = self._get_enabled_backends()
-        if backend:
-            wanted = _norm(backend)
-            backends = {name: cls for name, cls in backends.items() if wanted in _norm(name)}
-
-        for backend_name, backend_class in backends.items():
-            try:
-                identity = await backend_class.identify(host, port=port, timeout=timeout)
-            except Exception as e:
-                self.logger.debug(f"identify via {backend_name} failed for {host}: {e}")
-                identity = None
-            if identity:
-                identity.setdefault("backend", backend_name)
-                self.logger.info(f"Identified {host} as {identity.get('product') or backend_name}")
-                return identity
-        return None
-
     def _get_enabled_backends(self) -> Dict[str, type]:
         """
         Get enabled PLC backends based on configuration.
