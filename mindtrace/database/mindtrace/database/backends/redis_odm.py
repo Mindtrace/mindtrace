@@ -2,6 +2,7 @@ import asyncio
 from typing import Dict, List, Optional, Type, TypeVar
 
 from pydantic import BaseModel
+from redis.exceptions import ResponseError
 from redis_om import JsonModel, Migrator, get_redis_connection
 from redis_om.model.model import ExpressionProxy, NotFoundError
 
@@ -218,6 +219,22 @@ class RedisMindtraceODM(MindtraceODM):
             else:
                 # Async mode - defer initialization (operations will auto-init)
                 pass
+
+    def _is_index_missing(self, model: Type[ModelType]) -> bool:
+        """Return True iff FT.INFO confirms the model's index is gone.
+
+        Probed structurally so we don't depend on RediSearch's error wording.
+        """
+        index_name = getattr(model.Meta, "index_name", None)
+        if not index_name:
+            return False
+        try:
+            self.redis.execute_command("FT.INFO", index_name)
+            return False
+        except ResponseError:
+            return True
+        except Exception:
+            return False
 
     def _create_index_for_model(self, model: Type[ModelType]):
         """Manually create an index for a specific model using its connection."""
@@ -953,20 +970,15 @@ class RedisMindtraceODM(MindtraceODM):
             self._do_initialize()
         try:
             return self.model_cls.find().all()
-        except Exception as e:
-            # If "No such index" error, try to create index and retry
-            err = str(e)
-            if "No such index" in err or "Index not found" in err:
-                try:
-                    # Try to create the index manually
-                    self._create_index_for_model(self.model_cls)
-                    # Retry the query
-                    return self.model_cls.find().all()
-                except Exception as retry_error:
-                    self.logger.warning(f"Failed to create index and retry: {retry_error}")
-                    return []
-            else:
+        except Exception:
+            if not self._is_index_missing(self.model_cls):
                 raise
+            try:
+                self._create_index_for_model(self.model_cls)
+                return self.model_cls.find().all()
+            except Exception as retry_error:
+                self.logger.warning(f"Failed to create index and retry: {retry_error}")
+                return []
 
     def _dict_to_find_expressions(self, query_dict: dict):
         """Convert a dict query to redis-om expression(s) so find(dict) works."""
@@ -1066,22 +1078,16 @@ class RedisMindtraceODM(MindtraceODM):
 
             return results
         except Exception as e:
-            # If query fails due to missing index, try to create it and retry
-            err = str(e)
-            if "No such index" in err or "Index not found" in err:
+            if self._is_index_missing(self.model_cls):
                 try:
-                    # Try to create the index using Migrator with environment variable set
                     import os
 
                     original_redis_url = os.environ.get("REDIS_OM_URL", None)
                     try:
-                        # Set environment variable so Migrator uses correct connection
                         os.environ["REDIS_OM_URL"] = self.redis_url
                         get_redis_connection(url=self.redis_url)
-                        # Run Migrator to create the missing index
                         migrator = Migrator()
                         migrator.run()
-                        # Retry the query
                         if args:
                             return self.model_cls.find(*args).all()
                         else:
@@ -1095,9 +1101,7 @@ class RedisMindtraceODM(MindtraceODM):
                     self.logger.warning(f"Redis query failed after retry: {retry_error}")
                     return []
             else:
-                # If query fails for other reasons, log the error and return empty list
                 self.logger.warning(f"Redis query failed: {e}")
-                # Try to return all documents if specific query fails
                 try:
                     return self.model_cls.find().all()
                 except Exception:
