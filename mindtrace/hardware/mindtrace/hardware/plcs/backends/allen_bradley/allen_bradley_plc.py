@@ -556,7 +556,17 @@ class AllenBradleyPLC(BasePLC):
             if self.driver_type == "LogixDriver":
                 # LogixDriver has built-in tag list functionality
                 tags_dict = await asyncio.to_thread(lambda: self.plc.tags)
-                self._tags_cache = list(tags_dict.keys()) if tags_dict else []
+                if not tags_dict:
+                    # We're connected, but the controller tag list came back
+                    # empty/None — for a Logix controller that means the upload
+                    # failed, not that the PLC is tag-less. Caching [] here would
+                    # silently report "no tags" and make every later lookup look
+                    # like a missing tag. Fail loudly instead.
+                    raise PLCTagError(
+                        f"Tag list upload from Allen Bradley PLC at {self.ip_address} "
+                        "returned empty; the controller tag list could not be read"
+                    )
+                self._tags_cache = list(tags_dict.keys())
 
             elif self.driver_type == "SLCDriver":
                 # Enhanced SLCDriver tag discovery with comprehensive data file mapping
@@ -776,6 +786,10 @@ class AllenBradleyPLC(BasePLC):
             self._cache_timestamp = current_time
             return self._tags_cache
 
+        except PLCTagError:
+            # Already a clear, intentional error (e.g. empty tag-list upload) —
+            # don't re-wrap it.
+            raise
         except Exception as e:
             self.logger.error(f"Failed to get tags: {e}")
             raise PLCTagError(f"Failed to get tags from Allen Bradley PLC: {e}")
@@ -797,6 +811,15 @@ class AllenBradleyPLC(BasePLC):
         try:
             if self.driver_type == "LogixDriver":
                 tags_dict = await asyncio.to_thread(lambda: self.plc.tags)
+                if not tags_dict:
+                    # Connected, but the controller tag list is empty/None — the
+                    # upload failed. We CANNOT conclude the tag is absent; raising
+                    # "not found" here is the long-standing bug that mislabels a
+                    # tag-list-fetch failure as a missing tag. Surface it honestly.
+                    raise PLCTagError(
+                        f"Could not read the tag list from Allen Bradley PLC at "
+                        f"{self.ip_address}; cannot verify whether tag '{tag_name}' exists"
+                    )
                 if tag_name in tags_dict:
                     tag_info = tags_dict[tag_name]
                     return {
@@ -829,6 +852,9 @@ class AllenBradleyPLC(BasePLC):
                 }
 
         except PLCTagNotFoundError:
+            raise
+        except PLCTagError:
+            # Intentional, already-clear error (e.g. tag list couldn't be read).
             raise
         except Exception as e:
             self.logger.error(f"Failed to get tag info: {e}")
