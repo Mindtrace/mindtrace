@@ -524,6 +524,7 @@ class AllenBradleyPLC(BasePLC):
 
             # Convert results to dictionary
             write_status = {}
+            tag_errors = []
             for i, tag_result in enumerate(results):
                 tag_name = tag_list[i][0] if i < len(tag_list) else f"tag_{i}"
 
@@ -532,8 +533,15 @@ class AllenBradleyPLC(BasePLC):
                 elif hasattr(tag_result, "error") and tag_result.error:
                     self.logger.warning(f"Error writing tag {tag_name}: {tag_result.error}")
                     write_status[tag_name] = False
+                    tag_errors.append(f"{tag_name}: {tag_result.error}")
                 else:
                     write_status[tag_name] = True
+
+            # Raise so write_tag_with_retry can retry — tag-level errors (e.g. stale
+            # symbol cache after reconnect) would otherwise be silently swallowed.
+            if tag_errors:
+                from mindtrace.hardware.core.exceptions import PLCTagWriteError
+                raise PLCTagWriteError(f"Failed to write tags to Allen Bradley PLC: {'; '.join(tag_errors)}")
 
             return write_status
 

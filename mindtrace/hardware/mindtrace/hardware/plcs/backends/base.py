@@ -135,6 +135,7 @@ class BasePLC(MindtraceABC):
         self.plc = None
         self.device_manager = None
         self.initialized = False
+        self._reconnect_lock = asyncio.Lock()
 
         self._setup_plc_logger_formatting()
 
@@ -308,16 +309,25 @@ class BasePLC(MindtraceABC):
         """
         Attempt to reconnect to the PLC.
 
+        Serialised with a lock so concurrent callers (e.g. multiple write tasks
+        all failing at once) do not open duplicate sessions.  The second caller
+        to acquire the lock checks is_connected() first — if the first caller
+        already restored the connection it returns immediately without a second
+        disconnect/connect cycle.
+
         Returns:
             True if reconnection successful, False otherwise
         """
-        try:
-            await self.disconnect()
-            await asyncio.sleep(self.retry_delay)
-            return await self.connect()
-        except Exception as e:
-            self.logger.error(f"Reconnection failed: {e}")
-            return False
+        async with self._reconnect_lock:
+            try:
+                if await self.is_connected():
+                    return True
+                await self.disconnect()
+                await asyncio.sleep(self.retry_delay)
+                return await self.connect()
+            except Exception as e:
+                self.logger.error(f"Reconnection failed: {e}")
+                return False
 
     async def read_tag_with_retry(self, tags: Union[str, List[str]]) -> Dict[str, Any]:
         """
