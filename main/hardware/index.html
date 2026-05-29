@@ -588,6 +588,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="SDK Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#daheng-sdk-galaxy-eula-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Daheng SDK (Galaxy) — EULA notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
       </ul>
@@ -1651,6 +1668,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="SDK Requirements">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#daheng-sdk-galaxy-eula-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Daheng SDK (Galaxy) — EULA notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
       </ul>
@@ -2296,7 +2330,7 @@
 <h2 id="overview">Overview</h2>
 <p>The hardware module consists of five main subsystems:</p>
 <ul>
-<li><strong>Camera System</strong>: Multi-backend camera management (Basler, GenICam, OpenCV) with bandwidth control and liquid lens autofocus</li>
+<li><strong>Camera System</strong>: Multi-backend camera management (Basler, GenICam, OpenCV, Daheng) with bandwidth control and liquid lens autofocus</li>
 <li><strong>Stereo Camera System</strong>: 3D vision with depth measurement and point cloud generation (Basler Stereo ace)</li>
 <li><strong>3D Scanner System</strong>: Industrial 3D scanning with multi-component capture (Photoneo)</li>
 <li><strong>PLC System</strong>: Industrial PLC integration (Allen-Bradley) with tag-based operations</li>
@@ -2311,7 +2345,7 @@
 <div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>mindtrace/hardware/
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── cameras/                  # 2D camera subsystem
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>│   ├── core/                 # Camera, AsyncCamera, CameraManager
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│   ├── backends/             # Basler, GenICam, OpenCV, Mock
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│   ├── backends/             # Basler, GenICam, OpenCV, Daheng, Mock
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│   └── homography/           # Planar measurement system
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>├── stereo_cameras/           # 3D stereo camera subsystem
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│   ├── core/                 # StereoCamera, StereoCameraManager
@@ -2341,10 +2375,11 @@
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># With specific backend support</span>
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>pip<span class="w"> </span>install<span class="w"> </span>mindtrace-hardware<span class="o">[</span>cameras-basler<span class="o">]</span><span class="w">      </span><span class="c1"># Basler cameras</span>
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>pip<span class="w"> </span>install<span class="w"> </span>mindtrace-hardware<span class="o">[</span>cameras-genicam<span class="o">]</span><span class="w">     </span><span class="c1"># GenICam cameras</span>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>pip<span class="w"> </span>install<span class="w"> </span>mindtrace-hardware<span class="o">[</span>cameras-all<span class="o">]</span><span class="w">         </span><span class="c1"># All camera backends</span>
-</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>pip<span class="w"> </span>install<span class="w"> </span>mindtrace-hardware<span class="o">[</span>stereo-all<span class="o">]</span><span class="w">          </span><span class="c1"># Stereo cameras</span>
-</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>pip<span class="w"> </span>install<span class="w"> </span>mindtrace-hardware<span class="o">[</span>scanners-3d<span class="o">]</span><span class="w">         </span><span class="c1"># 3D scanners (Photoneo)</span>
-</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>pip<span class="w"> </span>install<span class="w"> </span>mindtrace-hardware<span class="o">[</span>plcs-all<span class="o">]</span><span class="w">            </span><span class="c1"># PLC support</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>pip<span class="w"> </span>install<span class="w"> </span>mindtrace-hardware<span class="o">[</span>cameras-daheng<span class="o">]</span><span class="w">      </span><span class="c1"># Daheng cameras (Galaxy SDK)</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>pip<span class="w"> </span>install<span class="w"> </span>mindtrace-hardware<span class="o">[</span>cameras-all<span class="o">]</span><span class="w">         </span><span class="c1"># All camera backends</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>pip<span class="w"> </span>install<span class="w"> </span>mindtrace-hardware<span class="o">[</span>stereo-all<span class="o">]</span><span class="w">          </span><span class="c1"># Stereo cameras</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>pip<span class="w"> </span>install<span class="w"> </span>mindtrace-hardware<span class="o">[</span>scanners-3d<span class="o">]</span><span class="w">         </span><span class="c1"># 3D scanners (Photoneo)</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>pip<span class="w"> </span>install<span class="w"> </span>mindtrace-hardware<span class="o">[</span>plcs-all<span class="o">]</span><span class="w">            </span><span class="c1"># PLC support</span>
 </span></code></pre></div>
 <h3 id="sdk-requirements">SDK Requirements</h3>
 <table>
@@ -2367,6 +2402,11 @@
 <td>Required (GenTL Producer)</td>
 </tr>
 <tr>
+<td>Daheng</td>
+<td><code>iai-gxipy</code></td>
+<td>Required (Galaxy SDK — manual download, EULA)</td>
+</tr>
+<tr>
 <td>Stereo ace</td>
 <td><code>pypylon</code></td>
 <td>Required (Supplementary Package)</td>
@@ -2381,9 +2421,35 @@
 <p>SDK setup commands:
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>mindtrace-camera-basler<span class="w"> </span>install<span class="w">        </span><span class="c1"># Basler Pylon tools (optional)</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>mindtrace-camera-genicam<span class="w"> </span>install<span class="w">       </span><span class="c1"># GenICam CTI files (required)</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>mindtrace-stereo-basler<span class="w"> </span>install<span class="w">        </span><span class="c1"># Stereo supplementary package (required)</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>mindtrace-scanner-photoneo<span class="w"> </span>install<span class="w">     </span><span class="c1"># Matrix Vision mvGenTL Producer (required)</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>mindtrace-camera-daheng<span class="w"> </span>install<span class="w">        </span><span class="c1"># Daheng Galaxy SDK (required, EULA)</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>mindtrace-stereo-basler<span class="w"> </span>install<span class="w">        </span><span class="c1"># Stereo supplementary package (required)</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>mindtrace-scanner-photoneo<span class="w"> </span>install<span class="w">     </span><span class="c1"># Matrix Vision mvGenTL Producer (required)</span>
 </span></code></pre></div></p>
+<h4 id="daheng-sdk-galaxy-eula-notes">Daheng SDK (Galaxy) — EULA notes</h4>
+<p>The <code>iai-gxipy</code> Python wheel is a ctypes wrapper around Daheng's
+native Galaxy library (<code>libgxiapi.so</code> on Linux / <code>GxIAPI.dll</code> on
+Windows). Importing <code>gxipy</code> without the native library raises an
+<code>OSError</code>/<code>NameError</code> from the upstream wheel — <code>DAHENG_AVAILABLE</code>
+reports <code>False</code> in that case and the rest of the camera stack
+continues to work; only Daheng-backed cameras are unavailable.</p>
+<p>Daheng's EULA does <strong>not</strong> grant redistribution rights, so the
+Galaxy SDK is never bundled in Mindtrace packages or Docker images.
+Two supported paths put it in place:</p>
+<ol>
+<li><strong>Interactive wizard (dev/lab):</strong> run
+   <code>mindtrace-camera-daheng install</code> — it prints the EULA, asks for
+   explicit acceptance, downloads from Daheng's site, and runs the
+   installer locally so <code>libgxiapi.so</code> lands in the expected
+   location. Use this on a workstation.</li>
+<li><strong>Pre-installed host (production):</strong> install Galaxy SDK once on
+   the host (Docker bind-mounts <code>/usr/lib/libgxiapi.so</code> and
+   <code>/opt/Galaxy_camera</code> into the container; bare-metal services pick
+   it up from the system path automatically). The container/image
+   stays clean of proprietary bits.</li>
+</ol>
+<p>The Mindtrace <code>mindtrace-camera</code> Docker image follows the same
+contract — see <code>docker/hardware/camera/README.md</code> for the
+container-side instructions.</p>
 <h2 id="camera-system">Camera System</h2>
 <h3 id="interface-hierarchy">Interface Hierarchy</h3>
 <table>

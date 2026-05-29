@@ -884,6 +884,95 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#mindtrace.database.testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        testing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.database.testing.register_benchmark_suites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        register_benchmark_suites
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.database.testing.suites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        suites
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="suites">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.database.testing.suites.mongo_crud" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mongo_crud
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.database.testing.suites.mongo_insert" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mongo_insert
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.database.testing.suites.mongo_read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mongo_read
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.database.testing.suites.mongo_update" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mongo_update
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -965,6 +1054,95 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#mindtrace.database.testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        testing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.database.testing.register_benchmark_suites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        register_benchmark_suites
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.database.testing.suites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        suites
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="suites">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.database.testing.suites.mongo_crud" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mongo_crud
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.database.testing.suites.mongo_insert" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mongo_insert
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.database.testing.suites.mongo_read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mongo_read
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.database.testing.suites.mongo_update" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mongo_update
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1015,6 +1193,282 @@
 
 
 
+
+<div class="doc doc-object doc-module">
+
+
+
+<h4 id="mindtrace.database.testing" class="doc doc-heading">
+            <span class="doc doc-object-name doc-module-name">testing</span>
+
+
+</h4>
+
+    <div class="doc doc-contents ">
+
+        <p>Embedded benchmark suites for <code>mindtrace-database</code>.</p>
+<p>Use <code>register_benchmark_suites</code> directly or discover it through the
+<code>mindtrace.benchmark_suites</code> entry point group.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h5 id="mindtrace.database.testing.register_benchmark_suites" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">register_benchmark_suites</span>
+
+
+</h5>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">register_benchmark_suites</span><span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="o">*</span><span class="p">,</span> <span class="n">runner</span><span class="p">:</span> <span class="n">TestRunner</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">replace</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Register database benchmark suites on <code>runner</code> or the default runner.</p>
+
+
+    </div>
+
+</div>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+<h5 id="mindtrace.database.testing.suites" class="doc doc-heading">
+            <span class="doc doc-object-name doc-module-name">suites</span>
+
+
+</h5>
+
+    <div class="doc doc-contents ">
+
+        <p>Database benchmark suite implementations.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-module">
+
+
+
+<h6 id="mindtrace.database.testing.suites.mongo_crud" class="doc doc-heading">
+            <span class="doc doc-object-name doc-module-name">mongo_crud</span>
+
+
+</h6>
+
+    <div class="doc doc-contents ">
+
+        <p>Mongo ODM CRUD smoke benchmark.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-module">
+
+
+
+<h6 id="mindtrace.database.testing.suites.mongo_insert" class="doc doc-heading">
+            <span class="doc doc-object-name doc-module-name">mongo_insert</span>
+
+
+</h6>
+
+    <div class="doc doc-contents ">
+
+        <p>Mongo ODM insert throughput benchmark.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-module">
+
+
+
+<h6 id="mindtrace.database.testing.suites.mongo_read" class="doc doc-heading">
+            <span class="doc doc-object-name doc-module-name">mongo_read</span>
+
+
+</h6>
+
+    <div class="doc doc-contents ">
+
+        <p>Mongo ODM read throughput benchmark.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-module">
+
+
+
+<h6 id="mindtrace.database.testing.suites.mongo_update" class="doc doc-heading">
+            <span class="doc doc-object-name doc-module-name">mongo_update</span>
+
+
+</h6>
+
+    <div class="doc doc-contents ">
+
+        <p>Mongo ODM update throughput benchmark.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+  </div>
+
+    </div>
+
+</div>
 
 
   </div>
