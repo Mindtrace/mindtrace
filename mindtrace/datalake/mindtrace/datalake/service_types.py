@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from mindtrace.core import TaskSchema
 from mindtrace.datalake.pagination_types import (
@@ -27,8 +27,10 @@ from mindtrace.datalake.sync_types import (
     DatasetSyncImportPlan,
     DatasetSyncImportRequest,
     DatasetSyncProgress,
+    ObjectPayloadDescriptor,
 )
 from mindtrace.datalake.types import (
+    REPLICATION_TASK_PURGEABLE_STATUSES,
     AnnotationRecord,
     AnnotationSchema,
     AnnotationSet,
@@ -40,6 +42,10 @@ from mindtrace.datalake.types import (
     DatasetVersion,
     Datum,
     DirectUploadSession,
+    ReplicationEntityKind,
+    ReplicationHydratePolicy,
+    ReplicationTask,
+    ReplicationTaskStatus,
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
@@ -69,7 +75,26 @@ class MountsOutput(BaseModel):
     mounts: list[dict[str, Any]]
 
 
+class DatalakeWipeInput(BaseModel):
+    delete_payloads: bool = True
+    delete_metadata: bool = True
+    clear_registry_metadata: bool = False
+
+
+class DatalakeWipeOutput(BaseModel):
+    database: str
+    deleted_payloads: bool
+    deleted_metadata: bool
+    clear_registry_metadata: bool
+    cleared_mounts: list[str] = Field(default_factory=list)
+
+
 MountsSchema = TaskSchema(name="mounts", output_schema=MountsOutput)
+DatalakeWipeSchema = TaskSchema(
+    name="datalake.wipe",
+    input_schema=DatalakeWipeInput,
+    output_schema=DatalakeWipeOutput,
+)
 
 
 class PutObjectInput(BaseModel):
@@ -724,6 +749,36 @@ class DatasetSyncBundleOutput(BaseModel):
     bundle: DatasetSyncBundle
 
 
+class DatasetSyncGraphExportOutput(BaseModel):
+    bundle: DatasetSyncBundle
+
+
+class DatasetSyncPayloadManifestOutput(BaseModel):
+    payloads: list[ObjectPayloadDescriptor] = Field(default_factory=list)
+
+
+class DatasetSyncImportGraphInput(BaseModel):
+    session_id: str
+
+
+class DatasetSyncImportGraphOutput(BaseModel):
+    result: DatasetSyncCommitResult
+
+
+class DatasetSyncHydratePayloadsInput(BaseModel):
+    session_id: str
+    asset_id: str
+    data_base64: str
+
+
+class DatasetSyncHydratePayloadsOutput(BaseModel):
+    storage_ref: StorageRef
+
+
+class DatasetSyncFinalizeGraphInput(BaseModel):
+    session_id: str
+
+
 class DatasetSyncImportPlanOutput(BaseModel):
     plan: DatasetSyncImportPlan
 
@@ -732,7 +787,148 @@ class DatasetSyncCommitResultOutput(BaseModel):
     result: DatasetSyncCommitResult
 
 
-DatasetSyncJobMode = Literal["prepare", "import"]
+class DatasetImportSessionStartOutput(BaseModel):
+    session_id: str
+    required_asset_ids: list[str] = Field(
+        default_factory=list,
+        description="Asset ids whose payload bytes must be uploaded before import_session_commit.",
+    )
+    expires_at: datetime
+
+
+class DatasetImportSessionUploadInput(BaseModel):
+    session_id: str
+    asset_id: str
+    data_base64: str
+
+
+class DatasetImportSessionUploadOutput(BaseModel):
+    storage_ref: StorageRef
+
+
+class DatasetImportSessionCommitInput(BaseModel):
+    session_id: str
+
+
+class DatasetImportSessionStatusInput(BaseModel):
+    """Poll import session lifecycle and persisted progress."""
+
+    session_id: str
+
+
+class DatasetImportSessionStatusOutput(BaseModel):
+    """Thin projection for callers (bundles omit large payloads)."""
+
+    session_id: str
+    status: Literal["open", "committed", "failed"]
+    expires_at: datetime
+    metadata_graph_committed: bool = False
+    session_stage: str | None = None
+    required_asset_ids: list[str] = Field(default_factory=list)
+    verified_asset_ids: list[str] = Field(default_factory=list)
+    required_asset_count: int = 0
+    verified_asset_count: int = 0
+    pending_asset_count: int = 0
+    progress: DatasetSyncProgress | None = None
+    import_progress_updated_at: datetime | None = None
+    import_progress_error: str | None = None
+    metadata_commit_cursor_entity_kind: str | None = None
+    metadata_commit_cursor_completed_items: int | None = None
+    metadata_commit_cursor_total_items: int | None = None
+
+
+class DatasetStreamingImportStartInput(BaseModel):
+    dataset_name: str
+    version: str
+    manifest_total: int = Field(default=0, ge=0)
+    source_alias: str | None = None
+    transfer_policy: str = "copy_if_missing"
+    mount_map: dict[str, str] = Field(default_factory=dict)
+    preserve_ids: bool = True
+    origin_lake_id: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_preserve_ids(self) -> DatasetStreamingImportStartInput:
+        """Match :class:`~mindtrace.datalake.sync_types.DatasetSyncImportRequest` until ID remapping exists."""
+        if not self.preserve_ids:
+            raise ValueError(
+                "preserve_ids=False is not supported yet; streaming imports preserve source identifiers. "
+                "Omit preserve_ids or set it to True."
+            )
+        return self
+
+
+class DatasetStreamingImportStartOutput(BaseModel):
+    session_id: str
+    expires_at: datetime
+
+
+class DatasetStreamingAssetPayloadInput(BaseModel):
+    asset_id: str
+    data_base64: str
+
+
+class DatasetStreamingImportDatumBatchItem(BaseModel):
+    manifest_index: int = Field(ge=0)
+    datum: Datum
+    assets: list[Asset] = Field(default_factory=list)
+    annotation_schemas: list[AnnotationSchema] = Field(default_factory=list)
+    annotation_records: list[AnnotationRecord] = Field(default_factory=list)
+    annotation_sets: list[AnnotationSet] = Field(default_factory=list)
+    payloads: list[DatasetStreamingAssetPayloadInput] = Field(default_factory=list)
+
+
+class DatasetStreamingImportPushBatchInput(BaseModel):
+    session_id: str
+    items: list[DatasetStreamingImportDatumBatchItem] = Field(default_factory=list)
+
+
+class DatasetStreamingImportPushBatchOutput(BaseModel):
+    session_id: str
+    processed_manifest_items: int = 0
+    required_asset_count: int = 0
+    verified_asset_count: int = 0
+    pending_asset_count: int = 0
+    progress: DatasetSyncProgress | None = None
+
+
+class DatasetStreamingImportFinalizeInput(BaseModel):
+    session_id: str
+
+
+class DatasetIntegrityVerifyInput(BaseModel):
+    dataset_name: str
+    version: str
+    mode: Literal["fast", "full-db", "full-lake"] = "fast"
+    sample_limit: int = Field(default=25, ge=1, le=500)
+
+
+class DatasetIntegrityIssueSample(BaseModel):
+    kind: str
+    id: str
+    detail: str | None = None
+
+
+class DatasetIntegrityVerifyOutput(BaseModel):
+    ok: bool
+    dataset_name: str
+    version: str
+    mode: Literal["fast", "full-db", "full-lake"]
+    manifest_count: int = 0
+    resolved_manifest_count: int = 0
+    duplicate_manifest_count: int = 0
+    missing_manifest_datum_count: int = 0
+    missing_asset_count: int = 0
+    missing_annotation_set_count: int = 0
+    missing_annotation_record_count: int = 0
+    missing_annotation_schema_count: int = 0
+    missing_mask_asset_count: int = 0
+    registry_missing_payload_count: int = 0
+    invalid_mount_count: int = 0
+    samples: list[DatasetIntegrityIssueSample] = Field(default_factory=list)
+
+
+DatasetSyncJobMode = Literal["prepare", "import", "fast_sync"]
 DatasetSyncJobStatus = Literal["queued", "running", "completed", "failed"]
 
 
@@ -788,6 +984,116 @@ class ReplicationMarkLocalDeleteEligibleInput(BaseModel):
     when: datetime | None = None
 
 
+class ReplicationTaskOutput(BaseModel):
+    task: ReplicationTask
+
+
+class ReplicationTaskListInput(BaseModel):
+    status: ReplicationTaskStatus | None = None
+    target_lake_id: str | None = None
+    root_kind: ReplicationEntityKind | None = None
+    rule_id: str | None = None
+    limit: int = Field(default=100, ge=1, le=1000)
+
+
+class ReplicationTaskListOutput(BaseModel):
+    tasks: list[ReplicationTask] = Field(default_factory=list)
+
+
+class ReplicationTaskEnqueueInput(BaseModel):
+    target_lake_id: str
+    root_kind: ReplicationEntityKind
+    root_id: str
+    rule_id: str | None = None
+    dedupe_key: str | None = None
+    source_version: str | None = None
+    hydrate_policy: ReplicationHydratePolicy = "async"
+    mount_map: dict[str, str] = Field(default_factory=dict)
+    include_graph: bool = True
+    max_attempts: int = Field(default=5, ge=1)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReplicationTaskEnqueueOutput(BaseModel):
+    task: ReplicationTask
+    created: bool
+
+
+class ReplicationTaskClaimInput(BaseModel):
+    worker_id: str
+    limit: int = Field(default=10, ge=1, le=100)
+    lease_seconds: int = Field(default=300, ge=1)
+
+
+class ReplicationTaskClaimOutput(BaseModel):
+    tasks: list[ReplicationTask] = Field(default_factory=list)
+
+
+class ReplicationTaskStatusUpdateInput(BaseModel):
+    task_id: str
+    status: ReplicationTaskStatus
+    worker_id: str | None = None
+    error: str | None = None
+    progress_phase: str | None = None
+    progress_message: str | None = None
+    completed_items: int | None = None
+    total_items: int | None = None
+    bytes_completed: int | None = None
+    bytes_total: int | None = None
+
+
+class ReplicationTaskFailInput(BaseModel):
+    task_id: str
+    error: str
+    worker_id: str | None = None
+    retry_delay_seconds: int = Field(default=60, ge=0)
+
+
+class ReplicationTaskIdInput(BaseModel):
+    task_id: str
+
+
+class ReplicationTaskPurgeInput(BaseModel):
+    older_than_seconds: int = Field(
+        default=86_400,
+        ge=3600,
+        le=366 * 24 * 3600,
+        description="Only purge tasks whose completed_at is at least this many seconds before evaluation time.",
+    )
+    statuses: list[ReplicationTaskStatus] | None = Field(
+        default=None,
+        validate_default=True,
+        description="Archival statuses to remove; default complete, dead, cancelled.",
+    )
+    limit: int = Field(default=500, ge=1, le=5000)
+    dry_run: bool = Field(default=False, description="If true, report matches without deleting.")
+    purge_secret: str | None = Field(
+        default=None,
+        description="When the service is constructed with replication_task_purge_secret, this must match.",
+    )
+
+    @field_validator("statuses")
+    @classmethod
+    def _statuses_archival_only(cls, v: list[ReplicationTaskStatus] | None) -> list[ReplicationTaskStatus] | None:
+        if v is None:
+            return None
+        for s in v:
+            if s not in REPLICATION_TASK_PURGEABLE_STATUSES:
+                raise ValueError(
+                    f"Purge only supports archival statuses {sorted(REPLICATION_TASK_PURGEABLE_STATUSES)}; got {s!r}"
+                )
+        return v
+
+
+class ReplicationTaskPurgeOutput(BaseModel):
+    dry_run: bool
+    cutoff: datetime
+    total_candidates: int
+    selected_count: int
+    deleted_count: int
+    deleted_task_ids: list[str] = Field(default_factory=list)
+
+
 class ReplicationBatchResultOutput(BaseModel):
     result: ReplicationBatchResult
 
@@ -808,6 +1114,31 @@ ExportDatasetVersionSchema = TaskSchema(
     name="dataset_versions.export",
     input_schema=ExportDatasetVersionInput,
     output_schema=DatasetSyncBundleOutput,
+)
+DatasetSyncGraphExportSchema = TaskSchema(
+    name="dataset_versions.export_sync_graph",
+    input_schema=ExportDatasetVersionInput,
+    output_schema=DatasetSyncGraphExportOutput,
+)
+DatasetSyncPayloadManifestSchema = TaskSchema(
+    name="dataset_versions.export_sync_payload_manifest",
+    input_schema=ExportDatasetVersionInput,
+    output_schema=DatasetSyncPayloadManifestOutput,
+)
+DatasetSyncImportGraphSchema = TaskSchema(
+    name="dataset_sync.import_graph",
+    input_schema=DatasetSyncImportGraphInput,
+    output_schema=DatasetSyncImportGraphOutput,
+)
+DatasetSyncHydratePayloadsSchema = TaskSchema(
+    name="dataset_sync.hydrate_payload",
+    input_schema=DatasetSyncHydratePayloadsInput,
+    output_schema=DatasetSyncHydratePayloadsOutput,
+)
+DatasetSyncFinalizeGraphSchema = TaskSchema(
+    name="dataset_sync.finalize_graph",
+    input_schema=DatasetSyncFinalizeGraphInput,
+    output_schema=DatasetSyncCommitResultOutput,
 )
 DatasetSyncImportPrepareSchema = TaskSchema(
     name="dataset_versions.import_prepare",
@@ -838,6 +1169,51 @@ DatasetSyncImportJobResultSchema = TaskSchema(
     name="dataset_versions.import_job_result",
     input_schema=DatasetSyncJobStatusInput,
     output_schema=DatasetSyncJobResultOutput,
+)
+DatasetImportSessionStartSchema = TaskSchema(
+    name="dataset_versions.import_session_start",
+    input_schema=DatasetSyncImportRequest,
+    output_schema=DatasetImportSessionStartOutput,
+)
+DatasetImportSessionUploadSchema = TaskSchema(
+    name="dataset_versions.import_session_upload_payload",
+    input_schema=DatasetImportSessionUploadInput,
+    output_schema=DatasetImportSessionUploadOutput,
+)
+DatasetImportSessionCommitSchema = TaskSchema(
+    name="dataset_versions.import_session_commit",
+    input_schema=DatasetImportSessionCommitInput,
+    output_schema=DatasetSyncCommitResultOutput,
+)
+DatasetImportSessionCommitMetadataSchema = TaskSchema(
+    name="dataset_versions.import_session_commit_metadata",
+    input_schema=DatasetImportSessionCommitInput,
+    output_schema=DatasetSyncCommitResultOutput,
+)
+DatasetImportSessionStatusSchema = TaskSchema(
+    name="dataset_versions.import_session_status",
+    input_schema=DatasetImportSessionStatusInput,
+    output_schema=DatasetImportSessionStatusOutput,
+)
+DatasetStreamingImportStartSchema = TaskSchema(
+    name="dataset_versions.streaming_import_start",
+    input_schema=DatasetStreamingImportStartInput,
+    output_schema=DatasetStreamingImportStartOutput,
+)
+DatasetStreamingImportPushBatchSchema = TaskSchema(
+    name="dataset_versions.streaming_import_push_batch",
+    input_schema=DatasetStreamingImportPushBatchInput,
+    output_schema=DatasetStreamingImportPushBatchOutput,
+)
+DatasetStreamingImportFinalizeSchema = TaskSchema(
+    name="dataset_versions.streaming_import_finalize",
+    input_schema=DatasetStreamingImportFinalizeInput,
+    output_schema=DatasetSyncCommitResultOutput,
+)
+DatasetIntegrityVerifySchema = TaskSchema(
+    name="dataset_versions.verify_integrity",
+    input_schema=DatasetIntegrityVerifyInput,
+    output_schema=DatasetIntegrityVerifyOutput,
 )
 ReplicationBatchUpsertSchema = TaskSchema(
     name="replication.upsert_batch",
@@ -872,4 +1248,52 @@ ReplicationReclaimSchema = TaskSchema(
 ReplicationStatusSchema = TaskSchema(
     name="replication.status",
     output_schema=ReplicationStatusOutput,
+)
+
+ReplicationTaskEnqueueSchema = TaskSchema(
+    name="replication.tasks.enqueue",
+    input_schema=ReplicationTaskEnqueueInput,
+    output_schema=ReplicationTaskEnqueueOutput,
+)
+
+ReplicationTaskListSchema = TaskSchema(
+    name="replication.tasks.list",
+    input_schema=ReplicationTaskListInput,
+    output_schema=ReplicationTaskListOutput,
+)
+
+ReplicationTaskGetSchema = TaskSchema(
+    name="replication.tasks.get",
+    input_schema=ReplicationTaskIdInput,
+    output_schema=ReplicationTaskOutput,
+)
+
+ReplicationTaskClaimSchema = TaskSchema(
+    name="replication.tasks.claim",
+    input_schema=ReplicationTaskClaimInput,
+    output_schema=ReplicationTaskClaimOutput,
+)
+
+ReplicationTaskUpdateStatusSchema = TaskSchema(
+    name="replication.tasks.update_status",
+    input_schema=ReplicationTaskStatusUpdateInput,
+    output_schema=ReplicationTaskOutput,
+)
+
+ReplicationTaskFailSchema = TaskSchema(
+    name="replication.tasks.fail",
+    input_schema=ReplicationTaskFailInput,
+    output_schema=ReplicationTaskOutput,
+)
+
+ReplicationTaskRetrySchema = TaskSchema(
+    name="replication.tasks.retry",
+    input_schema=ReplicationTaskIdInput,
+    output_schema=ReplicationTaskOutput,
+)
+
+ReplicationTaskPurgeSchema = TaskSchema(
+    name="replication.tasks.purge",
+    input_schema=ReplicationTaskPurgeInput,
+    output_schema=ReplicationTaskPurgeOutput,
 )

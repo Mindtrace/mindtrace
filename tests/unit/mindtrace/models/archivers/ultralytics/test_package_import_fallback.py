@@ -2,40 +2,29 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
-from pathlib import Path
-
-_REPO_ROOT = Path(__file__).resolve().parents[6]
-
-
-def test_ultralytics_archivers_init_passes_when_yolo_submodule_unavailable():
-    script = r"""
 import builtins
+import importlib
 import sys
 
-sys.path.insert(0, sys.argv[1])
-_real = builtins.__import__
 
-def _fake(name, globals=None, locals=None, fromlist=(), level=0):
-    if name == "mindtrace.models.archivers.ultralytics.yolo_archiver":
-        raise ImportError("simulated optional ultralytics yolo archiver failure")
-    return _real(name, globals, locals, fromlist, level)
+def test_ultralytics_archivers_init_passes_when_yolo_submodule_unavailable(monkeypatch):
+    real_import = builtins.__import__
 
-builtins.__import__ = _fake
-for key in list(sys.modules.keys()):
-    if key.startswith("mindtrace.models.archivers.ultralytics"):
-        del sys.modules[key]
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "mindtrace.models.archivers.ultralytics.yolo_archiver":
+            raise ImportError("simulated optional ultralytics yolo archiver failure")
+        return real_import(name, globals, locals, fromlist, level)
 
-import mindtrace.models.archivers.ultralytics as ultra_pkg
+    prefix = "mindtrace.models.archivers.ultralytics"
+    saved = {k: v for k, v in sys.modules.items() if k == prefix or k.startswith(prefix + ".")}
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    for k in list(saved):
+        sys.modules.pop(k, None)
 
-assert ultra_pkg.__all__ == []
-"""
-    proc = subprocess.run(
-        [sys.executable, "-c", script, str(_REPO_ROOT)],
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=False,
-    )
-    assert proc.returncode == 0, proc.stderr
+    try:
+        ultra_pkg = importlib.import_module(prefix)
+        assert ultra_pkg.__all__ == []
+    finally:
+        for k in [k for k in sys.modules if k == prefix or k.startswith(prefix + ".")]:
+            sys.modules.pop(k, None)
+        sys.modules.update(saved)

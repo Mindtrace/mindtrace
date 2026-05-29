@@ -24,12 +24,20 @@ class DiscordClient(Mindtrace):
     - Configurable bot behavior
     """
 
-    def __init__(self, *, token: str | None = None, intents: Optional[discord.Intents] = None, **kwargs):
+    def __init__(
+        self,
+        *,
+        token: str | None = None,
+        intents: Optional[discord.Intents] = None,
+        description: str | None = None,
+        **kwargs,
+    ):
         """Initialize the Discord client.
 
         Args:
             token: Discord bot token (optional, will use config if not provided)
             intents: Discord intents configuration
+            description: Bot description shown in Discord help embeds.
             **kwargs: Additional arguments passed to Mindtrace
         """
         super().__init__(**kwargs)
@@ -49,6 +57,7 @@ class DiscordClient(Mindtrace):
             intents=self.intents,
             command_prefix="!",  # Unused but required by discord.py
             help_command=None,  # We'll implement custom help
+            description=description,
         )
 
         # The bot already has a command tree by default, no need to create a new one

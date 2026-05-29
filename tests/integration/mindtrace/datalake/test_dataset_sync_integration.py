@@ -13,8 +13,11 @@ mount name ``minio`` while seeded source objects live on mount ``local``.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
+import shutil
 import socket
+import tempfile
 from pathlib import Path
 from uuid import uuid4
 
@@ -31,6 +34,7 @@ from mindtrace.datalake.service_types import (
 from mindtrace.datalake.sync import DatasetSyncManager
 from mindtrace.datalake.sync_types import DatasetSyncBundle, DatasetSyncImportRequest
 from mindtrace.datalake.types import AnnotationLabelDefinition
+from mindtrace.registry import LocalMountConfig, Mount, MountBackendKind, Store
 from tests.integration.mindtrace.datalake.conftest import MONGO_URL
 
 _HOPPER = Path(__file__).resolve().parents[3] / "resources" / "hopper.png"
@@ -287,6 +291,88 @@ async def test_datalake_service_export_dataset_version(async_datalake: AsyncData
     assert out.bundle.dataset_version.dataset_name == dataset_name
     assert len(out.bundle.payloads) == 1
     assert out.bundle.payloads[0].storage_ref.mount == "local"
+
+
+@pytest.mark.asyncio
+async def test_import_session_stages_bytes_when_bundle_mount_not_on_target_service(async_datalake: AsyncDatalake):
+    dataset_name = f"sync-session-{uuid4().hex[:10]}"
+    version = "1.0.0"
+    await _seed_minimal_image_dataset(async_datalake, dataset_name=dataset_name, version=version)
+    bundle = await DatasetSyncManager(async_datalake).export_dataset_version(dataset_name, version)
+    payload = bundle.payloads[0]
+    image_bytes = await async_datalake.get_object(payload.storage_ref)
+
+    temp_dir = Path(tempfile.mkdtemp(prefix="mindtrace-sink-mount-"))
+    try:
+        sink_store = Store.from_mounts(
+            [
+                Mount(
+                    name="sink",
+                    backend=MountBackendKind.LOCAL,
+                    config=LocalMountConfig(uri=temp_dir),
+                    is_default=True,
+                    registry_options={"mutable": True},
+                )
+            ],
+            default_mount="sink",
+        )
+        db_name = f"test_import_session_{uuid4().hex[:12]}"
+        sink_dl = await AsyncDatalake.create(
+            mongo_db_uri=MONGO_URL,
+            mongo_db_name=db_name,
+            store=sink_store,
+        )
+        try:
+            svc = DatalakeService(
+                mongo_db_uri=MONGO_URL,
+                mongo_db_name=db_name,
+                async_datalake=sink_dl,
+                live_service=False,
+                initialize_on_startup=False,
+            )
+            req = DatasetSyncImportRequest(
+                bundle=bundle,
+                transfer_policy="copy_if_missing",
+                mount_map={"local": "sink"},
+            )
+            start_raw = await _post_datalake_json(
+                svc,
+                "/dataset_versions.import_session_start",
+                req.model_dump(mode="json"),
+            )
+            session_id = start_raw["session_id"]
+            assert payload.asset_id in start_raw["required_asset_ids"]
+
+            await _post_datalake_json(
+                svc,
+                "/dataset_versions.import_session_upload_payload",
+                {
+                    "session_id": session_id,
+                    "asset_id": payload.asset_id,
+                    "data_base64": base64.b64encode(image_bytes).decode("ascii"),
+                },
+            )
+
+            commit_raw = await _post_datalake_json(
+                svc,
+                "/dataset_versions.import_session_commit",
+                {"session_id": session_id},
+            )
+            result = DatasetSyncCommitResultOutput.model_validate(commit_raw)
+            assert result.result.transferred_payloads == 1
+            imported = await sink_dl.get_dataset_version(dataset_name, version)
+            assert imported.dataset_name == dataset_name
+        finally:
+            await sink_dl.asset_database.client.drop_database(db_name)
+            sink_dl.asset_database.client.close()
+            sink_dl.annotation_record_database.client.close()
+            sink_dl.annotation_set_database.client.close()
+            sink_dl.datum_database.client.close()
+            sink_dl.dataset_version_database.client.close()
+            sink_dl.direct_upload_session_database.client.close()
+            sink_dl.dataset_import_session_database.client.close()
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 @pytest.mark.asyncio

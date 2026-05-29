@@ -1,7 +1,7 @@
 """High-level alias-based access to datalake assets and payloads.
 
 Serialization uses the same registry/store stack as :class:`~mindtrace.datalake.AsyncDatalake`
-(``put_object`` / ``get_object``), so ZenML materializers registered on ``Registry`` apply.
+(``put_object`` / ``get_object``), so registry materializers registered on ``Registry`` apply.
 
 Facades:
 
@@ -60,7 +60,6 @@ from uuid import uuid4
 
 from PIL import Image
 from pydantic import BaseModel, Field
-from zenml.materializers.base_materializer import BaseMaterializer
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.annotations import AnnotationVariants, annotation_from_record
@@ -103,7 +102,7 @@ from mindtrace.datalake.vault_serialization import (
     extract_serialization_block,
     materialize_payload_with_hints,
 )
-from mindtrace.registry import Registry
+from mindtrace.registry import Materializer, Registry
 
 _SYNC_VAULT_METHODS = _SYNC_VAULT_METHOD_NAMES
 _DATA_VAULT_METADATA_QUERY_PREFIX = "metadata.mindtrace.data_vault"
@@ -1419,13 +1418,13 @@ class AsyncDataVault:
         To load by ``asset_id`` from :meth:`list_assets`, use :meth:`load_by_asset_id`.
 
         When ``materialize`` is True and a :class:`~mindtrace.registry.Registry` is provided (via
-        ``registry=`` or the vault constructor), byte payloads are passed through ZenML materializers
+        ``registry=`` or the vault constructor), byte payloads are passed through registry materializers
         using hints stored under ``Asset.metadata["mindtrace.serialization"]`` (see
         :mod:`mindtrace.datalake.vault_serialization`). In-process datalake backends may already
         return materialized objects; in that case this step is skipped for non-bytes results.
         """
         asset = await self._backend.get_asset_by_alias(alias)
-        payload = await self._backend.get_object(asset.storage_ref, **get_object_kwargs)
+        payload = await self._backend.get_asset_payload(asset.asset_id, **get_object_kwargs)
         reg = registry if registry is not None else self._registry
         if not materialize or reg is None:
             return payload
@@ -1444,7 +1443,7 @@ class AsyncDataVault:
     ) -> Any:
         """Load payload bytes for ``asset_id`` without resolving an alias."""
         asset = await self._backend.get_asset(asset_id)
-        payload = await self._backend.get_object(asset.storage_ref, **get_object_kwargs)
+        payload = await self._backend.get_asset_payload(asset_id, **get_object_kwargs)
         reg = registry if registry is not None else self._registry
         if not materialize or reg is None:
             return payload
@@ -1465,7 +1464,7 @@ class AsyncDataVault:
         asset_metadata: dict[str, Any] | None = None,
         object_metadata: dict[str, Any] | None = None,
         on_conflict: str | None = None,
-        materializer: type[BaseMaterializer] | None = None,
+        materializer: type[Materializer] | None = None,
     ) -> Asset:
         """Store ``obj`` and register ``alias`` (unless it equals the new ``asset_id``)."""
         resolved_kind, resolved_media = _infer_kind_media(obj, kind, media_type)
@@ -1524,6 +1523,7 @@ class AsyncDataVault:
             mount=mount,
             object_metadata=object_metadata,
             asset_metadata=merged_asset_metadata,
+            size_bytes=len(png_bytes),
             created_by=created_by,
             on_conflict=on_conflict,
         )
@@ -2500,13 +2500,13 @@ class DataVault:
         To load by ``asset_id`` from :meth:`list_assets`, use :meth:`load_by_asset_id`.
 
         When ``materialize`` is True and a :class:`~mindtrace.registry.Registry` is provided (via
-        ``registry=`` or the vault constructor), byte payloads are passed through ZenML materializers
+        ``registry=`` or the vault constructor), byte payloads are passed through registry materializers
         using hints stored under ``Asset.metadata["mindtrace.serialization"]`` (see
         :mod:`mindtrace.datalake.vault_serialization`). In-process datalake backends may already
         return materialized objects; in that case this step is skipped for non-bytes results.
         """
         asset = self._backend.get_asset_by_alias(alias)
-        payload = self._backend.get_object(asset.storage_ref, **get_object_kwargs)
+        payload = self._backend.get_asset_payload(asset.asset_id, **get_object_kwargs)
         reg = registry if registry is not None else self._registry
         if not materialize or reg is None:
             return payload
@@ -2525,7 +2525,7 @@ class DataVault:
     ) -> Any:
         """Load payload bytes for ``asset_id`` without resolving an alias."""
         asset = self._backend.get_asset(asset_id)
-        payload = self._backend.get_object(asset.storage_ref, **get_object_kwargs)
+        payload = self._backend.get_asset_payload(asset_id, **get_object_kwargs)
         reg = registry if registry is not None else self._registry
         if not materialize or reg is None:
             return payload
@@ -2546,7 +2546,7 @@ class DataVault:
         asset_metadata: dict[str, Any] | None = None,
         object_metadata: dict[str, Any] | None = None,
         on_conflict: str | None = None,
-        materializer: type[BaseMaterializer] | None = None,
+        materializer: type[Materializer] | None = None,
     ) -> Asset:
         """Store ``obj`` and register ``alias`` (unless it equals the new ``asset_id``)."""
         resolved_kind, resolved_media = _infer_kind_media(obj, kind, media_type)
@@ -2605,6 +2605,7 @@ class DataVault:
             mount=mount,
             object_metadata=object_metadata,
             asset_metadata=merged_asset_metadata,
+            size_bytes=len(png_bytes),
             created_by=created_by,
             on_conflict=on_conflict,
         )

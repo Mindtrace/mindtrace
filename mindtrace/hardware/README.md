@@ -27,7 +27,7 @@ The Mindtrace Hardware module provides a unified interface for managing industri
 
 The hardware module consists of five main subsystems:
 
-- **Camera System**: Multi-backend camera management (Basler, GenICam, OpenCV) with bandwidth control and liquid lens autofocus
+- **Camera System**: Multi-backend camera management (Basler, GenICam, OpenCV, Daheng) with bandwidth control and liquid lens autofocus
 - **Stereo Camera System**: 3D vision with depth measurement and point cloud generation (Basler Stereo ace)
 - **3D Scanner System**: Industrial 3D scanning with multi-component capture (Photoneo)
 - **PLC System**: Industrial PLC integration (Allen-Bradley) with tag-based operations
@@ -45,7 +45,7 @@ Each subsystem provides:
 mindtrace/hardware/
 ├── cameras/                  # 2D camera subsystem
 │   ├── core/                 # Camera, AsyncCamera, CameraManager
-│   ├── backends/             # Basler, GenICam, OpenCV, Mock
+│   ├── backends/             # Basler, GenICam, OpenCV, Daheng, Mock
 │   └── homography/           # Planar measurement system
 ├── stereo_cameras/           # 3D stereo camera subsystem
 │   ├── core/                 # StereoCamera, StereoCameraManager
@@ -78,6 +78,7 @@ pip install mindtrace-hardware
 # With specific backend support
 pip install mindtrace-hardware[cameras-basler]      # Basler cameras
 pip install mindtrace-hardware[cameras-genicam]     # GenICam cameras
+pip install mindtrace-hardware[cameras-daheng]      # Daheng cameras (Galaxy SDK)
 pip install mindtrace-hardware[cameras-all]         # All camera backends
 pip install mindtrace-hardware[stereo-all]          # Stereo cameras
 pip install mindtrace-hardware[scanners-3d]         # 3D scanners (Photoneo)
@@ -90,6 +91,7 @@ pip install mindtrace-hardware[plcs-all]            # PLC support
 |---------------|---------------|--------------|
 | Basler 2D | `pypylon` | Optional (Viewer/IP Configurator only) |
 | GenICam | `harvesters` | Required (GenTL Producer) |
+| Daheng | `iai-gxipy` | Required (Galaxy SDK — manual download, EULA) |
 | Stereo ace | `pypylon` | Required (Supplementary Package) |
 | Photoneo | `harvesters` | Required (Matrix Vision mvGenTL Producer) |
 
@@ -97,9 +99,38 @@ SDK setup commands:
 ```bash
 mindtrace-camera-basler install        # Basler Pylon tools (optional)
 mindtrace-camera-genicam install       # GenICam CTI files (required)
+mindtrace-camera-daheng install        # Daheng Galaxy SDK (required, EULA)
 mindtrace-stereo-basler install        # Stereo supplementary package (required)
 mindtrace-scanner-photoneo install     # Matrix Vision mvGenTL Producer (required)
 ```
+
+#### Daheng SDK (Galaxy) — EULA notes
+
+The `iai-gxipy` Python wheel is a ctypes wrapper around Daheng's
+native Galaxy library (`libgxiapi.so` on Linux / `GxIAPI.dll` on
+Windows). Importing `gxipy` without the native library raises an
+`OSError`/`NameError` from the upstream wheel — `DAHENG_AVAILABLE`
+reports `False` in that case and the rest of the camera stack
+continues to work; only Daheng-backed cameras are unavailable.
+
+Daheng's EULA does **not** grant redistribution rights, so the
+Galaxy SDK is never bundled in Mindtrace packages or Docker images.
+Two supported paths put it in place:
+
+1. **Interactive wizard (dev/lab):** run
+   `mindtrace-camera-daheng install` — it prints the EULA, asks for
+   explicit acceptance, downloads from Daheng's site, and runs the
+   installer locally so `libgxiapi.so` lands in the expected
+   location. Use this on a workstation.
+2. **Pre-installed host (production):** install Galaxy SDK once on
+   the host (Docker bind-mounts `/usr/lib/libgxiapi.so` and
+   `/opt/Galaxy_camera` into the container; bare-metal services pick
+   it up from the system path automatically). The container/image
+   stays clean of proprietary bits.
+
+The Mindtrace `mindtrace-camera` Docker image follows the same
+contract — see `docker/hardware/camera/README.md` for the
+container-side instructions.
 
 ## Camera System
 

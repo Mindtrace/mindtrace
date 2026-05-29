@@ -33,8 +33,11 @@ def _bgr_pixel(b: int, g: int, r: int) -> np.ndarray:
     return np.array([[[b, g, r]]], dtype=np.uint8)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def service() -> CameraManagerService:
+    # The service is expensive to construct (FastAPI + MCP wiring). Tests in
+    # this module either call pure helpers or replace ``_camera_manager`` with
+    # a fresh Mock per test, so a single shared instance is safe.
     return CameraManagerService(include_mocks=True)
 
 
@@ -138,7 +141,7 @@ class TestAsyncCameraColorspace:
 
         manager = AsyncCameraManager(include_mocks=True)
         try:
-            names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
+            names = AsyncCameraManager.discover(backends="MockBasler", include_mocks=True)
             assert names
             cam = await manager.open(names[0])
 
@@ -159,7 +162,7 @@ class TestAsyncCameraColorspace:
 
         manager = AsyncCameraManager(include_mocks=True)
         try:
-            names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
+            names = AsyncCameraManager.discover(backends="MockBasler", include_mocks=True)
             cam = await manager.open(names[0])
 
             bgr_blue = np.zeros((2, 2, 3), dtype=np.uint8)
@@ -185,7 +188,7 @@ class TestAsyncCameraColorspace:
 
         manager = AsyncCameraManager(include_mocks=True)
         try:
-            names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
+            names = AsyncCameraManager.discover(backends="MockBasler", include_mocks=True)
             cam = await manager.open(names[0])
             cam.backend.capture = AsyncMock(return_value=bgr_frame)
 

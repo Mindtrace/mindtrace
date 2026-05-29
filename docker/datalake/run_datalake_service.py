@@ -56,6 +56,7 @@ def build_service() -> DatalakeService:
         default_mount=mount_name,
         initialize_on_startup=True,
         live_service=True,
+        replication_task_purge_secret=os.getenv("MINDTRACE_DATALAKE__REPLICATION_TASK_PURGE_SECRET") or None,
     )
     return service
 

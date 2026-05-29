@@ -1,3 +1,7 @@
+[![PyPI version](https://img.shields.io/pypi/v/mindtrace-registry)](https://pypi.org/project/mindtrace-registry/)
+[![License](https://img.shields.io/pypi/l/mindtrace-registry)](https://github.com/mindtrace/mindtrace/blob/main/mindtrace/registry/LICENSE)
+[![Downloads](https://static.pepy.tech/badge/mindtrace-registry)](https://pepy.tech/projects/mindtrace-registry)
+
 # Registry Module
 
 The Registry module provides a distributed, versioned object storage system with support for multiple backends. It enables storing, versioning, and retrieving objects with automatic serialization and lock-free concurrency for objects. 
@@ -113,6 +117,14 @@ When using a remote backend, the `Registry` maintains a local cache (enabled by 
 # Caching is on by default for remote backends
 registry = Registry(backend=gcp_backend, use_cache=True)
 
+# Keep at most 1024 concrete object versions in the local cache by default.
+# Set cache_max_entries=None to disable automatic LRU pruning.
+registry = Registry(
+    backend=gcp_backend,
+    use_cache=True,
+    cache_max_entries=1024,
+)
+
 # Control verification level on load
 obj = registry.load("my:model", verify="none")       # Trust cache, fastest
 obj = registry.load("my:model", verify="integrity")   # Verify hash (default)
@@ -126,6 +138,15 @@ registry.clear_cache()
 - `"none"`: Trust cache completely. Fastest.
 - `"integrity"`: Verify loaded artifacts match the hash in metadata. Default.
 - `"full"`: Integrity check + compare cache hash against remote. Detects stale cache entries.
+
+**LRU pruning**: remote registry caches retain at most `cache_max_entries`
+concrete object versions, defaulting to `1024`. Cache hits update the cached
+object metadata file timestamp with `os.utime(...)`, so recency is visible across
+processes sharing the same cache directory. Cache maintenance is amortized: when
+cache writes push the cache above `cache_max_entries`, least-recently-used
+entries are removed down to `cache_max_entries - cache_prune_buffer`. The default
+prune buffer is `min(max(cache_max_entries // 4, 1), 1024)`. Set
+`cache_max_entries=None` to keep the cache unbounded.
 
 ## Version Management
 
@@ -159,19 +180,39 @@ registry.save("model", obj, version="1.0.0", on_conflict="overwrite")
 
 ## Custom Materializers
 
-Register custom serialization handlers for your object types:
+A materializer is any class that exposes a `uri` attribute, a `save(data)` method, and a
+`load(data_type)` method. The contract is published as the runtime-checkable
+`mindtrace.registry.Materializer` Protocol — your class does **not** need to inherit from
+anything in mindtrace to be recognized. For convenience, you can inherit from
+`BaseMaterializer` (minimal) or `Archiver` (adds Mindtrace logging).
 
 ```python
-from mindtrace.registry import Registry
+from typing import Any, Type
+
+from mindtrace.registry import BaseMaterializer, Registry
+
+
+class MyMaterializer(BaseMaterializer):
+    def save(self, data: Any) -> None:
+        ...  # write to self.uri
+
+    def load(self, data_type: Type[Any]) -> Any:
+        ...  # read from self.uri
+
 
 registry = Registry()
 
-# Register a materializer for a custom class
+# Register a materializer for a custom class (by type or by fully-qualified string).
 registry.register_materializer("my_module.MyClass", "my_module.MyMaterializer")
 
-# Save with explicit materializer
+# Save with an explicit materializer override.
 registry.save("custom:obj", my_object, materializer=MyMaterializer)
 ```
+
+Built-in materializers cover scalars, container types, `bytes`, `pydantic.BaseModel`,
+`pathlib.Path`, numpy arrays, PIL images, PyTorch modules/dataloaders, and HuggingFace
+datasets. ML framework archivers for HuggingFace, ONNX, Ultralytics and timm models live
+in `mindtrace.models.archivers`.
 
 ## Metadata and Information
 
@@ -224,6 +265,28 @@ result = registry.save(
 # Batch load
 result = registry.load(["model:a", "model:b"], version=["1.0.0", "1.0.0"])
 ```
+
+## Dict-Like API
+
+The `Registry` also supports simple dict-like access for common operations:
+
+```python
+from mindtrace.registry import Registry
+
+registry = Registry()
+
+# Save
+registry["my:config"] = {"threshold": 0.8}
+
+# Load
+config = registry["my:config"]
+print(config)
+
+# Delete
+del registry["my:config"]
+```
+
+This is convenient for unversioned or latest-version style access when you want a compact interface.
 
 ## Backend Comparison
 
@@ -306,3 +369,38 @@ In addition to the standard Registry exceptions, Store introduces:
 - `StoreKeyFormatError` — invalid key format
 - `StoreAmbiguousObjectError` — unqualified load matched multiple mounts
 - `PermissionError` — write to a read-only mount
+
+## Examples
+
+See these examples and related docs in the repo for more end-to-end reference:
+
+- [Registry quick-start and backend examples](README.md)
+- [Store multi-registry facade section](README.md#store-multi-registry-facade)
+
+## Testing
+
+If you are working in the full Mindtrace repo, run tests for this module specifically:
+
+```bash
+# Run the registry test suite
+ds test: registry
+
+# Run only unit tests for registry
+ds test: --unit registry
+```
+
+If you need a fresh checkout first:
+
+```bash
+git clone https://github.com/Mindtrace/mindtrace.git && cd mindtrace
+uv sync --dev --all-extras
+```
+
+## Practical Notes and Caveats
+
+- Remote backends typically benefit from cache usage, but cache verification level affects correctness/performance trade-offs.
+- Versioned and unversioned registries behave differently; choose the mode that matches your object lifecycle.
+- Overwrite behavior depends on registry mutability and conflict policy.
+- Batch operations are convenient, but partial failures should be handled explicitly through the returned batch result.
+- The dict-like API is compact, but explicit `save()` / `load()` calls are often clearer when versioning behavior matters.
+- `Store` reads with unqualified keys can become ambiguous if the same object exists in multiple mounts.

@@ -32,7 +32,7 @@ architecture where dependency direction matters.
 
 ### Modules (non-exhaustive)
 
-`apps`, `automation`, `cluster`, `core`, `database`, `datalake`,
+`apps`, `agents`, `automation`, `cluster`, `core`, `database`, `datalake`,
 `hardware`, `jobs`, `models`, `registry`, `services`, `storage`, `ui`
 
 ### Dependency Boundaries (Critical)
