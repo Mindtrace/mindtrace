@@ -21,6 +21,8 @@ TransferPolicy = Literal[
     "fail_if_missing_payload",
 ]
 
+TargetObjectMatchPolicy = Literal["exists", "size", "checksum"]
+
 
 class ObjectPayloadDescriptor(BaseModel):
     asset_id: str
@@ -77,6 +79,69 @@ class DatasetSyncImportRequest(BaseModel):
         ge=1,
         description="Maximum concurrent payload transfers during import commit.",
     )
+    commit_batch_size: int = Field(
+        default=1000,
+        ge=1,
+        description="Number of metadata rows to group into each bulk commit batch per entity type.",
+    )
+    staged_payload_storage_refs: dict[str, StorageRef] | None = Field(
+        default=None,
+        description=(
+            "When set, payload bytes for each asset_id are already stored on the target at the given "
+            "StorageRef; the importer skips source get_object transfers. Used by import sessions and "
+            "caller-orchestrated cross-lake sync when the target cannot read bundle source mounts."
+        ),
+    )
+    greenfield_skip_target_object_probes: bool = Field(
+        default=True,
+        description=(
+            "When True and importing a dataset version graph that does not yet exist on the target, "
+            "skip per-payload ``object_exists`` probes for ``copy_if_missing`` (greenfield optimization). "
+            "When False, preserve the legacy probe-all behavior."
+        ),
+    )
+    greenfield_skip_target_metadata_probes: bool = Field(
+        default=True,
+        description=(
+            "When True and importing a dataset version graph that does not yet exist on the target, "
+            "skip per-row metadata existence probes during commit and rely on direct inserts / duplicate-key "
+            "handling instead."
+        ),
+    )
+    target_object_match_policy: TargetObjectMatchPolicy = Field(
+        default="exists",
+        description=(
+            "How strongly to verify that a target payload already matches before ``copy_if_missing`` skips "
+            "transfer: ``exists`` checks only object presence, ``size`` also compares content length when "
+            "available, and ``checksum`` prefers checksum metadata when both sides expose one."
+        ),
+    )
+    commit_progress_every_items: int = Field(
+        default=100,
+        ge=1,
+        description="Emit committing progress at least every N examined metadata rows.",
+    )
+    commit_progress_every_seconds: float = Field(
+        default=0.25,
+        gt=0,
+        description="Emit committing progress at least every N seconds while metadata commit is active.",
+    )
+    metadata_first: bool = Field(
+        default=False,
+        description=(
+            "When True with distinct source/target datalakes, commit dataset graph rows with replication-style "
+            "payload_state pending instead of transferring all bytes in-process. Requires Phase B hydration "
+            "(e.g. library ``ReplicationManager(source, target).hydrate_asset_payload`` or staging flows)."
+        ),
+    )
+    target_metadata_commit: bool = Field(
+        default=False,
+        description=(
+            "When True, source and target must be the same AsyncDatalake (single-process target-side import): "
+            "commit the dataset graph with replication-style payload_pending without transferring payloads. Used by "
+            "``dataset_versions.import_session_commit_metadata`` plus caller uploads (``import_session_upload_payload``)."
+        ),
+    )
 
     @field_validator("mount_map")
     @classmethod
@@ -93,6 +158,8 @@ class DatasetSyncImportRequest(BaseModel):
                 "preserve_ids=False is not supported yet; imports always preserve source identifiers. "
                 "Omit preserve_ids or set it to True."
             )
+        if self.metadata_first and self.target_metadata_commit:
+            raise ValueError("Cannot set both metadata_first and target_metadata_commit on the same request.")
         return self
 
 
@@ -113,6 +180,8 @@ class DatasetSyncImportPlan(BaseModel):
     missing_payload_count: int = 0
     transfer_required_count: int = 0
     ready_to_commit: bool = False
+    total_payload_bytes: int | None = None
+    transfer_required_bytes: int | None = None
 
 
 class DatasetSyncProgress(BaseModel):
@@ -122,6 +191,17 @@ class DatasetSyncProgress(BaseModel):
     completed_items: int = 0
     total_items: int = 0
     message: str = ""
+    entity_kind: str | None = None
+    phase_detail: str | None = None
+    entity_completed_items: int | None = None
+    entity_total_items: int | None = None
+    skipped_items: int | None = None
+    failed_items: int | None = None
+    current_asset_id: str | None = None
+    items_per_second: float | None = None
+    bytes_completed: int | None = None
+    bytes_total: int | None = None
+    bytes_per_second: float | None = None
 
 
 class DatasetSyncCommitResult(BaseModel):

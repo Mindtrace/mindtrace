@@ -4,10 +4,9 @@ Handles saving and loading of YOLOE (YOLO with Embeddings) model checkpoints.
 """
 
 import os
-from typing import Any, ClassVar, Tuple, Type
+from typing import Any, Type
 
 from ultralytics import YOLOE
-from zenml.enums import ArtifactType
 
 from mindtrace.registry import Archiver, Registry
 
@@ -18,9 +17,6 @@ class YoloEArchiver(Archiver):
     Serialization format:
         - model.pt: YOLOE weights file inside the URI directory.
     """
-
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (YOLOE,)
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.MODEL
 
     def __init__(self, uri: str, **kwargs):
         super().__init__(uri=uri, **kwargs)

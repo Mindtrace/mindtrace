@@ -1,10 +1,29 @@
-from mindtrace.core.base import Mindtrace, MindtraceABC, MindtraceMeta
+from mindtrace.core.base import Mindtrace, MindtraceABC
 from mindtrace.core.config import Config, CoreConfig
-from mindtrace.core.logging.logger import setup_logger
+from mindtrace.core.logging.logger import get_logger, setup_logger, track_operation
 from mindtrace.core.observables.context_listener import ContextListener
 from mindtrace.core.observables.event_bus import EventBus
 from mindtrace.core.observables.observable_context import ObservableContext
 from mindtrace.core.samples.echo_task import EchoInput, EchoOutput, echo_task
+from mindtrace.core.testing import (
+    BenchReporter,
+    BenchResult,
+    BenchResultSchema,
+    BenchSuiteConfig,
+    BenchTestSuite,
+    CancellationToken,
+    ProgressEvent,
+    RunOutcome,
+    SuiteContribution,
+    SuiteExecutionResult,
+    SuiteSchema,
+    TestRunner,
+    TestSuite,
+    UnknownSuiteIdError,
+    build_bench_suite_config,
+    utc_now_iso,
+    validate_suite_id,
+)
 from mindtrace.core.types.task_schema import TaskSchema
 from mindtrace.core.utils.checks import check_libs, first_not_none, ifnone, ifnone_url
 from mindtrace.core.utils.dynamic import get_class, instantiate_target
@@ -27,15 +46,33 @@ from mindtrace.core.utils.network import (
 from mindtrace.core.utils.system_metrics_collector import SystemMetricsCollector
 from mindtrace.core.utils.timers import Timeout, Timer, TimerCollection
 
-setup_logger()  # Initialize the default logger
-
 __all__ = [
+    "BenchReporter",
+    "BenchResult",
+    "BenchResultSchema",
+    "BenchSuiteConfig",
+    "BenchTestSuite",
+    "CancellationToken",
+    "ProgressEvent",
+    "RunOutcome",
+    "SuiteContribution",
+    "SuiteExecutionResult",
+    "SuiteSchema",
+    "TestRunner",
+    "TestSuite",
+    "UnknownSuiteIdError",
+    "build_bench_suite_config",
+    "utc_now_iso",
+    "validate_suite_id",
     "check_libs",
     "check_port_available",
     "compute_dir_hash",
     "ContextListener",
     "Config",
     "CoreConfig",
+    "get_logger",
+    "setup_logger",
+    "track_operation",
     "EchoInput",
     "EchoOutput",
     "echo_task",
@@ -53,7 +90,6 @@ __all__ = [
     "LocalIPError",
     "Mindtrace",
     "MindtraceABC",
-    "MindtraceMeta",
     "named_lambda",
     "NetworkError",
     "NoFreePortError",

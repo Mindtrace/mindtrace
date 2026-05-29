@@ -26,7 +26,7 @@ The service image configures a single default S3 mount (see env vars in `docker/
 
 ## 2. Confirm the service is alive
 
-Use the service’s **`health`** task (exact HTTP path depends on how `DatalakeService` is mounted in the Mindtrace `Service` framework). A successful check proves Mongo initialization and routing work.
+Use the serviceï¿½s **`health`** task (exact HTTP path depends on how `DatalakeService` is mounted in the Mindtrace `Service` framework). A successful check proves Mongo initialization and routing work.
 
 The **`summary`** and **`mounts`** tasks are useful for quick introspection of the lake and configured registry mounts.
 
@@ -36,35 +36,43 @@ The **`summary`** and **`mounts`** tasks are useful for quick introspection of t
 
 The datalake separates:
 
-- **Object storage** — blobs live in the registry/store (e.g. MinIO via a named mount).
-- **Canonical records** — assets, datums, dataset versions, etc. live in Mongo via `AsyncDatalake`.
+- **Object storage** ï¿½ blobs live in the registry/store (e.g. MinIO via a named mount).
+- **Canonical records** ï¿½ assets, datums, dataset versions, etc. live in Mongo via `AsyncDatalake`.
 
 Typical flow:
 
-1. **Write bytes** — `objects.put` (small payloads) or **`objects.upload_session.create`** / **`objects.upload_session.complete`** (larger or presigned-style flows).
-2. **Create or attach an asset** — e.g. **`assets.create`** with a `StorageRef` pointing at the uploaded object, or **`assets.create_from_object`** when the service accepts inline bytes.
+1. **Write bytes** ï¿½ `objects.put` (small payloads) or **`objects.upload_session.create`** / **`objects.upload_session.complete`** (larger or presigned-style flows).
+2. **Create or attach an asset** ï¿½ e.g. **`assets.create`** with a `StorageRef` pointing at the uploaded object, or **`assets.create_from_object`** when the service accepts inline bytes.
 
 You can then **`collections.*`**, **`datums.*`**, and **`dataset_versions.*`** to organize data into immutable dataset versions.
 
 ---
 
-## 4. Dataset sync (import/export) — versioned bundles
+## 4. Dataset sync (import/export) ï¿½ versioned bundles
 
 **Dataset sync** moves an immutable **dataset version** (and related graph) as a bounded **export bundle** from one lake and **imports** it into another.
 
 Service surface:
 
-- **`dataset_versions.export`** — build a bundle from a named dataset version on the **source** lake.
-- **`dataset_versions.import_prepare`** — compute a plan (idempotency, mapping).
-- **`dataset_versions.import_commit`** — apply the import on the **target** lake.
+- **`dataset_versions.export`** ï¿½ build a bundle from a named dataset version on the **source** lake.
+- **`dataset_versions.import_prepare`** ï¿½ compute a plan (idempotency, mapping).
+- **`dataset_versions.import_commit`** ï¿½ apply the import on the **target** lake.
 
-**Mental model:** this is “ship a dataset version snapshot,” not continuous byte replication.
+**Mental model:** this is ï¿½ship a dataset version snapshot,ï¿½ not continuous byte replication.
+
+**Cross-lake / different object stores:** A **target** `DatalakeService` process only knows about **its** registry mounts. If the export bundle still names a **source** mount (for example `minio`) but the target is configured with `gcs` only, the target cannot call `get_object` on the bundleï¿½s original `StorageRef` mountsï¿½a `StoreLocationNotFound`-style failure is expected if you try. The portable pattern is **caller-orchestrated staging**:
+
+1. **`dataset_versions.import_session_start`** ï¿½ same body as a normal import (`bundle`, `transfer_policy`, `mount_map`, ï¿½). The service persists session state and returns **`required_asset_ids`** (payloads that still need bytes on the target).
+2. For each required asset, the **caller** reads bytes from the **source** lake (source API / client with source credentials), then calls **`dataset_versions.import_session_upload_payload`** with **`data_base64`** so objects land only on **target** mounts (via `mount_map`).
+3. **`dataset_versions.import_session_commit`** with **`session_id`** ï¿½ writes metadata and finalizes the dataset graph using the staged objects only.
+
+Same **`mount_map`** semantics apply as for `import_prepare` / `import_commit`: bundle mount names are rewritten for existence checks, uploads, and persisted `StorageRef` values on the target.
 
 **Important limitation:** **`transfer_policy="metadata_only"`** is only supported when source and target refer to the **same** datalake instance. Cross-lake `metadata_only` imports are **rejected** on purpose today, because target `StorageRef` values must remain resolvable unless the system gains explicit placeholder/unresolved semantics. See GitHub issue discussion in the repo for future design.
 
 ---
 
-## 5. Replication (one-way, metadata-first) — separate from sync
+## 5. Replication (one-way, metadata-first) ï¿½ separate from sync
 
 **Replication** is a **different pipeline** from dataset sync. It is designed for **metadata-first** mirroring of assets (and related state) from a **source** lake to a **target** lake, then optional **payload hydration**, verification, and **reclaim** of source-side bytes.
 
@@ -83,25 +91,25 @@ Operational state for replication is currently carried in **asset metadata** (e.
 
 **Contrast with sync:**
 
-- **Sync** — import/export **dataset versions** as coherent bundles (dataset-centric).
-- **Replication** — mirror **assets** and payload lifecycle across lakes (asset-centric, metadata-first).
+- **Sync** ï¿½ import/export **dataset versions** as coherent bundles (dataset-centric).
+- **Replication** ï¿½ mirror **assets** and payload lifecycle across lakes (asset-centric, metadata-first).
 
 ---
 
 ## 6. Tombstones and deleted payloads
 
-After reclaim, a source asset may carry a **tombstone** `StorageRef` (for example mount `__local_payload_deleted__`) so the record is not left pointing at live storage. That mount is **not** a real registry mount; dereferencing it through normal object APIs should fail (for example with a store “location not found” style error). Treat it as an explicit “payload removed” marker, not a readable path.
+After reclaim, a source asset may carry a **tombstone** `StorageRef` (for example mount `__local_payload_deleted__`) so the record is not left pointing at live storage. That mount is **not** a real registry mount; dereferencing it through normal object APIs should fail (for example with a store ï¿½location not foundï¿½ style error). Treat it as an explicit ï¿½payload removedï¿½ marker, not a readable path.
 
 ---
 
 ## 7. Optional: Pascal VOC importer
 
-For a dataset-centric import from a classic benchmark, the package still ships a **Pascal VOC 2012** importer (CLI and Python). See [README.md § Built-in Pascal VOC importer](./README.md#built-in-pascal-voc-importer).
+For a dataset-centric import from a classic benchmark, the package still ships a **Pascal VOC 2012** importer (CLI and Python). See [README.md ï¿½ Built-in Pascal VOC importer](./README.md#built-in-pascal-voc-importer).
 
 ---
 
 ## 8. Where to go next
 
-- **Architecture and V3 concepts** — [README.md](./README.md)
-- **V3 proposal (long-form)** — `docs/datalake-v3-proposal.md` in the repository
-- **Docker stack** — [docker/datalake/README.md](../../docker/datalake/README.md)
+- **Architecture and V3 concepts** ï¿½ [README.md](./README.md)
+- **V3 proposal (long-form)** ï¿½ `docs/datalake-v3-proposal.md` in the repository
+- **Docker stack** ï¿½ [docker/datalake/README.md](../../docker/datalake/README.md)

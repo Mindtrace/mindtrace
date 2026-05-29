@@ -166,6 +166,9 @@ class AsyncDataVaultBackend(ABC):
     async def get_object(self, storage_ref: StorageRef, **kwargs: Any) -> Any: ...
 
     @abstractmethod
+    async def get_asset_payload(self, asset_id: str, **kwargs: Any) -> Any: ...
+
+    @abstractmethod
     async def create_asset_from_object(
         self,
         *,
@@ -366,6 +369,9 @@ class DataVaultBackend(ABC):
 
     @abstractmethod
     def get_object(self, storage_ref: StorageRef, **kwargs: Any) -> Any: ...
+
+    @abstractmethod
+    def get_asset_payload(self, asset_id: str, **kwargs: Any) -> Any: ...
 
     @abstractmethod
     def create_asset_from_object(
@@ -578,6 +584,9 @@ class LocalAsyncDataVaultBackend(AsyncDataVaultBackend):
 
     async def get_object(self, storage_ref: StorageRef, **kwargs: Any) -> Any:
         return await self._datalake.get_object(storage_ref, **kwargs)
+
+    async def get_asset_payload(self, asset_id: str, **kwargs: Any) -> Any:
+        return await self._datalake.get_asset_payload(asset_id, **kwargs)
 
     async def create_asset_from_object(
         self,
@@ -861,6 +870,9 @@ class LocalDataVaultBackend(DataVaultBackend):
 
     def get_object(self, storage_ref: StorageRef, **kwargs: Any) -> Any:
         return self._datalake.get_object(storage_ref, **kwargs)
+
+    def get_asset_payload(self, asset_id: str, **kwargs: Any) -> Any:
+        return self._datalake.get_asset_payload(asset_id, **kwargs)
 
     def create_asset_from_object(
         self,
@@ -1194,6 +1206,21 @@ class DatalakeServiceAsyncDataVaultBackend(AsyncDataVaultBackend):
             )
         out = await self._call("aobjects_get", input_obj=GetObjectInput(storage_ref=storage_ref))
         return base64.b64decode(out.data_base64.encode("ascii"))
+
+    async def get_asset_payload(self, asset_id: str, **kwargs: Any) -> Any:
+        if kwargs:
+            raise TypeError(
+                "DatalakeServiceAsyncDataVaultBackend.get_asset_payload does not support extra kwargs; "
+                "use the in-process datalake for advanced store.load options."
+            )
+        asset = await self.get_asset(asset_id)
+        if getattr(asset, "payload_status", "present") != "present":
+            raise FileNotFoundError(
+                f"Asset {asset_id!r} payload is not available on this datalake "
+                f"(payload_status={getattr(asset, 'payload_status', None)!r})"
+            )
+        storage_ref = getattr(asset, "payload_storage_ref", None) or asset.storage_ref
+        return await self.get_object(storage_ref)
 
     async def create_asset_from_object(
         self,
@@ -1583,6 +1610,21 @@ class DatalakeServiceDataVaultBackend(DataVaultBackend):
             )
         out = self._call("objects_get", input_obj=GetObjectInput(storage_ref=storage_ref))
         return base64.b64decode(out.data_base64.encode("ascii"))
+
+    def get_asset_payload(self, asset_id: str, **kwargs: Any) -> Any:
+        if kwargs:
+            raise TypeError(
+                "DatalakeServiceDataVaultBackend.get_asset_payload does not support extra kwargs; "
+                "use the in-process datalake for advanced store.load options."
+            )
+        asset = self.get_asset(asset_id)
+        if getattr(asset, "payload_status", "present") != "present":
+            raise FileNotFoundError(
+                f"Asset {asset_id!r} payload is not available on this datalake "
+                f"(payload_status={getattr(asset, 'payload_status', None)!r})"
+            )
+        storage_ref = getattr(asset, "payload_storage_ref", None) or asset.storage_ref
+        return self.get_object(storage_ref)
 
     def create_asset_from_object(
         self,

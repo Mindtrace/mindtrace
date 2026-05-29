@@ -50,7 +50,7 @@ class TestDiscordSamplesIntegration:
 
     def test_custom_discord_bot_service_status(self, custom_discord_bot_service):
         """Test the custom Discord bot service status endpoint."""
-        response = requests.post(f"{custom_discord_bot_service.url}/discord.status", json={})
+        response = requests.post(f"{str(custom_discord_bot_service.url).rstrip('/')}/discord.status", json={})
 
         assert response.status_code == 200
         data = response.json()
@@ -80,7 +80,7 @@ class TestDiscordSamplesIntegration:
 
     def test_custom_discord_bot_service_commands(self, custom_discord_bot_service):
         """Test the custom Discord bot service commands endpoint."""
-        response = requests.post(f"{custom_discord_bot_service.url}/discord.commands", json={})
+        response = requests.post(f"{str(custom_discord_bot_service.url).rstrip('/')}/discord.commands", json={})
 
         assert response.status_code == 200
         data = response.json()
@@ -115,7 +115,7 @@ class TestDiscordSamplesIntegration:
         for test_case in test_cases:
             payload = {"content": test_case["content"], "author_id": 123, "channel_id": 456, "guild_id": 789}
 
-            response = requests.post(f"{custom_discord_bot_service.url}/discord.execute", json=payload)
+            response = requests.post(f"{str(custom_discord_bot_service.url).rstrip('/')}/discord.execute", json=payload)
             assert response.status_code == 200
 
             data = response.json()
@@ -136,7 +136,7 @@ class TestDiscordSamplesIntegration:
         """Test the info command functionality."""
         payload = {"content": "/info", "author_id": 123, "channel_id": 456, "guild_id": 789}
 
-        response = requests.post(f"{custom_discord_bot_service.url}/discord.execute", json=payload)
+        response = requests.post(f"{str(custom_discord_bot_service.url).rstrip('/')}/discord.execute", json=payload)
         assert response.status_code == 200
 
         data = response.json()
@@ -154,7 +154,7 @@ class TestDiscordSamplesIntegration:
         """Test the help command functionality."""
         payload = {"content": "/help", "author_id": 123, "channel_id": 456, "guild_id": 789}
 
-        response = requests.post(f"{custom_discord_bot_service.url}/discord.execute", json=payload)
+        response = requests.post(f"{str(custom_discord_bot_service.url).rstrip('/')}/discord.execute", json=payload)
         assert response.status_code == 200
 
         data = response.json()
@@ -167,7 +167,7 @@ class TestDiscordSamplesIntegration:
         """Test the cleanup command functionality."""
         payload = {"content": "/cleanup 5", "author_id": 123, "channel_id": 456, "guild_id": 789}
 
-        response = requests.post(f"{custom_discord_bot_service.url}/discord.execute", json=payload)
+        response = requests.post(f"{str(custom_discord_bot_service.url).rstrip('/')}/discord.execute", json=payload)
         assert response.status_code == 200
 
         data = response.json()
@@ -185,7 +185,7 @@ class TestDiscordSamplesIntegration:
         """Test the service command functionality."""
         payload = {"content": "/service", "author_id": 123, "channel_id": 456, "guild_id": 789}
 
-        response = requests.post(f"{custom_discord_bot_service.url}/discord.execute", json=payload)
+        response = requests.post(f"{str(custom_discord_bot_service.url).rstrip('/')}/discord.execute", json=payload)
         assert response.status_code == 200
 
         data = response.json()
@@ -204,7 +204,9 @@ class TestDiscordSamplesIntegration:
             # No guild_id
         }
 
-        response = requests.post(f"{custom_discord_bot_service.url}/discord.execute", json=payload_no_guild)
+        response = requests.post(
+            f"{str(custom_discord_bot_service.url).rstrip('/')}/discord.execute", json=payload_no_guild
+        )
         assert response.status_code == 200
 
         data = response.json()
@@ -216,7 +218,7 @@ class TestDiscordSamplesIntegration:
         # Test cleanup command (requires manage messages permission)
         payload = {"content": "/cleanup 5", "author_id": 123, "channel_id": 456, "guild_id": 789}
 
-        response = requests.post(f"{custom_discord_bot_service.url}/discord.execute", json=payload)
+        response = requests.post(f"{str(custom_discord_bot_service.url).rstrip('/')}/discord.execute", json=payload)
         assert response.status_code == 200
 
         data = response.json()
@@ -235,7 +237,9 @@ class TestDiscordSamplesIntegration:
             payload = {"content": command, "author_id": author_id, "channel_id": 456, "guild_id": 789}
 
             try:
-                response = requests.post(f"{custom_discord_bot_service.url}/discord.execute", json=payload)
+                response = requests.post(
+                    f"{str(custom_discord_bot_service.url).rstrip('/')}/discord.execute", json=payload
+                )
                 results.put((command, response.status_code, response.json()))
             except Exception as e:
                 results.put((command, None, str(e)))
@@ -266,7 +270,7 @@ class TestDiscordSamplesIntegration:
         for command in unicode_commands:
             payload = {"content": command, "author_id": 123, "channel_id": 456, "guild_id": 789}
 
-            response = requests.post(f"{custom_discord_bot_service.url}/discord.execute", json=payload)
+            response = requests.post(f"{str(custom_discord_bot_service.url).rstrip('/')}/discord.execute", json=payload)
             assert response.status_code == 200
 
             data = response.json()

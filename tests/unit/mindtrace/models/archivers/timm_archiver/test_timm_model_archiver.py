@@ -171,8 +171,10 @@ def test_timm_archiver_roundtrip(temp_dir):
     """Test full save/load roundtrip with real timm model."""
     archiver = TimmModelArchiver(uri=temp_dir)
 
-    # Create real model
-    model = timm.create_model("resnet18", pretrained=False, num_classes=5)
+    # Use a tiny model — the test verifies save/load round-trip integrity, not
+    # any architecture-specific behaviour, so the smallest available timm model
+    # exercises the same code path much faster than resnet18.
+    model = timm.create_model("mobilenetv3_small_050", pretrained=False, num_classes=5)
     model.eval()
 
     # Save

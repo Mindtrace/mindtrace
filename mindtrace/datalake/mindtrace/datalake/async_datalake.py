@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
+import os
 import warnings
 from collections.abc import AsyncIterator, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
+from functools import partial
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -36,10 +40,14 @@ from mindtrace.datalake.types import (
     AssetRetention,
     Collection,
     CollectionItem,
+    DatasetImportSession,
     DatasetVersion,
     Datum,
     DirectUploadSession,
     DuplicateAliasError,
+    PayloadStatus,
+    ReplicationRule,
+    ReplicationTask,
     ResolvedCollectionItem,
     ResolvedDatasetVersion,
     ResolvedDatum,
@@ -85,6 +93,12 @@ def _default_datalake_store_path(mongo_db_uri: str, mongo_db_name: str) -> Path:
     return Path("~/.cache/mindtrace/temp").expanduser() / f"datalake-{digest}"
 
 
+def _default_store_save_workers() -> int:
+    """Return a conservative bounded worker count for blocking store writes."""
+
+    return min(32, max(4, (os.cpu_count() or 1) * 2))
+
+
 class AsyncDatalake(Mindtrace):
     """Async canonical data facade for payload storage, metadata, and dataset composition.
 
@@ -106,14 +120,21 @@ class AsyncDatalake(Mindtrace):
         mounts: list[Mount] | None = None,
         default_mount: str | None = None,
         slow_ops_policy: SlowOpsPolicy = SlowOpsPolicy.WARN,
+        store_save_max_workers: int | None = None,
     ) -> None:
+        if store is not None and mounts is not None:
+            raise ValueError("Provide either store or mounts, not both")
+        if store_save_max_workers is not None and store_save_max_workers < 1:
+            raise ValueError("store_save_max_workers must be at least 1")
+
         super().__init__()
         self.mongo_db_uri = mongo_db_uri
         self.mongo_db_name = mongo_db_name
         self.slow_ops_policy = SlowOpsPolicy(slow_ops_policy)
-
-        if store is not None and mounts is not None:
-            raise ValueError("Provide either store or mounts, not both")
+        self._store_save_executor = ThreadPoolExecutor(
+            max_workers=store_save_max_workers or _default_store_save_workers(),
+            thread_name_prefix="DatalakeStoreSave",
+        )
 
         if store is not None:
             self.store = store
@@ -152,6 +173,12 @@ class AsyncDatalake(Mindtrace):
         self.datum_database = MongoMindtraceODM(model_cls=Datum, **odm_kwargs)
         self.dataset_version_database = MongoMindtraceODM(model_cls=DatasetVersion, **odm_kwargs)
         self.direct_upload_session_database = MongoMindtraceODM(model_cls=DirectUploadSession, **odm_kwargs)
+        self.dataset_import_session_database = MongoMindtraceODM(
+            model_cls=DatasetImportSession,
+            **odm_kwargs,
+        )
+        self.replication_rule_database = MongoMindtraceODM(model_cls=ReplicationRule, **odm_kwargs)
+        self.replication_task_database = MongoMindtraceODM(model_cls=ReplicationTask, **odm_kwargs)
         self.asset_alias_database = MongoMindtraceODM(model_cls=AssetAlias, **odm_kwargs)
 
     def _all_odms(self) -> list[MongoMindtraceODM]:
@@ -166,6 +193,9 @@ class AsyncDatalake(Mindtrace):
             self.datum_database,
             self.dataset_version_database,
             self.direct_upload_session_database,
+            self.dataset_import_session_database,
+            self.replication_rule_database,
+            self.replication_task_database,
             self.asset_alias_database,
         ]
 
@@ -188,6 +218,10 @@ class AsyncDatalake(Mindtrace):
             self._mongo_client.close()
         except Exception:
             pass
+        try:
+            self._store_save_executor.shutdown(wait=True, cancel_futures=True)
+        except Exception:
+            pass
         self._closed = True
 
     async def __aenter__(self) -> "AsyncDatalake":
@@ -196,18 +230,59 @@ class AsyncDatalake(Mindtrace):
     async def __aexit__(self, exc_type, exc, tb) -> None:
         await self.close()
 
+    def _odm_backends(self) -> tuple[MongoMindtraceODM, ...]:
+        return (
+            self.asset_database,
+            self.collection_database,
+            self.collection_item_database,
+            self.asset_retention_database,
+            self.annotation_record_database,
+            self.annotation_schema_database,
+            self.annotation_set_database,
+            self.datum_database,
+            self.dataset_version_database,
+            self.direct_upload_session_database,
+            self.dataset_import_session_database,
+            self.replication_rule_database,
+            self.replication_task_database,
+            self.asset_alias_database,
+        )
+
     async def initialize(self) -> None:
-        await self.asset_database.initialize()
-        await self.collection_database.initialize()
-        await self.collection_item_database.initialize()
-        await self.asset_retention_database.initialize()
-        await self.annotation_record_database.initialize()
-        await self.annotation_schema_database.initialize()
-        await self.annotation_set_database.initialize()
-        await self.datum_database.initialize()
-        await self.dataset_version_database.initialize()
-        await self.direct_upload_session_database.initialize()
-        await self.asset_alias_database.initialize()
+        for odm in self._odm_backends():
+            await odm.initialize()
+
+    async def wipe(
+        self,
+        *,
+        delete_payloads: bool = True,
+        delete_metadata: bool = True,
+        clear_registry_metadata: bool = False,
+    ) -> dict[str, Any]:
+        if not delete_payloads and not delete_metadata:
+            raise ValueError("wipe() requires delete_payloads and/or delete_metadata to be enabled")
+
+        cleared_mounts: list[str] = []
+        if delete_payloads:
+            for mount_name in self.store.list_mounts():
+                self.store.get_mount(mount_name).registry.clear(clear_registry_metadata=clear_registry_metadata)
+                cleared_mounts.append(mount_name)
+            self.store.clear_location_cache()
+
+        if delete_metadata:
+            await self.asset_database.client.drop_database(self.mongo_db_name)
+            for odm in self._odm_backends():
+                if hasattr(odm, "_is_initialized"):
+                    odm._is_initialized = False
+            await self.initialize()
+
+        return {
+            "database": self.mongo_db_name,
+            "deleted_payloads": delete_payloads,
+            "deleted_metadata": delete_metadata,
+            "clear_registry_metadata": clear_registry_metadata,
+            "cleared_mounts": cleared_mounts,
+        }
 
     @classmethod
     async def create(
@@ -793,8 +868,17 @@ class AsyncDatalake(Mindtrace):
         on_conflict: str | None = None,
     ) -> StorageRef:
         target_mount = mount or self.store.default_mount
+        if not self.store.has_mount(target_mount):
+            configured = sorted(self.store.list_mounts())
+            raise StoreLocationNotFound(
+                f"Unknown store mount {target_mount!r} on datalake {self.mongo_db_name!r}; configured mounts: {configured}"
+            )
         key = self.store.build_key(target_mount, name, version)
-        saved_version = self.store.save(key, obj, version=version, metadata=metadata, on_conflict=on_conflict)
+        loop = asyncio.get_running_loop()
+        saved_version = await loop.run_in_executor(
+            self._store_save_executor,
+            partial(self.store.save, key, obj, version=version, metadata=metadata, on_conflict=on_conflict),
+        )
         resolved_version = saved_version if isinstance(saved_version, str) else version or "latest"
         return StorageRef(mount=target_mount, name=name, version=resolved_version)
 
@@ -807,6 +891,22 @@ class AsyncDatalake(Mindtrace):
         storage_ref = self._normalize_storage_ref(storage_ref)
         key = self.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
         return self.store.info(key, version=storage_ref.version)
+
+    async def get_asset_payload(self, asset_id: str, **kwargs: Any) -> Any:
+        asset = await self.get_asset(asset_id)
+        if asset.payload_status != "present":
+            raise FileNotFoundError(
+                f"Asset {asset_id!r} payload is not available on this datalake (payload_status={asset.payload_status!r})"
+            )
+        storage_ref = asset.payload_storage_ref or asset.storage_ref
+        try:
+            return await self.get_object(storage_ref, **kwargs)
+        except Exception as exc:
+            asset.payload_status = "corrupt"
+            asset.payload_status_reason = f"payload read failed: {exc}"
+            asset.payload_status_updated_at = self._utc_now()
+            await self.asset_database.update(asset)
+            raise
 
     async def object_exists(self, storage_ref: StorageRef) -> bool:
         """Return True if the object version exists on this lake's store.
@@ -863,6 +963,13 @@ class AsyncDatalake(Mindtrace):
             target_version=target_version,
         )
         return StorageRef(mount=target_mount, name=target_name, version=saved_version)
+
+    async def delete_object(self, storage_ref: StorageRef) -> None:
+        """Best-effort delete of a stored object by :class:`StorageRef` (matches ``put_object`` coordinates)."""
+
+        storage_ref = self._normalize_storage_ref(storage_ref)
+        key = self.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
+        self.store.delete(key, None)
 
     async def create_object_upload_session(
         self,
@@ -1007,18 +1114,32 @@ class AsyncDatalake(Mindtrace):
         subject: SubjectRef | None = None,
         metadata: dict[str, Any] | None = None,
         created_by: str | None = None,
+        payload_status: PayloadStatus = "present",
+        payload_status_reason: str | None = None,
+        payload_verified_at: datetime | None = None,
     ) -> Asset:
+        normalized_storage_ref = self._normalize_storage_ref(storage_ref)
+        now = self._utc_now()
         asset = self._build_document(
             Asset,
             kind=kind,
             media_type=media_type,
-            storage_ref=self._normalize_storage_ref(storage_ref),
+            storage_ref=normalized_storage_ref,
             checksum=checksum,
             size_bytes=size_bytes,
+            payload_status=payload_status,
+            payload_status_updated_at=now,
+            payload_status_reason=payload_status_reason,
+            payload_storage_ref=normalized_storage_ref,
+            payload_checksum=checksum,
+            payload_size_bytes=size_bytes,
+            payload_verified_at=payload_verified_at
+            if payload_verified_at is not None
+            else (now if payload_status == "present" else None),
             subject=subject,
             metadata=metadata or {},
             created_by=created_by,
-            updated_at=self._utc_now(),
+            updated_at=now,
         )
         inserted = await self.asset_database.insert(asset)
         await self.ensure_primary_asset_alias(inserted)
@@ -1040,6 +1161,42 @@ class AsyncDatalake(Mindtrace):
             created_at=self._utc_now(),
         )
         return await self.asset_alias_database.insert(doc)
+
+    async def ensure_primary_asset_aliases(self, assets: list[Asset]) -> list[AssetAlias]:
+        """Bulk/idempotent primary alias ensure for many assets.
+
+        Performs one ``$in`` lookup for existing aliases, then inserts only the missing rows.
+        Returns both pre-existing and newly inserted alias rows.
+        """
+        if not assets:
+            return []
+        asset_by_id = {asset.asset_id: asset for asset in assets}
+        aliases = list(asset_by_id.keys())
+        existing = await self.asset_alias_database.find({"alias": {"$in": aliases}})
+        alias_rows: list[AssetAlias] = []
+        existing_by_alias = {}
+        for row in existing:
+            existing_by_alias[row.alias] = row
+            if row.alias in asset_by_id and row.asset_id != row.alias:
+                raise DuplicateAliasError(f"Alias {row.alias!r} is already mapped to asset_id {row.asset_id!r}")
+            alias_rows.append(row)
+
+        missing_docs: list[AssetAlias] = []
+        for asset_id in aliases:
+            if asset_id in existing_by_alias:
+                continue
+            missing_docs.append(
+                self._build_document(
+                    AssetAlias,
+                    alias=asset_id,
+                    asset_id=asset_id,
+                    is_primary=True,
+                    created_at=self._utc_now(),
+                )
+            )
+        if missing_docs:
+            alias_rows.extend(await self.asset_alias_database.insert_many(missing_docs, ordered=False))
+        return alias_rows
 
     async def resolve_alias(self, alias: str) -> str:
         """Return ``asset_id`` for a string alias, or raise :class:`~mindtrace.database.core.exceptions.DocumentNotFoundError`."""

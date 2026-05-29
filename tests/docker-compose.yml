@@ -53,6 +53,10 @@ services:
       - MONGO_INITDB_DATABASE=test_db
     volumes:
       - mongodb_test_data:/data/db
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
 
   # Second MongoDB for cross-datalake replication / federation-style integration tests.
   mongodb_secondary:
@@ -63,6 +67,10 @@ services:
       - MONGO_INITDB_DATABASE=test_db
     volumes:
       - mongodb_secondary_test_data:/data/db
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
 
   pypylon-runtime:
     profiles:

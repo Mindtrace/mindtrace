@@ -1238,6 +1238,26 @@ async def test_motor_insert_non_beanie_model_uses_model_dump_and_motor_collectio
         assert str(out.id) == str(oid)
 
 
+@pytest.mark.asyncio
+async def test_motor_insert_document_too_large_not_wrapped_as_duplicate():
+    """``DocumentTooLarge`` must surface as :class:`~mindtrace.database.core.exceptions.DocumentTooLargeError`."""
+    from pymongo.errors import DocumentTooLarge
+
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+    from mindtrace.database.core.exceptions import DocumentTooLargeError
+
+    backend = MongoMindtraceODM(MotorDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+    backend._motor_routing = True
+
+    mock_coll = MagicMock()
+    mock_coll.insert_one = AsyncMock(side_effect=DocumentTooLarge("BSON document too large", None))
+
+    with patch.object(backend, "_motor_collection", return_value=mock_coll):
+        with pytest.raises(DocumentTooLargeError, match="BSON"):
+            await backend.insert(UserCreate(name="A", age=1, email="x@y.com"))
+
+
 def test_motor_patch_fields_basemodel():
     from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
 
