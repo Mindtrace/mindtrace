@@ -48,7 +48,7 @@ export const WithContext: Story = {
   args: {
     context: (
       <Stack spacing={0.5}>
-        <Typography variant="label" color="text.secondary">
+        <Typography variant="metricLabel" color="text.secondary">
           Current workspace
         </Typography>
         <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>

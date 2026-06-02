@@ -99,8 +99,22 @@ export function ToastProvider({
         durationMs: input.durationMs === undefined ? defaultDurationMs : input.durationMs,
       }
       setToasts((prev) => {
-        const trimmed = prev.length >= max ? prev.slice(prev.length - max + 1) : prev
-        return [...trimmed, next]
+        const queue = [...prev, next]
+        if (queue.length <= max) return queue
+        // Over capacity: drop the oldest *auto-dismissing* toasts first so
+        // "sticky" toasts (durationMs === null, i.e. kept until dismissed)
+        // are never silently discarded. If every toast is sticky we keep them
+        // all and let the stack grow rather than throw a sticky one away.
+        const overflow = queue.length - max
+        let toDrop = overflow
+        const trimmed = queue.filter((t) => {
+          if (toDrop > 0 && t.durationMs !== null && t.id !== id) {
+            toDrop -= 1
+            return false
+          }
+          return true
+        })
+        return trimmed
       })
       return id
     },

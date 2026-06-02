@@ -17,8 +17,12 @@ const VARIANTS = [
   'caption',
   'overline',
   'button',
+  'subheading',
+  'sectionLabel',
+  'metricLabel',
+  'tinyLabel',
+  'microCaption',
   'mono',
-  'label',
 ] as const
 
 function TypographyShowcase() {

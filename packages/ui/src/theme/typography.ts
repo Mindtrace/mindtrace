@@ -9,7 +9,6 @@
  *   - `tinyLabel`     — micro uppercase label
  *   - `microCaption`  — smaller caption
  *   - `mono`          — IDs, hashes, code
- *   - `label`         — small uppercase label (alias of metricLabel kept for back-compat)
  */
 
 import type { TypographyVariantsOptions, TypographyStyle } from '@mui/material/styles'
@@ -23,7 +22,6 @@ declare module '@mui/material/styles' {
     tinyLabel: TypographyStyle
     microCaption: TypographyStyle
     mono: TypographyStyle
-    label: TypographyStyle
   }
   interface TypographyVariantsOptions {
     subheading?: TypographyStyle
@@ -32,7 +30,6 @@ declare module '@mui/material/styles' {
     tinyLabel?: TypographyStyle
     microCaption?: TypographyStyle
     mono?: TypographyStyle
-    label?: TypographyStyle
   }
 }
 
@@ -44,7 +41,6 @@ declare module '@mui/material/Typography' {
     tinyLabel: true
     microCaption: true
     mono: true
-    label: true
   }
 }
 
@@ -114,15 +110,6 @@ export const typography: TypographyVariantsOptions = {
     fontSize: '0.72rem',
     fontWeight: fontWeight.medium,
     lineHeight: 1.4,
-  },
-  // Back-compat alias for our existing `label` variant — same shape as metricLabel.
-  label: {
-    fontFamily: fontFamily.sans,
-    fontWeight: fontWeight.semibold,
-    fontSize: '0.78rem',
-    textTransform: 'uppercase',
-    letterSpacing: '0.06em',
-    lineHeight: 1.3,
   },
 }
 

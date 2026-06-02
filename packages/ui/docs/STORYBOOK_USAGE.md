@@ -25,6 +25,18 @@ npm run storybook         # dev server on :6006
 npm run build:storybook   # static build into storybook-static/
 ```
 
+## Accessibility checks (on demand)
+
+The `@storybook/addon-a11y` (axe-core) addon is configured to run **manually**
+(`initialGlobals.a11y.manual` in `.storybook/preview.tsx`). Open the
+**Accessibility** panel and click **Run test** to audit the current story.
+
+It's manual on purpose: by default axe runs a full pass on every story render —
+once per story, again per preview on a Docs page, and again on every navigation
+and controls change — which made heavier pages (e.g. the composite
+`Patterns/PageLayout` docs page) janky and slowed navigation. Manual mode keeps
+the audit one click away without the per-render cost.
+
 ## Story conventions
 
 - **Titles** use one of three top-level prefixes: `Foundations/…`,

@@ -2,6 +2,7 @@
  * Component-level overrides — tighter, denser defaults than MUI's base.
  */
 
+import { alpha } from '@mui/material/styles'
 import type { Components, Theme } from '@mui/material/styles'
 import { fontWeight, radii } from './tokens'
 
@@ -10,13 +11,18 @@ export function buildComponents(mode: 'light' | 'dark'): Components<Theme> {
   const surfaceElevated = isDark ? '#111116' : '#FFFFFF'
   const surfaceBorder = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)'
 
+  // Selection/focus tints are derived from `palette.primary` at render time so
+  // the whole UI tracks a single primary knob — including consumer overrides
+  // passed to `createTheme`. Opacities differ per mode for legibility.
+  const selectedAlpha = isDark ? 0.16 : 0.08
+  const selectedHoverAlpha = isDark ? 0.24 : 0.14
+
   return {
     MuiCssBaseline: {
       styleOverrides: {
         body: {
           scrollbarWidth: 'thin',
           scrollbarColor: isDark ? 'rgba(255,255,255,0.10) transparent' : 'rgba(0,0,0,0.10) transparent',
-          fontFeatureSettings: "'cv11', 'ss01'",
         },
         '*::-webkit-scrollbar': { width: 8, height: 8 },
         '*::-webkit-scrollbar-thumb': {
@@ -40,14 +46,6 @@ export function buildComponents(mode: 'light' | 'dark'): Components<Theme> {
           fontWeight: fontWeight.semibold,
         },
         sizeSmall: { paddingLeft: 10, paddingRight: 10 },
-        contained: ({ ownerState }) => {
-          if (!isDark || ownerState.color !== 'primary') return {}
-          return {
-            backgroundColor: '#7F23CF',
-            color: '#FFFFFF',
-            '&:hover': { backgroundColor: '#6D1DB5' },
-          }
-        },
       },
     },
     MuiIconButton: { styleOverrides: { root: { borderRadius: radii.sm } } },
@@ -84,17 +82,17 @@ export function buildComponents(mode: 'light' | 'dark'): Components<Theme> {
     MuiTextField: { defaultProps: { size: 'small', variant: 'outlined' } },
     MuiOutlinedInput: {
       styleOverrides: {
-        root: {
+        root: ({ theme }) => ({
           borderRadius: radii.sm,
           ...(isDark
             ? {
                 color: '#FAFAFA',
                 '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.10)' },
                 '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.20)' },
-                '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#7F23CF' },
+                '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: theme.palette.primary.main },
               }
             : {}),
-        },
+        }),
         input: isDark
           ? {
               '&::placeholder': { color: 'rgba(255,255,255,0.3)' },
@@ -105,7 +103,8 @@ export function buildComponents(mode: 'light' | 'dark'): Components<Theme> {
     },
     MuiInputLabel: {
       styleOverrides: {
-        root: isDark ? { color: 'rgba(255,255,255,0.5)', '&.Mui-focused': { color: '#A78BFA' } } : {},
+        root: ({ theme }) =>
+          isDark ? { color: 'rgba(255,255,255,0.5)', '&.Mui-focused': { color: theme.palette.primary.main } } : {},
       },
     },
     MuiSelect: {
@@ -116,14 +115,12 @@ export function buildComponents(mode: 'light' | 'dark'): Components<Theme> {
     },
     MuiMenuItem: {
       styleOverrides: {
-        root: isDark
-          ? {
-              '&.Mui-selected': {
-                backgroundColor: 'rgba(167,139,250,0.12)',
-                '&:hover': { backgroundColor: 'rgba(167,139,250,0.18)' },
-              },
-            }
-          : {},
+        root: ({ theme }) => ({
+          '&.Mui-selected': {
+            backgroundColor: alpha(theme.palette.primary.main, selectedAlpha),
+            '&:hover': { backgroundColor: alpha(theme.palette.primary.main, selectedHoverAlpha) },
+          },
+        }),
       },
     },
     MuiSwitch: {
@@ -131,25 +128,22 @@ export function buildComponents(mode: 'light' | 'dark'): Components<Theme> {
     },
     MuiCheckbox: {
       styleOverrides: {
-        root: isDark ? { color: 'rgba(255,255,255,0.3)', '&.Mui-checked': { color: '#A78BFA' } } : {},
+        root: ({ theme }) =>
+          isDark ? { color: 'rgba(255,255,255,0.3)', '&.Mui-checked': { color: theme.palette.primary.main } } : {},
       },
     },
     MuiToggleButton: {
       styleOverrides: {
-        root: {
+        root: ({ theme }) => ({
           borderColor: surfaceBorder,
-          ...(isDark
-            ? {
-                color: 'rgba(255,255,255,0.5)',
-                '&.Mui-selected': {
-                  backgroundColor: 'rgba(167,139,250,0.12)',
-                  color: '#A78BFA',
-                  borderColor: 'rgba(167,139,250,0.30)',
-                  '&:hover': { backgroundColor: 'rgba(167,139,250,0.18)' },
-                },
-              }
-            : {}),
-        },
+          ...(isDark ? { color: 'rgba(255,255,255,0.5)' } : {}),
+          '&.Mui-selected': {
+            backgroundColor: alpha(theme.palette.primary.main, selectedAlpha),
+            color: theme.palette.primary.main,
+            borderColor: alpha(theme.palette.primary.main, 0.3),
+            '&:hover': { backgroundColor: alpha(theme.palette.primary.main, selectedHoverAlpha) },
+          },
+        }),
       },
     },
     MuiAlert: {
@@ -159,15 +153,15 @@ export function buildComponents(mode: 'light' | 'dark'): Components<Theme> {
     },
     MuiListItemButton: {
       styleOverrides: {
-        root: {
+        root: ({ theme }) => ({
           borderRadius: radii.sm,
           '&.Mui-selected': {
-            backgroundColor: isDark ? 'rgba(167, 139, 250, 0.12)' : 'rgba(124, 58, 237, 0.08)',
+            backgroundColor: alpha(theme.palette.primary.main, selectedAlpha),
             '&:hover': {
-              backgroundColor: isDark ? 'rgba(167, 139, 250, 0.18)' : 'rgba(124, 58, 237, 0.14)',
+              backgroundColor: alpha(theme.palette.primary.main, selectedHoverAlpha),
             },
           },
-        },
+        }),
       },
     },
     MuiTooltip: {
@@ -211,7 +205,6 @@ export function buildComponents(mode: 'light' | 'dark'): Components<Theme> {
           tinyLabel: 'div',
           microCaption: 'span',
           mono: 'span',
-          label: 'div',
         },
       },
     },

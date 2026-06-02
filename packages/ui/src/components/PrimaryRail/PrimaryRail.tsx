@@ -23,6 +23,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import Box from '@mui/material/Box'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
+import { alpha, type Theme } from '@mui/material/styles'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { useEffect, useState, type ReactNode } from 'react'
@@ -91,7 +92,10 @@ export function PrimaryRail({
 }: PrimaryRailProps) {
   const isControlled = collapsed !== undefined
   const [uncontrolled, setUncontrolled] = useState<boolean>(() => {
-    if (persistKey) {
+    // Guard `window` so this initializer is safe during SSR, where `window`
+    // is undefined. On the server we fall back to `defaultCollapsed`; on the
+    // client the stored value is read synchronously (no collapse flash).
+    if (persistKey && typeof window !== 'undefined') {
       try {
         const stored = window.localStorage.getItem(persistKey)
         if (stored !== null) return stored === 'true'
@@ -289,26 +293,31 @@ function NavRow({
     </>
   )
 
-  const innerSx = {
-    width: expanded ? '100%' : 40,
-    height: 36,
-    borderRadius: 1,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: expanded ? 'flex-start' : 'center',
-    gap: expanded ? 1.5 : 0,
-    px: expanded ? 1.25 : 0,
-    cursor: 'pointer',
-    textDecoration: 'none',
-    color: active ? 'primary.main' : 'text.secondary',
-    bgcolor: active ? 'action.selected' : 'transparent',
-    transition: 'background-color 120ms, color 120ms',
-    '&:hover': {
-      bgcolor: active ? 'action.selected' : 'action.hover',
-      color: active ? 'primary.main' : 'text.primary',
-    },
-    flexShrink: 0,
-  } as const
+  const innerSx = (theme: Theme) => {
+    // Active tint derives from `palette.primary` so it tracks a custom primary.
+    const selected = alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.08)
+    const selectedHover = alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.24 : 0.14)
+    return {
+      width: expanded ? '100%' : 40,
+      height: 36,
+      borderRadius: 1,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: expanded ? 'flex-start' : 'center',
+      gap: expanded ? 1.5 : 0,
+      px: expanded ? 1.25 : 0,
+      cursor: 'pointer',
+      textDecoration: 'none',
+      color: active ? 'primary.main' : 'text.secondary',
+      bgcolor: active ? selected : 'transparent',
+      transition: 'background-color 120ms, color 120ms',
+      '&:hover': {
+        bgcolor: active ? selectedHover : theme.palette.action.hover,
+        color: active ? 'primary.main' : 'text.primary',
+      },
+      flexShrink: 0,
+    } as const
+  }
 
   const inner = renderLink ? (
     renderLink(item, <Box sx={innerSx}>{content}</Box>)

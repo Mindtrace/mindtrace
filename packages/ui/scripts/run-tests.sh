@@ -23,7 +23,14 @@ cd "$PACKAGE_DIR"
 
 if [ ! -d node_modules ]; then
     echo "Installing @mindtrace/ui dependencies..."
-    npm install --silent
+    # Prefer `npm ci` for reproducible, lockfile-pinned installs (the right
+    # choice for CI). Fall back to `npm install` only when there's no lockfile
+    # to install from (e.g. a fresh local checkout that hasn't generated one).
+    if [ -f package-lock.json ]; then
+        npm ci --silent
+    else
+        npm install --silent
+    fi
 fi
 
 ARGS=()
