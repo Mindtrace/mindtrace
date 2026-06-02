@@ -149,6 +149,20 @@ test = """
     bash scripts/run_tests.sh ${@:-}
 """
 
+test_ui = """
+    # Run the @mindtrace/ui (vitest) test suite. The package is a
+    # standalone JS/TS library at packages/ui — this is just a `ds`-
+    # flavored shortcut to its own test runner so the team has the same
+    # UX as the Python suite.
+    #
+    # ds test_ui                          # run once
+    # ds test_ui --watch                  # watch mode
+    # ds test_ui --coverage               # with coverage
+    # ds test_ui: src/components/Button   # specific path/pattern
+
+    bash packages/ui/scripts/run-tests.sh ${@:-}
+"""
+
 publish_to_pypi = """
     # Push all packages to PyPI
     # First build all packages: uv build --all-packages
