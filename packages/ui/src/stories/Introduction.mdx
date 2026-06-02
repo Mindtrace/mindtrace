@@ -1,0 +1,171 @@
+import { Meta } from '@storybook/blocks'
+
+<Meta title="Introduction" />
+
+# @mindtrace/ui
+
+A React component library for **calm, data-heavy operational interfaces** —
+admin tools, dashboards, internal back-offices, control panels — used daily
+by expert users who care about throughput and predictability over flash.
+
+Built on **MUI**, themed and pre-wrapped so the same components look and
+behave the same way across every surface that consumes the library.
+
+---
+
+## What you can do here
+
+Storybook is the source-of-truth catalogue. Every component ships with a
+story so you can:
+
+- **Try multiple themes** — the toolbar (top-right) exposes seven theme
+  presets including light/dark Mindtrace plus four custom palettes. See how
+  each component absorbs a brand color change.
+- **Drive props live** — open the **Controls** panel and tweak strings,
+  enums, booleans, colors, ranges. Every component has typed `argTypes`.
+- **Watch events fire** — the **Actions** panel logs every `onClick`,
+  `onChange`, `onClose`, etc.
+- **Step through interactions** — the **Interactions** panel replays the
+  `play()` function for stories that have one (Wizard navigation, Toast
+  show/dismiss, Modal confirm/cancel, …).
+- **Check accessibility** — the **a11y** panel runs axe-core against the
+  rendered story.
+
+---
+
+## Where things live
+
+### Foundations — start here
+
+- [`Theme Builder`](?path=/docs/foundations-theme-builder--docs) — author a
+  theme inline with color pickers + a kitchen-sink showcase. Validates the
+  library against any brand palette.
+- `Palette`, `Typography`, `Shape`, `Shadows`, `Stack & Grid` — design
+  tokens and primitive scales.
+
+### Components — thin MUI wrappers
+
+The day-to-day building blocks. Each wraps a single MUI primitive and adds
+sensible defaults + a generic API.
+
+**Inputs.** `Button`, `TextField`, `Select`, `Checkbox`, `Switch`, `Radio`,
+`Tabs`, `CopyButton`.
+
+**Surfaces.** `Card`, `Modal`, `Drawer`, `ConfirmDialog`, `Toast`.
+
+**Status & feedback.** `Alert`, `Badge`, `StatusDot`, `StatusBadge`,
+`SeverityBadge`, `NumberBadge`, `Avatar`, `Mono`.
+
+**Plus raw MUI re-exports** for layout primitives (`Box`, `Stack`, `Grid`,
+`Container`), data display (`Table`, `Tooltip`, `Chip`), navigation (`Menu`,
+`Popover`, `Breadcrumbs`, `Pagination`, `Stepper`, `Accordion`), and
+feedback (`Snackbar`, `CircularProgress`, `LinearProgress`, `Skeleton`).
+
+### Layout — app frame primitives
+
+Composable shells, slot-based, no auth/business logic baked in:
+`AppShell`, `AppBar`, `PrimaryRail`, `PageContainer`, `UserMenu`,
+`HeroBackground`.
+
+### Patterns — bespoke higher-order composites
+
+Generic shapes lifted from real operational UIs:
+`PageLayout`, `PageHeader`, `FormSection`, `EmptyState`, `DataTable`,
+`KpiCard`, `SectionCard`, `FilterChips`, `SearchField`,
+`PathBreadcrumb`, `Wizard`.
+
+---
+
+## Quick start (in your app)
+
+```tsx
+import { MindtraceProvider, Button } from '@mindtrace/ui'
+
+export function App() {
+  return (
+    <MindtraceProvider mode="light">
+      <Button variant="contained">Save changes</Button>
+    </MindtraceProvider>
+  )
+}
+```
+
+One `MindtraceProvider` at the root — every descendant reads from its
+theme automatically. Pass `mode="dark"`, a custom `theme`, or
+`disableCssBaseline` for advanced setups.
+
+---
+
+## How Storybook is wired
+
+- Components live under `src/components/<Name>/` co-located with their
+  stories (`<Name>.stories.tsx`).
+- Theme is the real `lightTheme` / `darkTheme` from `src/theme/`, mounted
+  via the `addon-themes` decorator in `.storybook/preview.tsx`. The
+  toolbar picker swaps between this and the custom presets in
+  `.storybook/themes.ts`.
+- The `MindtraceProvider` (`src/providers/MindtraceProvider.tsx`) is what
+  consuming apps mount once at root; Storybook applies the same MUI
+  constituents directly so addon controls still resolve.
+
+---
+
+## Adding a new story
+
+Co-locate with the component:
+
+```tsx
+// src/components/MyComponent/MyComponent.stories.tsx
+import type { Meta, StoryObj } from '@storybook/react'
+import { fn } from '@storybook/test'
+
+import { MyComponent } from './MyComponent'
+
+const meta = {
+  title: 'Components/MyComponent',
+  component: MyComponent,
+  tags: ['autodocs'],
+  argTypes: {
+    variant: { control: { type: 'inline-radio' }, options: ['a', 'b'] },
+    disabled: { control: 'boolean' },
+    onClick: { action: 'clicked' },
+  },
+  args: { variant: 'a', onClick: fn() },
+} satisfies Meta<typeof MyComponent>
+
+export default meta
+type Story = StoryObj<typeof meta>
+
+export const Default: Story = {}
+```
+
+The `src/**/*.stories.@(ts|tsx)` glob in `.storybook/main.ts` picks new
+files up automatically.
+
+**Rules of thumb:**
+
+- Use `title: 'Components/…'` / `'Layout/…'` / `'Patterns/…'` /
+  `'Foundations/…'` so the story sorts into the right group.
+- Always include `tags: ['autodocs']` for the prop table.
+- Declare `argTypes` for any enum-like prop so the control becomes a
+  picker instead of a free-form input.
+- Wire `onClick`-style callbacks via `fn()` from `@storybook/test` so
+  the Actions panel shows them.
+- Keep example values generic. No private data, no customer or domain
+  terminology, no real URLs. See
+  [`docs/PUBLIC_PACKAGE_BOUNDARIES.md`](https://github.com/Mindtrace/mindtrace/blob/dev/packages/ui/docs/PUBLIC_PACKAGE_BOUNDARIES.md)
+  for the boundary rules.
+
+---
+
+## Further reading
+
+The [`docs/`](https://github.com/Mindtrace/mindtrace/tree/dev/packages/ui/docs)
+folder ships alongside the source:
+
+- `AI_USAGE_GUIDE.md` — rules for AI coding tools using this library
+- `UI_PHILOSOPHY.md` — what this UI is and isn't
+- `COMPONENT_GUIDELINES.md` — when to use which component
+- `STORYBOOK_USAGE.md` — Storybook as source of truth
+- `DESIGN_TOKENS.md` — tokens and how to use them
+- `PUBLIC_PACKAGE_BOUNDARIES.md` — what's allowed in the public package
