@@ -33,4 +33,26 @@ describe('DataTable', () => {
     await user.click(screen.getByText('Alice'))
     expect(onRowClick).toHaveBeenCalledWith(rows[0])
   })
+
+  it('falls back to a dash for non-primitive cells (no crash on circular refs)', () => {
+    // A circular object would throw if the default renderer called JSON.stringify.
+    const circular: { self?: unknown } = {}
+    circular.self = circular
+    const objRows = [{ id: 'x', meta: circular }]
+    expect(() =>
+      render(
+        <DataTable
+          rows={objRows}
+          columns={[
+            { id: 'id', label: 'ID' },
+            { id: 'meta', label: 'Meta' },
+          ]}
+          getRowKey={(r) => r.id}
+        />,
+      ),
+    ).not.toThrow()
+    // The non-primitive cell renders the em-dash placeholder, not raw JSON.
+    expect(screen.getByText('x')).toBeInTheDocument()
+    expect(screen.getByText('—')).toBeInTheDocument()
+  })
 })

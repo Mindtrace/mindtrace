@@ -52,15 +52,10 @@
   "peerDependencies": {
     "@emotion/react": "^11.0.0",
     "@emotion/styled": "^11.0.0",
-    "@mui/icons-material": "^9.0.0 || ^7.0.0 || ^6.0.0",
-    "@mui/material": "^9.0.0 || ^7.0.0 || ^6.0.0",
+    "@mui/icons-material": "^9.0.0",
+    "@mui/material": "^9.0.0",
     "react": ">=18.0.0",
     "react-dom": ">=18.0.0"
-  },
-  "peerDependenciesMeta": {
-    "@mui/icons-material": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@emotion/react": "^11.14.0",

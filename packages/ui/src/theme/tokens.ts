@@ -2,18 +2,26 @@
  * Design tokens — the source of truth for color, spacing, radius, type.
  *
  * Three-layer color system:
- *   Layer 1: Brand identity (purple, teal, blue) — sparingly, for emphasis
+ *   Layer 1: Accent ramps (purple, teal, blue) — the *default* palette
  *   Layer 2: Product foundation (neutrals, surfaces) — 90% of daily UI
- *   Layer 3: Semantic + data viz — restrained, mature
+ *   Layer 3: Semantic — success/warning/error/info
  *
- * Usage rules:
- *   Purple → primary action, active selection, product identity, focus
- *   Teal   → data signals, analysis accents, intelligence layer
+ * These are defaults, not a fixed identity. The purple accent is wired in
+ * as `palette.primary` only so the library has a sensible out-of-the-box
+ * look; consumers re-theme by passing their own `primary` (and friends) to
+ * `createTheme` / `MindtraceProvider`. Everything that signals "active /
+ * selected / focused" derives from `palette.primary` at render time, so
+ * turning the primary knob recolors the whole UI — see `theme/components.ts`
+ * and `theme/palette.ts`.
+ *
+ * Usage rules (for the defaults):
+ *   Accent (primary) → primary action, active selection, focus
+ *   Teal   → data signals, analysis accents
  *   Blue   → secondary emphasis, links, informational
  *   Neutrals → surfaces, text, borders, panels, dense operational areas
  */
 
-// ─── Layer 1: Brand Identity ─────────────────────────────────────────────
+// ─── Layer 1: Accent ramps (default palette) ─────────────────────────────
 
 export const brand = {
   purple: {
@@ -48,7 +56,6 @@ export const brand = {
     600: '#2563EB',
     700: '#1D4ED8',
   },
-  gradient: { start: '#14B8A6', mid: '#3B82F6', end: '#7C3AED' },
 } as const
 
 // ─── Layer 2: Product Foundation ─────────────────────────────────────────
@@ -81,24 +88,6 @@ export const semantic = {
 export const dataViz = {
   series: ['#7C3AED', '#14B8A6', '#3B82F6', '#F59E0B', '#EC4899', '#8B5CF6', '#06B6D4', '#F97316'],
   ranking: { first: '#F59E0B', second: '#A1A1AA', third: '#CD7F32', rest: '#52525B' },
-  matrix: { correct: '#7C3AED', incorrect: '#DC2626' },
-} as const
-
-// ─── Status Tones ────────────────────────────────────────────────────────
-
-export const statusTones = {
-  pending: { fg: '#71717A', bg: 'rgba(113,113,122,0.12)', border: 'rgba(113,113,122,0.24)' },
-  active: { fg: '#7C3AED', bg: 'rgba(124,58,237,0.10)', border: 'rgba(124,58,237,0.24)' },
-  running: { fg: '#0891B2', bg: 'rgba(8,145,178,0.10)', border: 'rgba(8,145,178,0.24)' },
-  submitted: { fg: '#D97706', bg: 'rgba(217,119,6,0.10)', border: 'rgba(217,119,6,0.24)' },
-  in_review: { fg: '#D97706', bg: 'rgba(217,119,6,0.10)', border: 'rgba(217,119,6,0.24)' },
-  approved: { fg: '#16A34A', bg: 'rgba(22,163,74,0.10)', border: 'rgba(22,163,74,0.24)' },
-  completed: { fg: '#16A34A', bg: 'rgba(22,163,74,0.10)', border: 'rgba(22,163,74,0.24)' },
-  rejected: { fg: '#DC2626', bg: 'rgba(220,38,38,0.10)', border: 'rgba(220,38,38,0.24)' },
-  failed: { fg: '#DC2626', bg: 'rgba(220,38,38,0.10)', border: 'rgba(220,38,38,0.24)' },
-  needs_changes: { fg: '#D97706', bg: 'rgba(217,119,6,0.10)', border: 'rgba(217,119,6,0.24)' },
-  draft: { fg: '#71717A', bg: 'rgba(113,113,122,0.08)', border: 'rgba(113,113,122,0.16)' },
-  archived: { fg: '#A1A1AA', bg: 'rgba(161,161,170,0.06)', border: 'rgba(161,161,170,0.12)' },
 } as const
 
 // ─── Primitives ──────────────────────────────────────────────────────────
@@ -125,6 +114,12 @@ export const layout = {
   contentPadding: 28,
 } as const
 
+// `Inter` / `JetBrains Mono` lead the stacks as a *progressive enhancement*:
+// the package does not ship or load them, so a consumer only gets that face if
+// they install + load it themselves (the design reference uses Inter — see the
+// README "Fonts" note). Without it the stack falls back to Roboto / system-ui,
+// which is the guaranteed-available look. No font-specific OpenType features
+// are forced in CssBaseline, so the fallback renders cleanly.
 export const fontFamily = {
   sans: "'Inter', 'Roboto', 'Helvetica Neue', system-ui, -apple-system, sans-serif",
   mono: "'JetBrains Mono', 'Fira Code', 'SF Mono', Menlo, monospace",

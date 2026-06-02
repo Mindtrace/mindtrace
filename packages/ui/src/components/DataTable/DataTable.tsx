@@ -113,6 +113,12 @@ export function DataTable<Row>({
 function renderDefault<Row>(row: Row, id: string): ReactNode {
   const v = (row as Record<string, unknown>)[id]
   if (v == null) return '—'
-  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return String(v)
-  return JSON.stringify(v)
+  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') {
+    return String(v)
+  }
+  // Non-primitive (object/array/function/symbol): the default renderer can't
+  // safely stringify these — JSON.stringify throws on circular references and
+  // dumps unreadable walls of text for large nested objects. Supply a custom
+  // `render` for the column when the value isn't a primitive.
+  return '—'
 }

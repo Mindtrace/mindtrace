@@ -7,16 +7,30 @@ the same way across every surface that consumes it.
 ## Install
 
 ```bash
-npm install @mindtrace/ui @mui/material @emotion/react @emotion/styled
+npm install @mindtrace/ui @mui/material @mui/icons-material @emotion/react @emotion/styled
 ```
 
-`@mui/icons-material` is an optional peer — install it if you use any
-icon-bearing primitive (KpiCard, SearchField, etc.) or want icons in your
-own UI:
+All four are required peers. `@mui/icons-material` is **not** optional: several
+components exported from the package root render Material icons at runtime
+(`SearchField`, `CopyButton`, `PrimaryRail`, `Wizard`, `PathBreadcrumb`,
+`UserMenu`), so the package depends on it being resolvable even if you only
+import `Button`.
 
-```bash
-npm install @mui/icons-material
-```
+### MUI version
+
+This package is built and tested against **MUI v9** (`@mui/material` and
+`@mui/icons-material` `^9`). It re-exports MUI primitives, whose prop
+interfaces differ across majors (e.g. the Grid v2 migration), so older majors
+are intentionally not in the peer range. Pin your app to v9 to match.
+
+### Fonts (optional)
+
+The reference design uses **Inter** (and **JetBrains Mono** for code/IDs), but
+the package does **not** ship or load any webfont — the font stacks list Inter
+first purely as a progressive enhancement. To match the Storybook screenshots,
+install and load Inter in your app (e.g. via `@fontsource/inter` or a `<link>`
+to Google Fonts). Without it the UI falls back to Roboto / system-ui, which
+renders cleanly — no Inter-specific OpenType features are forced.
 
 ## Quick start
 

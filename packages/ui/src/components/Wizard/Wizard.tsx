@@ -35,6 +35,7 @@ import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Divider from '@mui/material/Divider'
 import Stack from '@mui/material/Stack'
+import { alpha } from '@mui/material/styles'
 import Typography from '@mui/material/Typography'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 
@@ -92,6 +93,10 @@ type PersistedState = { step: number; max: number; valid: Record<string, boolean
 
 function loadPersisted(key: string | undefined, stepCount: number): PersistedState | null {
   if (!key) return null
+  // `useMemo` runs this during render, including on the server where `window`
+  // is undefined — guard so SSR doesn't crash. The state simply starts unpersisted
+  // on the server and the write effect re-syncs once mounted on the client.
+  if (typeof window === 'undefined') return null
   try {
     const raw = window.localStorage.getItem(key)
     if (!raw) return null
@@ -355,10 +360,16 @@ function StepRow({
         border: 0,
         textAlign: 'left',
         cursor: locked ? 'not-allowed' : 'pointer',
-        bgcolor: current ? theme.palette.action.selected : 'transparent',
+        bgcolor: current ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.08) : 'transparent',
         color: current ? 'primary.main' : locked ? 'text.disabled' : 'text.primary',
         fontFamily: 'inherit',
-        '&:hover': locked ? undefined : { bgcolor: current ? theme.palette.action.selected : theme.palette.action.hover },
+        '&:hover': locked
+          ? undefined
+          : {
+              bgcolor: current
+                ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.24 : 0.14)
+                : theme.palette.action.hover,
+            },
       })}
     >
       <Box

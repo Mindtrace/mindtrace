@@ -5,8 +5,18 @@
  * through deliberate contrast steps.
  */
 
+import { alpha } from '@mui/material/styles'
 import type { PaletteOptions } from '@mui/material/styles'
 import { brand, neutral, semantic } from './tokens'
+
+// Default primary accent per mode. `action.selected`/`focus` are derived from
+// these so the built-in theme's selection/focus tints track the primary.
+// Components additionally derive these states from `theme.palette.primary` at
+// render time (see theme/components.ts), so a consumer overriding `primary`
+// recolors selection/focus everywhere — not just where the default literal
+// would have applied.
+const primaryLight = brand.purple[600]
+const primaryDark = brand.purple[400]
 
 declare module '@mui/material/styles' {
   interface Palette {
@@ -45,10 +55,10 @@ export const lightPalette: PaletteOptions = {
   },
   action: {
     hover: 'rgba(24, 24, 27, 0.04)',
-    selected: 'rgba(124, 58, 237, 0.08)',
+    selected: alpha(primaryLight, 0.08),
     disabled: neutral[300],
     disabledBackground: neutral[100],
-    focus: 'rgba(124, 58, 237, 0.14)',
+    focus: alpha(primaryLight, 0.14),
   },
   error: semantic.error,
   warning: semantic.warning,
@@ -89,10 +99,10 @@ export const darkPalette: PaletteOptions = {
   },
   action: {
     hover: 'rgba(255, 255, 255, 0.04)',
-    selected: 'rgba(167, 139, 250, 0.12)',
+    selected: alpha(primaryDark, 0.16),
     disabled: neutral[700],
     disabledBackground: neutral[800],
-    focus: 'rgba(167, 139, 250, 0.20)',
+    focus: alpha(primaryDark, 0.24),
   },
   error: { main: '#F87171', light: '#FCA5A5', dark: '#EF4444' },
   warning: { main: '#FBBF24', light: '#FCD34D', dark: '#F59E0B' },

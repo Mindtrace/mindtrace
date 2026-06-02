@@ -65,7 +65,7 @@ export function KpiCard({ label, value, delta, icon, hint, loading }: KpiCardPro
     >
       <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <Stack spacing={1} sx={{ minWidth: 0 }}>
-          <Typography variant="label" component="div" color="text.secondary">
+          <Typography variant="metricLabel" component="div" color="text.secondary">
             {label}
           </Typography>
           <Typography
