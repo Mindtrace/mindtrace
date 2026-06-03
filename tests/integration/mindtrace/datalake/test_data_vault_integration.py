@@ -97,6 +97,26 @@ async def test_async_data_vault_round_trip_friendly_alias_and_asset_id(async_dat
     assert "integration-hopper" in aliases
 
 
+@pytest.mark.asyncio
+async def test_async_data_vault_save_records_payload_size(async_datalake):
+    vault = AsyncDataVault(async_datalake)
+    raw = _hopper_bytes()
+    alias = f"integration-size-bytes-{uuid4().hex[:10]}"
+
+    asset = await vault.save(
+        alias,
+        raw,
+        kind="image",
+        media_type="image/png",
+        created_by="integration",
+    )
+
+    fetched = await async_datalake.get_asset(asset.asset_id)
+    assert asset.size_bytes == len(raw)
+    assert fetched.size_bytes == len(raw)
+    assert await vault.load(alias) == raw
+
+
 def test_sync_data_vault_round_trip_friendly_alias_and_asset_id(sync_datalake: Datalake):
     vault = DataVault(sync_datalake)
     raw = _hopper_bytes()
@@ -121,6 +141,19 @@ def test_sync_data_vault_round_trip_friendly_alias_and_asset_id(sync_datalake: D
     aliases = sync_datalake.list_aliases_for_asset(asset.asset_id)
     assert asset.asset_id in aliases
     assert "sync-vault-hopper" in aliases
+
+
+def test_sync_data_vault_save_path_records_payload_size(sync_datalake: Datalake):
+    vault = DataVault(sync_datalake)
+    raw = _hopper_bytes()
+    alias = f"sync-vault-size-path-{uuid4().hex[:10]}"
+
+    asset = vault.save(alias, _HOPPER, created_by="integration")
+
+    fetched = sync_datalake.get_asset(asset.asset_id)
+    assert asset.size_bytes == len(raw)
+    assert fetched.size_bytes == len(raw)
+    assert vault.load(alias) == raw
 
 
 @pytest.mark.asyncio
@@ -193,6 +226,24 @@ async def test_async_data_vault_save_load_image_inprocess_service(datalake_servi
 
 
 @pytest.mark.asyncio
+async def test_async_data_vault_save_records_payload_size_inprocess_service(datalake_service_local_manager):
+    vault = AsyncDataVault(datalake_service_local_manager)
+    raw = _hopper_bytes()
+    alias = f"svc-async-size-bytes-{uuid4().hex[:10]}"
+
+    asset = await vault.save(
+        alias,
+        raw,
+        kind="image",
+        media_type="image/png",
+        created_by="integration",
+    )
+
+    assert asset.size_bytes == len(raw)
+    assert await vault.load(alias) == raw
+
+
+@pytest.mark.asyncio
 async def test_async_data_vault_image_discovery_inprocess_service(datalake_service_local_manager):
     vault = AsyncDataVault(datalake_service_local_manager)
     assets = await _save_async_image_assets(vault, prefix=f"svc-async-page-{uuid4().hex[:8]}")
@@ -219,6 +270,17 @@ def test_sync_data_vault_save_load_image_inprocess_service(datalake_service_loca
     vault.save_image(alias, im)
     out = vault.load_image(alias)
     assert _pil_image_to_png_bytes(out) == _pil_image_to_png_bytes(im)
+
+
+def test_sync_data_vault_save_path_records_payload_size_inprocess_service(datalake_service_local_manager):
+    vault = DataVault(datalake_service_local_manager)
+    raw = _hopper_bytes()
+    alias = f"svc-sync-size-path-{uuid4().hex[:10]}"
+
+    asset = vault.save(alias, _HOPPER, created_by="integration")
+
+    assert asset.size_bytes == len(raw)
+    assert vault.load(alias) == raw
 
 
 def test_sync_data_vault_image_discovery_inprocess_service(datalake_service_local_manager):

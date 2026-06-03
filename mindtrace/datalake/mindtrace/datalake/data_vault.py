@@ -482,6 +482,17 @@ def _infer_kind_media(
     return (kind or "artifact", media_type or "application/octet-stream")
 
 
+def _save_payload_and_size(obj: Any) -> tuple[Any, int | None]:
+    """Return the payload submitted by ``DataVault.save`` and its byte size when known."""
+    if isinstance(obj, Path):
+        payload = obj.read_bytes()
+        return payload, len(payload)
+    if isinstance(obj, (bytes, bytearray)):
+        payload = bytes(obj)
+        return payload, len(payload)
+    return obj, None
+
+
 def _normalize_async_backend(backend: Any) -> AsyncDataVaultBackend:
     if isinstance(backend, AsyncDatalake):
         return LocalAsyncDataVaultBackend(backend)
@@ -1475,14 +1486,16 @@ class AsyncDataVault:
             registry=self._registry,
             materializer=materializer,
         )
+        payload, size_bytes = _save_payload_and_size(obj)
         asset = await self._backend.create_asset_from_object(
             name=name,
-            obj=obj if not isinstance(obj, Path) else obj.read_bytes(),
+            obj=payload,
             kind=resolved_kind,
             media_type=resolved_media,
             mount=mount,
             object_metadata=object_metadata,
             asset_metadata=merged_asset_metadata,
+            size_bytes=size_bytes,
             created_by=created_by,
             on_conflict=on_conflict,
         )
@@ -2557,14 +2570,16 @@ class DataVault:
             registry=self._registry,
             materializer=materializer,
         )
+        payload, size_bytes = _save_payload_and_size(obj)
         asset = self._backend.create_asset_from_object(
             name=name,
-            obj=obj if not isinstance(obj, Path) else obj.read_bytes(),
+            obj=payload,
             kind=resolved_kind,
             media_type=resolved_media,
             mount=mount,
             object_metadata=object_metadata,
             asset_metadata=merged_asset_metadata,
+            size_bytes=size_bytes,
             created_by=created_by,
             on_conflict=on_conflict,
         )
