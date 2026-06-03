@@ -206,7 +206,7 @@ from mindtrace.core import (
     BenchSuiteConfig,
     BenchTestSuite,
     TaskSchema,
-    utc_now_iso,
+    utcnow_iso,
 )
 
 
@@ -237,7 +237,7 @@ class EchoLoopThroughputSuite(BenchTestSuite):
     )
 
     def execute_bench(self, config: BenchSuiteConfig, reporter: BenchReporter) -> BenchResult:
-        started = utc_now_iso()
+        started = utcnow_iso()
         monotonic_start = time.perf_counter()
         chunk = int(config.parameters.get("iter_chunk", 100))
         deadline = reporter.deadline(config.duration_seconds)
@@ -259,7 +259,7 @@ class EchoLoopThroughputSuite(BenchTestSuite):
             suite_id=config.suite_id,
             status="passed" if reporter.failures == 0 else "failed",
             started_at=started,
-            ended_at=utc_now_iso(),
+            ended_at=utcnow_iso(),
             duration_seconds=elapsed,
             operations=reporter.operations,
             successes=reporter.successes,
