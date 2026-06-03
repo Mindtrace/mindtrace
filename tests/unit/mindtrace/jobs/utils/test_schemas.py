@@ -40,8 +40,8 @@ class TestJobFromSchema:
 
         with patch("mindtrace.jobs.utils.schemas.uuid.uuid4") as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch("mindtrace.jobs.utils.schemas.datetime") as mock_datetime:
-                mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
+            with patch("mindtrace.jobs.utils.schemas.utcnow") as mock_utcnow:
+                mock_utcnow.return_value = datetime(2023, 1, 1, 12, 0, 0)
 
                 result = job_from_schema(schema, input_data)
 
@@ -59,8 +59,8 @@ class TestJobFromSchema:
 
         with patch("mindtrace.jobs.utils.schemas.uuid.uuid4") as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch("mindtrace.jobs.utils.schemas.datetime") as mock_datetime:
-                mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
+            with patch("mindtrace.jobs.utils.schemas.utcnow") as mock_utcnow:
+                mock_utcnow.return_value = datetime(2023, 1, 1, 12, 0, 0)
 
                 result = job_from_schema(schema, input_data)
 
@@ -80,8 +80,8 @@ class TestJobFromSchema:
 
         with patch("mindtrace.jobs.utils.schemas.uuid.uuid4") as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch("mindtrace.jobs.utils.schemas.datetime") as mock_datetime:
-                mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
+            with patch("mindtrace.jobs.utils.schemas.utcnow") as mock_utcnow:
+                mock_utcnow.return_value = datetime(2023, 1, 1, 12, 0, 0)
 
                 result = job_from_schema(schema, input_data)
 
@@ -97,8 +97,8 @@ class TestJobFromSchema:
 
         with patch("mindtrace.jobs.utils.schemas.uuid.uuid4") as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch("mindtrace.jobs.utils.schemas.datetime") as mock_datetime:
-                mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
+            with patch("mindtrace.jobs.utils.schemas.utcnow") as mock_utcnow:
+                mock_utcnow.return_value = datetime(2023, 1, 1, 12, 0, 0)
 
                 result = job_from_schema(schema, input_data)
 
@@ -132,8 +132,8 @@ class TestJobFromSchema:
 
         with patch("mindtrace.jobs.utils.schemas.uuid.uuid4") as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch("mindtrace.jobs.utils.schemas.datetime") as mock_datetime:
-                mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
+            with patch("mindtrace.jobs.utils.schemas.utcnow") as mock_utcnow:
+                mock_utcnow.return_value = datetime(2023, 1, 1, 12, 0, 0)
 
                 result = job_from_schema(schema, input_data)
 
@@ -175,8 +175,8 @@ class TestJobFromSchema:
         schema = MockJobSchema()
         input_data = MockInputSchema(data="test-data")
 
-        with patch("mindtrace.jobs.utils.schemas.datetime") as mock_datetime:
-            mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
+        with patch("mindtrace.jobs.utils.schemas.utcnow") as mock_utcnow:
+            mock_utcnow.return_value = datetime(2023, 1, 1, 12, 0, 0)
 
             job1 = job_from_schema(schema, input_data)
             job2 = job_from_schema(schema, input_data)
@@ -192,8 +192,8 @@ class TestJobFromSchema:
 
         with patch("mindtrace.jobs.utils.schemas.uuid.uuid4") as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch("mindtrace.jobs.utils.schemas.datetime") as mock_datetime:
-                mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 30, 45, 123456)
+            with patch("mindtrace.jobs.utils.schemas.utcnow") as mock_utcnow:
+                mock_utcnow.return_value = datetime(2023, 1, 1, 12, 30, 45, 123456)
 
                 result = job_from_schema(schema, input_data)
 
@@ -206,8 +206,8 @@ class TestJobFromSchema:
 
         with patch("mindtrace.jobs.utils.schemas.uuid.uuid4") as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch("mindtrace.jobs.utils.schemas.datetime") as mock_datetime:
-                mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
+            with patch("mindtrace.jobs.utils.schemas.utcnow") as mock_utcnow:
+                mock_utcnow.return_value = datetime(2023, 1, 1, 12, 0, 0)
 
                 result = job_from_schema(schema, input_data)
 
@@ -232,8 +232,8 @@ class TestJobFromSchema:
 
         with patch("mindtrace.jobs.utils.schemas.uuid.uuid4") as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch("mindtrace.jobs.utils.schemas.datetime") as mock_datetime:
-                mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
+            with patch("mindtrace.jobs.utils.schemas.utcnow") as mock_utcnow:
+                mock_utcnow.return_value = datetime(2023, 1, 1, 12, 0, 0)
 
                 result = job_from_schema(schema, input_data)
 

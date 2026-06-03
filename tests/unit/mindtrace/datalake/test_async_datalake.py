@@ -17,6 +17,7 @@ from export_test_utils import (
     resolved_dataset_version as export_fixture_resolved_dataset_version,
 )
 
+from mindtrace.core import utcnow
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake import AsyncDatalake
 from mindtrace.datalake.async_datalake import (
@@ -2744,7 +2745,7 @@ def _alias_fixture_row(alias: str, asset_id: str, *, is_primary: bool = False) -
         alias=alias,
         asset_id=asset_id,
         is_primary=is_primary,
-        created_at=datetime.now(timezone.utc),
+        created_at=utcnow(),
     )
 
 

@@ -16,7 +16,7 @@ from typing import Any, TypeVar
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from mindtrace.core import Mindtrace
+from mindtrace.core import Mindtrace, utcnow
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake.pagination_types import (
@@ -308,7 +308,7 @@ class AsyncDatalake(Mindtrace):
 
     @staticmethod
     def _utc_now() -> datetime:
-        return datetime.now(timezone.utc)
+        return utcnow()
 
     @staticmethod
     def _coerce_utc(dt: datetime) -> datetime:

@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import mimetypes
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib import request as urllib_request
 
+from mindtrace.core import utcnow
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.async_datalake import AsyncDatalake
 from mindtrace.datalake.blocking_payload_io import mkdir_and_write_bytes
@@ -93,7 +94,7 @@ class ReplicationManager:
 
     @staticmethod
     def _utc_now() -> datetime:
-        return datetime.now(timezone.utc)
+        return utcnow()
 
     @staticmethod
     def get_payload_status(asset: Asset) -> PayloadStatus | None:

@@ -17,7 +17,7 @@ from mindtrace.core import (
     BenchSuiteConfig,
     BenchTestSuite,
     TaskSchema,
-    utc_now_iso,
+    utcnow_iso,
 )
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.datalake.testing.mongo_resolve import resolve_mongo_triple
@@ -76,7 +76,7 @@ class DatalakeMongoInsertCeilingSuite(BenchTestSuite):
 
 
 async def _run_async(config: BenchSuiteConfig, reporter: BenchReporter) -> BenchResult:
-    started = utc_now_iso()
+    started = utcnow_iso()
     monotonic_start = time.perf_counter()
     mongo_backend, mongo_uri, mongo_db_name = resolve_mongo_triple(config)
     batch_size = int(config.parameters.get("batch_size", 100))
@@ -111,7 +111,7 @@ async def _run_async(config: BenchSuiteConfig, reporter: BenchReporter) -> Bench
         suite_id=config.suite_id,
         status="passed" if reporter.failures == 0 else "failed",
         started_at=started,
-        ended_at=utc_now_iso(),
+        ended_at=utcnow_iso(),
         duration_seconds=elapsed,
         operations=reporter.operations * batch_size,
         successes=reporter.successes * batch_size,

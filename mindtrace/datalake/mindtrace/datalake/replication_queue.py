@@ -13,7 +13,7 @@ from mindtrace.datalake.types import (
     ReplicationHydratePolicy,
     ReplicationTask,
     ReplicationTaskStatus,
-    utc_now,
+    utcnow,
 )
 
 _TERMINAL_TASK_STATUSES: set[ReplicationTaskStatus] = {"complete", "dead", "cancelled"}
@@ -181,7 +181,7 @@ class ReplicationQueueManager:
         claim without changing callers.
         """
 
-        current = _as_utc(now or utc_now())
+        current = _as_utc(now or utcnow())
         claimed: list[ReplicationTask] = []
         rows = await self.database.find(
             {
@@ -234,7 +234,7 @@ class ReplicationQueueManager:
         task = await self.get_task(task_id)
         if worker_id is not None and task.claimed_by not in {None, worker_id}:
             raise RuntimeError(f"replication task {task_id} is claimed by {task.claimed_by!r}")
-        now = utc_now()
+        now = utcnow()
         task.status = status
         task.updated_at = now
         task.last_error = error
@@ -268,7 +268,7 @@ class ReplicationQueueManager:
         task = await self.get_task(task_id)
         if worker_id is not None and task.claimed_by not in {None, worker_id}:
             raise RuntimeError(f"replication task {task_id} is claimed by {task.claimed_by!r}")
-        now = utc_now()
+        now = utcnow()
         task.attempts += 1
         task.status = "dead" if task.attempts >= task.max_attempts else "failed"
         task.last_error = error
@@ -285,7 +285,7 @@ class ReplicationQueueManager:
         task = await self.get_task(task_id)
         if task.status == "complete":
             raise RuntimeError(f"replication task {task_id} is already complete")
-        now = utc_now()
+        now = utcnow()
         task.status = "pending"
         task.next_attempt_at = now
         task.claimed_by = None
@@ -319,7 +319,7 @@ class ReplicationQueueManager:
                 allowed = sorted(REPLICATION_TASK_PURGEABLE_STATUSES)
                 raise ValueError(f"purge_terminal_tasks only supports archival statuses {allowed}; got {s!r}")
 
-        clock = _as_utc(now or utc_now())
+        clock = _as_utc(now or utcnow())
         cutoff = clock - timedelta(seconds=older_than_seconds)
         rows = await self.database.find({"status": {"$in": sorted(sts_tuple)}, "completed_at": {"$lte": cutoff}})
         ordered = sorted(

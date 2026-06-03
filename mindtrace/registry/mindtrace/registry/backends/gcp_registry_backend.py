@@ -8,11 +8,12 @@ import json
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
 from urllib.parse import quote
 
+from mindtrace.core import utcnow
 from mindtrace.registry.backends.registry_backend import (
     ConcreteVersionArg,
     MetadataArg,
@@ -274,7 +275,7 @@ class GCPRegistryBackend(RegistryBackend):
             prepared_meta["path"] = f"gs://{self.gcs.bucket_name}/{remote_key}"
             prepared_meta["_storage"] = {
                 "uuid": uuid_str,
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": utcnow().isoformat(),
             }
             meta_result = self._save_metadata_single(
                 name,
@@ -338,7 +339,7 @@ class GCPRegistryBackend(RegistryBackend):
             - Uses list_blobs to find all UUID folders for that object
             - Deletes UUIDs not matching current metadata's _storage.uuid
         """
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
+        expires_at = utcnow() + timedelta(hours=expires_hours)
 
         plan = {
             "name": name,
@@ -681,7 +682,7 @@ class GCPRegistryBackend(RegistryBackend):
             prepared_meta["path"] = f"gs://{self.gcs.bucket_name}/{remote_key}"
             prepared_meta["_storage"] = {
                 "uuid": uuid_str,
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": utcnow().isoformat(),
             }
 
             # Step 7: Write metadata (the "commit point")

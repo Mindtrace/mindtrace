@@ -52,7 +52,7 @@ import json
 import re
 import warnings
 from collections.abc import AsyncIterator, Iterator, Sequence
-from datetime import UTC, datetime
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -61,6 +61,7 @@ from uuid import uuid4
 from PIL import Image
 from pydantic import BaseModel, Field
 
+from mindtrace.core import utcnow
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.annotations import AnnotationVariants, annotation_from_record
 from mindtrace.datalake.async_datalake import (
@@ -257,7 +258,7 @@ def _snapshot_dataset_version_name(collection: Collection, snapshot_name: str | 
 
 
 def _snapshot_dataset_version_version(snapshot_version: str | None) -> str:
-    return snapshot_version or f"export-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}"
+    return snapshot_version or f"export-{utcnow().strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}"
 
 
 def _snapshot_primary_role(asset: Asset) -> str:
