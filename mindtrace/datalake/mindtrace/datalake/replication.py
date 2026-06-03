@@ -93,10 +93,6 @@ class ReplicationManager:
         return _apply_mount_map_to_storage_ref(storage_ref, mount_map)
 
     @staticmethod
-    def _utc_now() -> datetime:
-        return utcnow()
-
-    @staticmethod
     def get_payload_status(asset: Asset) -> PayloadStatus | None:
         status = getattr(asset, "payload_status", None)
         return status if isinstance(status, str) else None
@@ -197,12 +193,12 @@ class ReplicationManager:
                     **asset.model_dump(),
                     "storage_ref": mapped_storage_ref.model_dump(),
                     "payload_status": payload_status,
-                    "payload_status_updated_at": self._utc_now(),
+                    "payload_status_updated_at": utcnow(),
                     "payload_status_reason": None if payload_status == "present" else "metadata_first_pending_payload",
                     "payload_storage_ref": mapped_storage_ref.model_dump(),
                     "payload_checksum": asset.checksum,
                     "payload_size_bytes": asset.size_bytes,
-                    "payload_verified_at": self._utc_now() if payload_status == "present" else None,
+                    "payload_verified_at": utcnow() if payload_status == "present" else None,
                     "metadata": self.build_asset_replication_metadata(
                         metadata_for_replication,
                         origin_lake_id=request.origin_lake_id,
@@ -293,7 +289,7 @@ class ReplicationManager:
         await self._set_asset_replication_state(
             target_asset,
             payload_status="uploading",
-            payload_last_attempt_at=self._utc_now(),
+            payload_last_attempt_at=utcnow(),
             payload_last_error=None,
         )
 
@@ -306,8 +302,8 @@ class ReplicationManager:
                 refreshed_target_asset,
                 payload_status="present",
                 payload_available=True,
-                payload_last_attempt_at=self._utc_now(),
-                payload_verified_at=self._utc_now(),
+                payload_last_attempt_at=utcnow(),
+                payload_verified_at=utcnow(),
                 payload_last_error=None,
             )
             return refreshed_target_asset
@@ -317,7 +313,7 @@ class ReplicationManager:
                 failed_asset,
                 payload_status="corrupt",
                 payload_available=False,
-                payload_last_attempt_at=self._utc_now(),
+                payload_last_attempt_at=utcnow(),
                 payload_last_error=str(exc),
             )
             raise
@@ -370,7 +366,7 @@ class ReplicationManager:
             raise RuntimeError(f"Source asset {asset_id} is not delete-eligible until target payload is verified")
         await self._set_source_asset_reclaim_state(
             source_asset,
-            local_delete_eligible_at=when or self._utc_now(),
+            local_delete_eligible_at=when or utcnow(),
             payload_last_error=None,
         )
         return source_asset
@@ -386,13 +382,13 @@ class ReplicationManager:
         version = payload_ref.version if payload_ref.version is not None else "latest"
         self.source.store.delete(key, version=version)
         source_asset.payload_status = "missing"
-        source_asset.payload_status_updated_at = self._utc_now()
+        source_asset.payload_status_updated_at = utcnow()
         source_asset.payload_status_reason = "local payload deleted"
         source_asset.payload_storage_ref = LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF
         source_asset.payload_verified_at = None
         await self._set_source_asset_reclaim_state(
             source_asset,
-            local_deleted_at=self._utc_now(),
+            local_deleted_at=utcnow(),
             payload_available=False,
             payload_last_error=None,
         )
@@ -546,10 +542,10 @@ class ReplicationManager:
         metadata["replication"] = state.model_dump(mode="json")
         asset.metadata = metadata
         asset.payload_status = payload_status
-        asset.payload_status_updated_at = self._utc_now()
+        asset.payload_status_updated_at = utcnow()
         asset.payload_status_reason = payload_last_error
         if payload_status == "present":
-            asset.payload_verified_at = payload_verified_at or self._utc_now()
+            asset.payload_verified_at = payload_verified_at or utcnow()
             asset.payload_storage_ref = asset.storage_ref
             asset.payload_checksum = asset.checksum
             asset.payload_size_bytes = asset.size_bytes

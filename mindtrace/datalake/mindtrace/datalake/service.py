@@ -10,12 +10,13 @@ import traceback
 from collections.abc import Awaitable
 from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException
 
+from mindtrace.core import as_utc
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DocumentTooLargeError
 from mindtrace.datalake.async_datalake import AsyncDatalake, SlowOperationDisabledError, SlowOpsPolicy
 from mindtrace.datalake.replication import ReplicationManager
@@ -278,8 +279,7 @@ _LOGGER = logging.getLogger(__name__)
 def _import_session_expired(expires_at: datetime, *, now: datetime | None = None) -> bool:
     """Compare session expiry to current UTC time, treating naive datetimes as UTC (Mongo round-trip)."""
     current = now if now is not None else utcnow()
-    deadline = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=timezone.utc)
-    return current > deadline
+    return current > as_utc(expires_at)
 
 
 class _ImportSessionProgressWriter:

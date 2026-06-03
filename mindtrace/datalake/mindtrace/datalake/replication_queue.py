@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
+from mindtrace.core import as_utc
 from mindtrace.database.core.exceptions import DuplicateInsertError
 from mindtrace.datalake.types import (
     DEFAULT_REPLICATION_TASK_PURGE_STATUSES,
@@ -23,22 +24,16 @@ _RECLAIM_EXPIRED_LEASE_STATUSES: frozenset[ReplicationTaskStatus] = frozenset(
 )
 
 
-def _as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
-
-
 def _task_is_claimable_at(task: ReplicationTask, current: datetime) -> bool:
     """Return True when a worker may steal/assign a fresh lease without manual repair."""
     if task.status in _TERMINAL_TASK_STATUSES:
         return False
-    if task.lease_expires_at is not None and _as_utc(task.lease_expires_at) > current:
+    if task.lease_expires_at is not None and as_utc(task.lease_expires_at) > current:
         return False
     if task.status in _RETRYABLE_TASK_STATUSES:
-        return _as_utc(task.next_attempt_at) <= current
+        return as_utc(task.next_attempt_at) <= current
     if task.status in _RECLAIM_EXPIRED_LEASE_STATUSES:
-        return task.lease_expires_at is not None and _as_utc(task.lease_expires_at) <= current
+        return task.lease_expires_at is not None and as_utc(task.lease_expires_at) <= current
     return False
 
 
@@ -181,7 +176,7 @@ class ReplicationQueueManager:
         claim without changing callers.
         """
 
-        current = _as_utc(now or utcnow())
+        current = as_utc(now or utcnow())
         claimed: list[ReplicationTask] = []
         rows = await self.database.find(
             {
@@ -319,12 +314,12 @@ class ReplicationQueueManager:
                 allowed = sorted(REPLICATION_TASK_PURGEABLE_STATUSES)
                 raise ValueError(f"purge_terminal_tasks only supports archival statuses {allowed}; got {s!r}")
 
-        clock = _as_utc(now or utcnow())
+        clock = as_utc(now or utcnow())
         cutoff = clock - timedelta(seconds=older_than_seconds)
         rows = await self.database.find({"status": {"$in": sorted(sts_tuple)}, "completed_at": {"$lte": cutoff}})
         ordered = sorted(
             rows,
-            key=lambda t: (_as_utc(t.completed_at) if t.completed_at else clock, t.created_at),
+            key=lambda t: (as_utc(t.completed_at) if t.completed_at else clock, t.created_at),
         )
         total = len(ordered)
         slice_rows = ordered[: max(0, limit)]
