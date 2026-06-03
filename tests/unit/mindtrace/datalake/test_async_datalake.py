@@ -249,17 +249,6 @@ class TestAsyncDatalakeUnit:
 
         async_datalake._guard_slow_list_operation.assert_called()
 
-    def test_utc_now_returns_timezone_aware_datetime(self, async_datalake):
-        now = async_datalake._utc_now()
-        assert now.tzinfo is not None
-
-    def test_coerce_utc_attaches_timezone_to_naive_datetime(self, async_datalake):
-        naive = datetime(2026, 1, 1, 12, 0, 0)
-
-        coerced = async_datalake._coerce_utc(naive)
-
-        assert coerced.tzinfo is not None
-
     def test_build_document_uses_model_construct(self, async_datalake):
         class Dummy:
             @classmethod
@@ -508,7 +497,7 @@ class TestAsyncDatalakeUnit:
         mock_odm.find_window = AsyncMock(side_effect=find_window_side_effect)
         mock_odm.count_documents = AsyncMock(return_value=2)
 
-        with patch.object(async_datalake, "_utc_now", return_value=cutoff):
+        with patch("mindtrace.datalake.async_datalake.utcnow", return_value=cutoff):
             first_page = await async_datalake.list_assets_page(
                 filters={"kind": "image"},
                 limit=1,
@@ -1037,7 +1026,7 @@ class TestAsyncDatalakeUnit:
             upload_method="local_path",
             upload_path="/tmp/direct-upload/data.txt",
             staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
-            expires_at=async_datalake._utc_now(),
+            expires_at=utcnow(),
         )
         mock_odm.find.return_value = [session]
 
@@ -1061,7 +1050,7 @@ class TestAsyncDatalakeUnit:
             upload_method="local_path",
             upload_path="/tmp/direct-upload/data.txt",
             staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
-            expires_at=async_datalake._utc_now(),
+            expires_at=utcnow(),
         )
         mock_odm.find.return_value = [session]
 
@@ -1080,7 +1069,7 @@ class TestAsyncDatalakeUnit:
             upload_method="local_path",
             upload_path="/tmp/direct-upload/data.txt",
             staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
-            expires_at=async_datalake._utc_now(),
+            expires_at=utcnow(),
         )
         mock_odm.find.return_value = [session]
         mock_store.inspect_direct_upload_target.return_value = {"exists": False}
@@ -1103,7 +1092,7 @@ class TestAsyncDatalakeUnit:
             upload_method="local_path",
             upload_path="/tmp/direct-upload/data.txt",
             staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
-            expires_at=async_datalake._utc_now(),
+            expires_at=utcnow(),
         )
         mock_odm.find.return_value = [session]
         mock_store.inspect_direct_upload_target.return_value = {"exists": False}
@@ -1124,7 +1113,7 @@ class TestAsyncDatalakeUnit:
             status="completed",
             upload_path="/tmp/direct-upload/data.txt",
             staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
-            expires_at=async_datalake._utc_now(),
+            expires_at=utcnow(),
         )
 
         completed = await async_datalake._verify_and_finalize_upload_session(
@@ -1148,7 +1137,7 @@ class TestAsyncDatalakeUnit:
             upload_method="local_path",
             upload_path="/tmp/direct-upload/data.txt",
             staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
-            expires_at=async_datalake._utc_now(),
+            expires_at=utcnow(),
         )
         mock_odm.find.return_value = [session]
         mock_store.commit_direct_upload.side_effect = RuntimeError("commit failed")

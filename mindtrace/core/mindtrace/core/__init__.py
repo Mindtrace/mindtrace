@@ -43,7 +43,7 @@ from mindtrace.core.utils.network import (
     wait_for_service,
 )
 from mindtrace.core.utils.system_metrics_collector import SystemMetricsCollector
-from mindtrace.core.utils.time import utcnow, utcnow_iso
+from mindtrace.core.utils.time import as_utc, utcnow, utcnow_iso
 from mindtrace.core.utils.timers import Timeout, Timer, TimerCollection
 
 __all__ = [
@@ -62,6 +62,7 @@ __all__ = [
     "TestSuite",
     "UnknownSuiteIdError",
     "build_bench_suite_config",
+    "as_utc",
     "utcnow",
     "utcnow_iso",
     "validate_suite_id",
