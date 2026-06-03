@@ -17,7 +17,7 @@ from mindtrace.core import (
     BenchSuiteConfig,
     BenchTestSuite,
     TaskSchema,
-    utc_now_iso,
+    utcnow_iso,
 )
 from mindtrace.core.testing.workloads import deterministic_payload
 from mindtrace.registry import Registry
@@ -50,7 +50,7 @@ class RegistrySmokeSuite(BenchTestSuite):
     )
 
     def execute_bench(self, config: BenchSuiteConfig, reporter: BenchReporter) -> BenchResult:
-        started = utc_now_iso()
+        started = utcnow_iso()
         mono = time.perf_counter()
         registry_path = Path(mkdtemp(prefix="mindtrace-registry-smoke-"))
         registry = Registry(backend=registry_path, version_objects=True, mutable=True)
@@ -80,7 +80,7 @@ class RegistrySmokeSuite(BenchTestSuite):
             suite_id=config.suite_id,
             status="passed" if reporter.failures == 0 else "failed",
             started_at=started,
-            ended_at=utc_now_iso(),
+            ended_at=utcnow_iso(),
             duration_seconds=elapsed,
             operations=reporter.operations,
             successes=reporter.successes,

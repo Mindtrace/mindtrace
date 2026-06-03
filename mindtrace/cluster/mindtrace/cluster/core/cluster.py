@@ -3,7 +3,6 @@ import threading
 import urllib.parse
 import uuid
 from abc import abstractmethod
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +12,7 @@ from pydantic import BaseModel
 
 from mindtrace.cluster.core import types as cluster_types
 from mindtrace.cluster.workers.environments.git_env import GitEnvironment
-from mindtrace.core import TaskSchema, Timeout, get_class
+from mindtrace.core import TaskSchema, Timeout, get_class, utcnow
 from mindtrace.database import BackendType, UnifiedMindtraceODM
 from mindtrace.jobs import Consumer, Job, JobSchema, Orchestrator, RabbitMQClient
 from mindtrace.registry import Archiver, Registry
@@ -440,7 +439,7 @@ class ClusterManager(Gateway):
                     worker_url=worker_url,
                     status=cluster_types.WorkerStatusEnum.IDLE,
                     job_id=None,
-                    last_heartbeat=datetime.now(),
+                    last_heartbeat=utcnow(),
                 )
             )
         self.logger.info(f"Connected {worker_url} to cluster {str(self._url)} listening on queue {job_type}")
@@ -582,7 +581,7 @@ class ClusterManager(Gateway):
                 {
                     "status": cluster_types.WorkerStatusEnum.NONEXISTENT,
                     "job_id": None,
-                    "last_heartbeat": datetime.now(),
+                    "last_heartbeat": utcnow(),
                 },
             )
             return our_status
@@ -591,7 +590,7 @@ class ClusterManager(Gateway):
             self.worker_status_database,
             "worker_id",
             worker_id,
-            {"status": worker_status.status, "job_id": worker_status.job_id, "last_heartbeat": datetime.now()},
+            {"status": worker_status.status, "job_id": worker_status.job_id, "last_heartbeat": utcnow()},
         )
         return our_status
 
@@ -638,14 +637,14 @@ class ClusterManager(Gateway):
             {
                 "status": cluster_types.JobStatusEnum.RUNNING,
                 "worker_id": payload["worker_id"],
-                "job.started_at": datetime.now().isoformat(),
+                "job.started_at": utcnow().isoformat(),
             },
         )
         update_database(
             self.worker_status_database,
             "worker_id",
             payload["worker_id"],
-            {"status": cluster_types.WorkerStatusEnum.RUNNING, "job_id": job_id, "last_heartbeat": datetime.now()},
+            {"status": cluster_types.WorkerStatusEnum.RUNNING, "job_id": job_id, "last_heartbeat": utcnow()},
         )
         self.logger.info(f"Worker {payload['worker_id']} alerted cluster manager that job {job_id} has started")
 
@@ -663,7 +662,7 @@ class ClusterManager(Gateway):
             self.job_status_database,
             "job_id",
             job_id,
-            {"status": status_enum, "output": payload["output"], "job.completed_at": datetime.now().isoformat()},
+            {"status": status_enum, "output": payload["output"], "job.completed_at": utcnow().isoformat()},
         )
         if job_status.worker_id != payload["worker_id"]:
             self.logger.warning(
@@ -688,7 +687,7 @@ class ClusterManager(Gateway):
             self.worker_status_database,
             "worker_id",
             payload["worker_id"],
-            {"status": cluster_types.WorkerStatusEnum.IDLE, "job_id": None, "last_heartbeat": datetime.now()},
+            {"status": cluster_types.WorkerStatusEnum.IDLE, "job_id": None, "last_heartbeat": utcnow()},
         )
 
     def requeue_from_dlq(self, payload: dict):

@@ -18,7 +18,7 @@ from mindtrace.core import (
     BenchSuiteConfig,
     BenchTestSuite,
     TaskSchema,
-    utc_now_iso,
+    utcnow_iso,
 )
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.testing.suites._models import DatabaseBenchDocument
@@ -67,7 +67,7 @@ class DatabaseMongoUpdateCeilingSuite(BenchTestSuite):
 
 
 async def _run_async(config: BenchSuiteConfig, reporter: BenchReporter) -> BenchResult:
-    started = utc_now_iso()
+    started = utcnow_iso()
     mono = time.perf_counter()
     mongo_backend, mongo_uri, mongo_db_name = resolve_mongo_resources(config)
     dataset_size = int(config.parameters.get("dataset_size", 1000))
@@ -107,7 +107,7 @@ async def _run_async(config: BenchSuiteConfig, reporter: BenchReporter) -> Bench
         suite_id=config.suite_id,
         status="passed" if reporter.failures == 0 else "failed",
         started_at=started,
-        ended_at=utc_now_iso(),
+        ended_at=utcnow_iso(),
         duration_seconds=elapsed,
         operations=reporter.operations,
         successes=reporter.successes,

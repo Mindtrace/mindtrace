@@ -5,11 +5,12 @@ Contains all Pydantic models for API responses, ensuring consistent
 response formatting across all stereo camera management endpoints.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
+from mindtrace.core import utcnow
 from mindtrace.hardware.core.types import ServiceStatus
 
 
@@ -18,7 +19,7 @@ class BaseResponse(BaseModel):
 
     success: bool
     message: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=utcnow)
 
 
 class BoolResponse(BaseResponse):
