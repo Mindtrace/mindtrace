@@ -487,14 +487,9 @@ def _save_payload_and_size(obj: Any) -> tuple[Any, int | None]:
     if isinstance(obj, Path):
         payload = obj.read_bytes()
         return payload, len(payload)
-    if isinstance(obj, memoryview):
-        payload = obj.tobytes()
-        return payload, len(payload)
     if isinstance(obj, (bytes, bytearray)):
         payload = bytes(obj)
         return payload, len(payload)
-    if isinstance(obj, str):
-        return obj, len(obj.encode("utf-8"))
     return obj, None
 
 
