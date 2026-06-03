@@ -2970,6 +2970,32 @@ async def test_async_data_vault_save_records_path_size(mock_async_datalake_for_a
     assert kwargs["size_bytes"] == image_path.stat().st_size
 
 
+@pytest.mark.parametrize("payload", ["hello", memoryview(b"hello")])
+@pytest.mark.asyncio
+async def test_async_data_vault_save_omits_size_for_registry_serialized_payloads(
+    mock_async_datalake_for_alias_indexing,
+    payload,
+):
+    created = Asset(
+        kind="artifact",
+        media_type="application/octet-stream",
+        storage_ref=StorageRef(mount="m", name="vault/object", version="1"),
+        asset_id="asset_obj",
+    )
+    mock_async_datalake_for_alias_indexing.create_asset_from_object = AsyncMock(return_value=created)
+
+    vault = AsyncDataVault(mock_async_datalake_for_alias_indexing)
+    await vault.save(
+        "friendly-object",
+        payload,
+        asset_metadata={SERIALIZATION_METADATA_KEY: direct_bytes_serialization_block()},
+    )
+
+    kwargs = mock_async_datalake_for_alias_indexing.create_asset_from_object.await_args.kwargs
+    assert kwargs["obj"] is payload
+    assert kwargs["size_bytes"] is None
+
+
 @pytest.mark.asyncio
 async def test_async_data_vault_save_image_records_png_size(mock_async_datalake_for_alias_indexing):
     created = Asset(
@@ -3074,6 +3100,31 @@ def test_data_vault_save_records_path_size(mock_sync_datalake_for_alias_indexing
     kwargs = mock_sync_datalake_for_alias_indexing.create_asset_from_object.call_args.kwargs
     assert kwargs["obj"] == b"jpeg-from-disk"
     assert kwargs["size_bytes"] == image_path.stat().st_size
+
+
+@pytest.mark.parametrize("payload", ["hello", memoryview(b"hello")])
+def test_data_vault_save_omits_size_for_registry_serialized_payloads(
+    mock_sync_datalake_for_alias_indexing,
+    payload,
+):
+    created = Asset(
+        kind="artifact",
+        media_type="application/octet-stream",
+        storage_ref=StorageRef(mount="m", name="vault/object", version="1"),
+        asset_id="asset_obj",
+    )
+    mock_sync_datalake_for_alias_indexing.create_asset_from_object = Mock(return_value=created)
+
+    vault = DataVault(mock_sync_datalake_for_alias_indexing)
+    vault.save(
+        "friendly-object",
+        payload,
+        asset_metadata={SERIALIZATION_METADATA_KEY: direct_bytes_serialization_block()},
+    )
+
+    kwargs = mock_sync_datalake_for_alias_indexing.create_asset_from_object.call_args.kwargs
+    assert kwargs["obj"] is payload
+    assert kwargs["size_bytes"] is None
 
 
 def test_data_vault_save_image_records_png_size(mock_sync_datalake_for_alias_indexing):
