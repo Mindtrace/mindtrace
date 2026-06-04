@@ -2932,6 +2932,71 @@ async def test_async_data_vault_save_registers_secondary_alias(mock_async_datala
 
 
 @pytest.mark.asyncio
+async def test_async_data_vault_save_records_bytes_size(mock_async_datalake_for_alias_indexing):
+    created = Asset(
+        kind="image",
+        media_type="image/jpeg",
+        storage_ref=StorageRef(mount="m", name="vault/image.jpg", version="1"),
+        asset_id="asset_img",
+    )
+    mock_async_datalake_for_alias_indexing.create_asset_from_object = AsyncMock(return_value=created)
+
+    payload = b"jpeg-bytes"
+    vault = AsyncDataVault(mock_async_datalake_for_alias_indexing)
+    await vault.save("friendly-image", payload, kind="image", media_type="image/jpeg")
+
+    kwargs = mock_async_datalake_for_alias_indexing.create_asset_from_object.await_args.kwargs
+    assert kwargs["obj"] == payload
+    assert kwargs["size_bytes"] == len(payload)
+
+
+@pytest.mark.asyncio
+async def test_async_data_vault_save_records_path_size(mock_async_datalake_for_alias_indexing, tmp_path):
+    created = Asset(
+        kind="image",
+        media_type="image/jpeg",
+        storage_ref=StorageRef(mount="m", name="vault/image.jpg", version="1"),
+        asset_id="asset_img",
+    )
+    mock_async_datalake_for_alias_indexing.create_asset_from_object = AsyncMock(return_value=created)
+    image_path = tmp_path / "capture.jpg"
+    image_path.write_bytes(b"jpeg-from-disk")
+
+    vault = AsyncDataVault(mock_async_datalake_for_alias_indexing)
+    await vault.save("friendly-image", image_path)
+
+    kwargs = mock_async_datalake_for_alias_indexing.create_asset_from_object.await_args.kwargs
+    assert kwargs["obj"] == b"jpeg-from-disk"
+    assert kwargs["size_bytes"] == image_path.stat().st_size
+
+
+@pytest.mark.parametrize("payload", ["hello", memoryview(b"hello")])
+@pytest.mark.asyncio
+async def test_async_data_vault_save_omits_size_for_registry_serialized_payloads(
+    mock_async_datalake_for_alias_indexing,
+    payload,
+):
+    created = Asset(
+        kind="artifact",
+        media_type="application/octet-stream",
+        storage_ref=StorageRef(mount="m", name="vault/object", version="1"),
+        asset_id="asset_obj",
+    )
+    mock_async_datalake_for_alias_indexing.create_asset_from_object = AsyncMock(return_value=created)
+
+    vault = AsyncDataVault(mock_async_datalake_for_alias_indexing)
+    await vault.save(
+        "friendly-object",
+        payload,
+        asset_metadata={SERIALIZATION_METADATA_KEY: direct_bytes_serialization_block()},
+    )
+
+    kwargs = mock_async_datalake_for_alias_indexing.create_asset_from_object.await_args.kwargs
+    assert kwargs["obj"] is payload
+    assert kwargs["size_bytes"] is None
+
+
+@pytest.mark.asyncio
 async def test_async_data_vault_save_image_records_png_size(mock_async_datalake_for_alias_indexing):
     created = Asset(
         kind="image",
@@ -2998,6 +3063,68 @@ def test_data_vault_save_adds_secondary_alias(mock_sync_datalake_for_alias_index
     vault.save("friendly", b"bytes", kind="image", media_type="image/png")
 
     mock_sync_datalake_for_alias_indexing.add_alias.assert_called_once_with("new_asset", "friendly")
+
+
+def test_data_vault_save_records_bytes_size(mock_sync_datalake_for_alias_indexing):
+    created = Asset(
+        kind="image",
+        media_type="image/jpeg",
+        storage_ref=StorageRef(mount="m", name="vault/image.jpg", version="1"),
+        asset_id="asset_img",
+    )
+    mock_sync_datalake_for_alias_indexing.create_asset_from_object = Mock(return_value=created)
+
+    payload = b"jpeg-bytes"
+    vault = DataVault(mock_sync_datalake_for_alias_indexing)
+    vault.save("friendly-image", payload, kind="image", media_type="image/jpeg")
+
+    kwargs = mock_sync_datalake_for_alias_indexing.create_asset_from_object.call_args.kwargs
+    assert kwargs["obj"] == payload
+    assert kwargs["size_bytes"] == len(payload)
+
+
+def test_data_vault_save_records_path_size(mock_sync_datalake_for_alias_indexing, tmp_path):
+    created = Asset(
+        kind="image",
+        media_type="image/jpeg",
+        storage_ref=StorageRef(mount="m", name="vault/image.jpg", version="1"),
+        asset_id="asset_img",
+    )
+    mock_sync_datalake_for_alias_indexing.create_asset_from_object = Mock(return_value=created)
+    image_path = tmp_path / "capture.jpg"
+    image_path.write_bytes(b"jpeg-from-disk")
+
+    vault = DataVault(mock_sync_datalake_for_alias_indexing)
+    vault.save("friendly-image", image_path)
+
+    kwargs = mock_sync_datalake_for_alias_indexing.create_asset_from_object.call_args.kwargs
+    assert kwargs["obj"] == b"jpeg-from-disk"
+    assert kwargs["size_bytes"] == image_path.stat().st_size
+
+
+@pytest.mark.parametrize("payload", ["hello", memoryview(b"hello")])
+def test_data_vault_save_omits_size_for_registry_serialized_payloads(
+    mock_sync_datalake_for_alias_indexing,
+    payload,
+):
+    created = Asset(
+        kind="artifact",
+        media_type="application/octet-stream",
+        storage_ref=StorageRef(mount="m", name="vault/object", version="1"),
+        asset_id="asset_obj",
+    )
+    mock_sync_datalake_for_alias_indexing.create_asset_from_object = Mock(return_value=created)
+
+    vault = DataVault(mock_sync_datalake_for_alias_indexing)
+    vault.save(
+        "friendly-object",
+        payload,
+        asset_metadata={SERIALIZATION_METADATA_KEY: direct_bytes_serialization_block()},
+    )
+
+    kwargs = mock_sync_datalake_for_alias_indexing.create_asset_from_object.call_args.kwargs
+    assert kwargs["obj"] is payload
+    assert kwargs["size_bytes"] is None
 
 
 def test_data_vault_save_image_records_png_size(mock_sync_datalake_for_alias_indexing):
