@@ -14,7 +14,7 @@ from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from mindtrace.core import utcnow
+from mindtrace.core import utcnow, utcnow_iso
 from mindtrace.hardware.core.exceptions import (
     CameraNotFoundError,
 )
@@ -625,7 +625,7 @@ class StereoCameraService(Service):
                 disparity_shape=result.disparity.shape if result.disparity is not None else None,
                 intensity_saved_path=request.save_intensity_path,
                 disparity_saved_path=request.save_disparity_path,
-                capture_timestamp=utcnow().isoformat(),
+                capture_timestamp=utcnow_iso(),
             )
 
             return StereoCaptureResponse(success=True, message="Stereo capture successful", data=capture_result)
@@ -667,7 +667,7 @@ class StereoCameraService(Service):
                     disparity_shape=result.disparity.shape if result.disparity is not None else None,
                     intensity_saved_path=capture_config.get("save_intensity_path"),
                     disparity_saved_path=capture_config.get("save_disparity_path"),
-                    capture_timestamp=utcnow().isoformat(),
+                    capture_timestamp=utcnow_iso(),
                 )
 
                 results.append(capture_result)
@@ -714,7 +714,7 @@ class StereoCameraService(Service):
                 saved_path=request.save_path,
                 points_shape=point_cloud.points.shape if point_cloud.points is not None else None,
                 colors_shape=point_cloud.colors.shape if point_cloud.colors is not None else None,
-                capture_timestamp=utcnow().isoformat(),
+                capture_timestamp=utcnow_iso(),
             )
 
             return PointCloudResponse(success=True, message="Point cloud captured", data=result)
@@ -754,7 +754,7 @@ class StereoCameraService(Service):
                     saved_path=capture_config.get("save_path"),
                     points_shape=point_cloud.points.shape if point_cloud.points is not None else None,
                     colors_shape=point_cloud.colors.shape if point_cloud.colors is not None else None,
-                    capture_timestamp=utcnow().isoformat(),
+                    capture_timestamp=utcnow_iso(),
                 )
 
                 results.append(result)
@@ -802,7 +802,7 @@ class StereoCameraService(Service):
                 "camera": camera,
                 "streaming": True,
                 "stream_url": stream_url,
-                "start_time": utcnow().isoformat(),
+                "start_time": utcnow_iso(),
             },
         }
 

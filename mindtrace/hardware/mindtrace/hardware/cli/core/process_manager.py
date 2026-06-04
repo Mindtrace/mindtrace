@@ -11,7 +11,7 @@ from typing import Any, Dict
 
 import psutil
 
-from mindtrace.core import utcnow
+from mindtrace.core import utcnow_iso
 
 
 class ProcessManager:
@@ -119,7 +119,7 @@ class ProcessManager:
             "pid": process.pid,
             "host": host,
             "port": port,
-            "start_time": utcnow().isoformat(),
+            "start_time": utcnow_iso(),
             "command": " ".join(cmd),
         }
         self.save_pids()
@@ -170,7 +170,7 @@ class ProcessManager:
             "pid": process.pid,
             "host": host,
             "port": port,
-            "start_time": utcnow().isoformat(),
+            "start_time": utcnow_iso(),
             "command": " ".join(cmd),
         }
         self.save_pids()
@@ -229,7 +229,7 @@ class ProcessManager:
             "pid": process.pid,
             "host": host,
             "port": port,
-            "start_time": utcnow().isoformat(),
+            "start_time": utcnow_iso(),
             "command": " ".join(cmd),
         }
         self.save_pids()
@@ -288,7 +288,7 @@ class ProcessManager:
             "pid": process.pid,
             "host": host,
             "port": port,
-            "start_time": utcnow().isoformat(),
+            "start_time": utcnow_iso(),
             "command": " ".join(cmd),
         }
         self.save_pids()
