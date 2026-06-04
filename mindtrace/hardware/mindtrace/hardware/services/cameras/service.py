@@ -1029,6 +1029,26 @@ class CameraManagerService(Service):
             return None, None, None
 
     @staticmethod
+    def _file_size_bytes(path: str) -> Optional[int]:
+        """On-disk byte size of ``path``, or ``None`` if it can't be read."""
+        try:
+            return os.path.getsize(path)
+        except OSError:
+            return None
+
+    @staticmethod
+    def _image_size_on_disk(path: str) -> Optional[Tuple[int, int]]:
+        """``(width, height)`` parsed from the image header at ``path``, or ``None``.
+
+        ``PIL.Image.open`` is lazy — this reads the header without decoding pixels.
+        """
+        try:
+            with PILImage.open(path) as im:
+                return im.size
+        except Exception:
+            return None
+
+    @staticmethod
     def _backend_return_type(output_format: str) -> str:
         """Translate a wire format to the in-memory type the backend should return.
 
@@ -1042,10 +1062,10 @@ class CameraManagerService(Service):
         """Capture a single image with timeout protection.
 
         When ``save_path`` is set, the image is written to disk and the response
-        carries ``image_path``. When it is omitted, the image is encoded inline
-        as a base64 JPEG in ``image_data`` (with ``image_size`` and
-        ``file_size_bytes`` populated) so callers don't need a stream or a
-        round-trip through ``/cameras/images/...``.
+        carries ``image_path`` plus ``image_size`` and ``file_size_bytes`` for
+        the saved file. When ``save_path`` is omitted, the image is encoded
+        inline as base64 in ``image_data`` (with the same size fields) so
+        callers don't need a stream or a round-trip through ``/cameras/images/...``.
         """
         try:
             manager = await self._get_camera_manager()
@@ -1073,6 +1093,8 @@ class CameraManagerService(Service):
                         success=True,
                         image_path=request.save_path,
                         capture_time=datetime.now(timezone.utc),
+                        image_size=self._image_size_on_disk(request.save_path),
+                        file_size_bytes=self._file_size_bytes(request.save_path),
                     )
                 else:
                     image_data, image_size, file_size_bytes = self._encode_inline_image(captured, request.output_format)
@@ -1136,7 +1158,11 @@ class CameraManagerService(Service):
                     if request.save_path_pattern:
                         # Image is the file path string
                         capture_results[camera] = CaptureResult(
-                            success=True, image_path=image, capture_time=datetime.now(timezone.utc)
+                            success=True,
+                            image_path=image,
+                            capture_time=datetime.now(timezone.utc),
+                            image_size=self._image_size_on_disk(image),
+                            file_size_bytes=self._file_size_bytes(image),
                         )
                     else:
                         # Image is numpy/PIL data — encode inline in the requested wire format
