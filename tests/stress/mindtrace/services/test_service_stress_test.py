@@ -18,7 +18,7 @@ from statistics import mean, median
 import pytest
 from tqdm import tqdm
 
-from mindtrace.core import utcnow
+from mindtrace.core import utcnow, utcnow_iso
 from mindtrace.services.samples.echo_service import EchoService
 
 # Suppress verbose HTTP logging during stress tests
@@ -1002,7 +1002,7 @@ class TestEchoServiceThroughput:
         """
         Save stress test results to a JSON file for tracking performance over time and comparing configurations.
         """
-        timestamp = utcnow().isoformat()
+        timestamp = utcnow_iso()
         results_with_timestamp = {"timestamp": timestamp, "results": results}
         with open(filename, "w") as f:
             json.dump(results_with_timestamp, f)

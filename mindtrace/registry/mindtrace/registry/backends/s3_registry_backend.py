@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
 from urllib.parse import quote
 
-from mindtrace.core import utcnow
+from mindtrace.core import utcnow, utcnow_iso
 from mindtrace.registry.backends.registry_backend import (
     ConcreteVersionArg,
     MetadataArg,
@@ -308,7 +308,7 @@ class S3RegistryBackend(RegistryBackend):
             prepared_meta["path"] = f"s3://{self._bucket}/{remote_key}"
             prepared_meta["_storage"] = {
                 "uuid": uuid_str,
-                "created_at": utcnow().isoformat(),
+                "created_at": utcnow_iso(),
             }
             meta_result = self._save_metadata_single(
                 name,
@@ -723,7 +723,7 @@ class S3RegistryBackend(RegistryBackend):
             prepared_meta["path"] = f"s3://{self._bucket}/{remote_key}"
             prepared_meta["_storage"] = {
                 "uuid": uuid_str,
-                "created_at": utcnow().isoformat(),
+                "created_at": utcnow_iso(),
             }
 
             # Step 7: Write metadata (the "commit point")

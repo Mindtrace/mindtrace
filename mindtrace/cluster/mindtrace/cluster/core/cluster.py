@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from mindtrace.cluster.core import types as cluster_types
 from mindtrace.cluster.workers.environments.git_env import GitEnvironment
-from mindtrace.core import TaskSchema, Timeout, get_class, utcnow
+from mindtrace.core import TaskSchema, Timeout, get_class, utcnow, utcnow_iso
 from mindtrace.database import BackendType, UnifiedMindtraceODM
 from mindtrace.jobs import Consumer, Job, JobSchema, Orchestrator, RabbitMQClient
 from mindtrace.registry import Archiver, Registry
@@ -637,7 +637,7 @@ class ClusterManager(Gateway):
             {
                 "status": cluster_types.JobStatusEnum.RUNNING,
                 "worker_id": payload["worker_id"],
-                "job.started_at": utcnow().isoformat(),
+                "job.started_at": utcnow_iso(),
             },
         )
         update_database(
@@ -662,7 +662,7 @@ class ClusterManager(Gateway):
             self.job_status_database,
             "job_id",
             job_id,
-            {"status": status_enum, "output": payload["output"], "job.completed_at": utcnow().isoformat()},
+            {"status": status_enum, "output": payload["output"], "job.completed_at": utcnow_iso()},
         )
         if job_status.worker_id != payload["worker_id"]:
             self.logger.warning(

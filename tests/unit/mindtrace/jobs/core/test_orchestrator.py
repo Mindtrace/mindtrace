@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from pydantic import BaseModel
 
-from mindtrace.core import TaskSchema, utcnow
+from mindtrace.core import TaskSchema, utcnow_iso
 from mindtrace.jobs.core.orchestrator import Orchestrator
 from mindtrace.jobs.local.client import LocalClient
 from mindtrace.jobs.types.job_specs import ExecutionStatus, Job, JobSchema
@@ -67,7 +67,7 @@ def sample_job():
         schema_name="test-schema",
         payload={"data": "test"},
         status=ExecutionStatus.QUEUED,
-        created_at=utcnow().isoformat(),
+        created_at=utcnow_iso(),
     )
 
 

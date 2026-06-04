@@ -18,7 +18,7 @@ from tempfile import TemporaryDirectory
 import pytest
 from tqdm import tqdm
 
-from mindtrace.core import utcnow
+from mindtrace.core import utcnow_iso
 from mindtrace.registry import Registry
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 
@@ -1010,7 +1010,7 @@ class TestRegistryThroughput:
 
         # Save to results directory
         filepath = results_dir / filename
-        timestamp = utcnow().isoformat()
+        timestamp = utcnow_iso()
         results_with_timestamp = {"timestamp": timestamp, "results": results}
 
         with open(filepath, "w") as f:
