@@ -9,7 +9,7 @@ from bson import ObjectId
 
 from mindtrace.database.core.exceptions import DuplicateInsertError
 from mindtrace.datalake.replication_queue import ReplicationQueueManager, _task_is_claimable_at
-from mindtrace.datalake.types import ReplicationTask, utc_now
+from mindtrace.datalake.types import ReplicationTask, utcnow
 from tests.unit.mindtrace.datalake.fake_replication_task_database import FakeReplicationTaskDatabase
 
 
@@ -113,7 +113,7 @@ async def test_claim_due_tasks_sets_lease(queue_manager, task_database):
     )
     task_database.find.side_effect = [[task], [task]]
 
-    claimed = await queue_manager.claim_due_tasks(worker_id="worker-1", limit=1, lease_seconds=30, now=utc_now())
+    claimed = await queue_manager.claim_due_tasks(worker_id="worker-1", limit=1, lease_seconds=30, now=utcnow())
 
     assert len(claimed) == 1
     assert claimed[0].status == "claimed"

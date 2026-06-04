@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from mindtrace.core import utcnow
 
 from ._store import AbstractMemoryStore, MemoryEntry
 
@@ -12,7 +12,7 @@ class InMemoryStore(AbstractMemoryStore):
         self._data: dict[str, MemoryEntry] = {}
 
     async def save(self, key: str, value: str, metadata: dict | None = None) -> None:
-        now = datetime.now(timezone.utc)
+        now = utcnow()
         existing = self._data.get(key)
         self._data[key] = MemoryEntry(
             key=key,

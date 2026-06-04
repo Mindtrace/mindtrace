@@ -1,6 +1,6 @@
 import base64
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pymongo import MongoClient
 
+from mindtrace.core import utcnow
 from mindtrace.datalake import DatalakeDirectUploadClient, DatalakeService, StorageRef, SubjectRef
 from mindtrace.datalake.pagination_types import DatasetViewExpand
 from mindtrace.datalake.service_types import (
@@ -719,7 +720,7 @@ class TestDatalakeServiceIntegration:
                 collection = mongo_client[db_name]["datalake_direct_upload_sessions"]
                 collection.update_one(
                     {"upload_session_id": session.upload_session_id},
-                    {"$set": {"expires_at": datetime.now(timezone.utc) - timedelta(seconds=1)}},
+                    {"$set": {"expires_at": utcnow() - timedelta(seconds=1)}},
                 )
 
                 assert client.portal is not None

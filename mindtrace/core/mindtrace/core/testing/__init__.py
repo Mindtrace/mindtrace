@@ -9,7 +9,7 @@ from mindtrace.core.testing.bench_framework import (
     BenchSuiteConfig,
     CancellationToken,
     latency_summary,
-    utc_now_iso,
+    utcnow_iso,
 )
 from mindtrace.core.testing.bench_suite import BenchTestSuite, build_bench_suite_config, coerce_bench_config
 from mindtrace.core.testing.matrix import expand_param_matrix
@@ -52,6 +52,6 @@ __all__ = [
     "latency_summary",
     "parse_size_bytes",
     "run_threaded_until_deadline",
-    "utc_now_iso",
+    "utcnow_iso",
     "validate_suite_id",
 ]

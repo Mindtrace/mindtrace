@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
+from mindtrace.core import as_utc
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.types import ReplicationTask
 
@@ -20,23 +19,18 @@ class FakeReplicationTaskDatabase:
         self._tasks = {t.task_id: t for t in tasks}
         self._extra_due = list(extra_due_candidates or [])
 
-    def _normalize_utc(self, value: datetime) -> datetime:
-        if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
-
     def _matches_due_branch(self, branch: dict, task: ReplicationTask) -> bool:
         allowed = set(branch["status"]["$in"])
         if task.status not in allowed:
             return False
         if "next_attempt_at" in branch:
-            lte = self._normalize_utc(branch["next_attempt_at"]["$lte"])
-            return self._normalize_utc(task.next_attempt_at) <= lte
+            lte = as_utc(branch["next_attempt_at"]["$lte"])
+            return as_utc(task.next_attempt_at) <= lte
         if "lease_expires_at" in branch:
-            lte = self._normalize_utc(branch["lease_expires_at"]["$lte"])
+            lte = as_utc(branch["lease_expires_at"]["$lte"])
             if task.lease_expires_at is None:
                 return False
-            return self._normalize_utc(task.lease_expires_at) <= lte
+            return as_utc(task.lease_expires_at) <= lte
         return True
 
     def _matches_or_query(self, query: dict, task: ReplicationTask) -> bool:
@@ -46,8 +40,8 @@ class FakeReplicationTaskDatabase:
         allowed = set(query["status"]["$in"])
         if task.status not in allowed:
             return False
-        lte = self._normalize_utc(query["next_attempt_at"]["$lte"])
-        return self._normalize_utc(task.next_attempt_at) <= lte
+        lte = as_utc(query["next_attempt_at"]["$lte"])
+        return as_utc(task.next_attempt_at) <= lte
 
     async def find(self, query: dict) -> list[ReplicationTask]:
         if "task_id" in query:
@@ -77,15 +71,13 @@ class FakeReplicationTaskDatabase:
                 and "next_attempt_at" not in query
             ):
                 allowed = set(query["status"]["$in"])
-                cutoff = self._normalize_utc(query["completed_at"]["$lte"])
+                cutoff = as_utc(query["completed_at"]["$lte"])
                 rows = [
                     t
                     for t in self._tasks.values()
-                    if t.status in allowed
-                    and t.completed_at is not None
-                    and self._normalize_utc(t.completed_at) <= cutoff
+                    if t.status in allowed and t.completed_at is not None and as_utc(t.completed_at) <= cutoff
                 ]
-                return sorted(rows, key=lambda t: (self._normalize_utc(t.completed_at), t.created_at))
+                return sorted(rows, key=lambda t: (as_utc(t.completed_at), t.created_at))
             base = [t for t in self._tasks.values() if self._matches_due_query(query, t)]
             extra = [t for t in self._extra_due if self._matches_due_query(query, t)]
             return base + extra

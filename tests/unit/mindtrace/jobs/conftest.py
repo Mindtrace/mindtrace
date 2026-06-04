@@ -1,11 +1,11 @@
 import tempfile
 import time
-from datetime import datetime
 from pathlib import Path
 
 import pytest
 from pydantic import BaseModel
 
+from mindtrace.core import utcnow_iso
 from mindtrace.jobs import Consumer, Job, JobSchema, LocalClient, job_from_schema
 from mindtrace.registry import Registry
 
@@ -59,7 +59,7 @@ def unique_queue_name():
 
 @pytest.fixture
 def test_timestamp():
-    return datetime.now().isoformat()
+    return utcnow_iso()
 
 
 @pytest.fixture(scope="session")
