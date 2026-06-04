@@ -2,6 +2,7 @@
 
 import base64
 import json
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock
@@ -79,6 +80,7 @@ from mindtrace.datalake.vault_serialization import (
     SERIALIZATION_METADATA_KEY,
     direct_bytes_serialization_block,
 )
+from mindtrace.hardware.cameras.core.capture_metadata import file_size_bytes_for_path, image_dimensions
 from mindtrace.registry import Registry
 from mindtrace.services import Service
 from mindtrace.services.core.utils import generate_connection_manager
@@ -3065,6 +3067,75 @@ def test_data_vault_save_adds_secondary_alias(mock_sync_datalake_for_alias_index
     mock_sync_datalake_for_alias_indexing.add_alias.assert_called_once_with("new_asset", "friendly")
 
 
+def test_data_vault_save_path_size_matches_hardware_saved_file_metadata(
+    mock_sync_datalake_for_alias_indexing,
+    tmp_path,
+):
+    """Save-path captures and ``DataVault.save(Path)`` measure the same encoded file bytes."""
+    created = Asset(
+        kind="image",
+        media_type="image/jpeg",
+        storage_ref=StorageRef(mount="m", name="vault/frame", version="1"),
+        asset_id="asset_jpg_path",
+    )
+    mock_sync_datalake_for_alias_indexing.create_asset_from_object = Mock(return_value=created)
+
+    image = Image.new("RGB", (16, 12), color=(12, 34, 56))
+    jpg_path = tmp_path / "frame.jpg"
+    image.save(jpg_path, format="JPEG", quality=95)
+
+    hardware_image_size = image_dimensions(image)
+    hardware_file_size = file_size_bytes_for_path(str(jpg_path))
+
+    DataVault(mock_sync_datalake_for_alias_indexing).save("frame-from-path", jpg_path)
+
+    kwargs = mock_sync_datalake_for_alias_indexing.create_asset_from_object.call_args.kwargs
+    assert hardware_image_size == image.size
+    assert hardware_file_size == jpg_path.stat().st_size
+    assert kwargs["kind"] == "image"
+    assert kwargs["media_type"] == "image/jpeg"
+    assert kwargs["obj"] == jpg_path.read_bytes()
+    assert kwargs["size_bytes"] == hardware_file_size
+
+
+@pytest.mark.parametrize(
+    ("pil_format", "media_type"),
+    [("PNG", "image/png"), ("JPEG", "image/jpeg")],
+)
+def test_data_vault_save_inline_bytes_size_matches_hardware_encoded_response_metadata(
+    mock_sync_datalake_for_alias_indexing,
+    pil_format,
+    media_type,
+):
+    """Inline captures and ``DataVault.save(bytes)`` measure the same encoded response bytes."""
+    created = Asset(
+        kind="image",
+        media_type=media_type,
+        storage_ref=StorageRef(mount="m", name="vault/frame", version="1"),
+        asset_id="asset_encoded_bytes",
+    )
+    mock_sync_datalake_for_alias_indexing.create_asset_from_object = Mock(return_value=created)
+
+    image = Image.new("RGB", (16, 12), color=(80, 120, 160))
+    buf = BytesIO()
+    image.save(buf, format=pil_format)
+    encoded = buf.getvalue()
+
+    DataVault(mock_sync_datalake_for_alias_indexing).save(
+        "frame-from-inline-bytes",
+        encoded,
+        kind="image",
+        media_type=media_type,
+    )
+
+    kwargs = mock_sync_datalake_for_alias_indexing.create_asset_from_object.call_args.kwargs
+    assert image_dimensions(image) == image.size
+    assert kwargs["kind"] == "image"
+    assert kwargs["media_type"] == media_type
+    assert kwargs["obj"] == encoded
+    assert kwargs["size_bytes"] == len(encoded)
+
+
 def test_data_vault_save_records_bytes_size(mock_sync_datalake_for_alias_indexing):
     created = Asset(
         kind="image",
@@ -3125,6 +3196,7 @@ def test_data_vault_save_omits_size_for_registry_serialized_payloads(
     kwargs = mock_sync_datalake_for_alias_indexing.create_asset_from_object.call_args.kwargs
     assert kwargs["obj"] is payload
     assert kwargs["size_bytes"] is None
+
 
 
 def test_data_vault_save_image_records_png_size(mock_sync_datalake_for_alias_indexing):
