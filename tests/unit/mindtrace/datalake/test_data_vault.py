@@ -3198,7 +3198,6 @@ def test_data_vault_save_omits_size_for_registry_serialized_payloads(
     assert kwargs["size_bytes"] is None
 
 
-
 def test_data_vault_save_image_records_png_size(mock_sync_datalake_for_alias_indexing):
     created = Asset(
         kind="image",
