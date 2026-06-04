@@ -13,6 +13,7 @@ from mindtrace.agents.memory import (
     MemoryEntry,
     MemoryToolset,
 )
+from mindtrace.core import utcnow
 
 
 def _ctx() -> RunContext:
@@ -29,9 +30,8 @@ class TestMemoryEntry:
 
     def test_fields_stored(self):
         """MemoryEntry stores key, value, and metadata."""
-        from datetime import datetime, timezone
 
-        now = datetime.now(timezone.utc)
+        now = utcnow()
         entry = MemoryEntry(key="k", value="v", metadata={"tag": "x"}, created_at=now, updated_at=now)
         assert entry.key == "k"
         assert entry.value == "v"
@@ -39,9 +39,8 @@ class TestMemoryEntry:
 
     def test_default_metadata_is_empty_dict(self):
         """metadata defaults to an empty dict."""
-        from datetime import datetime, timezone
 
-        now = datetime.now(timezone.utc)
+        now = utcnow()
         entry = MemoryEntry(key="k", value="v", created_at=now, updated_at=now)
         assert entry.metadata == {}
 

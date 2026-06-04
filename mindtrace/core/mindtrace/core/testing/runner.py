@@ -5,7 +5,6 @@ from __future__ import annotations
 import importlib.metadata as importlib_metadata
 import threading
 from collections.abc import Callable, Mapping, Sequence
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Generic, Type, TypeVar
 
@@ -27,14 +26,11 @@ from mindtrace.core.testing.types import (
     validate_suite_id,
 )
 from mindtrace.core.types.task_schema import TaskSchema
+from mindtrace.core.utils.time import utcnow_iso
 
 _TS = TypeVar("_TS", bound=type[TestSuite])
 _T = TypeVar("_T")
 _BENCHMARK_ENTRY_POINT_GROUP = "mindtrace.benchmark_suites"
-
-
-def _utc_iso() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _pydantic_model_json_schema(model: Type[BaseModel]) -> dict[str, Any]:
@@ -307,7 +303,7 @@ class TestRunner(Mindtrace):
     ) -> RunOutcome:
         """Batch driver; ``execute`` sees the stored :class:`SuiteContribution`."""
 
-        started = _utc_iso()
+        started = utcnow_iso()
         with self._lock:
             if suite_ids is None:
                 ordered_ids = sorted(self._registry.keys())
@@ -317,7 +313,7 @@ class TestRunner(Mindtrace):
         rows: list[SuiteExecutionResult] = []
 
         if not ordered_ids:
-            ended = _utc_iso()
+            ended = utcnow_iso()
             return RunOutcome(overall="empty", suites=(), started_at=started, finished_at=ended)
 
         for sid in ordered_ids:
@@ -337,7 +333,7 @@ class TestRunner(Mindtrace):
 
             rows.append(row)
 
-        ended = _utc_iso()
+        ended = utcnow_iso()
         overall: OverallStatus = "passed" if all(r.status == "passed" for r in rows) else "failed"
         return RunOutcome(
             overall=overall,

@@ -1,4 +1,3 @@
-from datetime import datetime
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -40,8 +39,8 @@ class TestJobFromSchema:
 
         with patch("mindtrace.jobs.utils.schemas.uuid.uuid4") as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch("mindtrace.jobs.utils.schemas.datetime") as mock_datetime:
-                mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
+            with patch("mindtrace.jobs.utils.schemas.utcnow_iso") as mock_utcnow_iso:
+                mock_utcnow_iso.return_value = "2023-01-01T12:00:00Z"
 
                 result = job_from_schema(schema, input_data)
 
@@ -50,7 +49,7 @@ class TestJobFromSchema:
                 assert result.name == "test-job"
                 assert result.schema_name == "test-job"
                 assert result.payload == input_data
-                assert result.created_at == "2023-01-01T12:00:00"
+                assert result.created_at == "2023-01-01T12:00:00Z"
 
     def test_job_from_schema_with_dictionary_input(self):
         """Test creating a job with dictionary input data."""
@@ -59,8 +58,8 @@ class TestJobFromSchema:
 
         with patch("mindtrace.jobs.utils.schemas.uuid.uuid4") as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch("mindtrace.jobs.utils.schemas.datetime") as mock_datetime:
-                mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
+            with patch("mindtrace.jobs.utils.schemas.utcnow_iso") as mock_utcnow_iso:
+                mock_utcnow_iso.return_value = "2023-01-01T12:00:00Z"
 
                 result = job_from_schema(schema, input_data)
 
@@ -71,7 +70,7 @@ class TestJobFromSchema:
                 assert isinstance(result.payload, MockInputSchema)
                 assert result.payload.data == "test-data"
                 assert result.payload.count == 10
-                assert result.created_at == "2023-01-01T12:00:00"
+                assert result.created_at == "2023-01-01T12:00:00Z"
 
     def test_job_from_schema_with_partial_dictionary_input(self):
         """Test creating a job with partial dictionary input (using defaults)."""
@@ -80,8 +79,8 @@ class TestJobFromSchema:
 
         with patch("mindtrace.jobs.utils.schemas.uuid.uuid4") as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch("mindtrace.jobs.utils.schemas.datetime") as mock_datetime:
-                mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
+            with patch("mindtrace.jobs.utils.schemas.utcnow_iso") as mock_utcnow_iso:
+                mock_utcnow_iso.return_value = "2023-01-01T12:00:00Z"
 
                 result = job_from_schema(schema, input_data)
 
@@ -97,8 +96,8 @@ class TestJobFromSchema:
 
         with patch("mindtrace.jobs.utils.schemas.uuid.uuid4") as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch("mindtrace.jobs.utils.schemas.datetime") as mock_datetime:
-                mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
+            with patch("mindtrace.jobs.utils.schemas.utcnow_iso") as mock_utcnow_iso:
+                mock_utcnow_iso.return_value = "2023-01-01T12:00:00Z"
 
                 result = job_from_schema(schema, input_data)
 
@@ -132,8 +131,8 @@ class TestJobFromSchema:
 
         with patch("mindtrace.jobs.utils.schemas.uuid.uuid4") as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch("mindtrace.jobs.utils.schemas.datetime") as mock_datetime:
-                mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
+            with patch("mindtrace.jobs.utils.schemas.utcnow_iso") as mock_utcnow_iso:
+                mock_utcnow_iso.return_value = "2023-01-01T12:00:00Z"
 
                 result = job_from_schema(schema, input_data)
 
@@ -175,8 +174,8 @@ class TestJobFromSchema:
         schema = MockJobSchema()
         input_data = MockInputSchema(data="test-data")
 
-        with patch("mindtrace.jobs.utils.schemas.datetime") as mock_datetime:
-            mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
+        with patch("mindtrace.jobs.utils.schemas.utcnow_iso") as mock_utcnow_iso:
+            mock_utcnow_iso.return_value = "2023-01-01T12:00:00Z"
 
             job1 = job_from_schema(schema, input_data)
             job2 = job_from_schema(schema, input_data)
@@ -192,12 +191,12 @@ class TestJobFromSchema:
 
         with patch("mindtrace.jobs.utils.schemas.uuid.uuid4") as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch("mindtrace.jobs.utils.schemas.datetime") as mock_datetime:
-                mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 30, 45, 123456)
+            with patch("mindtrace.jobs.utils.schemas.utcnow_iso") as mock_utcnow_iso:
+                mock_utcnow_iso.return_value = "2023-01-01T12:30:45.123456Z"
 
                 result = job_from_schema(schema, input_data)
 
-                assert result.created_at == "2023-01-01T12:30:45.123456"
+                assert result.created_at == "2023-01-01T12:30:45.123456Z"
 
     def test_job_from_schema_payload_immutability(self):
         """Test that the payload is properly set and not modified."""
@@ -206,8 +205,8 @@ class TestJobFromSchema:
 
         with patch("mindtrace.jobs.utils.schemas.uuid.uuid4") as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch("mindtrace.jobs.utils.schemas.datetime") as mock_datetime:
-                mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
+            with patch("mindtrace.jobs.utils.schemas.utcnow_iso") as mock_utcnow_iso:
+                mock_utcnow_iso.return_value = "2023-01-01T12:00:00Z"
 
                 result = job_from_schema(schema, input_data)
 
@@ -232,8 +231,8 @@ class TestJobFromSchema:
 
         with patch("mindtrace.jobs.utils.schemas.uuid.uuid4") as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch("mindtrace.jobs.utils.schemas.datetime") as mock_datetime:
-                mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
+            with patch("mindtrace.jobs.utils.schemas.utcnow_iso") as mock_utcnow_iso:
+                mock_utcnow_iso.return_value = "2023-01-01T12:00:00Z"
 
                 result = job_from_schema(schema, input_data)
 

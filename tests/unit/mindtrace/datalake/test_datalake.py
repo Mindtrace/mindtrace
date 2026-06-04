@@ -1,11 +1,11 @@
 import asyncio
 import threading
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from datalake_unit_mongo_uri import DATALAKE_UNIT_MONGO_URI
 
+from mindtrace.core import utcnow
 from mindtrace.datalake import Datalake
 from mindtrace.datalake.async_datalake import SlowOpsPolicy
 from mindtrace.datalake.pagination_types import CursorPage, DatasetViewInfo, DatasetViewPage, DatasetViewRow, PageInfo
@@ -94,7 +94,7 @@ class TestDatalakeSyncFacade:
             upload_method="local_path",
             upload_path="/tmp/direct-upload/data.txt",
             staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
-            expires_at=datetime.now(timezone.utc),
+            expires_at=utcnow(),
         )
         for name, value in {
             "close": None,
@@ -204,7 +204,7 @@ class TestDatalakeSyncFacade:
                 alias="asset_1",
                 asset_id="asset_1",
                 is_primary=True,
-                created_at=datetime.now(timezone.utc),
+                created_at=utcnow(),
             ),
             "resolve_alias": "resolved_asset_id",
             "add_alias": AssetAlias.model_construct(
@@ -212,7 +212,7 @@ class TestDatalakeSyncFacade:
                 alias="nick",
                 asset_id="asset_1",
                 is_primary=False,
-                created_at=datetime.now(timezone.utc),
+                created_at=utcnow(),
             ),
             "remove_alias": None,
             "list_aliases_for_asset": ["asset_1", "nick"],

@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from mindtrace.core import BenchReporter, BenchResult, BenchSuiteConfig, utc_now_iso
+from mindtrace.core import BenchReporter, BenchResult, BenchSuiteConfig, utcnow_iso
 
 DEFAULT_MOCK_CAMERAS = ("MockBasler:mock_basler_1",)
 
@@ -116,7 +116,7 @@ def make_result(
         suite_id=config.suite_id,
         status=status_from_reporter(reporter),
         started_at=started,
-        ended_at=utc_now_iso(),
+        ended_at=utcnow_iso(),
         duration_seconds=elapsed,
         operations=reporter.operations,
         successes=reporter.successes,

@@ -32,7 +32,7 @@ from mindtrace.datalake.types import (
     DatasetVersion,
     Datum,
     StorageRef,
-    utc_now,
+    utcnow,
 )
 
 
@@ -765,7 +765,7 @@ class DatasetSyncManager:
                 )
                 payload_status = "present"
                 payload_status_reason = None
-                payload_verified_at = utc_now()
+                payload_verified_at = utcnow()
                 if replication_manager is not None:
                     merged_origin = replication_manager.build_asset_replication_metadata(
                         merged_origin,
@@ -782,7 +782,7 @@ class DatasetSyncManager:
                         **asset.model_dump(),
                         "storage_ref": storage_ref.model_dump(),
                         "payload_status": payload_status,
-                        "payload_status_updated_at": utc_now(),
+                        "payload_status_updated_at": utcnow(),
                         "payload_status_reason": payload_status_reason,
                         "payload_storage_ref": storage_ref.model_dump(),
                         "payload_checksum": asset.checksum,
@@ -1023,7 +1023,7 @@ class DatasetSyncManager:
 
         await self._verify_transferred_payload(payload_descriptor, payload_bytes, staged_storage_ref)
         asset = await self.target.get_asset(asset_id)
-        now = utc_now()
+        now = utcnow()
         asset.storage_ref = staged_storage_ref
         asset.size_bytes = len(payload_bytes)
         if payload_descriptor.checksum:
@@ -1041,7 +1041,7 @@ class DatasetSyncManager:
         await rm._set_asset_replication_state(
             asset,
             payload_status="present",
-            payload_verified_at=utc_now(),
+            payload_verified_at=utcnow(),
             payload_last_error=None,
         )
         return await self.target.get_asset(asset_id)
@@ -1317,7 +1317,7 @@ class DatasetSyncManager:
                     **asset.model_dump(),
                     "storage_ref": _apply_mount_map_to_storage_ref(asset.storage_ref, request.mount_map).model_dump(),
                     "payload_status": "missing",
-                    "payload_status_updated_at": utc_now(),
+                    "payload_status_updated_at": utcnow(),
                     "payload_status_reason": "fast_sync_pending_payload",
                     "payload_storage_ref": _apply_mount_map_to_storage_ref(
                         asset.storage_ref, request.mount_map

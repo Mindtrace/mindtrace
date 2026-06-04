@@ -14,7 +14,7 @@ from mindtrace.core import (
     UnknownSuiteIdError,
     validate_suite_id,
 )
-from mindtrace.core.testing import BenchReporter, BenchResult, utc_now_iso
+from mindtrace.core.testing import BenchReporter, BenchResult, utcnow_iso
 
 
 @pytest.fixture(autouse=True)
@@ -49,7 +49,7 @@ class SampleBenchSuite(BenchTestSuite):
     profiles = {"smoke": {"duration_seconds": 0.1, "resources": {"from_profile": True}}}
 
     def execute_bench(self, config: BenchSuiteConfig, reporter: BenchReporter) -> BenchResult:
-        now = utc_now_iso()
+        now = utcnow_iso()
         return BenchResult(
             suite_id=config.suite_id,
             status="passed",
