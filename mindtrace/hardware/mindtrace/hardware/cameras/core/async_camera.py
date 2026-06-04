@@ -201,7 +201,8 @@ class AsyncCamera(Mindtrace):
             at the boundary.
 
         Raises:
-            CameraCaptureError: If image capture ultimately fails after retries.
+            CameraCaptureError: If image capture ultimately fails after retries,
+                or the captured image cannot be written to ``save_path``.
             CameraConnectionError: If the camera connection fails during capture.
             CameraTimeoutError: If the capture exceeds the configured timeout.
             RuntimeError: For unexpected errors after exhausting retries.
@@ -224,7 +225,10 @@ class AsyncCamera(Mindtrace):
                             dirname = os.path.dirname(save_path)
                             if dirname:
                                 await asyncio.to_thread(os.makedirs, dirname, exist_ok=True)
-                            await asyncio.to_thread(cv2.imwrite, save_path, image)
+                            if not await asyncio.to_thread(cv2.imwrite, save_path, image):
+                                raise CameraCaptureError(
+                                    f"Failed to write captured image to '{save_path}' for camera '{self._full_name}'"
+                                )
                             self.logger.debug(f"Saved captured image to '{save_path}'")
 
                         self.logger.debug(
