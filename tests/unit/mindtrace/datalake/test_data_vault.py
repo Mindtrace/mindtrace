@@ -80,7 +80,7 @@ from mindtrace.datalake.vault_serialization import (
     SERIALIZATION_METADATA_KEY,
     direct_bytes_serialization_block,
 )
-from mindtrace.hardware.cameras.core.capture_metadata import file_size_bytes_for_path, image_dimensions
+from mindtrace.hardware.services.cameras.service import CameraManagerService
 from mindtrace.registry import Registry
 from mindtrace.services import Service
 from mindtrace.services.core.utils import generate_connection_manager
@@ -3084,8 +3084,8 @@ def test_data_vault_save_path_size_matches_hardware_saved_file_metadata(
     jpg_path = tmp_path / "frame.jpg"
     image.save(jpg_path, format="JPEG", quality=95)
 
-    hardware_image_size = image_dimensions(image)
-    hardware_file_size = file_size_bytes_for_path(str(jpg_path))
+    hardware_image_size = CameraManagerService._image_size_on_disk(str(jpg_path))
+    hardware_file_size = CameraManagerService._file_size_bytes(str(jpg_path))
 
     DataVault(mock_sync_datalake_for_alias_indexing).save("frame-from-path", jpg_path)
 
@@ -3129,7 +3129,7 @@ def test_data_vault_save_inline_bytes_size_matches_hardware_encoded_response_met
     )
 
     kwargs = mock_sync_datalake_for_alias_indexing.create_asset_from_object.call_args.kwargs
-    assert image_dimensions(image) == image.size
+    assert image.size == (16, 12)
     assert kwargs["kind"] == "image"
     assert kwargs["media_type"] == media_type
     assert kwargs["obj"] == encoded
