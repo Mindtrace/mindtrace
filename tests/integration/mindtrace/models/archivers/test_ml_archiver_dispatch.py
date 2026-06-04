@@ -22,6 +22,19 @@ HAS_TIMM = importlib.util.find_spec("timm") is not None
 HAS_ONNX = importlib.util.find_spec("onnx") is not None
 
 
+def _hf_bert_tiny():
+    """Build the tiny-BERT model, skipping the test on Hub network errors."""
+    from huggingface_hub.errors import HfHubHTTPError
+    from requests.exceptions import RequestException
+    from transformers import AutoConfig, AutoModel
+
+    try:
+        config = AutoConfig.from_pretrained("lyeonii/bert-tiny")
+    except (HfHubHTTPError, RequestException, OSError) as e:
+        pytest.skip(f"Could not reach HuggingFace Hub: {e}")
+    return AutoModel.from_config(config)
+
+
 @pytest.fixture
 def temp_dir():
     """Create a temporary directory for testing."""
@@ -42,10 +55,7 @@ class TestArchiverDispatch:
     @pytest.mark.skipif(not HAS_TRANSFORMERS, reason="transformers not installed")
     def test_hf_model_dispatches_to_hf_archiver(self, registry):
         """A PreTrainedModel should be handled by HuggingFaceModelArchiver."""
-        from transformers import AutoConfig, AutoModel
-
-        config = AutoConfig.from_pretrained("lyeonii/bert-tiny")
-        model = AutoModel.from_config(config)
+        model = _hf_bert_tiny()
 
         materializer = registry._find_materializer(model)
         assert "HuggingFaceModelArchiver" in materializer
@@ -89,10 +99,7 @@ class TestArchiverDispatch:
     @pytest.mark.skipif(not HAS_TRANSFORMERS or not HAS_TIMM, reason="transformers and timm required")
     def test_hf_model_not_dispatched_to_timm(self, registry):
         """PreTrainedModel (more specific) should NOT fall through to timm's nn.Module."""
-        from transformers import AutoConfig, AutoModel
-
-        config = AutoConfig.from_pretrained("lyeonii/bert-tiny")
-        model = AutoModel.from_config(config)
+        model = _hf_bert_tiny()
 
         materializer = registry._find_materializer(model)
         assert "HuggingFaceModelArchiver" in materializer
@@ -143,13 +150,10 @@ class TestArchiverRoundtrip:
     @pytest.mark.skipif(not HAS_TRANSFORMERS, reason="transformers not installed")
     def test_hf_model_roundtrip(self, temp_dir):
         """Test HuggingFace model save/load roundtrip."""
-        from transformers import AutoConfig, AutoModel
-
         from mindtrace.models.archivers.huggingface.hf_model_archiver import HuggingFaceModelArchiver
 
         archiver = HuggingFaceModelArchiver(uri=temp_dir)
-        config = AutoConfig.from_pretrained("lyeonii/bert-tiny")
-        model = AutoModel.from_config(config)
+        model = _hf_bert_tiny()
         model.eval()
 
         archiver.save(model)

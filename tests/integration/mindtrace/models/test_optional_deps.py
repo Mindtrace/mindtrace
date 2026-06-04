@@ -12,6 +12,7 @@ batch=4, 32x32) keep every test fast (<5s on CPU).
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
 import numpy as np
@@ -80,6 +81,23 @@ try:
     _HAS_PEFT = True
 except ImportError:
     _HAS_PEFT = False
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+@contextlib.contextmanager
+def skip_on_hub_error():
+    """Skip the enclosed test on Hub network errors (rate limits, connectivity)."""
+    from huggingface_hub.errors import HfHubHTTPError
+    from requests.exceptions import RequestException
+
+    try:
+        yield
+    except (HfHubHTTPError, RequestException, OSError) as e:
+        pytest.skip(f"Could not reach HuggingFace Hub: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +298,8 @@ class TestHuggingFaceDINOBackbone:
         """Build dino_v2_small (no pretrained), verify output is (B, D)."""
         from mindtrace.models.architectures.backbones.registry import build_backbone
 
-        info = build_backbone("dino_v2_small", pretrained=False)
+        with skip_on_hub_error():
+            info = build_backbone("dino_v2_small", pretrained=False)
         backbone = info.model
         backbone.eval()
 
@@ -292,7 +311,8 @@ class TestHuggingFaceDINOBackbone:
 
     def test_dino_v2_small_with_linear_head(self):
         """Build full model: dino_v2_small + linear head, verify logit shape."""
-        model = build_model("dino_v2_small", "linear", num_classes=NUM_CLASSES, pretrained=False)
+        with skip_on_hub_error():
+            model = build_model("dino_v2_small", "linear", num_classes=NUM_CLASSES, pretrained=False)
         model.eval()
 
         x = torch.randn(2, 3, 224, 224)
@@ -302,13 +322,14 @@ class TestHuggingFaceDINOBackbone:
 
     def test_dino_v2_small_with_mlp_head(self):
         """Build full model: dino_v2_small + MLP head, verify logit shape."""
-        model = build_model(
-            "dino_v2_small",
-            "mlp",
-            num_classes=NUM_CLASSES,
-            pretrained=False,
-            hidden_dim=64,
-        )
+        with skip_on_hub_error():
+            model = build_model(
+                "dino_v2_small",
+                "mlp",
+                num_classes=NUM_CLASSES,
+                pretrained=False,
+                hidden_dim=64,
+            )
         model.eval()
 
         x = torch.randn(2, 3, 224, 224)
@@ -531,13 +552,14 @@ class TestPeftLoRA:
 
         # LoRA requires pretrained=True to freeze base weights then add adapters
         lora_cfg = LoRAConfig(r=4, lora_alpha=4, target_modules="qv")
-        model = build_model(
-            "dino_v2_small_reg",
-            "linear",
-            num_classes=NUM_CLASSES,
-            pretrained=True,
-            lora_config=lora_cfg,
-        )
+        with skip_on_hub_error():
+            model = build_model(
+                "dino_v2_small_reg",
+                "linear",
+                num_classes=NUM_CLASSES,
+                pretrained=True,
+                lora_config=lora_cfg,
+            )
         backbone = model.backbone
 
         total = sum(p.numel() for p in backbone.parameters())
@@ -550,13 +572,14 @@ class TestPeftLoRA:
         """LoRA-adapted backbone produces the same output shape."""
         from mindtrace.models.architectures.backbones.dino_hf import LoRAConfig
 
-        model = build_model(
-            "dino_v2_small_reg",
-            "linear",
-            num_classes=NUM_CLASSES,
-            pretrained=False,
-            lora_config=LoRAConfig(r=4, target_modules="qv"),
-        )
+        with skip_on_hub_error():
+            model = build_model(
+                "dino_v2_small_reg",
+                "linear",
+                num_classes=NUM_CLASSES,
+                pretrained=False,
+                lora_config=LoRAConfig(r=4, target_modules="qv"),
+            )
         model.eval()
 
         x = torch.randn(2, 3, 224, 224)
@@ -568,13 +591,14 @@ class TestPeftLoRA:
         """Train LoRA-adapted model for 1 epoch, verify loss is finite."""
         from mindtrace.models.architectures.backbones.dino_hf import LoRAConfig
 
-        model = build_model(
-            "dino_v2_small_reg",
-            "linear",
-            num_classes=NUM_CLASSES,
-            pretrained=False,
-            lora_config=LoRAConfig(r=4, target_modules="qv"),
-        )
+        with skip_on_hub_error():
+            model = build_model(
+                "dino_v2_small_reg",
+                "linear",
+                num_classes=NUM_CLASSES,
+                pretrained=False,
+                lora_config=LoRAConfig(r=4, target_modules="qv"),
+            )
         optimizer = build_optimizer("adamw", model, lr=1e-3)
 
         x = torch.randn(8, 3, 224, 224)
