@@ -1,6 +1,5 @@
 import json
 import uuid
-from datetime import datetime
 from pathlib import Path
 from unittest.mock import ANY, MagicMock, Mock, patch
 from uuid import uuid4
@@ -11,6 +10,7 @@ from urllib3.exceptions import ConnectionError
 
 from mindtrace.cluster.core import types as cluster_types
 from mindtrace.cluster.core.cluster import ClusterManager, Node, Worker, update_database
+from mindtrace.core import utcnow
 from mindtrace.jobs import Job
 from mindtrace.jobs.types.job_specs import ExecutionStatus
 from mindtrace.registry.backends.registry_backend import RegistryBackend
@@ -1207,7 +1207,7 @@ def test_get_worker_status_success(cluster_manager):
         worker_url="http://worker:8080",
         status=cluster_types.WorkerStatusEnum.IDLE,
         job_id=None,
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
 
     cluster_manager.worker_status_database.find.return_value = [expected_worker_status]
@@ -1247,7 +1247,7 @@ def test_get_worker_status_by_url_success(cluster_manager):
         worker_url=worker_url,
         status=cluster_types.WorkerStatusEnum.RUNNING,
         job_id=None,
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
 
     cluster_manager.worker_status_database.find.return_value = [expected_worker_status]
@@ -1289,7 +1289,7 @@ def test_get_worker_status_with_different_statuses(cluster_manager):
         worker_url="http://worker:8080",
         status=cluster_types.WorkerStatusEnum.IDLE,
         job_id=None,
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
     cluster_manager.worker_status_database.find.return_value = [idle_worker]
 
@@ -1304,7 +1304,7 @@ def test_get_worker_status_with_different_statuses(cluster_manager):
         worker_url="http://worker:8080",
         status=cluster_types.WorkerStatusEnum.RUNNING,
         job_id=None,
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
     cluster_manager.worker_status_database.find.return_value = [running_worker]
 
@@ -1318,7 +1318,7 @@ def test_get_worker_status_with_different_statuses(cluster_manager):
         worker_url="http://worker:8080",
         status=cluster_types.WorkerStatusEnum.ERROR,
         job_id=None,
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
     cluster_manager.worker_status_database.find.return_value = [error_worker]
 
@@ -1336,7 +1336,7 @@ def test_get_worker_status_by_url_with_different_urls(cluster_manager):
         worker_url=http_url,
         status=cluster_types.WorkerStatusEnum.IDLE,
         job_id=None,
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
     cluster_manager.worker_status_database.find.return_value = [http_worker]
 
@@ -1352,7 +1352,7 @@ def test_get_worker_status_by_url_with_different_urls(cluster_manager):
         worker_url=https_url,
         status=cluster_types.WorkerStatusEnum.RUNNING,
         job_id=None,
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
     cluster_manager.worker_status_database.find.return_value = [https_worker]
 
@@ -1368,7 +1368,7 @@ def test_get_worker_status_by_url_with_different_urls(cluster_manager):
         worker_url=localhost_url,
         status=cluster_types.WorkerStatusEnum.SHUTDOWN,
         job_id=None,
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
     cluster_manager.worker_status_database.find.return_value = [localhost_worker]
 
@@ -1472,7 +1472,7 @@ def test_get_worker_status_multiple_results(cluster_manager):
         worker_url="http://worker1:8080",
         status=cluster_types.WorkerStatusEnum.IDLE,
         job_id=None,
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
     worker2 = cluster_types.WorkerStatus(
         worker_id=worker_id,
@@ -1480,7 +1480,7 @@ def test_get_worker_status_multiple_results(cluster_manager):
         worker_url="http://worker2:8080",
         status=cluster_types.WorkerStatusEnum.RUNNING,
         job_id=None,
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
 
     cluster_manager.worker_status_database.find.return_value = [worker1, worker2]
@@ -1503,7 +1503,7 @@ def test_get_worker_status_by_url_multiple_results(cluster_manager):
         worker_url=worker_url,
         status=cluster_types.WorkerStatusEnum.IDLE,
         job_id=None,
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
     worker2 = cluster_types.WorkerStatus(
         worker_id="worker-456",
@@ -1511,7 +1511,7 @@ def test_get_worker_status_by_url_multiple_results(cluster_manager):
         worker_url=worker_url,
         status=cluster_types.WorkerStatusEnum.RUNNING,
         job_id=None,
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
 
     cluster_manager.worker_status_database.find.return_value = [worker1, worker2]
@@ -1609,7 +1609,7 @@ def test_query_worker_status_success(cluster_manager):
         worker_url=worker_url,
         status=cluster_types.WorkerStatusEnum.IDLE,
         job_id=None,
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
     cluster_manager.worker_status_database.find.return_value = [existing_worker_status]
 
@@ -1676,7 +1676,7 @@ def test_query_worker_status_worker_down(cluster_manager):
         worker_url=worker_url,
         status=cluster_types.WorkerStatusEnum.IDLE,
         job_id=None,
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
     cluster_manager.worker_status_database.find.return_value = [existing_worker_status]
 
@@ -1719,7 +1719,7 @@ def test_query_worker_status_worker_connection_failure(cluster_manager):
         worker_url=worker_url,
         status=cluster_types.WorkerStatusEnum.IDLE,
         job_id=None,
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
     cluster_manager.worker_status_database.find.return_value = [existing_worker_status]
 
@@ -1759,7 +1759,7 @@ def test_query_worker_status_by_url_success(cluster_manager):
                 worker_url=worker_url,
                 status=cluster_types.WorkerStatusEnum.IDLE,
                 job_id=None,
-                last_heartbeat=datetime.now(),
+                last_heartbeat=utcnow(),
             )
             mock_query_status.return_value = expected_result
 
@@ -1806,7 +1806,7 @@ def test_url_to_id_success(cluster_manager):
         worker_url=worker_url,
         status=cluster_types.WorkerStatusEnum.IDLE,
         job_id=None,
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
     cluster_manager.worker_status_database.find.return_value = [existing_worker_status]
 
@@ -1848,7 +1848,7 @@ def test_url_to_id_multiple_entries(cluster_manager):
         worker_url=worker_url,
         status=cluster_types.WorkerStatusEnum.IDLE,
         job_id=None,
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
     existing_worker_status2 = cluster_types.WorkerStatus(
         worker_id=worker_id2,
@@ -1856,7 +1856,7 @@ def test_url_to_id_multiple_entries(cluster_manager):
         worker_url=worker_url,
         status=cluster_types.WorkerStatusEnum.IDLE,
         job_id=None,
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
     cluster_manager.worker_status_database.find.return_value = [existing_worker_status1, existing_worker_status2]
 
@@ -1938,7 +1938,7 @@ def test_query_worker_status_edge_cases(cluster_manager):
         worker_url=worker_url,
         status=cluster_types.WorkerStatusEnum.IDLE,
         job_id=None,
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
     cluster_manager.worker_status_database.find.return_value = [existing_worker_status]
 
@@ -1995,7 +1995,7 @@ def test_update_database_edge_cases():
         {"status": "completed"},
         {"output": {"result": "test"}},
         {"worker_id": "new-worker-id"},
-        {"status": "running", "job_id": "job-123", "last_heartbeat": datetime.now()},
+        {"status": "running", "job_id": "job-123", "last_heartbeat": utcnow()},
         {},  # Empty update dict
     ]
 
@@ -2043,7 +2043,7 @@ def test_query_worker_status_by_url_edge_cases(cluster_manager):
                         worker_url=worker_url,
                         status=cluster_types.WorkerStatusEnum.IDLE,
                         job_id=None,
-                        last_heartbeat=datetime.now(),
+                        last_heartbeat=utcnow(),
                     )
                     mock_query_status.return_value = expected_result
                 else:  # Empty URL
@@ -2511,7 +2511,7 @@ def test_worker_alert_completed_job_with_mismatched_worker_id(cluster_manager):
         worker_url="http://worker:8080",
         status=cluster_types.WorkerStatusEnum.RUNNING,
         job_id="job-123",
-        last_heartbeat=datetime.now(),
+        last_heartbeat=utcnow(),
     )
     cluster_manager.worker_status_database.find.return_value = [worker_status]
 

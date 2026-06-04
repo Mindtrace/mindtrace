@@ -10,12 +10,12 @@ import base64
 import io
 import os
 import time
-from datetime import datetime, timezone
 from typing import Optional, Tuple
 
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image as PILImage
 
+from mindtrace.core import utcnow
 from mindtrace.core.utils.conversions import ndarray_to_pil
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
 from mindtrace.hardware.core.exceptions import (
@@ -1092,7 +1092,7 @@ class CameraManagerService(Service):
                     result = CaptureResult(
                         success=True,
                         image_path=request.save_path,
-                        capture_time=datetime.now(timezone.utc),
+                        capture_time=utcnow(),
                         image_size=self._image_size_on_disk(request.save_path),
                         file_size_bytes=self._file_size_bytes(request.save_path),
                     )
@@ -1100,7 +1100,7 @@ class CameraManagerService(Service):
                     image_data, image_size, file_size_bytes = self._encode_inline_image(captured, request.output_format)
                     result = CaptureResult(
                         success=True,
-                        capture_time=datetime.now(timezone.utc),
+                        capture_time=utcnow(),
                         image_data=image_data,
                         image_size=image_size,
                         file_size_bytes=file_size_bytes,
@@ -1120,22 +1120,16 @@ class CameraManagerService(Service):
         except CameraTimeoutError as e:
             # Return timeout error as failed response with detailed message
             self.logger.error(f"Capture timeout: {e}")
-            result = CaptureResult(
-                success=False, image_path=None, capture_time=datetime.now(timezone.utc), error=str(e)
-            )
+            result = CaptureResult(success=False, image_path=None, capture_time=utcnow(), error=str(e))
             return CaptureResponse(success=False, message=str(e), data=result)
         except CameraNotFoundError as e:
             # Return not found error as failed response
             self.logger.warning(f"Camera not found: {e}")
-            result = CaptureResult(
-                success=False, image_path=None, capture_time=datetime.now(timezone.utc), error=str(e)
-            )
+            result = CaptureResult(success=False, image_path=None, capture_time=utcnow(), error=str(e))
             return CaptureResponse(success=False, message=str(e), data=result)
         except Exception as e:
             self.logger.error(f"Failed to capture image from '{request.camera}': {e}")
-            result = CaptureResult(
-                success=False, image_path=None, capture_time=datetime.now(timezone.utc), error=str(e)
-            )
+            result = CaptureResult(success=False, image_path=None, capture_time=utcnow(), error=str(e))
             return CaptureResponse(success=False, message=f"Capture failed: {str(e)}", data=result)
 
     async def capture_images_batch(self, request: CaptureBatchRequest) -> BatchCaptureResponse:
@@ -1160,7 +1154,7 @@ class CameraManagerService(Service):
                         capture_results[camera] = CaptureResult(
                             success=True,
                             image_path=image,
-                            capture_time=datetime.now(timezone.utc),
+                            capture_time=utcnow(),
                             image_size=self._image_size_on_disk(image),
                             file_size_bytes=self._file_size_bytes(image),
                         )
@@ -1171,14 +1165,14 @@ class CameraManagerService(Service):
                         )
                         capture_results[camera] = CaptureResult(
                             success=True,
-                            capture_time=datetime.now(timezone.utc),
+                            capture_time=utcnow(),
                             image_data=image_data,
                             image_size=image_size,
                             file_size_bytes=file_size_bytes,
                         )
                     successful_count += 1
                 else:
-                    capture_results[camera] = CaptureResult(success=False, capture_time=datetime.now(timezone.utc))
+                    capture_results[camera] = CaptureResult(success=False, capture_time=utcnow())
 
             return BatchCaptureResponse(
                 success=successful_count > 0,
@@ -1226,7 +1220,7 @@ class CameraManagerService(Service):
                 images=images,
                 image_paths=hdr_result.get("image_paths"),
                 exposure_levels=hdr_result.get("exposure_levels", []),
-                capture_time=datetime.now(timezone.utc),
+                capture_time=utcnow(),
                 successful_captures=hdr_result.get("successful_captures", 0),
             )
 
@@ -1241,7 +1235,7 @@ class CameraManagerService(Service):
                 images=None,
                 image_paths=None,
                 exposure_levels=[],
-                capture_time=datetime.now(timezone.utc),
+                capture_time=utcnow(),
                 successful_captures=0,
             )
             return HDRCaptureResponse(success=False, message=str(e), data=result)
@@ -1253,7 +1247,7 @@ class CameraManagerService(Service):
                 images=None,
                 image_paths=None,
                 exposure_levels=[],
-                capture_time=datetime.now(timezone.utc),
+                capture_time=utcnow(),
                 successful_captures=0,
             )
             return HDRCaptureResponse(success=False, message=f"HDR capture failed: {str(e)}", data=result)
@@ -1294,7 +1288,7 @@ class CameraManagerService(Service):
                         images=images,
                         image_paths=hdr_data.get("image_paths"),
                         exposure_levels=hdr_data.get("exposure_levels", []),
-                        capture_time=datetime.now(timezone.utc),
+                        capture_time=utcnow(),
                         successful_captures=hdr_data.get("successful_captures", 0),
                     )
                     successful_count += 1
@@ -1304,7 +1298,7 @@ class CameraManagerService(Service):
                         images=None,
                         image_paths=None,
                         exposure_levels=[],
-                        capture_time=datetime.now(timezone.utc),
+                        capture_time=utcnow(),
                         successful_captures=0,
                     )
 
@@ -1552,15 +1546,13 @@ class CameraManagerService(Service):
             # Track this stream as active (always update, even if already exists)
             self._active_streams[request.camera] = {
                 "stream_url": stream_url,
-                "start_time": datetime.now(timezone.utc),
+                "start_time": utcnow(),
                 "camera_proxy": camera_proxy,
                 "quality": request.quality,
                 "fps": request.fps,
             }
 
-            stream_info = StreamInfo(
-                camera=request.camera, streaming=True, stream_url=stream_url, start_time=datetime.now(timezone.utc)
-            )
+            stream_info = StreamInfo(camera=request.camera, streaming=True, stream_url=stream_url, start_time=utcnow())
 
             return StreamInfoResponse(
                 success=True, message=f"Stream started for camera '{request.camera}'", data=stream_info
@@ -1624,7 +1616,7 @@ class CameraManagerService(Service):
             if is_streaming:
                 stream_info = self._active_streams[request.camera]
                 stream_url = stream_info["stream_url"]
-                uptime_seconds = (datetime.now(timezone.utc) - stream_info["start_time"]).total_seconds()
+                uptime_seconds = (utcnow() - stream_info["start_time"]).total_seconds()
 
             stream_status = StreamStatus(
                 camera=request.camera,

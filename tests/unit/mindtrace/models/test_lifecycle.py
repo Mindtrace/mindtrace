@@ -11,12 +11,12 @@ Tests cover:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
+from mindtrace.core import utcnow
 from mindtrace.models.lifecycle import (
     EvalResult,
     ModelCard,
@@ -88,9 +88,9 @@ class TestEvalResult:
         assert result.split == "val"
 
     def test_timestamp_set_on_creation(self):
-        before = datetime.now(timezone.utc)
+        before = utcnow()
         result = EvalResult(metric="acc", value=0.9)
-        after = datetime.now(timezone.utc)
+        after = utcnow()
         assert before <= result.timestamp <= after
 
     def test_to_dict_roundtrip(self):
