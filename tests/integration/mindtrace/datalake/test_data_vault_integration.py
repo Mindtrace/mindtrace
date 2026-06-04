@@ -16,8 +16,8 @@ from PIL import Image
 from mindtrace.datalake import AsyncDataVault, Datalake, DataVault
 from mindtrace.datalake.data_vault import _pil_image_to_png_bytes
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
-from mindtrace.hardware.cameras.core.capture_metadata import SavedCaptureInfo
 from mindtrace.hardware.services.cameras.models.requests import CaptureImageRequest
+from mindtrace.hardware.services.cameras.models.responses import CaptureResult
 from mindtrace.hardware.services.cameras.service import CameraManagerService
 
 _HOPPER = Path(__file__).resolve().parents[3] / "resources" / "hopper.png"
@@ -50,29 +50,29 @@ def _first_mock_basler_camera() -> str:
     return cameras[0]
 
 
-async def _capture_saved_file_with_mock_camera(tmp_path: Path, *, suffix: str) -> SavedCaptureInfo:
-    """Capture through the hardware manager's save-path route and return disk metadata.
+async def _capture_saved_file_with_mock_camera(tmp_path: Path, *, suffix: str) -> CaptureResult:
+    """Capture through the camera service save-path route and return disk metadata.
 
-    This is the same hardware boundary Chiron uses when it asks Mindtrace to
-    write a capture to disk.  The manager returns :class:`SavedCaptureInfo`,
-    whose ``file_size_bytes`` is computed from the encoded file on disk after
-    the mock camera/backend has written it.
+    Production callers use ``CameraManagerService.capture_image`` with
+    ``save_path``; the service reads ``image_size`` and ``file_size_bytes`` from
+    the encoded file on disk after the backend writes it.
     """
     camera = _first_mock_basler_camera()
+    save_path = str(tmp_path / f"capture.{suffix}")
     async with AsyncCameraManager(include_mocks=True) as manager:
         await manager.open([camera])
-        results = await manager.batch_capture(
-            [camera],
-            save_path_pattern=str(tmp_path / f"{{camera}}.{suffix}"),
-            output_format="numpy",
+        service = CameraManagerService(include_mocks=True)
+        service._camera_manager = manager
+        response = await service.capture_image(
+            CaptureImageRequest(camera=camera, save_path=save_path, output_format="numpy")
         )
 
-    saved = results[camera]
-    assert isinstance(saved, SavedCaptureInfo)
-    assert saved.path.endswith(f".{suffix}")
-    assert saved.file_size_bytes > 0
-    assert Path(saved.path).stat().st_size == saved.file_size_bytes
-    return saved
+    assert response.success is True
+    capture = response.data
+    assert capture.image_path == save_path
+    assert capture.file_size_bytes is not None and capture.file_size_bytes > 0
+    assert Path(save_path).stat().st_size == capture.file_size_bytes
+    return capture
 
 
 async def _capture_inline_with_mock_camera(*, output_format: str | None = None):
@@ -251,9 +251,9 @@ def test_sync_data_vault_save_path_records_payload_size(sync_datalake: Datalake)
 async def test_hardware_save_path_jpeg_file_size_matches_datalake_payload_size(async_datalake, tmp_path):
     """Hardware JPEG disk captures and DataVault path saves agree on encoded bytes.
 
-    This covers the production-style save-path route: the hardware manager asks
-    the camera backend to write a ``.jpg`` file, reports ``SavedCaptureInfo``
-    from that encoded file, and a caller then hands the same path to DataVault.
+    This covers the production-style save-path route: the camera service writes
+    a ``.jpg`` file, reports ``file_size_bytes`` from that encoded file, and a
+    caller then hands the same path to DataVault.
     The assertion is deliberately about the JPEG file bytes on disk, not the
     in-memory image dimensions or uncompressed pixels.
     """
@@ -261,7 +261,7 @@ async def test_hardware_save_path_jpeg_file_size_matches_datalake_payload_size(a
 
     asset = await _assert_datalake_asset_size_matches_hardware_bytes(
         async_datalake,
-        payload=Path(saved.path),
+        payload=Path(saved.image_path),
         hardware_file_size_bytes=saved.file_size_bytes,
         alias_prefix="hardware-save-path-jpeg",
     )
@@ -281,7 +281,7 @@ async def test_hardware_save_path_png_file_size_matches_datalake_payload_size(as
 
     asset = await _assert_datalake_asset_size_matches_hardware_bytes(
         async_datalake,
-        payload=Path(saved.path),
+        payload=Path(saved.image_path),
         hardware_file_size_bytes=saved.file_size_bytes,
         alias_prefix="hardware-save-path-png",
     )
