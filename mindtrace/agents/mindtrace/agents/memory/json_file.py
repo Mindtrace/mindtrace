@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
+
+from mindtrace.core import utcnow
 
 from ._store import AbstractMemoryStore, MemoryEntry
 
@@ -46,7 +48,7 @@ class JsonFileStore(AbstractMemoryStore):
         self._path.write_text(json.dumps({k: _entry_to_dict(v) for k, v in self._data.items()}, indent=2))
 
     async def save(self, key: str, value: str, metadata: dict | None = None) -> None:
-        now = datetime.now(timezone.utc)
+        now = utcnow()
         existing = self._data.get(key)
         self._data[key] = MemoryEntry(
             key=key,

@@ -5,11 +5,12 @@ Contains all Pydantic models for API responses, ensuring consistent
 response formatting across all camera management endpoints.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
+from mindtrace.core import utcnow
 from mindtrace.hardware.core.types import ServiceStatus
 
 
@@ -18,7 +19,7 @@ class BaseResponse(BaseModel):
 
     success: bool
     message: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=utcnow)
 
 
 class BoolResponse(BaseResponse):
@@ -195,7 +196,7 @@ class CaptureResult(BaseModel):
     error: Optional[str] = None
     image_data: Optional[str] = None  # Base64 encoded image
     image_path: Optional[str] = None
-    capture_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    capture_time: datetime = Field(default_factory=utcnow)
     image_size: Optional[Tuple[int, int]] = None
     file_size_bytes: Optional[int] = None
 
@@ -221,7 +222,7 @@ class HDRCaptureResult(BaseModel):
     images: Optional[List[str]] = None  # Base64 encoded images
     image_paths: Optional[List[str]] = None
     exposure_levels: List[float]
-    capture_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    capture_time: datetime = Field(default_factory=utcnow)
     successful_captures: int
 
 

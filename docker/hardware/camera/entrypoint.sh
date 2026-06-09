@@ -21,6 +21,7 @@ echo "==> Camera Backends:"
 echo "    - OpenCV: ${MINDTRACE_HW_CAMERA_OPENCV_ENABLED:-true}"
 echo "    - Basler: ${MINDTRACE_HW_CAMERA_BASLER_ENABLED:-false}"
 echo "    - GenICam: ${MINDTRACE_HW_CAMERA_GENICAM_ENABLED:-false}"
+echo "    - Daheng: ${MINDTRACE_HW_CAMERA_DAHENG_ENABLED:-false}"
 
 # Check for Basler SDK if enabled
 if [ "${MINDTRACE_HW_CAMERA_BASLER_ENABLED:-false}" = "true" ]; then

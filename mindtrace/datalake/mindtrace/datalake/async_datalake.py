@@ -1,18 +1,22 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
+import os
 import warnings
 from collections.abc import AsyncIterator, Iterable
-from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 from enum import StrEnum
+from functools import partial
 from pathlib import Path
 from typing import Any, TypeVar
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from mindtrace.core import Mindtrace
+from mindtrace.core import Mindtrace, as_utc, utcnow
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake.pagination_types import (
@@ -89,6 +93,12 @@ def _default_datalake_store_path(mongo_db_uri: str, mongo_db_name: str) -> Path:
     return Path("~/.cache/mindtrace/temp").expanduser() / f"datalake-{digest}"
 
 
+def _default_store_save_workers() -> int:
+    """Return a conservative bounded worker count for blocking store writes."""
+
+    return min(32, max(4, (os.cpu_count() or 1) * 2))
+
+
 class AsyncDatalake(Mindtrace):
     """Async canonical data facade for payload storage, metadata, and dataset composition.
 
@@ -110,14 +120,21 @@ class AsyncDatalake(Mindtrace):
         mounts: list[Mount] | None = None,
         default_mount: str | None = None,
         slow_ops_policy: SlowOpsPolicy = SlowOpsPolicy.WARN,
+        store_save_max_workers: int | None = None,
     ) -> None:
+        if store is not None and mounts is not None:
+            raise ValueError("Provide either store or mounts, not both")
+        if store_save_max_workers is not None and store_save_max_workers < 1:
+            raise ValueError("store_save_max_workers must be at least 1")
+
         super().__init__()
         self.mongo_db_uri = mongo_db_uri
         self.mongo_db_name = mongo_db_name
         self.slow_ops_policy = SlowOpsPolicy(slow_ops_policy)
-
-        if store is not None and mounts is not None:
-            raise ValueError("Provide either store or mounts, not both")
+        self._store_save_executor = ThreadPoolExecutor(
+            max_workers=store_save_max_workers or _default_store_save_workers(),
+            thread_name_prefix="DatalakeStoreSave",
+        )
 
         if store is not None:
             self.store = store
@@ -199,6 +216,10 @@ class AsyncDatalake(Mindtrace):
                 pass
         try:
             self._mongo_client.close()
+        except Exception:
+            pass
+        try:
+            self._store_save_executor.shutdown(wait=True, cancel_futures=True)
         except Exception:
             pass
         self._closed = True
@@ -284,16 +305,6 @@ class AsyncDatalake(Mindtrace):
         )
         await datalake.initialize()
         return datalake
-
-    @staticmethod
-    def _utc_now() -> datetime:
-        return datetime.now(timezone.utc)
-
-    @staticmethod
-    def _coerce_utc(dt: datetime) -> datetime:
-        if dt.tzinfo is None:
-            return dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc)
 
     @staticmethod
     def _normalize_storage_ref(storage_ref: StorageRef) -> StorageRef:
@@ -564,7 +575,7 @@ class AsyncDatalake(Mindtrace):
         sort_spec, cursor_fields = self._resolve_sort_spec(resource, sort)
         snapshot_field = self._snapshot_field_for(resource)
         snapshot_token = (
-            self._encode_snapshot_token(resource=resource, field=snapshot_field, cutoff=self._utc_now())
+            self._encode_snapshot_token(resource=resource, field=snapshot_field, cutoff=utcnow())
             if snapshot_field is not None
             else None
         )
@@ -847,8 +858,17 @@ class AsyncDatalake(Mindtrace):
         on_conflict: str | None = None,
     ) -> StorageRef:
         target_mount = mount or self.store.default_mount
+        if not self.store.has_mount(target_mount):
+            configured = sorted(self.store.list_mounts())
+            raise StoreLocationNotFound(
+                f"Unknown store mount {target_mount!r} on datalake {self.mongo_db_name!r}; configured mounts: {configured}"
+            )
         key = self.store.build_key(target_mount, name, version)
-        saved_version = self.store.save(key, obj, version=version, metadata=metadata, on_conflict=on_conflict)
+        loop = asyncio.get_running_loop()
+        saved_version = await loop.run_in_executor(
+            self._store_save_executor,
+            partial(self.store.save, key, obj, version=version, metadata=metadata, on_conflict=on_conflict),
+        )
         resolved_version = saved_version if isinstance(saved_version, str) else version or "latest"
         return StorageRef(mount=target_mount, name=name, version=resolved_version)
 
@@ -874,7 +894,7 @@ class AsyncDatalake(Mindtrace):
         except Exception as exc:
             asset.payload_status = "corrupt"
             asset.payload_status_reason = f"payload read failed: {exc}"
-            asset.payload_status_updated_at = self._utc_now()
+            asset.payload_status_updated_at = utcnow()
             await self.asset_database.update(asset)
             raise
 
@@ -966,7 +986,7 @@ class AsyncDatalake(Mindtrace):
             on_conflict=on_conflict,
             upload_method="local_path",
             content_type=content_type,
-            expires_at=self._utc_now() + timedelta(minutes=expires_in_minutes),
+            expires_at=utcnow() + timedelta(minutes=expires_in_minutes),
             created_by=created_by,
         )
         key = self.store.build_key(target_mount, name, version)
@@ -1003,10 +1023,10 @@ class AsyncDatalake(Mindtrace):
 
     async def reconcile_upload_sessions(self, limit: int = 100) -> list[DirectUploadSession]:
         pending = await self.direct_upload_session_database.find({"status": "pending"})
-        now = self._utc_now()
+        now = utcnow()
         reconciled: list[DirectUploadSession] = []
         for session in pending[:limit]:
-            session.expires_at = self._coerce_utc(session.expires_at)
+            session.expires_at = as_utc(session.expires_at)
             if session.expires_at <= now:
                 reconciled.append(
                     await self._verify_and_finalize_upload_session(
@@ -1029,15 +1049,15 @@ class AsyncDatalake(Mindtrace):
 
         key = self.store.build_key(session.mount, session.name, session.requested_version)
         session.verification_attempts += 1
-        session.last_verified_at = self._utc_now()
-        session.expires_at = self._coerce_utc(session.expires_at)
+        session.last_verified_at = utcnow()
+        session.expires_at = as_utc(session.expires_at)
 
         inspection = self.store.inspect_direct_upload_target(key, staged_target=session.staged_reference)
         if not inspection.get("exists"):
-            if allow_pending_missing and session.expires_at <= self._utc_now():
+            if allow_pending_missing and session.expires_at <= utcnow():
                 session.status = "expired"
                 session.failure_reason = "Upload did not complete before expiry."
-                session.cleanup_completed_at = self._utc_now()
+                session.cleanup_completed_at = utcnow()
             await self.direct_upload_session_database.update(session)
             if allow_pending_missing:
                 return session
@@ -1056,7 +1076,7 @@ class AsyncDatalake(Mindtrace):
             session.status = "failed"
             session.failure_reason = str(e)
             if cleanup_ok:
-                session.cleanup_completed_at = self._utc_now()
+                session.cleanup_completed_at = utcnow()
             await self.direct_upload_session_database.update(session)
             raise
 
@@ -1069,7 +1089,7 @@ class AsyncDatalake(Mindtrace):
         )
         session.status = "completed"
         session.failure_reason = None
-        session.completed_at = self._utc_now()
+        session.completed_at = utcnow()
         session.cleanup_completed_at = session.completed_at
         return await self.direct_upload_session_database.update(session)
 
@@ -1089,7 +1109,7 @@ class AsyncDatalake(Mindtrace):
         payload_verified_at: datetime | None = None,
     ) -> Asset:
         normalized_storage_ref = self._normalize_storage_ref(storage_ref)
-        now = self._utc_now()
+        now = utcnow()
         asset = self._build_document(
             Asset,
             kind=kind,
@@ -1128,7 +1148,7 @@ class AsyncDatalake(Mindtrace):
             alias=asset.asset_id,
             asset_id=asset.asset_id,
             is_primary=True,
-            created_at=self._utc_now(),
+            created_at=utcnow(),
         )
         return await self.asset_alias_database.insert(doc)
 
@@ -1161,7 +1181,7 @@ class AsyncDatalake(Mindtrace):
                     alias=asset_id,
                     asset_id=asset_id,
                     is_primary=True,
-                    created_at=self._utc_now(),
+                    created_at=utcnow(),
                 )
             )
         if missing_docs:
@@ -1190,7 +1210,7 @@ class AsyncDatalake(Mindtrace):
             alias=alias,
             asset_id=asset_id,
             is_primary=False,
-            created_at=self._utc_now(),
+            created_at=utcnow(),
         )
         try:
             return await self.asset_alias_database.insert(doc)
@@ -1264,7 +1284,7 @@ class AsyncDatalake(Mindtrace):
     async def update_asset_metadata(self, asset_id: str, metadata: dict[str, Any]) -> Asset:
         asset = await self.get_asset(asset_id)
         asset.metadata = metadata
-        asset.updated_at = self._utc_now()
+        asset.updated_at = utcnow()
         return await self.asset_database.update(asset)
 
     async def delete_asset(self, asset_id: str) -> None:
@@ -1296,7 +1316,7 @@ class AsyncDatalake(Mindtrace):
             status=status,
             metadata=metadata or {},
             created_by=created_by,
-            updated_at=self._utc_now(),
+            updated_at=utcnow(),
         )
         return await self.collection_database.insert(collection)
 
@@ -1333,7 +1353,7 @@ class AsyncDatalake(Mindtrace):
         collection = await self.get_collection(collection_id)
         for key, value in changes.items():
             setattr(collection, key, value)
-        collection.updated_at = self._utc_now()
+        collection.updated_at = utcnow()
         return await self.collection_database.update(collection)
 
     async def delete_collection(self, collection_id: str) -> None:
@@ -1363,7 +1383,7 @@ class AsyncDatalake(Mindtrace):
             status=status,
             metadata=metadata or {},
             added_by=added_by,
-            updated_at=self._utc_now(),
+            updated_at=utcnow(),
         )
         return await self.collection_item_database.insert(collection_item)
 
@@ -1414,7 +1434,7 @@ class AsyncDatalake(Mindtrace):
             await self.get_asset(changes["asset_id"])
         for key, value in changes.items():
             setattr(collection_item, key, value)
-        collection_item.updated_at = self._utc_now()
+        collection_item.updated_at = utcnow()
         return await self.collection_item_database.update(collection_item)
 
     async def delete_collection_item(self, collection_item_id: str) -> None:
@@ -1440,7 +1460,7 @@ class AsyncDatalake(Mindtrace):
             retention_policy=retention_policy,
             metadata=metadata or {},
             created_by=created_by,
-            updated_at=self._utc_now(),
+            updated_at=utcnow(),
         )
         return await self.asset_retention_database.insert(asset_retention)
 
@@ -1479,7 +1499,7 @@ class AsyncDatalake(Mindtrace):
             await self.get_asset(changes["asset_id"])
         for key, value in changes.items():
             setattr(asset_retention, key, value)
-        asset_retention.updated_at = self._utc_now()
+        asset_retention.updated_at = utcnow()
         return await self.asset_retention_database.update(asset_retention)
 
     async def delete_asset_retention(self, asset_retention_id: str) -> None:
@@ -1521,7 +1541,7 @@ class AsyncDatalake(Mindtrace):
             allow_additional_attributes=allow_additional_attributes,
             metadata=metadata or {},
             created_by=created_by,
-            updated_at=self._utc_now(),
+            updated_at=utcnow(),
         )
         try:
             return await self.annotation_schema_database.insert(schema)
@@ -1572,7 +1592,7 @@ class AsyncDatalake(Mindtrace):
             ]
         for key, value in changes.items():
             setattr(schema, key, value)
-        schema.updated_at = self._utc_now()
+        schema.updated_at = utcnow()
         return await self.annotation_schema_database.update(schema)
 
     async def delete_annotation_schema(self, annotation_schema_id: str) -> None:
@@ -1650,7 +1670,7 @@ class AsyncDatalake(Mindtrace):
 
     def _coerce_annotation_record(self, annotation: AnnotationRecord | dict[str, Any]) -> AnnotationRecord:
         if isinstance(annotation, AnnotationRecord):
-            annotation.updated_at = self._utc_now()
+            annotation.updated_at = utcnow()
             return annotation
 
         source = annotation.get("source")
@@ -1670,7 +1690,7 @@ class AsyncDatalake(Mindtrace):
             geometry=annotation.get("geometry", {}),
             attributes=annotation.get("attributes", {}),
             metadata=annotation.get("metadata", {}),
-            updated_at=self._utc_now(),
+            updated_at=utcnow(),
         )
 
     async def _rollback_inserted_annotation_records(self, inserted_records: list[AnnotationRecord]) -> None:
@@ -1708,13 +1728,13 @@ class AsyncDatalake(Mindtrace):
             annotation_schema_id=annotation_schema_id,
             metadata=metadata or {},
             created_by=created_by,
-            updated_at=self._utc_now(),
+            updated_at=utcnow(),
         )
         inserted = await self.annotation_set_database.insert(annotation_set)
         if datum is not None:
             if inserted.annotation_set_id not in datum.annotation_set_ids:
                 datum.annotation_set_ids.append(inserted.annotation_set_id)
-                datum.updated_at = self._utc_now()
+                datum.updated_at = utcnow()
                 try:
                     await self.datum_database.update(datum)
                 except Exception:
@@ -1760,7 +1780,7 @@ class AsyncDatalake(Mindtrace):
             await self.get_annotation_schema(changes["annotation_schema_id"])
         for key, value in changes.items():
             setattr(annotation_set, key, value)
-        annotation_set.updated_at = self._utc_now()
+        annotation_set.updated_at = utcnow()
         return await self.annotation_set_database.update(annotation_set)
 
     def _assert_asset_subject_for_set_less_records(self, records: list[AnnotationRecord]) -> None:
@@ -1922,7 +1942,7 @@ class AsyncDatalake(Mindtrace):
                 next_record_ids.append(inserted.annotation_id)
 
         annotation_set.annotation_record_ids = next_record_ids
-        annotation_set.updated_at = self._utc_now()
+        annotation_set.updated_at = utcnow()
         try:
             await self.annotation_set_database.update(annotation_set)
         except Exception:
@@ -2014,7 +2034,7 @@ class AsyncDatalake(Mindtrace):
             if key == "source" and isinstance(value, dict):
                 value = AnnotationSource(**value)
             setattr(record, key, value)
-        record.updated_at = self._utc_now()
+        record.updated_at = utcnow()
         return await self.annotation_record_database.update(record)
 
     async def delete_annotation_record(self, annotation_id: str) -> None:
@@ -2025,7 +2045,7 @@ class AsyncDatalake(Mindtrace):
                 annotation_set.annotation_record_ids = [
                     existing_id for existing_id in annotation_set.annotation_record_ids if existing_id != annotation_id
                 ]
-                annotation_set.updated_at = self._utc_now()
+                annotation_set.updated_at = utcnow()
                 await self.annotation_set_database.update(annotation_set)
         await self.annotation_record_database.delete(record.id)
 
@@ -2045,7 +2065,7 @@ class AsyncDatalake(Mindtrace):
             asset_refs=asset_refs,
             metadata=metadata or {},
             annotation_set_ids=annotation_set_ids or [],
-            updated_at=self._utc_now(),
+            updated_at=utcnow(),
         )
         return await self.datum_database.insert(datum)
 
@@ -2112,7 +2132,7 @@ class AsyncDatalake(Mindtrace):
             await self._validate_annotation_set_ids_exist(changes["annotation_set_ids"])
         for key, value in changes.items():
             setattr(datum, key, value)
-        datum.updated_at = self._utc_now()
+        datum.updated_at = utcnow()
         return await self.datum_database.update(datum)
 
     async def create_dataset_version(

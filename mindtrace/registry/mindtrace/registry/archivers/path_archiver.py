@@ -5,23 +5,14 @@ import shutil
 import tarfile
 import tempfile
 from pathlib import Path, PosixPath, PurePath, WindowsPath
-from typing import Any, ClassVar, Tuple, Type
-
-from zenml.enums import ArtifactType
+from typing import Any, ClassVar, Type
 
 from mindtrace.registry.core.archiver import Archiver
 
 
 class PathArchiver(Archiver):
-    """Archiver for Path objects that preserves original filenames.
+    """Archiver for Path objects that preserves original filenames."""
 
-    Unlike ZenML's PathMaterializer which saves files with a generic name,
-    this archiver preserves the original filename (including extension)
-    when saving and loading Path objects.
-    """
-
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (Path, PosixPath, WindowsPath, PurePath)
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
     METADATA_FILE: ClassVar[str] = "metadata.json"
     ARCHIVE_NAME: ClassVar[str] = "data.tar.gz"
 

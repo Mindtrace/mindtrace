@@ -10,12 +10,13 @@ import traceback
 from collections.abc import Awaitable
 from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException
 
+from mindtrace.core import as_utc
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DocumentTooLargeError
 from mindtrace.datalake.async_datalake import AsyncDatalake, SlowOperationDisabledError, SlowOpsPolicy
 from mindtrace.datalake.replication import ReplicationManager
@@ -267,7 +268,7 @@ from mindtrace.datalake.sync_types import (
     DatasetSyncProgress,
     ObjectPayloadDescriptor,
 )
-from mindtrace.datalake.types import Asset, DatasetImportSession, StorageRef, utc_now
+from mindtrace.datalake.types import Asset, DatasetImportSession, StorageRef, utcnow
 from mindtrace.registry import Mount
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.services import Service
@@ -277,9 +278,8 @@ _LOGGER = logging.getLogger(__name__)
 
 def _import_session_expired(expires_at: datetime, *, now: datetime | None = None) -> bool:
     """Compare session expiry to current UTC time, treating naive datetimes as UTC (Mongo round-trip)."""
-    current = now if now is not None else datetime.now(timezone.utc)
-    deadline = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=timezone.utc)
-    return current > deadline
+    current = now if now is not None else utcnow()
+    return current > as_utc(expires_at)
 
 
 class _ImportSessionProgressWriter:
@@ -315,7 +315,7 @@ class _ImportSessionProgressWriter:
         sess.import_progress_bytes_total = progress.bytes_total
         sess.import_progress_skipped_items = progress.skipped_items
         sess.import_progress_failed_items = progress.failed_items
-        sess.import_progress_updated_at = utc_now()
+        sess.import_progress_updated_at = utcnow()
         sess.metadata_commit_cursor_entity_kind = progress.entity_kind
         sess.metadata_commit_cursor_completed_items = progress.entity_completed_items
         sess.metadata_commit_cursor_total_items = progress.entity_total_items
@@ -1679,7 +1679,7 @@ class DatalakeService(Service):
                 continue
             setattr(existing, key, value)
         if hasattr(existing, "updated_at"):
-            existing.updated_at = utc_now()
+            existing.updated_at = utcnow()
         updated = await database.update(existing)
         return updated, False
 
@@ -1694,7 +1694,7 @@ class DatalakeService(Service):
             if key in {"id", "_id"}:
                 continue
             setattr(existing, key, value)
-        existing.updated_at = utc_now()
+        existing.updated_at = utcnow()
         updated = await datalake.asset_database.update(existing)
         return updated, False
 
@@ -1702,7 +1702,7 @@ class DatalakeService(Service):
         self, payload: DatasetStreamingImportStartInput
     ) -> DatasetStreamingImportStartOutput:
         datalake = await self._ensure_datalake()
-        now = utc_now()
+        now = utcnow()
         session = DatasetImportSession(
             bundle_data={},
             transfer_policy=payload.transfer_policy,
@@ -1825,7 +1825,7 @@ class DatalakeService(Service):
                         "storage_ref": mapped_storage_ref.model_dump(),
                         "payload_storage_ref": mapped_payload_ref.model_dump(),
                         **resolved_payload_updates,
-                        "updated_at": utc_now(),
+                        "updated_at": utcnow(),
                     }
                 )
                 row, _ = await self._streaming_upsert_asset(datalake, mapped_asset)
@@ -1978,7 +1978,7 @@ class DatalakeService(Service):
         session.import_progress_completed_items = processed_total
         session.import_progress_total_items = session.expected_manifest_total
         session.import_progress_bytes_completed = bytes_completed
-        session.import_progress_updated_at = utc_now()
+        session.import_progress_updated_at = utcnow()
         await datalake.dataset_import_session_database.update(session)
         return DatasetStreamingImportPushBatchOutput(
             session_id=session.import_session_id,
@@ -2045,7 +2045,7 @@ class DatalakeService(Service):
         if rows:
             dataset_version = rows[0]
             dataset_version.manifest = list(session.ordered_manifest_ids)
-            dataset_version.updated_at = utc_now()
+            dataset_version.updated_at = utcnow()
             dataset_version = await datalake.dataset_version_database.update(dataset_version)
         else:
             dataset_version = await datalake.create_dataset_version(
@@ -2161,7 +2161,7 @@ class DatalakeService(Service):
             )
 
         required = [row.asset_id for row in plan.payloads if row.transfer_required]
-        now = utc_now()
+        now = utcnow()
         session = DatasetImportSession(
             bundle_data={},
             transfer_policy=payload.transfer_policy,

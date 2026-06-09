@@ -742,3 +742,28 @@ def test_discover_mixed_backends_filters(monkeypatch):
     assert isinstance(lst, list)
     for n in lst:
         assert n.startswith("MockBasler:")
+
+
+@pytest.mark.asyncio
+async def test_batch_capture_save_path_pattern_returns_paths(tmp_path):
+    """Batch save-path captures return per-camera file paths to written files."""
+    manager = AsyncCameraManager(include_mocks=True, max_concurrent_captures=2)
+    mock_cameras = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][:2]
+    if len(mock_cameras) < 2:
+        pytest.skip("Need at least two mock Basler cameras")
+
+    try:
+        await manager.open(mock_cameras)
+        pattern = str(tmp_path / "{camera}.jpg")
+        results = await manager.batch_capture(
+            mock_cameras,
+            save_path_pattern=pattern,
+            output_format="numpy",
+        )
+        assert set(results.keys()) == set(mock_cameras)
+        for camera_name, path in results.items():
+            safe_name = camera_name.replace(":", "_").replace("/", "_")
+            assert path == str(tmp_path / f"{safe_name}.jpg")
+            assert (tmp_path / f"{safe_name}.jpg").exists()
+    finally:
+        await manager.close(None)
