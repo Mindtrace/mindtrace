@@ -32,7 +32,7 @@ class TestHttpHelpers:
         client, context_manager = _make_async_client(response)
 
         with patch(
-            "mindtrace.hardware.services.cameras.connection_manager.httpx.AsyncClient",
+            "mindtrace.hardware.services.cameras.connection_manager.httpx2.AsyncClient",
             return_value=context_manager,
         ) as async_client:
             result = await cm.get("/system/diagnostics", http_timeout=12.5)
@@ -49,7 +49,7 @@ class TestHttpHelpers:
         client, context_manager = _make_async_client(response)
 
         with patch(
-            "mindtrace.hardware.services.cameras.connection_manager.httpx.AsyncClient",
+            "mindtrace.hardware.services.cameras.connection_manager.httpx2.AsyncClient",
             return_value=context_manager,
         ) as async_client:
             result = await cm.post("/cameras/open", {"camera": "Basler:1"}, http_timeout=20.0)

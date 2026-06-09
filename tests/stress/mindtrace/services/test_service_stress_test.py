@@ -22,7 +22,7 @@ from mindtrace.core import utcnow, utcnow_iso
 from mindtrace.services.samples.echo_service import EchoService
 
 # Suppress verbose HTTP logging during stress tests
-logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpx2").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("asyncio").setLevel(logging.WARNING)
