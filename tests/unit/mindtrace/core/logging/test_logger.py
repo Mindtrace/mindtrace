@@ -3,6 +3,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from mindtrace.core.logging.logger import get_logger, setup_logger
 
 
@@ -629,3 +631,97 @@ class TestGetLoggerAdvanced:
         with open(child_log_file) as f:
             content = f.read()
             assert "Child message" in content
+
+
+class TestPerModuleFilesFlag:
+    """Tests for the MINDTRACE_LOGGER.PER_MODULE_FILES config flag."""
+
+    _MANAGED_NAMES = (
+        "mindtrace",
+        "mindtrace.per_module_default_off",
+        "mindtrace.per_module_flag_on",
+        "mindtrace.per_module_propagate",
+    )
+
+    @pytest.fixture(autouse=True)
+    def _isolate_logger_state(self):
+        # Clear handlers for the loggers this class touches both before and
+        # after each test so cross-test state (and prior runs in the same
+        # process) cannot leak in or out.
+        snapshots = {n: list(logging.getLogger(n).handlers) for n in self._MANAGED_NAMES}
+        for name in self._MANAGED_NAMES:
+            logging.getLogger(name).handlers = []
+        yield
+        for name, handlers in snapshots.items():
+            logging.getLogger(name).handlers = list(handlers)
+
+    def test_per_module_files_default_off(self, tmp_path, monkeypatch):
+        """With the flag unset, a child logger has no handlers of its own and no module file is created."""
+        monkeypatch.setenv("MINDTRACE_DIR_PATHS__LOGGER_DIR", str(tmp_path))
+        monkeypatch.delenv("MINDTRACE_LOGGER__PER_MODULE_FILES", raising=False)
+
+        logger = get_logger("mindtrace.per_module_default_off")
+
+        assert logger.handlers == []
+        assert not (tmp_path / "modules").exists()
+
+    def test_per_module_files_flag_on_attaches_file_handler(self, tmp_path, monkeypatch):
+        """With the flag on, a child gets its own rotating file at modules/<name>.log and records reach it."""
+        monkeypatch.setenv("MINDTRACE_DIR_PATHS__LOGGER_DIR", str(tmp_path))
+        monkeypatch.setenv("MINDTRACE_LOGGER__PER_MODULE_FILES", "true")
+
+        logger = get_logger("mindtrace.per_module_flag_on")
+
+        # Rotating file handler attached; no own stream handler (root provides one).
+        assert any("RotatingFileHandler" in str(type(h)) for h in logger.handlers)
+        assert not any(isinstance(h, logging.StreamHandler) and not hasattr(h, "baseFilename") for h in logger.handlers)
+
+        logger.warning("hello per-module")
+
+        per_module_log = tmp_path / "modules" / "mindtrace.per_module_flag_on.log"
+        assert per_module_log.exists()
+        assert "hello per-module" in per_module_log.read_text()
+
+    def test_per_module_files_flag_on_still_propagates_to_root(self, tmp_path, monkeypatch):
+        """With the flag on, records still reach the unified mindtrace.log via propagation."""
+        monkeypatch.setenv("MINDTRACE_DIR_PATHS__LOGGER_DIR", str(tmp_path))
+        monkeypatch.setenv("MINDTRACE_LOGGER__PER_MODULE_FILES", "true")
+
+        # Point the root logger's file handler at tmp_path so we can read it.
+        setup_logger("mindtrace", log_dir=tmp_path, add_stream_handler=False, propagate=False)
+
+        logger = get_logger("mindtrace.per_module_propagate")
+        logger.warning("propagated message")
+
+        root_log = tmp_path / "mindtrace.log"
+        per_module_log = tmp_path / "modules" / "mindtrace.per_module_propagate.log"
+        assert root_log.exists() and "propagated message" in root_log.read_text()
+        assert per_module_log.exists() and "propagated message" in per_module_log.read_text()
+
+
+class TestUseStructlogConfigDefault:
+    """Child loggers should honor MINDTRACE_LOGGER__USE_STRUCTLOG without an explicit kwarg."""
+
+    _MANAGED_NAMES = ("mindtrace", "mindtrace.structlog_default_child")
+
+    @pytest.fixture(autouse=True)
+    def _isolate_logger_state(self):
+        snapshots = {n: list(logging.getLogger(n).handlers) for n in self._MANAGED_NAMES}
+        for name in self._MANAGED_NAMES:
+            logging.getLogger(name).handlers = []
+        yield
+        for name, handlers in snapshots.items():
+            logging.getLogger(name).handlers = list(handlers)
+
+    def test_child_logger_picks_up_structlog_from_config(self, tmp_path, monkeypatch):
+        """With USE_STRUCTLOG enabled via env, a no-kwargs child returns a structlog-bound logger."""
+        monkeypatch.setenv("MINDTRACE_DIR_PATHS__LOGGER_DIR", str(tmp_path))
+        monkeypatch.setenv("MINDTRACE_DIR_PATHS__STRUCT_LOGGER_DIR", str(tmp_path))
+        monkeypatch.setenv("MINDTRACE_LOGGER__USE_STRUCTLOG", "true")
+
+        logger = get_logger("mindtrace.structlog_default_child")
+
+        # A structlog-bound logger supports .bind(); a plain stdlib Logger does not.
+        assert not isinstance(logger, logging.Logger)
+        assert hasattr(logger, "bind")
+        assert callable(logger.bind)

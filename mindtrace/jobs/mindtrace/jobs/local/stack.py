@@ -1,9 +1,7 @@
 import json
 import queue
 from pathlib import Path
-from typing import Any, ClassVar, Tuple, Type
-
-from zenml.enums import ArtifactType
+from typing import Any, Type
 
 from mindtrace.registry import Archiver, Registry
 
@@ -55,9 +53,6 @@ class LocalStack:
 
 class StackArchiver(Archiver):
     """Archiver for LocalStack objects using JSON serialization."""
-
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (LocalStack,)
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
 
     def __init__(self, uri: str, **kwargs):
         super().__init__(uri=uri, **kwargs)

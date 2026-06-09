@@ -1,9 +1,38 @@
+import subprocess
 import sys
 from unittest.mock import Mock
 
 import pytest
 
 from .mocks import create_fake_pycomm3, create_fake_pypylon
+
+
+@pytest.fixture(autouse=True)
+def _block_unmocked_privileged_subprocess_calls(monkeypatch):
+    """Fail fast if a unit test leaks a real `sudo` subprocess call.
+
+    Without this guard, an unmocked privileged subprocess in any
+    hardware-setup code path will silently prompt for a password and
+    hang the test run. Patching Popen catches run/call/check_call/
+    check_output/Popen uniformly.
+    """
+    original_init = subprocess.Popen.__init__
+
+    def _is_sudo(args):
+        if isinstance(args, (list, tuple)) and args:
+            head = str(args[0])
+        elif isinstance(args, str) and args.strip():
+            head = args.split(None, 1)[0]
+        else:
+            return False
+        return head.rsplit("/", 1)[-1] == "sudo"
+
+    def guarded_init(self, args, *a, **kw):
+        if _is_sudo(args):
+            raise AssertionError(f"Unexpected real privileged subprocess call: {args!r}")
+        return original_init(self, args, *a, **kw)
+
+    monkeypatch.setattr(subprocess.Popen, "__init__", guarded_init)
 
 
 @pytest.fixture(scope="session", autouse=True)

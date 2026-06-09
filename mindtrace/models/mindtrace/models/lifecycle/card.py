@@ -39,10 +39,11 @@ import json
 import logging
 import math
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from mindtrace.core import utcnow
 from mindtrace.models.lifecycle.stages import (
     VALID_DEMOTIONS,
     VALID_PROMOTIONS,
@@ -68,7 +69,7 @@ class EvalResult:
     value: float
     dataset: str = ""
     split: str = "val"
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=utcnow)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -86,9 +87,7 @@ class EvalResult:
             value=float(data["value"]),
             dataset=data.get("dataset", ""),
             split=data.get("split", "val"),
-            timestamp=(
-                datetime.fromisoformat(data["timestamp"]) if "timestamp" in data else datetime.now(timezone.utc)
-            ),
+            timestamp=(datetime.fromisoformat(data["timestamp"]) if "timestamp" in data else utcnow()),
         )
 
 
@@ -116,7 +115,7 @@ class PromotionResult:
     model_name: str
     model_version: str
     failed_requirements: dict[str, tuple[float, float]] = field(default_factory=dict)
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=utcnow)
 
 
 @dataclass
@@ -154,7 +153,7 @@ class ModelCard:
     eval_results: list[EvalResult] = field(default_factory=list)
     known_limitations: list[str] = field(default_factory=list)
     description: str = ""
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=utcnow)
     extra: dict[str, Any] = field(default_factory=dict)
     _model_saved: bool = field(default=False, init=False, repr=False)
 
@@ -460,7 +459,7 @@ class ModelCard:
         """Deserialize from a dict."""
         eval_results = [EvalResult.from_dict(r) for r in data.get("eval_results", [])]
         created_at_raw = data.get("created_at")
-        created_at = datetime.fromisoformat(created_at_raw) if created_at_raw else datetime.now(timezone.utc)
+        created_at = datetime.fromisoformat(created_at_raw) if created_at_raw else utcnow()
         return cls(
             name=data["name"],
             version=data["version"],

@@ -8,15 +8,13 @@ Handles saving and loading of:
 """
 
 import os
-from typing import Any, ClassVar, Tuple, Type
-
-from zenml.enums import ArtifactType
+from typing import Any, Type
 
 from mindtrace.registry import Archiver, Registry
 
 # Check if transformers is available
 try:
-    from transformers import (
+    from transformers import (  # noqa: F401
         FeatureExtractionMixin,
         ImageProcessingMixin,
         PreTrainedTokenizerBase,
@@ -24,15 +22,8 @@ try:
     )
 
     _HF_AVAILABLE = True
-    _HF_PROCESSOR_TYPES: Tuple[Type[Any], ...] = (
-        PreTrainedTokenizerBase,
-        ProcessorMixin,
-        ImageProcessingMixin,
-        FeatureExtractionMixin,
-    )
 except ImportError:
     _HF_AVAILABLE = False
-    _HF_PROCESSOR_TYPES = (object,)  # Fallback to prevent ZenML error
 
 
 class HuggingFaceProcessorArchiver(Archiver):
@@ -50,9 +41,6 @@ class HuggingFaceProcessorArchiver(Archiver):
         >>> registry.save("vit_processor:v1", processor)
         >>> loaded_processor = registry.load("vit_processor:v1")
     """
-
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = _HF_PROCESSOR_TYPES
-    ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
 
     def __init__(self, uri: str, **kwargs):
         super().__init__(uri=uri, **kwargs)

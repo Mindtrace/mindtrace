@@ -1,10 +1,10 @@
 """Additional unit tests for CameraManagerService stream/performance paths."""
 
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from mindtrace.core import utcnow
 from mindtrace.hardware.core.exceptions import CameraNotFoundError
 from mindtrace.hardware.services.cameras.models.requests import (
     CameraPerformanceSettingsRequest,
@@ -179,7 +179,7 @@ async def test_get_stream_status_active_stream(service_and_manager):
 
     service._active_streams["Basler:cam1"] = {
         "stream_url": "http://localhost:8002/stream/Basler_cam1",
-        "start_time": datetime.now(timezone.utc),
+        "start_time": utcnow(),
     }
 
     response = await service.get_stream_status(StreamStatusRequest(camera="Basler:cam1"))

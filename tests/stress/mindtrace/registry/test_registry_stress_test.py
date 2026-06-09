@@ -11,7 +11,6 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 from pathlib import Path
 from statistics import mean
 from tempfile import TemporaryDirectory
@@ -19,12 +18,12 @@ from tempfile import TemporaryDirectory
 import pytest
 from tqdm import tqdm
 
+from mindtrace.core import utcnow_iso
 from mindtrace.registry import Registry
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 
 # Suppress verbose logging during stress tests
 logging.getLogger("mindtrace.registry").setLevel(logging.WARNING)
-logging.getLogger("zenml").setLevel(logging.WARNING)
 logging.getLogger("mindtrace.core").setLevel(logging.WARNING)
 
 # For even cleaner output during stress tests, uncomment the following line:
@@ -1011,7 +1010,7 @@ class TestRegistryThroughput:
 
         # Save to results directory
         filepath = results_dir / filename
-        timestamp = datetime.now().isoformat()
+        timestamp = utcnow_iso()
         results_with_timestamp = {"timestamp": timestamp, "results": results}
 
         with open(filepath, "w") as f:

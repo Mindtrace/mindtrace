@@ -38,6 +38,13 @@ def __getattr__(name):
             return GENICAM_AVAILABLE
         except ImportError:
             return False
+    elif name == "DAHENG_AVAILABLE":
+        try:
+            from mindtrace.hardware.cameras.backends.daheng import DAHENG_AVAILABLE
+
+            return DAHENG_AVAILABLE
+        except ImportError:
+            return False
     elif name == "SETUP_AVAILABLE":
         try:
             from mindtrace.hardware.cameras.setup import (
@@ -82,6 +89,7 @@ __all__ = [
     "BASLER_AVAILABLE",
     "OPENCV_AVAILABLE",
     "GENICAM_AVAILABLE",
+    "DAHENG_AVAILABLE",
     "SETUP_AVAILABLE",
     # Setup utilities (available if setup module can be imported)
     "install_pylon_sdk",

@@ -5,6 +5,7 @@ Requires MongoDB at ``mongodb://localhost:27018`` (see ``conftest.py``).
 
 from __future__ import annotations
 
+import base64
 import socket
 from pathlib import Path
 from uuid import uuid4
@@ -14,6 +15,10 @@ from PIL import Image
 
 from mindtrace.datalake import AsyncDataVault, Datalake, DataVault
 from mindtrace.datalake.data_vault import _pil_image_to_png_bytes
+from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
+from mindtrace.hardware.services.cameras.models.requests import CaptureImageRequest
+from mindtrace.hardware.services.cameras.models.responses import CaptureResult
+from mindtrace.hardware.services.cameras.service import CameraManagerService
 
 _HOPPER = Path(__file__).resolve().parents[3] / "resources" / "hopper.png"
 
@@ -36,6 +41,92 @@ def _hopper_bytes() -> bytes:
     if not _HOPPER.is_file():
         pytest.skip(f"Missing test fixture: {_HOPPER}")
     return _HOPPER.read_bytes()
+
+
+def _first_mock_basler_camera() -> str:
+    cameras = [name for name in AsyncCameraManager.discover(include_mocks=True) if name.startswith("MockBasler:")]
+    if not cameras:
+        pytest.skip("Need at least one mock Basler camera")
+    return cameras[0]
+
+
+async def _capture_saved_file_with_mock_camera(tmp_path: Path, *, suffix: str) -> CaptureResult:
+    """Capture through the camera service save-path route and return disk metadata.
+
+    Production callers use ``CameraManagerService.capture_image`` with
+    ``save_path``; the service reads ``image_size`` and ``file_size_bytes`` from
+    the encoded file on disk after the backend writes it.
+    """
+    camera = _first_mock_basler_camera()
+    save_path = str(tmp_path / f"capture.{suffix}")
+    async with AsyncCameraManager(include_mocks=True) as manager:
+        await manager.open([camera])
+        service = CameraManagerService(include_mocks=True)
+        service._camera_manager = manager
+        response = await service.capture_image(
+            CaptureImageRequest(camera=camera, save_path=save_path, output_format="numpy")
+        )
+
+    assert response.success is True
+    capture = response.data
+    assert capture.image_path == save_path
+    assert capture.file_size_bytes is not None and capture.file_size_bytes > 0
+    assert Path(save_path).stat().st_size == capture.file_size_bytes
+    return capture
+
+
+async def _capture_inline_with_mock_camera(*, output_format: str | None = None):
+    """Capture through the camera service's inline wire-encoding route.
+
+    The service is intentionally used here (rather than calling the manager
+    directly) because inline base64 encoding and its ``file_size_bytes`` value
+    live at the service boundary.  That is the hardware API path a caller would
+    hand to DataVault as bytes.
+    """
+    camera = _first_mock_basler_camera()
+    async with AsyncCameraManager(include_mocks=True) as manager:
+        await manager.open([camera])
+        service = CameraManagerService(include_mocks=True)
+        service._camera_manager = manager
+        kwargs = {"camera": camera}
+        if output_format is not None:
+            kwargs["output_format"] = output_format
+        response = await service.capture_image(CaptureImageRequest(**kwargs))
+
+    assert response.success is True
+    assert response.data.image_data is not None
+    assert response.data.file_size_bytes is not None
+    payload = base64.b64decode(response.data.image_data)
+    assert len(payload) == response.data.file_size_bytes
+    return response.data, payload
+
+
+async def _assert_datalake_asset_size_matches_hardware_bytes(
+    async_datalake,
+    *,
+    payload: bytes | Path,
+    hardware_file_size_bytes: int,
+    alias_prefix: str,
+    media_type: str | None = None,
+):
+    """Persist hardware capture bytes through DataVault and verify stored asset metadata.
+
+    The unit tests prove DataVault passes size values to its backend.  This
+    integration helper proves the end-to-end persistence path: real DataVault,
+    real AsyncDatalake metadata, and real local object storage agree with the
+    size the hardware layer reported for the same encoded representation.
+    """
+    vault = AsyncDataVault(async_datalake)
+    kwargs = {"kind": "image", "created_by": "hardware-datalake-integration"}
+    if media_type is not None:
+        kwargs["media_type"] = media_type
+    asset = await vault.save(f"{alias_prefix}-{uuid4().hex[:10]}", payload, **kwargs)
+    fetched = await async_datalake.get_asset(asset.asset_id)
+
+    assert asset.size_bytes == hardware_file_size_bytes
+    assert fetched.size_bytes == hardware_file_size_bytes
+    assert await vault.load(asset.asset_id) == (payload.read_bytes() if isinstance(payload, Path) else payload)
+    return fetched
 
 
 async def _save_async_image_assets(vault: AsyncDataVault, *, prefix: str, count: int = 3):
@@ -97,6 +188,26 @@ async def test_async_data_vault_round_trip_friendly_alias_and_asset_id(async_dat
     assert "integration-hopper" in aliases
 
 
+@pytest.mark.asyncio
+async def test_async_data_vault_save_records_payload_size(async_datalake):
+    vault = AsyncDataVault(async_datalake)
+    raw = _hopper_bytes()
+    alias = f"integration-size-bytes-{uuid4().hex[:10]}"
+
+    asset = await vault.save(
+        alias,
+        raw,
+        kind="image",
+        media_type="image/png",
+        created_by="integration",
+    )
+
+    fetched = await async_datalake.get_asset(asset.asset_id)
+    assert asset.size_bytes == len(raw)
+    assert fetched.size_bytes == len(raw)
+    assert await vault.load(alias) == raw
+
+
 def test_sync_data_vault_round_trip_friendly_alias_and_asset_id(sync_datalake: Datalake):
     vault = DataVault(sync_datalake)
     raw = _hopper_bytes()
@@ -121,6 +232,113 @@ def test_sync_data_vault_round_trip_friendly_alias_and_asset_id(sync_datalake: D
     aliases = sync_datalake.list_aliases_for_asset(asset.asset_id)
     assert asset.asset_id in aliases
     assert "sync-vault-hopper" in aliases
+
+
+def test_sync_data_vault_save_path_records_payload_size(sync_datalake: Datalake):
+    vault = DataVault(sync_datalake)
+    raw = _hopper_bytes()
+    alias = f"sync-vault-size-path-{uuid4().hex[:10]}"
+
+    asset = vault.save(alias, _HOPPER, created_by="integration")
+
+    fetched = sync_datalake.get_asset(asset.asset_id)
+    assert asset.size_bytes == len(raw)
+    assert fetched.size_bytes == len(raw)
+    assert vault.load(alias) == raw
+
+
+@pytest.mark.asyncio
+async def test_hardware_save_path_jpeg_file_size_matches_datalake_payload_size(async_datalake, tmp_path):
+    """Hardware JPEG disk captures and DataVault path saves agree on encoded bytes.
+
+    This covers the production-style save-path route: the camera service writes
+    a ``.jpg`` file, reports ``file_size_bytes`` from that encoded file, and a
+    caller then hands the same path to DataVault.
+    The assertion is deliberately about the JPEG file bytes on disk, not the
+    in-memory image dimensions or uncompressed pixels.
+    """
+    saved = await _capture_saved_file_with_mock_camera(tmp_path, suffix="jpg")
+
+    asset = await _assert_datalake_asset_size_matches_hardware_bytes(
+        async_datalake,
+        payload=Path(saved.image_path),
+        hardware_file_size_bytes=saved.file_size_bytes,
+        alias_prefix="hardware-save-path-jpeg",
+    )
+
+    assert asset.media_type == "image/jpeg"
+
+
+@pytest.mark.asyncio
+async def test_hardware_save_path_png_file_size_matches_datalake_payload_size(async_datalake, tmp_path):
+    """Hardware PNG disk captures and DataVault path saves agree on encoded bytes.
+
+    This is the same save-path contract as the JPEG test, but with a PNG file
+    extension.  It protects against the hardware and Datalake modules silently
+    disagreeing when a caller chooses lossless disk output instead of JPEG.
+    """
+    saved = await _capture_saved_file_with_mock_camera(tmp_path, suffix="png")
+
+    asset = await _assert_datalake_asset_size_matches_hardware_bytes(
+        async_datalake,
+        payload=Path(saved.image_path),
+        hardware_file_size_bytes=saved.file_size_bytes,
+        alias_prefix="hardware-save-path-png",
+    )
+
+    assert asset.media_type == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_hardware_inline_jpeg_file_size_matches_datalake_payload_size(async_datalake):
+    """Hardware inline JPEG responses and DataVault byte saves agree on encoded bytes.
+
+    Inline captures do not write a file first.  The camera service encodes the
+    in-memory mock-camera frame as base64 JPEG, reports ``file_size_bytes`` for
+    those exact encoded response bytes, and callers can persist those decoded
+    bytes directly with DataVault.
+    """
+    capture, payload = await _capture_inline_with_mock_camera(output_format="jpeg")
+
+    asset = await _assert_datalake_asset_size_matches_hardware_bytes(
+        async_datalake,
+        payload=payload,
+        hardware_file_size_bytes=capture.file_size_bytes,
+        alias_prefix="hardware-inline-jpeg",
+        media_type="image/jpeg",
+    )
+
+    assert payload.startswith(b"\xff\xd8\xff")
+    assert asset.media_type == "image/jpeg"
+
+
+@pytest.mark.asyncio
+async def test_hardware_inline_default_png_file_size_matches_datalake_payload_size(async_datalake):
+    """The default inline hardware response is PNG and matches DataVault bytes.
+
+    ``CaptureImageRequest.output_format`` currently defaults to ``"pil"``.
+    That value names the in-memory backend return type, but an HTTP/service
+    response must still carry bytes.  The camera service intentionally encodes
+    the default inline wire payload as PNG because it is lossless and neutral.
+
+    This test documents that subtle default behavior for future reviewers and
+    agents: omitting ``output_format`` does **not** mean DataVault receives a
+    PIL object.  It receives decoded PNG bytes, and the hardware-reported
+    ``file_size_bytes`` must match the persisted Datalake asset size for those
+    PNG bytes.
+    """
+    capture, payload = await _capture_inline_with_mock_camera()
+
+    asset = await _assert_datalake_asset_size_matches_hardware_bytes(
+        async_datalake,
+        payload=payload,
+        hardware_file_size_bytes=capture.file_size_bytes,
+        alias_prefix="hardware-inline-default-png",
+        media_type="image/png",
+    )
+
+    assert payload.startswith(b"\x89PNG\r\n\x1a\n")
+    assert asset.media_type == "image/png"
 
 
 @pytest.mark.asyncio
@@ -193,6 +411,24 @@ async def test_async_data_vault_save_load_image_inprocess_service(datalake_servi
 
 
 @pytest.mark.asyncio
+async def test_async_data_vault_save_records_payload_size_inprocess_service(datalake_service_local_manager):
+    vault = AsyncDataVault(datalake_service_local_manager)
+    raw = _hopper_bytes()
+    alias = f"svc-async-size-bytes-{uuid4().hex[:10]}"
+
+    asset = await vault.save(
+        alias,
+        raw,
+        kind="image",
+        media_type="image/png",
+        created_by="integration",
+    )
+
+    assert asset.size_bytes == len(raw)
+    assert await vault.load(alias) == raw
+
+
+@pytest.mark.asyncio
 async def test_async_data_vault_image_discovery_inprocess_service(datalake_service_local_manager):
     vault = AsyncDataVault(datalake_service_local_manager)
     assets = await _save_async_image_assets(vault, prefix=f"svc-async-page-{uuid4().hex[:8]}")
@@ -219,6 +455,17 @@ def test_sync_data_vault_save_load_image_inprocess_service(datalake_service_loca
     vault.save_image(alias, im)
     out = vault.load_image(alias)
     assert _pil_image_to_png_bytes(out) == _pil_image_to_png_bytes(im)
+
+
+def test_sync_data_vault_save_path_records_payload_size_inprocess_service(datalake_service_local_manager):
+    vault = DataVault(datalake_service_local_manager)
+    raw = _hopper_bytes()
+    alias = f"svc-sync-size-path-{uuid4().hex[:10]}"
+
+    asset = vault.save(alias, _HOPPER, created_by="integration")
+
+    assert asset.size_bytes == len(raw)
+    assert vault.load(alias) == raw
 
 
 def test_sync_data_vault_image_discovery_inprocess_service(datalake_service_local_manager):

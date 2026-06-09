@@ -12,13 +12,13 @@ import threading
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
 from pathlib import Path
 from statistics import mean, median
 
 import pytest
 from tqdm import tqdm
 
+from mindtrace.core import utcnow, utcnow_iso
 from mindtrace.services.samples.echo_service import EchoService
 
 # Suppress verbose HTTP logging during stress tests
@@ -616,7 +616,7 @@ class TestEchoServiceThroughput:
             },
         }
 
-        filename = results_dir / f"multi_worker_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        filename = results_dir / f"multi_worker_test_{utcnow().strftime('%Y%m%d_%H%M%S')}.json"
         self.save_results(summary_results, filename)
         print(f"\nResults saved to: {filename}")
 
@@ -882,7 +882,7 @@ class TestEchoServiceThroughput:
             },
         }
 
-        filename = results_dir / f"delayed_processing_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        filename = results_dir / f"delayed_processing_test_{utcnow().strftime('%Y%m%d_%H%M%S')}.json"
         self.save_results(summary_results, filename)
         print(f"\nResults saved to: {filename}")
 
@@ -994,7 +994,7 @@ class TestEchoServiceThroughput:
             },
         }
 
-        filename = results_dir / f"baseline_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        filename = results_dir / f"baseline_test_{utcnow().strftime('%Y%m%d_%H%M%S')}.json"
         self.save_results(summary_results, filename)
         print(f"\nResults saved to: {filename}")
 
@@ -1002,7 +1002,7 @@ class TestEchoServiceThroughput:
         """
         Save stress test results to a JSON file for tracking performance over time and comparing configurations.
         """
-        timestamp = datetime.now().isoformat()
+        timestamp = utcnow_iso()
         results_with_timestamp = {"timestamp": timestamp, "results": results}
         with open(filename, "w") as f:
             json.dump(results_with_timestamp, f)
