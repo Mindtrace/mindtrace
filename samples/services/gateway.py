@@ -9,7 +9,7 @@ Gateway Service example showing how to:
 
 import asyncio
 
-import httpx
+import httpx2
 import requests
 
 from mindtrace.services import Gateway
@@ -163,7 +163,7 @@ async def async_gateway_example():
 
 async def make_async_request(gateway_url: str, payload: dict):
     """Helper function to make async HTTP requests."""
-    async with httpx.AsyncClient() as client:
+    async with httpx2.AsyncClient() as client:
         response = await client.post(f"{gateway_url}/echo/echo", json=payload)
         return response.json()
 
