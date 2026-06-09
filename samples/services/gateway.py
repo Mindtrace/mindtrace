@@ -140,7 +140,7 @@ async def async_gateway_example():
             tasks = []
             for i in range(3):
                 echo_payload = {"message": f"Async message {i} via Gateway", "delay": 0.1}
-                # Note: We use httpx directly here for async HTTP requests
+                # Note: We use httpx2 directly here for async HTTP requests
                 # In a real application, you might want to create async methods on the connection manager
                 task = tg.create_task(make_async_request(gateway_url, echo_payload))
                 tasks.append(task)

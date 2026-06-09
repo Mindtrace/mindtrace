@@ -282,7 +282,7 @@ class TestGenerateConnectionManager:
         manager = ConnectionManagerClass(url=parse_url("http://test.com"))
         _ = manager.test_endpoint(test_param="value")
 
-        # Verify httpx call
+        # Verify httpx2 call
         mock_httpx.post.assert_called_once_with("http://test.com/test_endpoint", json={"input": "data"}, timeout=60)
 
         # Verify input schema was called
@@ -758,7 +758,7 @@ class TestGenerateConnectionManager:
         # Call with single valid arg
         result = manager.test_endpoint(TestInput(value="test"))
 
-        # Should call httpx with dumped payload
+        # Should call httpx2 with dumped payload
         mock_httpx.post.assert_called_once_with("http://test.com/test_endpoint", json={"value": "test"}, timeout=60)
         assert result == {"result": "success"}
 
