@@ -241,12 +241,17 @@ class OpenAIChatModel(Model):
                     )
                     part_index = 1
                 for tc in delta.tool_calls:
-                    tc_key = tc.id if tc.id else str(tc.index if tc.index is not None else 0)
+                    # Always key by index — tc.id is only present on the
+                    # first chunk; continuation chunks have id=None but the
+                    # same index. Keying by id would create a second entry
+                    # for every continuation chunk, producing a spurious
+                    # tool call with name=None which llama.cpp rejects.
+                    tc_key = str(tc.index) if tc.index is not None else "0"
                     if tc_key not in tool_calls:
                         tool_calls[tc_key] = {
                             "id": tc.id or "",
-                            "name": tc.function.name if tc.function else "",
-                            "args": tc.function.arguments or "",
+                            "name": (tc.function.name or "") if tc.function else "",
+                            "args": (tc.function.arguments or "") if tc.function else "",
                         }
                         tool_call_order.append(tc_key)
                         tool_key_to_part_index[tc_key] = part_index
@@ -261,6 +266,9 @@ class OpenAIChatModel(Model):
                         )
                         part_index += 1
                     else:
+                        # Update id if the first chunk didn't carry it
+                        if tc.id and not tool_calls[tc_key]["id"]:
+                            tool_calls[tc_key]["id"] = tc.id
                         args_delta = (tc.function.arguments or "") if tc.function else ""
                         if args_delta:
                             tool_calls[tc_key]["args"] += args_delta
