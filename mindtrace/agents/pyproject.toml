@@ -19,6 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+anthropic = ["anthropic>=0.40.0"]
 mcp = ["fastmcp>=2.13.0"]
 distributed-rabbitmq = ["aio-pika>=9.0"]
 memory-redis = ["redis>=5.0"]
