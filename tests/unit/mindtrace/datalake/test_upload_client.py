@@ -387,7 +387,7 @@ async def test_aupload_file_uses_presigned_url(tmp_path):
     client_context = AsyncMock()
     client_context.__aenter__.return_value = mock_async_client
 
-    with patch("mindtrace.datalake.upload_client.httpx.AsyncClient", return_value=client_context):
+    with patch("mindtrace.datalake.upload_client.httpx2.AsyncClient", return_value=client_context):
         await client._aupload_file_payload(session, source_path)
 
     response.raise_for_status.assert_called_once()
@@ -410,7 +410,7 @@ async def test_aupload_payload_uses_presigned_url():
     client_context = AsyncMock()
     client_context.__aenter__.return_value = mock_async_client
 
-    with patch("mindtrace.datalake.upload_client.httpx.AsyncClient", return_value=client_context) as async_client:
+    with patch("mindtrace.datalake.upload_client.httpx2.AsyncClient", return_value=client_context) as async_client:
         await client._aupload_payload(session, b"payload")
 
     async_client.assert_called_once_with(timeout=300)

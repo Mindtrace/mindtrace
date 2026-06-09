@@ -22,7 +22,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 
 from mindtrace.datalake import AsyncDatalake, DatalakeDirectUploadClient, DatalakeService
 from mindtrace.datalake.service_types import (

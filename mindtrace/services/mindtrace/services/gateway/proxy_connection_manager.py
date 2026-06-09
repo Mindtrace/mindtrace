@@ -1,6 +1,6 @@
 from typing import Any, Dict
 
-import httpx
+import httpx2
 import requests
 from urllib3.util.url import Url
 
@@ -108,7 +108,7 @@ class ProxyConnectionManager:
                     payload = kwargs
 
                 # Make async HTTP request
-                async with httpx.AsyncClient(timeout=60) as client:
+                async with httpx2.AsyncClient(timeout=60) as client:
                     response = await client.post(endpoint_url, json=payload)
 
                 if response.status_code != 200:
