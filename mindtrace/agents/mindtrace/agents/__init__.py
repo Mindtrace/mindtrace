@@ -13,10 +13,10 @@ from .execution import AbstractTaskQueue, AgentTask, LocalTaskQueue, TaskStatus
 from .history import AbstractHistoryStrategy, InMemoryHistory
 from .memory import AbstractMemoryStore, InMemoryStore, JsonFileStore, MemoryEntry, MemoryToolset
 from .messages import HandoffPart, ModelMessage, SystemPromptPart, TextPart, ToolCallPart, ToolReturnPart
-from .models import Model, ModelRequestParameters, ModelResponse, OpenAIChatModel
+from .models import AnthropicChatModel, Model, ModelRequestParameters, ModelResponse, OpenAIChatModel
 from .profiles import ModelProfile
 from .prompts import UserPromptPart
-from .providers import GeminiProvider, OllamaProvider, OpenAIProvider, Provider
+from .providers import AnthropicProvider, GeminiProvider, OllamaProvider, OpenAIProvider, Provider
 from .tools import RunContext, Tool, ToolDefinition
 from .toolsets import AbstractToolset, CompoundToolset, FunctionToolset, MCPToolset, ToolFilter
 
@@ -31,6 +31,8 @@ __all__ = [
     "AgentRunResult",
     "AgentRunResultEvent",
     "AgentTask",
+    "AnthropicChatModel",
+    "AnthropicProvider",
     "CompoundToolset",
     "DistributedAgent",
     "FunctionToolset",
