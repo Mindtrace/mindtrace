@@ -141,7 +141,7 @@ async def test_async_proxy_method_success(mock_client_class):
     mock_client = AsyncMock()
     mock_response = Mock()  # Use regular Mock, not AsyncMock
     mock_response.status_code = 200
-    mock_response.json.return_value = {"result": "ok"}  # json() is synchronous in httpx
+    mock_response.json.return_value = {"result": "ok"}  # json() is synchronous in httpx2
     mock_client.post.return_value = mock_response
     mock_client_class.return_value.__aenter__.return_value = mock_client
 
