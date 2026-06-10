@@ -26,7 +26,20 @@ from mindtrace.core.testing import (
 from mindtrace.core.types.task_schema import TaskSchema
 from mindtrace.core.utils.checks import check_libs, first_not_none, ifnone, ifnone_url
 from mindtrace.core.utils.dynamic import get_class, instantiate_target
-from mindtrace.core.utils.hashing import compute_dir_hash
+from mindtrace.core.utils.hashing import (
+    DEFAULT_PASSWORD_HASH_POLICY,
+    FingerprintAlg,
+    FingerprintEncoding,
+    PasswordHashPolicy,
+    PasswordKDF,
+    compute_dir_hash,
+    fingerprint,
+    fingerprint_hasher,
+    hash_password,
+    needs_rehash,
+    verify_and_maybe_upgrade,
+    verify_password,
+)
 from mindtrace.core.utils.lambdas import named_lambda
 from mindtrace.core.utils.network import (
     LocalIPError,
@@ -69,6 +82,17 @@ __all__ = [
     "check_libs",
     "check_port_available",
     "compute_dir_hash",
+    "DEFAULT_PASSWORD_HASH_POLICY",
+    "fingerprint",
+    "fingerprint_hasher",
+    "FingerprintAlg",
+    "FingerprintEncoding",
+    "hash_password",
+    "needs_rehash",
+    "PasswordHashPolicy",
+    "PasswordKDF",
+    "verify_and_maybe_upgrade",
+    "verify_password",
     "ContextListener",
     "Config",
     "CoreConfig",
