@@ -64,9 +64,7 @@ class AnthropicChatModel(Model):
     def base_url(self) -> str:
         return self._provider.base_url
 
-    def _messages_to_anthropic(
-        self, messages: Sequence[ModelMessage]
-    ) -> tuple[str | None, list[dict[str, Any]]]:
+    def _messages_to_anthropic(self, messages: Sequence[ModelMessage]) -> tuple[str | None, list[dict[str, Any]]]:
         """Translate ModelMessages to Anthropic format.
 
         Returns (system_prompt, anthropic_messages). Consecutive tool-role messages
@@ -98,25 +96,27 @@ class AnthropicChatModel(Model):
                                 content.append({"type": "text", "text": item})
                             elif isinstance(item, ImageUrl):
                                 # Anthropic uses source with url type for remote images
-                                content.append({
-                                    "type": "image",
-                                    "source": {"type": "url", "url": item.url},
-                                })
+                                content.append(
+                                    {
+                                        "type": "image",
+                                        "source": {"type": "url", "url": item.url},
+                                    }
+                                )
                             elif isinstance(item, BinaryContent):
                                 if item.is_image:
                                     media_type = item.media_type
-                                    content.append({
-                                        "type": "image",
-                                        "source": {
-                                            "type": "base64",
-                                            "media_type": media_type,
-                                            "data": item.base64,
-                                        },
-                                    })
-                                else:
-                                    raise RuntimeError(
-                                        f"Unsupported binary content type: {item.media_type}"
+                                    content.append(
+                                        {
+                                            "type": "image",
+                                            "source": {
+                                                "type": "base64",
+                                                "media_type": media_type,
+                                                "data": item.base64,
+                                            },
+                                        }
                                     )
+                                else:
+                                    raise RuntimeError(f"Unsupported binary content type: {item.media_type}")
                     anthropic_messages.append({"role": "user", "content": content})
                 i += 1
 
@@ -127,12 +127,14 @@ class AnthropicChatModel(Model):
                 if text_parts:
                     content.append({"type": "text", "text": "".join(p.content for p in text_parts)})
                 for tp in tool_parts:
-                    content.append({
-                        "type": "tool_use",
-                        "id": tp.tool_call_id,
-                        "name": tp.tool_name,
-                        "input": json.loads(tp.args) if tp.args else {},
-                    })
+                    content.append(
+                        {
+                            "type": "tool_use",
+                            "id": tp.tool_call_id,
+                            "name": tp.tool_name,
+                            "input": json.loads(tp.args) if tp.args else {},
+                        }
+                    )
                 anthropic_messages.append({"role": "assistant", "content": content})
                 i += 1
 
@@ -142,11 +144,13 @@ class AnthropicChatModel(Model):
                 while i < len(messages) and messages[i].role == "tool":
                     part = messages[i].parts[0]
                     if isinstance(part, ToolReturnPart):
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": part.tool_call_id,
-                            "content": part.content,
-                        })
+                        tool_results.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": part.tool_call_id,
+                                "content": part.content,
+                            }
+                        )
                     i += 1
                 anthropic_messages.append({"role": "user", "content": tool_results})
 
@@ -197,11 +201,13 @@ class AnthropicChatModel(Model):
             if block.type == "text":
                 text_parts.append(block.text)
             elif block.type == "tool_use":
-                tool_calls.append({
-                    "id": block.id,
-                    "name": block.name,
-                    "arguments": json.dumps(block.input),
-                })
+                tool_calls.append(
+                    {
+                        "id": block.id,
+                        "name": block.name,
+                        "arguments": json.dumps(block.input),
+                    }
+                )
 
         return ModelResponse(
             text="".join(text_parts),

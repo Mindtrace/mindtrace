@@ -1,8 +1,7 @@
 """Unit tests for AnthropicChatModel."""
 
 import json
-from dataclasses import dataclass
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -25,10 +24,10 @@ from mindtrace.agents.prompts import UserPromptPart
 from mindtrace.agents.providers.anthropic import AnthropicProvider
 from mindtrace.agents.tools import ToolDefinition
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_provider() -> AnthropicProvider:
     client = MagicMock()
@@ -66,6 +65,7 @@ def _tool_return_msg(tool_call_id: str, content: str) -> ModelMessage:
 # ---------------------------------------------------------------------------
 # Message translation
 # ---------------------------------------------------------------------------
+
 
 class TestMessagesToAnthropic:
     def setup_method(self):
@@ -153,9 +153,9 @@ class TestMessagesToAnthropic:
         system, anthropic = self.model._messages_to_anthropic(msgs)
         assert system == "Be helpful."
         assert len(anthropic) == 4
-        assert anthropic[0]["role"] == "user"       # user prompt
+        assert anthropic[0]["role"] == "user"  # user prompt
         assert anthropic[1]["role"] == "assistant"  # tool_use block
-        assert anthropic[2]["role"] == "user"       # tool_result
+        assert anthropic[2]["role"] == "user"  # tool_result
         assert anthropic[3]["role"] == "assistant"  # text reply
 
     def test_no_system_returns_none(self):
@@ -176,6 +176,7 @@ class TestMessagesToAnthropic:
 # ---------------------------------------------------------------------------
 # Tool definition building
 # ---------------------------------------------------------------------------
+
 
 class TestBuildTools:
     def setup_method(self):
@@ -209,6 +210,7 @@ class TestBuildTools:
 # ---------------------------------------------------------------------------
 # request() — mocked client
 # ---------------------------------------------------------------------------
+
 
 class TestRequest:
     def setup_method(self):
@@ -303,6 +305,7 @@ class TestRequest:
 # request_stream() — mocked streaming context
 # ---------------------------------------------------------------------------
 
+
 class TestRequestStream:
     def setup_method(self):
         self.provider = _make_provider()
@@ -323,6 +326,7 @@ class TestRequestStream:
 
     def _content_block_start(self, index: int, block_type: str, **kwargs):
         from anthropic.types import RawContentBlockStartEvent
+
         block = MagicMock()
         block.type = block_type
         for k, v in kwargs.items():
@@ -334,6 +338,7 @@ class TestRequestStream:
 
     def _content_block_delta(self, index: int, delta_type: str, **kwargs):
         from anthropic.types import RawContentBlockDeltaEvent
+
         delta = MagicMock()
         delta.type = delta_type
         for k, v in kwargs.items():
@@ -345,6 +350,7 @@ class TestRequestStream:
 
     def _content_block_stop(self, index: int):
         from anthropic.types import RawContentBlockStopEvent
+
         event = MagicMock(spec=RawContentBlockStopEvent)
         event.index = index
         return event
@@ -357,9 +363,7 @@ class TestRequestStream:
             self._content_block_delta(0, "text_delta", text="lo!"),
             self._content_block_stop(0),
         ]
-        self.provider.client.messages.stream = MagicMock(
-            return_value=self._make_stream_context(raw_events)
-        )
+        self.provider.client.messages.stream = MagicMock(return_value=self._make_stream_context(raw_events))
 
         collected = []
         async for event in self.model.request_stream(
@@ -391,9 +395,7 @@ class TestRequestStream:
             self._content_block_delta(0, "input_json_delta", partial_json=':"cats"}'),
             self._content_block_stop(0),
         ]
-        self.provider.client.messages.stream = MagicMock(
-            return_value=self._make_stream_context(raw_events)
-        )
+        self.provider.client.messages.stream = MagicMock(return_value=self._make_stream_context(raw_events))
 
         collected = []
         async for event in self.model.request_stream(
@@ -431,9 +433,7 @@ class TestRequestStream:
             self._content_block_delta(1, "input_json_delta", partial_json="{}"),
             self._content_block_stop(1),
         ]
-        self.provider.client.messages.stream = MagicMock(
-            return_value=self._make_stream_context(raw_events)
-        )
+        self.provider.client.messages.stream = MagicMock(return_value=self._make_stream_context(raw_events))
 
         collected = []
         async for event in self.model.request_stream(
