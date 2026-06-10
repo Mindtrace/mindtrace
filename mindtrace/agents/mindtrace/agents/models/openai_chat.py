@@ -113,11 +113,13 @@ class OpenAIChatModel(Model):
                     # Always include content as a string — Ollama (and some
                     # other local models) reject null/absent content even when
                     # tool_calls are present.
-                    openai_messages.append({
-                        "role": "assistant",
-                        "content": content,
-                        "tool_calls": tool_calls,
-                    })
+                    openai_messages.append(
+                        {
+                            "role": "assistant",
+                            "content": content,
+                            "tool_calls": tool_calls,
+                        }
+                    )
                 else:
                     openai_messages.append({"role": "assistant", "content": content})
             elif msg.role == "tool":

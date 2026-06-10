@@ -73,8 +73,7 @@ class AnthropicProvider(Provider[AsyncAnthropic]):
             api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
             if not api_key:
                 raise ValueError(
-                    "Set the `ANTHROPIC_API_KEY` environment variable or pass it via "
-                    "`AnthropicProvider(api_key=...)`"
+                    "Set the `ANTHROPIC_API_KEY` environment variable or pass it via `AnthropicProvider(api_key=...)`"
                 )
             self._client = AsyncAnthropic(api_key=api_key)
 
