@@ -7,12 +7,22 @@ provider-specific class is first accessed.
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 
 import pytest
 
 import mindtrace.agents as agents
+
+
+def _requires_sdk(sdk: str):
+    """Skip when the optional provider SDK isn't installed — resolving the
+    lazy attribute is exactly what imports it."""
+    return pytest.mark.skipif(
+        importlib.util.find_spec(sdk) is None,
+        reason=f"optional `{sdk}` SDK not installed",
+    )
 
 
 def test_package_import_does_not_import_provider_sdks():
@@ -31,12 +41,12 @@ def test_package_import_does_not_import_provider_sdks():
 @pytest.mark.parametrize(
     "name",
     [
-        "OpenAIChatModel",
-        "AnthropicChatModel",
-        "OpenAIProvider",
-        "AnthropicProvider",
-        "GeminiProvider",
-        "OllamaProvider",
+        pytest.param("OpenAIChatModel", marks=_requires_sdk("openai")),
+        pytest.param("AnthropicChatModel", marks=_requires_sdk("anthropic")),
+        pytest.param("OpenAIProvider", marks=_requires_sdk("openai")),
+        pytest.param("AnthropicProvider", marks=_requires_sdk("anthropic")),
+        pytest.param("GeminiProvider", marks=_requires_sdk("openai")),
+        pytest.param("OllamaProvider", marks=_requires_sdk("openai")),
     ],
 )
 def test_lazy_attributes_resolve(name):

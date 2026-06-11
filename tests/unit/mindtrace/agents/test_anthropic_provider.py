@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytest.importorskip("anthropic", reason="provider SDK not installed")
+
 from mindtrace.agents.providers.anthropic import AnthropicProvider
 
 
