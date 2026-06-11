@@ -1647,6 +1647,40 @@ async def test_service_methods_map_requests_to_async_datalake(case, service, moc
     assert getattr(result, case["expected_output_field"]) == case["expected_output_factory"](datalake_objects)
 
 
+@pytest.mark.parametrize(
+    ("service_method", "payload", "datalake_method", "expected_arg"),
+    [
+        pytest.param("get_asset", GetByIdInput(id="missing-asset"), "get_asset", "missing-asset", id="by-id"),
+        pytest.param(
+            "get_asset_by_alias",
+            GetAssetByAliasInput(alias="missing-alias"),
+            "get_asset_by_alias",
+            "missing-alias",
+            id="by-alias",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_service_asset_lookup_missing_documents_return_404(
+    service,
+    mock_datalake,
+    service_method,
+    payload,
+    datalake_method,
+    expected_arg,
+):
+    missing = DocumentNotFoundError(f"missing: {expected_arg}")
+    mock_method = getattr(mock_datalake, datalake_method)
+    mock_method.side_effect = missing
+
+    with pytest.raises(HTTPException) as exc_info:
+        await getattr(service, service_method)(payload)
+
+    assert exc_info.value.status_code == 404
+    assert str(missing) in exc_info.value.detail
+    mock_method.assert_awaited_once_with(expected_arg)
+
+
 @pytest.mark.asyncio
 async def test_service_list_assets_page_maps_page_contract(service, mock_datalake, datalake_objects):
     page = CursorPage(

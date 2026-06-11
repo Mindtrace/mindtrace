@@ -9,7 +9,7 @@ Gateway Service example showing how to:
 
 import asyncio
 
-import httpx
+import httpx2
 import requests
 
 from mindtrace.services import Gateway
@@ -140,7 +140,7 @@ async def async_gateway_example():
             tasks = []
             for i in range(3):
                 echo_payload = {"message": f"Async message {i} via Gateway", "delay": 0.1}
-                # Note: We use httpx directly here for async HTTP requests
+                # Note: We use httpx2 directly here for async HTTP requests
                 # In a real application, you might want to create async methods on the connection manager
                 task = tg.create_task(make_async_request(gateway_url, echo_payload))
                 tasks.append(task)
@@ -163,7 +163,7 @@ async def async_gateway_example():
 
 async def make_async_request(gateway_url: str, payload: dict):
     """Helper function to make async HTTP requests."""
-    async with httpx.AsyncClient() as client:
+    async with httpx2.AsyncClient() as client:
         response = await client.post(f"{gateway_url}/echo/echo", json=payload)
         return response.json()
 

@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-import httpx
+import httpx2
 import requests
 
 from mindtrace.datalake.blocking_payload_io import mkdir_and_write_bytes
@@ -97,7 +97,7 @@ class DatalakeDirectUploadClient:
         if session.upload_method == "presigned_url":
             if not session.upload_url:
                 raise ValueError("presigned_url upload session is missing upload_url")
-            async with httpx.AsyncClient(timeout=300) as client:
+            async with httpx2.AsyncClient(timeout=300) as client:
                 response = await client.put(session.upload_url, content=data, headers=session.upload_headers or {})
                 response.raise_for_status()
             return
@@ -131,7 +131,7 @@ class DatalakeDirectUploadClient:
         if session.upload_method == "presigned_url":
             if not session.upload_url:
                 raise ValueError("presigned_url upload session is missing upload_url")
-            async with httpx.AsyncClient(timeout=3600) as client:
+            async with httpx2.AsyncClient(timeout=3600) as client:
                 response = await client.put(
                     session.upload_url,
                     content=self._aiter_file_chunks(file_path),
