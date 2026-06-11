@@ -1,6 +1,6 @@
 import time
 
-import httpx
+import httpx2
 import pytest
 
 from mindtrace.cluster import ClusterManager, Node
@@ -52,13 +52,13 @@ def test_start_worker_from_git():
 
         # Verify worker is launched and reachable (quick validation to catch launch failures early)
         try:
-            response = httpx.post(f"{worker_url}/heartbeat", json={}, timeout=2.0)
+            response = httpx2.post(f"{worker_url}/heartbeat", json={}, timeout=2.0)
             if response.status_code != 200:
                 pytest.fail(
                     f"Worker at {worker_url} is not responding correctly. Status code: {response.status_code}. "
                     f"This indicates the worker failed to launch properly or crashed immediately after launch."
                 )
-        except httpx.TimeoutException:
+        except httpx2.TimeoutException:
             pytest.fail(
                 f"Worker at {worker_url} did not respond within 2 seconds. "
                 f"This indicates the worker failed to launch properly or is not reachable."
@@ -97,7 +97,7 @@ def test_start_worker_from_git():
         if status.status != "running":
             # Check if worker is still alive
             try:
-                response = httpx.post(f"{worker_url}/heartbeat", json={}, timeout=2.0)
+                response = httpx2.post(f"{worker_url}/heartbeat", json={}, timeout=2.0)
                 worker_alive = response.status_code == 200
             except Exception:
                 worker_alive = False
@@ -130,7 +130,7 @@ def test_start_worker_from_git():
                 # If stuck in running for more than 10 seconds (20 checks at 0.5s intervals), check worker health
                 if stuck_in_running_count > 20 and (time.time() - start_time) > 10:
                     try:
-                        response = httpx.post(f"{worker_url}/heartbeat", json={}, timeout=2.0)
+                        response = httpx2.post(f"{worker_url}/heartbeat", json={}, timeout=2.0)
                         worker_alive = response.status_code == 200
                     except Exception:
                         worker_alive = False

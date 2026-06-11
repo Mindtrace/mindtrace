@@ -410,11 +410,11 @@ class TestGatewayErrorScenarios:
         gateway_cm = Gateway.connect(url=gateway_manager.url)
         gateway_cm.register_app("bad_service", "http://localhost:9999")
 
-        # Try to access the unavailable service - this should trigger httpx.RequestError
+        # Try to access the unavailable service - this should trigger httpx2.RequestError
         gateway_url = str(gateway_manager.url).rstrip("/")
         response = requests.post(f"{gateway_url}/bad_service/echo", json={"message": "test"})
 
-        # Should get 500 error due to network failure (httpx.RequestError)
+        # Should get 500 error due to network failure (httpx2.RequestError)
         assert response.status_code == 500
         assert "All connection attempts failed" in response.text
 

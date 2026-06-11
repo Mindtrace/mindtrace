@@ -4,7 +4,7 @@ import asyncio
 from urllib.parse import urljoin
 from uuid import UUID
 
-import httpx
+import httpx2
 import requests
 from fastapi import HTTPException
 from fastmcp import Client
@@ -118,7 +118,7 @@ class ConnectionManager(Mindtrace):
             StatusOutput with the current server status.
         """
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx2.AsyncClient(timeout=10) as client:
                 response = await client.post(urljoin(str(self.url), "status"))
 
             if response.status_code != 200:
@@ -127,7 +127,7 @@ class ConnectionManager(Mindtrace):
             result = response.json()
             return StatusOutput(**result)
 
-        except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError):
+        except (httpx2.ConnectError, httpx2.TimeoutException, httpx2.RequestError):
             return StatusOutput(status=ServerStatus.DOWN)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
