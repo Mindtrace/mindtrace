@@ -1,7 +1,7 @@
 import logging
 from typing import TYPE_CHECKING, Optional, Type
 
-import httpx
+import httpx2
 from fastapi import HTTPException
 
 from mindtrace.core.logging.logger import track_operation
@@ -169,7 +169,7 @@ def generate_connection_manager(
                         payload = input_schema(**kwargs).model_dump(mode="json") if input_schema is not None else {}
                 else:
                     payload = kwargs
-                res = httpx.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=timeout)
+                res = httpx2.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=timeout)
                 if res.status_code != 200:
                     raise HTTPException(res.status_code, res.text)
 
@@ -210,7 +210,7 @@ def generate_connection_manager(
                         payload = input_schema(**kwargs).model_dump(mode="json") if input_schema is not None else {}
                 else:
                     payload = kwargs
-                async with httpx.AsyncClient(timeout=timeout) as client:
+                async with httpx2.AsyncClient(timeout=timeout) as client:
                     res = await client.post(
                         str(self.url).rstrip("/") + endpoint_path,
                         json=payload,
