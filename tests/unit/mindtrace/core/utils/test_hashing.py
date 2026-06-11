@@ -449,6 +449,16 @@ class TestHashPassword:
         hashed = hash_password("mypassword", kdf="bcrypt")
         assert hashed.startswith("$2b$")
 
+    def test_hash_password_bcrypt_72_bytes_ok(self):
+        """Test bcrypt accepts a password at the 72-byte boundary."""
+        hashed = hash_password("a" * 72, kdf="bcrypt")
+        assert hashed.startswith("$2b$")
+
+    def test_hash_password_bcrypt_over_72_bytes_raises(self):
+        """Test bcrypt rejects passwords longer than 72 bytes instead of truncating."""
+        with pytest.raises(ValueError, match="72 bytes"):
+            hash_password("a" * 73, kdf="bcrypt")
+
     def test_hash_password_scrypt(self):
         """Test password hashing with scrypt."""
         hashed = hash_password("mypassword", kdf="scrypt")
@@ -542,6 +552,11 @@ class TestVerifyPassword:
         """Test verifying incorrect password with bcrypt."""
         hashed = hash_password("mypassword", kdf="bcrypt")
         assert verify_password(hashed, "wrongpassword") is False
+
+    def test_verify_password_bcrypt_over_72_bytes_returns_false(self):
+        """Test an over-72-byte candidate fails cleanly instead of raising."""
+        hashed = hash_password("a" * 72, kdf="bcrypt")
+        assert verify_password(hashed, "a" * 73) is False
 
     def test_verify_password_scrypt_correct(self):
         """Test verifying correct password with scrypt."""
