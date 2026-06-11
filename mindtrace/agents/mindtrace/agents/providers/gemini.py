@@ -1,8 +1,14 @@
+"""Gemini provider, routed through Google's OpenAI-compatible endpoint.
+
+Note: the compat endpoint exposes the OpenAI feature subset only — Gemini-native
+features (native structured output, safety settings, thinking budgets) are not
+available through it. A native client would be required for those.
+"""
+
 from __future__ import annotations
 
 import os
 
-from ..profiles import ModelProfile
 from ._provider import Provider
 
 try:
@@ -13,46 +19,6 @@ except ImportError as import_error:
     ) from import_error
 
 _GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-
-_MODEL_PROFILES: dict[str, ModelProfile] = {
-    "gemini-2.5-flash": ModelProfile(
-        supports_tools=True,
-        supports_json_schema_output=True,
-        supports_json_object_output=True,
-        default_structured_output_mode="tool",
-    ),
-    "gemini-2.5-pro": ModelProfile(
-        supports_tools=True,
-        supports_json_schema_output=True,
-        supports_json_object_output=True,
-        default_structured_output_mode="tool",
-    ),
-    "gemini-2.0-flash": ModelProfile(
-        supports_tools=True,
-        supports_json_schema_output=True,
-        supports_json_object_output=True,
-        default_structured_output_mode="tool",
-    ),
-    "gemini-1.5-pro": ModelProfile(
-        supports_tools=True,
-        supports_json_schema_output=True,
-        supports_json_object_output=True,
-        default_structured_output_mode="tool",
-    ),
-    "gemini-1.5-flash": ModelProfile(
-        supports_tools=True,
-        supports_json_schema_output=False,
-        supports_json_object_output=True,
-        default_structured_output_mode="tool",
-    ),
-}
-
-_DEFAULT_GEMINI_PROFILE = ModelProfile(
-    supports_tools=True,
-    supports_json_schema_output=False,
-    supports_json_object_output=True,
-    default_structured_output_mode="tool",
-)
 
 
 class GeminiProvider(Provider[AsyncOpenAI]):
@@ -68,22 +34,17 @@ class GeminiProvider(Provider[AsyncOpenAI]):
     def client(self) -> AsyncOpenAI:
         return self._client
 
-    def model_profile(self, model_name: str) -> ModelProfile:
-        for prefix, profile in _MODEL_PROFILES.items():
-            if model_name.startswith(prefix):
-                return profile
-        return _DEFAULT_GEMINI_PROFILE
-
     def __init__(
         self,
         api_key: str | None = None,
+        base_url: str | None = None,
         openai_client: AsyncOpenAI | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         if openai_client is not None:
-            if api_key is not None:
-                raise ValueError("Cannot provide both `openai_client` and `api_key`.")
+            if api_key is not None or base_url is not None:
+                raise ValueError("Cannot provide both `openai_client` and `api_key`/`base_url`.")
             self._client = openai_client
         else:
             api_key = api_key or os.getenv("GEMINI_API_KEY")
@@ -92,7 +53,7 @@ class GeminiProvider(Provider[AsyncOpenAI]):
                     "Set the `GEMINI_API_KEY` environment variable or pass it via "
                     "`GeminiProvider(api_key=...)` to use the Gemini provider."
                 )
-            self._client = AsyncOpenAI(api_key=api_key, base_url=_GEMINI_BASE_URL)
+            self._client = AsyncOpenAI(api_key=api_key, base_url=base_url or _GEMINI_BASE_URL)
 
 
 __all__ = ["GeminiProvider"]

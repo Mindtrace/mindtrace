@@ -9,6 +9,7 @@ from mindtrace.agents.events import (
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
+    ResponseCompleteEvent,
 )
 from mindtrace.agents.events._native import TextPartDelta, ToolCallArgsDelta
 from mindtrace.agents.messages import (
@@ -172,6 +173,49 @@ class TestMessagesToAnthropic:
         block = anthropic[0]["content"][0]
         assert block["input"] == {}
 
+    def test_multiple_system_messages_concatenated(self):
+        msgs = [_system_msg("Be helpful."), _user_msg("Hello"), _system_msg("Be brief.")]
+        system, anthropic = self.model._messages_to_anthropic(msgs)
+        assert system == "Be helpful.\n\nBe brief."
+        assert all(m["role"] != "system" for m in anthropic)
+
+    def test_multiple_user_parts_combined_into_one_message(self):
+        msg = ModelMessage(
+            role="user",
+            parts=[UserPromptPart(content="part one"), UserPromptPart(content="part two")],
+        )
+        _, anthropic = self.model._messages_to_anthropic([msg])
+        assert anthropic == [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "part one"},
+                    {"type": "text", "text": "part two"},
+                ],
+            }
+        ]
+
+    def test_empty_assistant_message_dropped(self):
+        # Anthropic rejects empty content arrays, so a part-less assistant turn
+        # must not be sent at all.
+        msg = ModelMessage(role="assistant", parts=[SystemPromptPart(content="not assistant content")])
+        _, anthropic = self.model._messages_to_anthropic([msg])
+        assert anthropic == []
+
+    def test_tool_message_without_tool_return_dropped(self):
+        msg = ModelMessage(role="tool", parts=[TextPart(content="not a tool return")])
+        _, anthropic = self.model._messages_to_anthropic([msg])
+        assert anthropic == []
+
+    def test_non_string_tool_return_serialized(self):
+        msg = ModelMessage(
+            role="tool",
+            parts=[ToolReturnPart(tool_call_id="tc-1", content={"temp": 21})],
+        )
+        _, anthropic = self.model._messages_to_anthropic([msg])
+        block = anthropic[0]["content"][0]
+        assert block["content"] == '{"temp": 21}'
+
 
 # ---------------------------------------------------------------------------
 # Tool definition building
@@ -239,7 +283,124 @@ class TestRequest:
         assert result.tool_calls == []
         assert result.provider_name == "anthropic"
         assert result.model_name == "claude-sonnet-4-6"
-        assert result.finish_reason == "end_turn"
+        assert result.finish_reason == "stop"
+        assert result.raw_finish_reason == "end_turn"
+
+    def _request_kwargs(self, model_settings=None, tools=None):
+        return self.model._build_request_kwargs(
+            messages=[_user_msg("hi")],
+            model_settings=model_settings,
+            model_request_parameters=ModelRequestParameters(function_tools=tools or []),
+        )
+
+    def _weather_tool(self):
+        return ToolDefinition(
+            name="weather",
+            description="Get weather",
+            parameters_json_schema={"type": "object", "properties": {}},
+        )
+
+    def test_build_request_kwargs_maps_common_settings(self):
+        kwargs = self._request_kwargs(
+            model_settings={
+                "max_tokens": 64,
+                "temperature": 0.1,
+                "top_p": 0.9,
+                "top_k": 40,
+                "stop_sequences": ["END"],
+            }
+        )
+        assert kwargs["max_tokens"] == 64
+        assert kwargs["temperature"] == 0.1
+        assert kwargs["top_p"] == 0.9
+        assert kwargs["top_k"] == 40
+        assert kwargs["stop_sequences"] == ["END"]
+
+    def test_max_tokens_defaults_from_profile(self):
+        # claude-sonnet-4-6 (the test model) is a 4.x model → 16384 default.
+        kwargs = self._request_kwargs(model_settings=None)
+        assert kwargs["max_tokens"] == 16384
+
+        legacy_model = AnthropicChatModel("claude-3-opus-20240229", provider=_make_provider())
+        kwargs = legacy_model._build_request_kwargs(
+            messages=[_user_msg("hi")],
+            model_settings=None,
+            model_request_parameters=ModelRequestParameters(),
+        )
+        assert kwargs["max_tokens"] == 4096
+
+    def test_build_request_kwargs_drops_unknown_and_unsupported_settings(self):
+        # `seed` has no Anthropic equivalent and must not reach the wire.
+        kwargs = self._request_kwargs(model_settings={"seed": 7, "temperature": 0.2})
+        assert "seed" not in kwargs
+        assert kwargs["temperature"] == 0.2
+
+    def test_sampling_settings_gated_for_claude_4_7_plus(self):
+        provider = _make_provider()
+        model = AnthropicChatModel("claude-opus-4-8", provider=provider)
+        kwargs = model._build_request_kwargs(
+            messages=[_user_msg("hi")],
+            model_settings={"temperature": 0.2, "top_p": 0.9, "top_k": 5, "max_tokens": 32},
+            model_request_parameters=ModelRequestParameters(),
+        )
+        assert "temperature" not in kwargs
+        assert "top_p" not in kwargs
+        assert "top_k" not in kwargs
+        assert kwargs["max_tokens"] == 32
+
+    def test_tool_choice_mapping(self):
+        tools = [self._weather_tool()]
+        assert self._request_kwargs({"tool_choice": "auto"}, tools)["tool_choice"] == {"type": "auto"}
+        assert self._request_kwargs({"tool_choice": "none"}, tools)["tool_choice"] == {"type": "none"}
+        assert self._request_kwargs({"tool_choice": "required"}, tools)["tool_choice"] == {"type": "any"}
+        assert self._request_kwargs({"tool_choice": "weather"}, tools)["tool_choice"] == {
+            "type": "tool",
+            "name": "weather",
+        }
+
+    def test_parallel_tool_calls_maps_to_disable_parallel_tool_use(self):
+        tools = [self._weather_tool()]
+        kwargs = self._request_kwargs({"parallel_tool_calls": False}, tools)
+        assert kwargs["tool_choice"] == {"type": "auto", "disable_parallel_tool_use": True}
+
+        kwargs = self._request_kwargs({"tool_choice": "required", "parallel_tool_calls": True}, tools)
+        assert kwargs["tool_choice"] == {"type": "any", "disable_parallel_tool_use": False}
+
+    def test_tool_choice_ignored_without_tools(self):
+        kwargs = self._request_kwargs({"tool_choice": "required"})
+        assert "tool_choice" not in kwargs
+
+    @pytest.mark.asyncio
+    async def test_maps_usage_and_normalizes_truncation(self):
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "partial"
+
+        usage = MagicMock()
+        usage.input_tokens = 10
+        usage.output_tokens = 4096
+        usage.cache_read_input_tokens = 7
+        usage.cache_creation_input_tokens = 3
+
+        response = MagicMock()
+        response.content = [text_block]
+        response.stop_reason = "max_tokens"
+        response.usage = usage
+
+        self.provider.client.messages.create = AsyncMock(return_value=response)
+
+        result = await self.model.request(
+            [_user_msg("Hi")],
+            model_settings=None,
+            model_request_parameters=ModelRequestParameters(),
+        )
+
+        assert result.finish_reason == "length"
+        assert result.raw_finish_reason == "max_tokens"
+        assert result.usage.input_tokens == 10
+        assert result.usage.output_tokens == 4096
+        assert result.usage.cache_read_tokens == 7
+        assert result.usage.cache_write_tokens == 3
 
     @pytest.mark.asyncio
     async def test_returns_tool_calls(self):
@@ -263,9 +424,9 @@ class TestRequest:
 
         assert result.text == ""
         assert len(result.tool_calls) == 1
-        assert result.tool_calls[0]["id"] == "tc-1"
-        assert result.tool_calls[0]["name"] == "search"
-        assert json.loads(result.tool_calls[0]["arguments"]) == {"query": "cats"}
+        assert result.tool_calls[0].id == "tc-1"
+        assert result.tool_calls[0].name == "search"
+        assert json.loads(result.tool_calls[0].arguments) == {"query": "cats"}
 
     @pytest.mark.asyncio
     async def test_system_prompt_passed_as_kwarg(self):
@@ -355,6 +516,57 @@ class TestRequestStream:
         event.index = index
         return event
 
+    def _message_start(self, input_tokens=None, cache_read=None, cache_write=None):
+        from anthropic.types import RawMessageStartEvent
+
+        usage = MagicMock()
+        usage.input_tokens = input_tokens
+        usage.output_tokens = None
+        usage.cache_read_input_tokens = cache_read
+        usage.cache_creation_input_tokens = cache_write
+        event = MagicMock(spec=RawMessageStartEvent)
+        event.message = MagicMock()
+        event.message.usage = usage
+        return event
+
+    def _message_delta(self, stop_reason=None, output_tokens=None):
+        from anthropic.types import RawMessageDeltaEvent
+
+        event = MagicMock(spec=RawMessageDeltaEvent)
+        event.delta = MagicMock()
+        event.delta.stop_reason = stop_reason
+        event.usage = MagicMock()
+        event.usage.output_tokens = output_tokens
+        return event
+
+    @pytest.mark.asyncio
+    async def test_stream_reports_finish_reason_and_usage(self):
+        raw_events = [
+            self._message_start(input_tokens=12, cache_read=2, cache_write=1),
+            self._content_block_start(0, "text"),
+            self._content_block_delta(0, "text_delta", text="Hi"),
+            self._content_block_stop(0),
+            self._message_delta(stop_reason="max_tokens", output_tokens=5),
+        ]
+        self.provider.client.messages.stream = MagicMock(return_value=self._make_stream_context(raw_events))
+
+        collected = []
+        async for event in self.model.request_stream(
+            [_user_msg("Hi")],
+            model_settings=None,
+            model_request_parameters=ModelRequestParameters(),
+        ):
+            collected.append(event)
+
+        complete = collected[-1]
+        assert isinstance(complete, ResponseCompleteEvent)
+        assert complete.finish_reason == "length"
+        assert complete.raw_finish_reason == "max_tokens"
+        assert complete.usage.input_tokens == 12
+        assert complete.usage.output_tokens == 5
+        assert complete.usage.cache_read_tokens == 2
+        assert complete.usage.cache_write_tokens == 1
+
     @pytest.mark.asyncio
     async def test_text_streaming_yields_correct_events(self):
         raw_events = [
@@ -382,7 +594,8 @@ class TestRequestStream:
         assert delta_events[0].delta.content_delta == "Hel"
         assert delta_events[1].delta.content_delta == "lo!"
 
-        end = collected[-1]
+        assert isinstance(collected[-1], ResponseCompleteEvent)
+        end = collected[-2]
         assert isinstance(end, PartEndEvent)
         assert end.part_kind == "text"
         assert end.part.content == "Hello!"
@@ -416,7 +629,8 @@ class TestRequestStream:
         assert deltas[0].delta.tool_call_id == "tc-1"
         assert deltas[0].delta.args_delta == '{"q"'
 
-        end = collected[-1]
+        assert isinstance(collected[-1], ResponseCompleteEvent)
+        end = collected[-2]
         assert isinstance(end, PartEndEvent)
         assert end.part_kind == "tool_call"
         assert end.part.tool_name == "search"

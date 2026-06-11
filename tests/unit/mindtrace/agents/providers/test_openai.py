@@ -18,8 +18,25 @@ def test_init_with_injected_client_uses_client_directly():
     assert provider.client is client
     assert provider.name == "openai"
     assert provider.base_url == "https://api.openai.test/v1/"
-    assert provider.model_profile("gpt-test").supports_json_schema_output is True
-    assert provider.model_profile("gpt-test").supports_json_object_output is True
+
+
+def test_model_profile_uses_max_completion_tokens():
+    provider = OpenAIProvider(openai_client=SimpleNamespace(base_url="https://api.openai.test/v1/"))
+
+    profile = provider.model_profile("gpt-test")
+
+    assert profile.max_tokens_param == "max_completion_tokens"
+    assert profile.unsupported_model_settings == frozenset()
+
+
+@pytest.mark.parametrize("model_name", ["o1", "o3-mini", "o4-mini", "gpt-5", "gpt-5-mini"])
+def test_model_profile_gates_sampling_settings_for_reasoning_models(model_name):
+    provider = OpenAIProvider(openai_client=SimpleNamespace(base_url="https://api.openai.test/v1/"))
+
+    profile = provider.model_profile(model_name)
+
+    assert "temperature" in profile.unsupported_model_settings
+    assert "top_p" in profile.unsupported_model_settings
 
 
 def test_init_rejects_client_with_explicit_credentials():
