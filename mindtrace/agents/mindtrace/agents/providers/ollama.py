@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 
-from ..profiles import ModelProfile
 from ._provider import Provider
 
 try:
@@ -11,6 +10,9 @@ except ImportError as import_error:
     raise ImportError(
         "Please install the `openai` package to use the Ollama provider: `pip install openai`"
     ) from import_error
+
+# Ollama's OpenAI-compatible endpoint in its default local setup.
+_DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
 
 
 class OllamaProvider(Provider[AsyncOpenAI]):
@@ -26,14 +28,6 @@ class OllamaProvider(Provider[AsyncOpenAI]):
     def client(self) -> AsyncOpenAI:
         return self._client
 
-    def model_profile(self, model_name: str) -> ModelProfile:
-        return ModelProfile(
-            supports_tools=True,
-            supports_json_schema_output=False,
-            supports_json_object_output=False,
-            default_structured_output_mode="tool",
-        )
-
     def __init__(
         self,
         base_url: str | None = None,
@@ -47,12 +41,8 @@ class OllamaProvider(Provider[AsyncOpenAI]):
                 raise ValueError("Cannot provide both `openai_client` and `base_url`/`api_key`")
             self._client = openai_client
         else:
-            base_url = base_url or os.getenv("OLLAMA_BASE_URL")
-            if not base_url:
-                raise ValueError(
-                    "Set the `OLLAMA_BASE_URL` environment variable or pass it via "
-                    "`OllamaProvider(base_url=...)` to use the Ollama provider."
-                )
+            base_url = base_url or os.getenv("OLLAMA_BASE_URL") or _DEFAULT_OLLAMA_BASE_URL
+            # Ollama ignores the API key, but the OpenAI client requires one.
             api_key = api_key or os.getenv("OLLAMA_API_KEY") or "api-key-not-set"
             self._client = AsyncOpenAI(base_url=base_url, api_key=api_key)
 

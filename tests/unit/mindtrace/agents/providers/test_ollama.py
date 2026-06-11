@@ -18,8 +18,7 @@ def test_init_with_injected_client_uses_client_directly():
     assert provider.client is client
     assert provider.name == "ollama"
     assert provider.base_url == "http://ollama.test:11434/v1/"
-    assert provider.model_profile("llama3").supports_tools is True
-    assert provider.model_profile("llama3").supports_json_schema_output is False
+    assert provider.model_profile("llama3") is None  # falls back to DEFAULT_PROFILE in Model
 
 
 def test_init_rejects_client_with_explicit_connection_settings():
@@ -50,8 +49,12 @@ def test_init_prefers_explicit_api_key_over_env(monkeypatch):
     async_openai.assert_called_once_with(base_url="http://ollama.test:11434/v1/", api_key="explicit-key")
 
 
-def test_init_requires_base_url_when_no_client_or_env(monkeypatch):
+def test_init_defaults_to_local_ollama_when_no_client_or_env(monkeypatch):
     monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+    monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
+    constructed_client = SimpleNamespace(base_url="http://localhost:11434/v1")
 
-    with pytest.raises(ValueError, match="OLLAMA_BASE_URL"):
+    with patch("mindtrace.agents.providers.ollama.AsyncOpenAI", return_value=constructed_client) as async_openai:
         OllamaProvider()
+
+    async_openai.assert_called_once_with(base_url="http://localhost:11434/v1", api_key="api-key-not-set")

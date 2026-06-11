@@ -10,6 +10,13 @@ try:
 except ImportError as e:
     raise ImportError("Please install the `openai` package: `pip install openai`") from e
 
+# Settings rejected by OpenAI reasoning models (o-series, gpt-5 family).
+_REASONING_UNSUPPORTED_SETTINGS = frozenset({"temperature", "top_p", "presence_penalty", "frequency_penalty"})
+
+
+def _is_reasoning_model(model_name: str) -> bool:
+    return model_name.lower().startswith(("o1", "o3", "o4", "gpt-5"))
+
 
 class OpenAIProvider(Provider[AsyncOpenAI]):
     @property
@@ -26,10 +33,11 @@ class OpenAIProvider(Provider[AsyncOpenAI]):
 
     def model_profile(self, model_name: str) -> ModelProfile:
         return ModelProfile(
-            supports_tools=True,
-            supports_json_schema_output=True,
-            supports_json_object_output=True,
-            default_structured_output_mode="tool",
+            # openai.com deprecated `max_tokens`; reasoning models reject it.
+            max_tokens_param="max_completion_tokens",
+            unsupported_model_settings=(
+                _REASONING_UNSUPPORTED_SETTINGS if _is_reasoning_model(model_name) else frozenset()
+            ),
         )
 
     def __init__(
