@@ -949,11 +949,19 @@ class DatalakeService(Service):
 
     async def get_asset(self, payload: GetByIdInput) -> AssetOutput:
         datalake = await self._ensure_datalake()
-        return AssetOutput(asset=await datalake.get_asset(payload.id))
+        try:
+            asset = await datalake.get_asset(payload.id)
+        except DocumentNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return AssetOutput(asset=asset)
 
     async def get_asset_by_alias(self, payload: GetAssetByAliasInput) -> AssetOutput:
         datalake = await self._ensure_datalake()
-        return AssetOutput(asset=await datalake.get_asset_by_alias(payload.alias))
+        try:
+            asset = await datalake.get_asset_by_alias(payload.alias)
+        except DocumentNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return AssetOutput(asset=asset)
 
     async def add_alias(self, payload: AddAliasInput) -> AssetAliasOutput:
         datalake = await self._ensure_datalake()
