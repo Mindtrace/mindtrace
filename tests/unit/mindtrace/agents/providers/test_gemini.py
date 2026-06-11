@@ -7,6 +7,8 @@ from unittest.mock import patch
 
 import pytest
 
+pytest.importorskip("openai", reason="provider SDK not installed")
+
 from mindtrace.agents.providers.gemini import GeminiProvider
 
 

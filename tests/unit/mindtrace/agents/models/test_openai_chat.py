@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+pytest.importorskip("openai", reason="provider SDK not installed")
+
 from mindtrace.agents.events import (
     PartDeltaEvent,
     PartEndEvent,

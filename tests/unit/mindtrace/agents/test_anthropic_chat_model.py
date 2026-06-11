@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+pytest.importorskip("anthropic", reason="provider SDK not installed")
+
 from mindtrace.agents.events import (
     PartDeltaEvent,
     PartEndEvent,

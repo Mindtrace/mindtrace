@@ -9,10 +9,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock
 
-import anthropic
-import httpx
-import openai
 import pytest
+
+openai = pytest.importorskip("openai", reason="provider SDK not installed")
+anthropic = pytest.importorskip("anthropic", reason="provider SDK not installed")
+
+import httpx
 
 from mindtrace.agents.messages import ModelMessage
 from mindtrace.agents.models import (
