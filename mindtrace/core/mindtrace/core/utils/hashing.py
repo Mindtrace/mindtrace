@@ -63,7 +63,6 @@ class PasswordHashPolicy:
         pbkdf2_iterations: PBKDF2 iteration count.
         pbkdf2_salt_len: PBKDF2 salt length in bytes.
         pbkdf2_dklen: PBKDF2 derived key length in bytes.
-        pbkdf2_hash_name: Hash name for PBKDF2 (e.g., "sha256").
     """
 
     default_kdf: PasswordKDF = "argon2id"
@@ -85,11 +84,11 @@ class PasswordHashPolicy:
     scrypt_dklen: int = 32
     scrypt_salt_len: int = 16
 
-    # PBKDF2-HMAC-SHA256
+    # PBKDF2-HMAC-SHA256. SHA-256 is baked into the stored format ("$pbkdf2_sha256$")
+    # and the verifier, so it is intentionally not exposed as a configurable parameter.
     pbkdf2_iterations: int = 600_000
     pbkdf2_salt_len: int = 16
     pbkdf2_dklen: int = 32
-    pbkdf2_hash_name: str = "sha256"
 
 
 DEFAULT_PASSWORD_HASH_POLICY = PasswordHashPolicy()
@@ -262,6 +261,12 @@ def hash_password(
     The returned string is self-describing and safe to store. Verification uses
     the stored hash's prefix/format to select the correct verifier.
 
+    Note:
+        bcrypt only uses the first 72 bytes of a password, so accepting longer
+        passwords would let distinct passwords collide. This function rejects
+        passwords over 72 bytes when ``kdf="bcrypt"``; use a different KDF such as
+        the default ``argon2id`` for longer passwords.
+
     Args:
         password: Plaintext password (unicode string).
         kdf: Optional algorithm override. If not provided, uses
@@ -272,7 +277,8 @@ def hash_password(
         Encoded password hash string.
 
     Raises:
-        ValueError: If inputs are invalid or KDF is unsupported.
+        ValueError: If inputs are invalid, the KDF is unsupported, or a bcrypt
+            password exceeds 72 bytes.
     """
     if not isinstance(password, str) or password == "":
         raise ValueError("password must be a non-empty str")
@@ -284,6 +290,11 @@ def hash_password(
         return _get_argon2_hasher(policy).hash(password)
 
     if chosen == "bcrypt":
+        if len(pw_b) > _BCRYPT_MAX_BYTES:
+            raise ValueError(
+                f"bcrypt passwords cannot exceed {_BCRYPT_MAX_BYTES} bytes (got {len(pw_b)}); "
+                "use a different kdf such as 'argon2id' for longer passwords"
+            )
         salt = bcrypt.gensalt(rounds=policy.bcrypt_rounds)
         return bcrypt.hashpw(pw_b, salt).decode("utf-8")
 
@@ -302,7 +313,7 @@ def hash_password(
     if chosen == "pbkdf2_sha256":
         salt = os.urandom(policy.pbkdf2_salt_len)
         dk = hashlib.pbkdf2_hmac(
-            policy.pbkdf2_hash_name,
+            "sha256",
             pw_b,
             salt,
             policy.pbkdf2_iterations,
@@ -324,7 +335,9 @@ def verify_password(stored_hash: str, password: str) -> bool:
         password: Candidate plaintext password.
 
     Returns:
-        True if the password matches, False otherwise.
+        True if the password matches, False otherwise. Candidates longer than 72
+        bytes are reported as a non-match for bcrypt hashes (bcrypt uses only the
+        first 72 bytes).
 
     Raises:
         ValueError: If the stored hash format is malformed or unsupported.
@@ -348,6 +361,12 @@ def verify_password(stored_hash: str, password: str) -> bool:
 
     # bcrypt hashes typically start with "$2a$", "$2b$", or "$2y$"
     if stored_hash.startswith(("$2a$", "$2b$", "$2y$")):
+        # bcrypt uses only the first 72 bytes; hash_password rejects longer
+        # passwords, so a longer candidate cannot match one of our hashes. Report a
+        # non-match rather than relying on bcrypt's version-dependent handling of
+        # overlong input.
+        if len(pw_b) > _BCRYPT_MAX_BYTES:
+            return False
         try:
             return bcrypt.checkpw(pw_b, stored_hash.encode("utf-8"))
         except Exception as e:
@@ -549,6 +568,11 @@ def _get_argon2_hasher(policy: PasswordHashPolicy) -> PasswordHasher:
 
 # Lazily-initialized Argon2 hasher for default policy (avoids import-time cost).
 _DEFAULT_ARGON2_PH: PasswordHasher | None = None
+
+# bcrypt only considers the first 72 bytes of a password, and its handling of
+# longer input is not consistent across releases, so the limit is enforced
+# explicitly here rather than relying on the library.
+_BCRYPT_MAX_BYTES = 72
 
 # Self-describing formats for scrypt/pbkdf2:
 #   $scrypt$N=<N>$r=<r>$p=<p>$salt=<b64>$dk=<b64>
