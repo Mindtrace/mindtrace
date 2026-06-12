@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
+from .._types import FinishReason, ToolCall, Usage
 from ..events import (
     NativeEvent,
     PartDeltaEvent,
@@ -19,7 +20,7 @@ from ..messages._parts import SystemPromptPart
 from ..prompts import BinaryContent, ImageUrl, UserPromptPart
 from ..providers import Provider
 from ._exceptions import ModelError, map_provider_error
-from ._model import FinishReason, Model, ModelRequestParameters, ModelResponse, ToolCall, Usage
+from ._model import Model, ModelRequestParameters, ModelResponse
 from ._utils import serialize_tool_return_content
 
 try:

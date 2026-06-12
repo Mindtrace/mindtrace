@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .._types import FinishReason, ToolCall, Usage
 from ._exceptions import (
     ModelAPIError,
     ModelAuthenticationError,
@@ -18,7 +19,7 @@ from ._exceptions import (
     ModelRateLimitError,
     ModelTimeoutError,
 )
-from ._model import FinishReason, Model, ModelRequestParameters, ModelResponse, ToolCall, Usage
+from ._model import Model, ModelRequestParameters, ModelResponse
 from ._settings import ModelSettings
 
 if TYPE_CHECKING:
