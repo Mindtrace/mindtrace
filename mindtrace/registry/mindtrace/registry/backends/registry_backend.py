@@ -145,6 +145,61 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         """Delete any staged artifact associated with a direct-upload target."""
         pass
 
+    def create_direct_download_url(
+        self,
+        name: str,
+        version: str,
+        *,
+        expiration_minutes: int = 15,
+        response_content_type: str | None = None,
+        response_content_disposition: str | None = None,
+        filename: str | None = None,
+    ) -> str | None:
+        """Mint a presigned GET URL for a committed object's payload file.
+
+        Returns ``None`` for backends that cannot presign (e.g. local filesystem),
+        signalling callers to fall back to proxying bytes. Object-store backends
+        (S3/GCS) override this to return a URL. ``version`` must be concrete.
+        """
+        return None
+
+    def create_direct_download_urls(
+        self,
+        names: list[str],
+        versions: list[str],
+        *,
+        expiration_minutes: int = 15,
+        response_content_types: list[str | None] | None = None,
+        response_content_disposition: str | None = None,
+        filenames: list[str | None] | None = None,
+    ) -> list[str | None]:
+        """Batch presigned GET URLs aligned with the inputs (``None`` per failed item).
+
+        Default loops the single call; object-store backends override this to batch the
+        metadata read (the only network-bound step) into one parallel fan-out.
+        """
+        if len(names) != len(versions):
+            raise ValueError("names and versions must be the same length")
+        n = len(names)
+        rcts = response_content_types or [None] * n
+        fns = filenames or [None] * n
+        out: list[str | None] = []
+        for name, version, rct, fn in zip(names, versions, rcts, fns):
+            try:
+                out.append(
+                    self.create_direct_download_url(
+                        name,
+                        version,
+                        expiration_minutes=expiration_minutes,
+                        response_content_type=rct,
+                        response_content_disposition=response_content_disposition,
+                        filename=fn,
+                    )
+                )
+            except Exception:  # noqa: BLE001 — best-effort batch
+                out.append(None)
+        return out
+
     @abstractmethod
     def commit_direct_upload(
         self,

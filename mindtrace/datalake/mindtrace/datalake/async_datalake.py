@@ -882,6 +882,135 @@ class AsyncDatalake(Mindtrace):
         key = self.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
         return self.store.info(key, version=storage_ref.version)
 
+    async def get_object_download_url(
+        self,
+        storage_ref: StorageRef,
+        *,
+        expires_in_minutes: int = 15,
+        response_content_type: str | None = None,
+        response_content_disposition: str | None = None,
+    ) -> str | None:
+        """Mint a presigned GET URL for the object at ``storage_ref``.
+
+        Returns ``None`` if the backing mount cannot presign (e.g. local filesystem),
+        signalling callers to fall back to streaming bytes via :meth:`get_object`.
+        The store call (a metadata read + local signing) runs off the event loop.
+        """
+        storage_ref = self._normalize_storage_ref(storage_ref)
+        if not self.store.has_mount(storage_ref.mount):
+            configured = sorted(self.store.list_mounts())
+            raise StoreLocationNotFound(
+                f"Unknown store mount {storage_ref.mount!r} on datalake {self.mongo_db_name!r}; "
+                f"configured mounts: {configured}"
+            )
+        key = self.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            self._store_save_executor,
+            partial(
+                self.store.create_direct_download_url,
+                key,
+                version=storage_ref.version,
+                expiration_minutes=expires_in_minutes,
+                response_content_type=response_content_type,
+                response_content_disposition=response_content_disposition,
+            ),
+        )
+
+    async def get_asset_download_url(
+        self,
+        asset_id: str,
+        *,
+        expires_in_minutes: int = 15,
+        response_content_type: str | None = None,
+        response_content_disposition: str | None = None,
+    ) -> str | None:
+        """Mint a presigned GET URL for an asset's payload.
+
+        Defaults the response Content-Type to the asset's ``media_type`` so browsers
+        render the image inline. Returns ``None`` if the mount cannot presign.
+        """
+        asset = await self.get_asset(asset_id)
+        if asset.payload_status != "present":
+            raise FileNotFoundError(
+                f"Asset {asset_id!r} payload is not available (payload_status={asset.payload_status!r})"
+            )
+        storage_ref = asset.payload_storage_ref or asset.storage_ref
+        return await self.get_object_download_url(
+            storage_ref,
+            expires_in_minutes=expires_in_minutes,
+            response_content_type=response_content_type or asset.media_type,
+            response_content_disposition=response_content_disposition,
+        )
+
+    async def get_assets_download_urls(
+        self,
+        asset_ids: list[str],
+        *,
+        expires_in_minutes: int = 15,
+    ) -> dict[str, str]:
+        """Batch variant: ``{asset_id: url}`` for every asset that resolves and presigns.
+
+        Optimised so the cost is independent of batch size in round-trips:
+
+        1. ONE Mongo query (``$in``) resolves all assets — not N ``get_asset`` calls.
+        2. Storage refs are grouped by mount; each mount issues ONE batched metadata
+           read (parallel ``download_string_batch``) covering all its objects.
+        3. URLs are signed locally (signing is a pure-CPU op — no network — so there is
+           nothing to parallelise there; the metadata read is the only I/O and it is
+           already fanned out).
+
+        Asset ids that are missing, lack a present payload, or whose mount cannot presign
+        are omitted (best-effort — one bad id never fails the batch).
+        """
+        if not asset_ids:
+            return {}
+
+        # 1) Resolve all assets in a single query, preserving request order / dedup.
+        unique_ids = list(dict.fromkeys(asset_ids))
+        assets = await self.asset_database.find({"asset_id": {"$in": unique_ids}})
+        by_id = {a.asset_id: a for a in assets}
+
+        # 2) Bucket presignable refs by mount, remembering each one's content type.
+        per_mount: dict[str, dict[str, list]] = {}
+        for aid in unique_ids:
+            asset = by_id.get(aid)
+            if asset is None or asset.payload_status != "present":
+                continue
+            ref = self._normalize_storage_ref(asset.payload_storage_ref or asset.storage_ref)
+            if not self.store.has_mount(ref.mount):
+                continue
+            bucket = per_mount.setdefault(ref.mount, {"ids": [], "names": [], "versions": [], "rcts": []})
+            bucket["ids"].append(aid)
+            bucket["names"].append(ref.name)
+            bucket["versions"].append(ref.version)
+            bucket["rcts"].append(asset.media_type)
+
+        # 3) One batched store call per mount, off the event loop.
+        loop = asyncio.get_running_loop()
+
+        async def _sign_mount(mount: str, b: dict[str, list]) -> list[str | None]:
+            return await loop.run_in_executor(
+                self._store_save_executor,
+                partial(
+                    self.store.create_direct_download_urls,
+                    mount,
+                    b["names"],
+                    b["versions"],
+                    expiration_minutes=expires_in_minutes,
+                    response_content_types=b["rcts"],
+                ),
+            )
+
+        signed = await asyncio.gather(*(_sign_mount(m, b) for m, b in per_mount.items()))
+
+        out: dict[str, str] = {}
+        for (mount, b), urls in zip(per_mount.items(), signed):
+            for aid, url in zip(b["ids"], urls):
+                if url:
+                    out[aid] = url
+        return out
+
     async def get_asset_payload(self, asset_id: str, **kwargs: Any) -> Any:
         asset = await self.get_asset(asset_id)
         if asset.payload_status != "present":

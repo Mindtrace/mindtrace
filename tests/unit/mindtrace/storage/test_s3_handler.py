@@ -1182,6 +1182,73 @@ def test_get_presigned_url_invalid_method(mock_boto3):
 
 
 @patch("mindtrace.storage.s3.boto3")
+def test_get_presigned_url_get_with_response_content_type(mock_boto3):
+    """GET presign threads ResponseContentType/Disposition into the signed params.
+
+    Objects stored as opaque bytes (``data.txt``) carry no useful content type; this
+    override is what makes a browser render the image inline.
+    """
+    mock_client = _prepare_client(mock_boto3)
+    mock_client.generate_presigned_url.return_value = "https://signed-get-url"
+
+    handler = S3StorageHandler("bucket", endpoint="localhost:9000", access_key="a", secret_key="s")
+    handler.get_presigned_url(
+        "objects/x/1/uuid/data.txt",
+        response_content_type="image/png",
+        response_content_disposition="inline",
+    )
+
+    mock_client.generate_presigned_url.assert_called_once_with(
+        "get_object",
+        Params={
+            "Bucket": "bucket",
+            "Key": "objects/x/1/uuid/data.txt",
+            "ResponseContentType": "image/png",
+            "ResponseContentDisposition": "inline",
+        },
+        ExpiresIn=3600,
+    )
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_presign_endpoint_uses_separate_signing_client(mock_boto3):
+    """Split-horizon: a distinct presign endpoint builds a 2nd client used only to sign."""
+    io_client = MagicMock(name="io")
+    presign_client = MagicMock(name="presign")
+    presign_client.generate_presigned_url.return_value = "http://localhost:19000/signed"
+    mock_boto3.client.side_effect = [io_client, presign_client]
+
+    handler = S3StorageHandler(
+        "bucket",
+        endpoint="internal-minio:9000",
+        access_key="a",
+        secret_key="s",
+        secure=False,
+        presign_endpoint="localhost:19000",
+    )
+
+    # Two clients constructed; the second is bound to the presign endpoint.
+    assert mock_boto3.client.call_count == 2
+    assert mock_boto3.client.call_args_list[1].kwargs["endpoint_url"] == "http://localhost:19000"
+    assert handler._presign_client is presign_client
+
+    url = handler.get_presigned_url("k/data.txt", response_content_type="image/png")
+    assert url == "http://localhost:19000/signed"
+    # Signing goes through the presign client, never the I/O client.
+    presign_client.generate_presigned_url.assert_called_once()
+    io_client.generate_presigned_url.assert_not_called()
+
+
+@patch("mindtrace.storage.s3.boto3")
+def test_presign_endpoint_defaults_to_io_client(mock_boto3):
+    """No separate presign endpoint → reuse the I/O client (behaviour unchanged)."""
+    mock_client = _prepare_client(mock_boto3)
+    handler = S3StorageHandler("bucket", endpoint="localhost:9000", access_key="a", secret_key="s")
+    assert handler._presign_client is handler.client
+    assert mock_boto3.client.call_count == 1
+
+
+@patch("mindtrace.storage.s3.boto3")
 def test_get_object_metadata(mock_boto3):
     mock_client = _prepare_client(mock_boto3)
 

@@ -92,6 +92,8 @@ class S3RegistryBackend(RegistryBackend):
         prefix: str = "",
         max_workers: int = 4,
         lock_timeout: int = 30,
+        presign_endpoint: str | None = None,
+        presign_secure: bool | None = None,
         **kwargs,
     ):
         """Initialize the S3RegistryBackend.
@@ -131,6 +133,8 @@ class S3RegistryBackend(RegistryBackend):
             secure=secure,
             ensure_bucket=True,
             create_if_missing=True,
+            presign_endpoint=presign_endpoint,
+            presign_secure=presign_secure,
         )
 
         self._ensure_metadata_file()
@@ -265,6 +269,124 @@ class S3RegistryBackend(RegistryBackend):
             "content_type": metadata.get("content_type"),
             "path": staged_path,
         }
+
+    def create_direct_download_url(
+        self,
+        name: str,
+        version: str,
+        *,
+        expiration_minutes: int = 15,
+        response_content_type: str | None = None,
+        response_content_disposition: str | None = None,
+        filename: str | None = None,
+    ) -> str:
+        """Mint a presigned GET URL for a committed object's payload file.
+
+        Resolves the object's active artifact folder (``objects/{name}/{version}/{uuid}/``)
+        from its ``_storage.uuid`` metadata and the ``_files`` manifest, then signs a GET
+        for the single payload file. ``version`` must be concrete (resolve ``latest`` at the
+        Registry layer).
+
+        Args:
+            name: Object name.
+            version: Concrete version string.
+            expiration_minutes: URL lifetime.
+            response_content_type: Overrides the Content-Type the store returns (objects
+                stored as opaque bytes carry no useful type — set this so browsers render).
+            response_content_disposition: Overrides Content-Disposition.
+            filename: Manifest file to sign. Optional when the object has a single file.
+
+        Returns:
+            A presigned GET URL string.
+
+        Raises:
+            RegistryObjectNotFound: If the object/version has no metadata.
+            ValueError: If metadata is corrupt or the file to sign is ambiguous.
+        """
+        op = self.fetch_metadata(name, version).first()
+        if op is None or op.is_error or not op.metadata:
+            raise RegistryObjectNotFound(f"Object {name}@{version} not found")
+        remote_key = self._download_key_from_meta(name, version, op.metadata, filename)
+        return self.storage.get_presigned_url(
+            remote_key,
+            expiration_minutes=expiration_minutes,
+            method="GET",
+            response_content_type=response_content_type,
+            response_content_disposition=response_content_disposition,
+        )
+
+    def create_direct_download_urls(
+        self,
+        names: list[str],
+        versions: list[str],
+        *,
+        expiration_minutes: int = 15,
+        response_content_types: list[str | None] | None = None,
+        response_content_disposition: str | None = None,
+        filenames: list[str | None] | None = None,
+    ) -> list[str | None]:
+        """Batch variant of :meth:`create_direct_download_url`.
+
+        Reads every object's metadata in a SINGLE batched call (the only network-bound
+        step — :meth:`fetch_metadata` fans out parallel ``download_string_batch`` reads),
+        then signs each URL locally (signing is a pure-CPU op, no I/O). This collapses N
+        round-trips into one. Returns a list aligned with the inputs; entries that don't
+        resolve become ``None`` (best-effort — one bad object never fails the batch).
+        """
+        if len(names) != len(versions):
+            raise ValueError("names and versions must be the same length")
+        n = len(names)
+        rcts = response_content_types or [None] * n
+        fns = filenames or [None] * n
+        results = self.fetch_metadata(names, versions)
+        urls: list[str | None] = []
+        for i, (name, version) in enumerate(zip(names, versions)):
+            op = results.get((name, version))
+            if op is None or op.is_error or not op.metadata:
+                urls.append(None)
+                continue
+            try:
+                remote_key = self._download_key_from_meta(name, version, op.metadata, fns[i])
+            except (ValueError, RegistryObjectNotFound):
+                urls.append(None)
+                continue
+            urls.append(
+                self.storage.get_presigned_url(
+                    remote_key,
+                    expiration_minutes=expiration_minutes,
+                    method="GET",
+                    response_content_type=rcts[i],
+                    response_content_disposition=response_content_disposition,
+                )
+            )
+        return urls
+
+    def _download_key_from_meta(
+        self, name: str, version: str, meta: dict[str, Any], filename: str | None
+    ) -> str:
+        """Resolve the bucket key of an object's payload file from its registry metadata."""
+        uuid_str = (meta.get("_storage") or {}).get("uuid")
+        if not uuid_str:
+            raise ValueError(f"Object {name}@{version} has corrupted metadata (missing _storage.uuid)")
+        target_file = self._resolve_manifest_file(name, version, meta.get("_files") or [], filename)
+        return f"{self._object_key_with_uuid(name, version, uuid_str)}/{target_file}"
+
+    @staticmethod
+    def _resolve_manifest_file(
+        name: str, version: str, files: list[str], filename: str | None
+    ) -> str:
+        """Pick which manifest file a presigned download should target."""
+        if filename is not None:
+            if files and filename not in files:
+                raise ValueError(f"File {filename!r} not in manifest for {name}@{version}: {files}")
+            return filename
+        if len(files) == 1:
+            return files[0]
+        if "data.txt" in files:  # canonical single-payload name for bytes/image assets
+            return "data.txt"
+        raise ValueError(
+            f"Cannot infer download file for {name}@{version}; pass filename. Manifest: {files}"
+        )
 
     def cleanup_direct_upload_target(self, staged_target: dict[str, Any]) -> bool:
         staged_path = staged_target.get("path", "")
