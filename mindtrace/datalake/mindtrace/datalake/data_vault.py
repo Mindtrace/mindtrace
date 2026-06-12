@@ -745,6 +745,45 @@ class AsyncDataVault:
         """Load :class:`~mindtrace.datalake.types.Asset` metadata by canonical ``asset_id``."""
         return await self._backend.get_asset(asset_id)
 
+    async def get_download_url(
+        self,
+        asset_id: str,
+        *,
+        expires_in_minutes: int = 15,
+        content_type: str | None = None,
+    ) -> str | None:
+        """Mint a short-lived presigned GET URL for an asset's payload.
+
+        The URL points directly at object storage (S3/MinIO/GCS), so the bytes never
+        transit the datalake service — ideal for browsers loading run images. The
+        response Content-Type defaults to the asset's stored ``media_type`` (pass
+        ``content_type`` to override) so images render inline rather than download.
+
+        Returns ``None`` when the backing store cannot presign (e.g. a local-filesystem
+        datalake); fall back to :meth:`get_asset_payload` / ``get_object`` to stream bytes.
+
+        URLs expire — request one per use, do not persist it.
+        """
+        return await self._backend.get_asset_download_url(
+            asset_id,
+            expires_in_minutes=expires_in_minutes,
+            response_content_type=content_type,
+        )
+
+    async def get_download_urls(
+        self,
+        asset_ids: list[str],
+        *,
+        expires_in_minutes: int = 15,
+    ) -> dict[str, str]:
+        """Batch :meth:`get_download_url` in one round-trip → ``{asset_id: url}``.
+
+        Asset ids that don't resolve or can't presign are omitted from the result.
+        """
+        return await self._backend.get_assets_download_urls(
+            asset_ids, expires_in_minutes=expires_in_minutes
+        )
+
     async def list_datasets(self, filters: dict[str, Any] | None = None) -> list[VaultDataset]:
         """List mutable human-facing datasets backed by active datalake collections."""
         collections = await self._backend.list_collections(_dataset_filters(filters))

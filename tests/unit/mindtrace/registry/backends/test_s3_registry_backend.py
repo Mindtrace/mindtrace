@@ -214,8 +214,11 @@ class MockMinioHandler:
         expiration_minutes: int = 60,
         method: str = "GET",
         content_type: str | None = None,
+        response_content_type: str | None = None,
+        response_content_disposition: str | None = None,
     ) -> str:
-        return f"https://example.invalid/presign/{remote_path}"
+        rct = f"&rct={response_content_type}" if response_content_type else ""
+        return f"https://example.invalid/presign/{remote_path}?method={method}{rct}"
 
     def copy(
         self, source_remote_path: str, destination_remote_path: str, fail_if_exists: bool = False
@@ -1601,3 +1604,85 @@ def test_s3_commit_direct_upload_metadata_write_error(backend, monkeypatch):
         on_conflict=OnConflict.OVERWRITE,
     )
     assert r.is_error
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Presigned download URL Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def single_file_object_dir(tmp_path):
+    """An object with a single payload file, like an image asset's data.txt."""
+    obj_dir = tmp_path / "img_object"
+    obj_dir.mkdir()
+    (obj_dir / "data.txt").write_bytes(b"\x89PNG\r\n\x1a\n")
+    return obj_dir
+
+
+def test_create_direct_download_url_builds_uuid_key(backend, single_file_object_dir, monkeypatch):
+    """Resolves the active uuid + single-file manifest into objects/{name}/{ver}/{uuid}/data.txt."""
+    backend.push("img:cam0", "1.0.0", single_file_object_dir, {"_files": ["data.txt"]})
+    uuid_str = backend.fetch_metadata("img:cam0", "1.0.0").first().metadata["_storage"]["uuid"]
+
+    captured = {}
+
+    def fake_presign(remote_path, **kwargs):
+        captured["path"] = remote_path
+        captured["kwargs"] = kwargs
+        return "https://signed"
+
+    monkeypatch.setattr(backend.storage, "get_presigned_url", fake_presign)
+
+    url = backend.create_direct_download_url(
+        "img:cam0", "1.0.0", response_content_type="image/png", expiration_minutes=15
+    )
+    assert url == "https://signed"
+    assert captured["path"] == f"objects/img:cam0/1.0.0/{uuid_str}/data.txt"
+    assert captured["kwargs"]["method"] == "GET"
+    assert captured["kwargs"]["response_content_type"] == "image/png"
+    assert captured["kwargs"]["expiration_minutes"] == 15
+
+
+def test_create_direct_download_url_not_found_raises(backend):
+    from mindtrace.registry.core.exceptions import RegistryObjectNotFound
+
+    with pytest.raises(RegistryObjectNotFound):
+        backend.create_direct_download_url("missing:obj", "1.0.0")
+
+
+def test_create_direct_download_url_ambiguous_requires_filename(backend, sample_object_dir, sample_metadata):
+    """Two-file object cannot infer the payload file → must pass filename."""
+    backend.push("test:object", "1.0.0", sample_object_dir, sample_metadata)  # _files: data.json, model.bin
+    with pytest.raises(ValueError, match="filename"):
+        backend.create_direct_download_url("test:object", "1.0.0")
+    # explicit filename works
+    url = backend.create_direct_download_url("test:object", "1.0.0", filename="model.bin")
+    assert "model.bin" in url
+
+
+def test_create_direct_download_urls_batch_one_metadata_fetch(
+    backend, single_file_object_dir, monkeypatch
+):
+    """Batch reads metadata ONCE for all items, then signs each; missing → None, aligned."""
+    backend.push("img:a", "1.0.0", single_file_object_dir, {"_files": ["data.txt"]})
+    backend.push("img:b", "1.0.0", single_file_object_dir, {"_files": ["data.txt"]})
+
+    calls = {"n": 0}
+    real_fetch = backend.fetch_metadata
+
+    def counting_fetch(name, version):
+        calls["n"] += 1
+        return real_fetch(name, version)
+
+    monkeypatch.setattr(backend, "fetch_metadata", counting_fetch)
+
+    urls = backend.create_direct_download_urls(
+        ["img:a", "img:b", "img:missing"],
+        ["1.0.0", "1.0.0", "1.0.0"],
+        response_content_types=["image/png", "image/jpeg", None],
+    )
+    assert calls["n"] == 1, "batch must fetch metadata in a single call"
+    assert len(urls) == 3
+    assert urls[0] is not None and urls[1] is not None
+    assert urls[2] is None  # missing object omitted, alignment preserved
+    assert "rct=image/png" in urls[0] and "rct=image/jpeg" in urls[1]

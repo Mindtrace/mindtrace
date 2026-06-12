@@ -28,6 +28,8 @@ from mindtrace.datalake.service_types import (
     CreateDatumInput,
     DeleteByIdInput,
     GetAssetByAliasInput,
+    GetAssetDownloadUrlInput,
+    GetAssetsDownloadUrlsInput,
     GetByIdInput,
     GetDatasetVersionInput,
     GetObjectInput,
@@ -167,6 +169,37 @@ class AsyncDataVaultBackend(ABC):
 
     @abstractmethod
     async def get_asset_payload(self, asset_id: str, **kwargs: Any) -> Any: ...
+
+    async def get_asset_download_url(
+        self,
+        asset_id: str,
+        *,
+        expires_in_minutes: int = 15,
+        response_content_type: str | None = None,
+    ) -> str | None:
+        """Mint a presigned GET URL for an asset's payload (None if unsupported).
+
+        Non-abstract so existing backends/test fakes keep working; object-store-backed
+        backends override it.
+        """
+        raise NotImplementedError("This datalake backend does not support presigned download URLs")
+
+    async def get_assets_download_urls(
+        self,
+        asset_ids: list[str],
+        *,
+        expires_in_minutes: int = 15,
+    ) -> dict[str, str]:
+        """Batch presigned URLs: ``{asset_id: url}``. Default loops the single call."""
+        out: dict[str, str] = {}
+        for aid in asset_ids:
+            try:
+                url = await self.get_asset_download_url(aid, expires_in_minutes=expires_in_minutes)
+            except Exception:  # noqa: BLE001 — best-effort batch
+                url = None
+            if url:
+                out[aid] = url
+        return out
 
     @abstractmethod
     async def create_asset_from_object(
@@ -587,6 +620,29 @@ class LocalAsyncDataVaultBackend(AsyncDataVaultBackend):
 
     async def get_asset_payload(self, asset_id: str, **kwargs: Any) -> Any:
         return await self._datalake.get_asset_payload(asset_id, **kwargs)
+
+    async def get_asset_download_url(
+        self,
+        asset_id: str,
+        *,
+        expires_in_minutes: int = 15,
+        response_content_type: str | None = None,
+    ) -> str | None:
+        return await self._datalake.get_asset_download_url(
+            asset_id,
+            expires_in_minutes=expires_in_minutes,
+            response_content_type=response_content_type,
+        )
+
+    async def get_assets_download_urls(
+        self,
+        asset_ids: list[str],
+        *,
+        expires_in_minutes: int = 15,
+    ) -> dict[str, str]:
+        return await self._datalake.get_assets_download_urls(
+            asset_ids, expires_in_minutes=expires_in_minutes
+        )
 
     async def create_asset_from_object(
         self,
@@ -1197,6 +1253,38 @@ class DatalakeServiceAsyncDataVaultBackend(AsyncDataVaultBackend):
             input_obj=GetAssetByAliasInput(alias=alias),
         )
         return out.asset
+
+    async def get_asset_download_url(
+        self,
+        asset_id: str,
+        *,
+        expires_in_minutes: int = 15,
+        response_content_type: str | None = None,
+    ) -> str | None:
+        out = await self._call(
+            "aassets_download_url",
+            input_obj=GetAssetDownloadUrlInput(
+                asset_id=asset_id,
+                expires_in_minutes=expires_in_minutes,
+                response_content_type=response_content_type,
+            ),
+        )
+        return out.url
+
+    async def get_assets_download_urls(
+        self,
+        asset_ids: list[str],
+        *,
+        expires_in_minutes: int = 15,
+    ) -> dict[str, str]:
+        out = await self._call(
+            "aassets_download_urls",
+            input_obj=GetAssetsDownloadUrlsInput(
+                asset_ids=asset_ids,
+                expires_in_minutes=expires_in_minutes,
+            ),
+        )
+        return out.urls
 
     async def get_object(self, storage_ref: StorageRef, **kwargs: Any) -> Any:
         if kwargs:
