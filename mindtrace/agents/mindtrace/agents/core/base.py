@@ -181,9 +181,9 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
             for tool_call in response.tool_calls or []:
                 assistant_parts.append(
                     ToolCallPart(
-                        tool_call_id=tool_call.get("id", ""),
-                        tool_name=tool_call["name"],
-                        args=tool_call.get("arguments", "{}"),
+                        tool_call_id=tool_call.id,
+                        tool_name=tool_call.name,
+                        args=tool_call.arguments,
                     )
                 )
             if not assistant_parts:
@@ -192,8 +192,8 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
 
             if response.tool_calls:
                 for tool_call in response.tool_calls:
-                    tool_name = tool_call["name"]
-                    tool_args = tool_call.get("arguments", "{}")
+                    tool_name = tool_call.name
+                    tool_args = tool_call.arguments
                     try:
                         if self.callbacks and self.callbacks.before_tool_call:
                             result = await _invoke(self.callbacks.before_tool_call, tool_name, tool_args, ctx)
@@ -220,7 +220,7 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
                             role="tool",
                             parts=[
                                 ToolReturnPart(
-                                    tool_call_id=tool_call.get("id", ""),
+                                    tool_call_id=tool_call.id,
                                     content=content,
                                 )
                             ],
@@ -410,9 +410,9 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
                 for tc in response.tool_calls or []:
                     assistant_parts.append(
                         ToolCallPart(
-                            tool_call_id=tc.get("id", ""),
-                            tool_name=tc["name"],
-                            args=tc.get("arguments", "{}"),
+                            tool_call_id=tc.id,
+                            tool_name=tc.name,
+                            args=tc.arguments,
                         )
                     )
                 if not assistant_parts:
@@ -421,8 +421,8 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
 
                 if response.tool_calls:
                     for tc in response.tool_calls:
-                        tool_name = tc["name"]
-                        tool_args = tc.get("arguments", "{}")
+                        tool_name = tc.name
+                        tool_args = tc.arguments
                         try:
                             if self.callbacks and self.callbacks.before_tool_call:
                                 result = await _invoke(self.callbacks.before_tool_call, tool_name, tool_args, ctx)
@@ -446,14 +446,14 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
 
                         yield {
                             "step": "tool_result",
-                            "tool_name": tc["name"],
-                            "tool_call_id": tc.get("id", ""),
+                            "tool_name": tc.name,
+                            "tool_call_id": tc.id,
                             "result": content,
                         }
                         messages.append(
                             ModelMessage(
                                 role="tool",
-                                parts=[ToolReturnPart(tool_call_id=tc.get("id", ""), content=content)],
+                                parts=[ToolReturnPart(tool_call_id=tc.id, content=content)],
                             )
                         )
                     continue

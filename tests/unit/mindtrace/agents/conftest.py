@@ -9,7 +9,7 @@ import pytest
 
 from mindtrace.agents.events import NativeEvent, PartEndEvent
 from mindtrace.agents.messages import ModelMessage, TextPart, ToolCallPart
-from mindtrace.agents.models import Model, ModelRequestParameters, ModelResponse
+from mindtrace.agents.models import Model, ModelRequestParameters, ModelResponse, ToolCall
 
 
 class FakeModel(Model):
@@ -63,9 +63,9 @@ class FakeModel(Model):
             yield PartEndEvent(
                 index=index,
                 part=ToolCallPart(
-                    tool_name=tc["name"],
-                    tool_call_id=tc.get("id", ""),
-                    args=tc.get("arguments", "{}"),
+                    tool_name=tc.name,
+                    tool_call_id=tc.id,
+                    args=tc.arguments,
                 ),
                 part_kind="tool_call",
             )
@@ -86,7 +86,7 @@ def tool_call_response(
     """Build a tool-call ModelResponse."""
     return ModelResponse(
         text="",
-        tool_calls=[{"name": tool_name, "id": tool_call_id, "arguments": arguments}],
+        tool_calls=[ToolCall(name=tool_name, id=tool_call_id, arguments=arguments)],
         **kwargs,
     )
 
