@@ -780,9 +780,7 @@ class AsyncDataVault:
 
         Asset ids that don't resolve or can't presign are omitted from the result.
         """
-        return await self._backend.get_assets_download_urls(
-            asset_ids, expires_in_minutes=expires_in_minutes
-        )
+        return await self._backend.get_assets_download_urls(asset_ids, expires_in_minutes=expires_in_minutes)
 
     async def list_datasets(self, filters: dict[str, Any] | None = None) -> list[VaultDataset]:
         """List mutable human-facing datasets backed by active datalake collections."""

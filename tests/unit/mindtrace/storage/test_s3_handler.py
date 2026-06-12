@@ -1242,7 +1242,7 @@ def test_presign_endpoint_uses_separate_signing_client(mock_boto3):
 @patch("mindtrace.storage.s3.boto3")
 def test_presign_endpoint_defaults_to_io_client(mock_boto3):
     """No separate presign endpoint → reuse the I/O client (behaviour unchanged)."""
-    mock_client = _prepare_client(mock_boto3)
+    _prepare_client(mock_boto3)
     handler = S3StorageHandler("bucket", endpoint="localhost:9000", access_key="a", secret_key="s")
     assert handler._presign_client is handler.client
     assert mock_boto3.client.call_count == 1

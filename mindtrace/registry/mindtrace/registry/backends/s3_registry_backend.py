@@ -361,9 +361,7 @@ class S3RegistryBackend(RegistryBackend):
             )
         return urls
 
-    def _download_key_from_meta(
-        self, name: str, version: str, meta: dict[str, Any], filename: str | None
-    ) -> str:
+    def _download_key_from_meta(self, name: str, version: str, meta: dict[str, Any], filename: str | None) -> str:
         """Resolve the bucket key of an object's payload file from its registry metadata."""
         uuid_str = (meta.get("_storage") or {}).get("uuid")
         if not uuid_str:
@@ -372,9 +370,7 @@ class S3RegistryBackend(RegistryBackend):
         return f"{self._object_key_with_uuid(name, version, uuid_str)}/{target_file}"
 
     @staticmethod
-    def _resolve_manifest_file(
-        name: str, version: str, files: list[str], filename: str | None
-    ) -> str:
+    def _resolve_manifest_file(name: str, version: str, files: list[str], filename: str | None) -> str:
         """Pick which manifest file a presigned download should target."""
         if filename is not None:
             if files and filename not in files:
@@ -384,9 +380,7 @@ class S3RegistryBackend(RegistryBackend):
             return files[0]
         if "data.txt" in files:  # canonical single-payload name for bytes/image assets
             return "data.txt"
-        raise ValueError(
-            f"Cannot infer download file for {name}@{version}; pass filename. Manifest: {files}"
-        )
+        raise ValueError(f"Cannot infer download file for {name}@{version}; pass filename. Manifest: {files}")
 
     def cleanup_direct_upload_target(self, staged_target: dict[str, Any]) -> bool:
         staged_path = staged_target.get("path", "")
