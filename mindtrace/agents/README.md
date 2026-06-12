@@ -9,12 +9,29 @@ The `Agents` module provides Mindtrace’s framework for building LLM-powered ag
 ## Features
 
 - **Agent runtime** with `MindtraceAgent`
-- **Pluggable models and providers** for OpenAI, Ollama, and Gemini
+- **Pluggable models and providers** for OpenAI, Anthropic, Gemini, and Ollama
 - **Tool calling** with Python functions, toolsets, and remote MCP tools
 - **Lifecycle control** with callbacks, streaming events, and step-by-step iteration
 - **State and persistence** with history backends and memory toolsets
 - **Multi-agent composition** with agents-as-tools and handoff markers
 - **Distributed execution** with local and RabbitMQ-backed task queues
+
+## Installation
+
+Provider SDKs are optional extras — install only what you use:
+
+```bash
+pip install 'mindtrace-agents[openai]'     # OpenAI
+pip install 'mindtrace-agents[anthropic]'  # Anthropic
+pip install 'mindtrace-agents[gemini]'     # Gemini (OpenAI-compatible endpoint)
+pip install 'mindtrace-agents[ollama]'     # Ollama (OpenAI-compatible endpoint)
+pip install 'mindtrace-agents[all-providers]'
+```
+
+Gemini and Ollama are reached through their OpenAI-compatible endpoints, so they
+share the `openai` SDK. Note that the Gemini compat endpoint exposes the OpenAI
+feature subset only (no Gemini-native structured output, safety settings, or
+thinking budgets).
 
 ## Quick Start
 

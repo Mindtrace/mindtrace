@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Union
 
+from .._types import FinishReason, Usage
+
 
 @dataclass(frozen=True)
 class PartStartEvent:
@@ -39,6 +41,20 @@ class PartEndEvent:
     part_kind: str | None = None
     message_id: str | None = None
     tool_call_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ResponseCompleteEvent:
+    """Emitted once at the end of a model stream with response metadata.
+
+    Carries the normalized finish reason (so truncation is distinguishable
+    from natural completion) and token usage when the provider reports it.
+    """
+
+    finish_reason: FinishReason | None = None
+    raw_finish_reason: str | None = None
+    usage: Usage | None = None
+    message_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -95,6 +111,7 @@ NativeEvent = Union[
     PartStartEvent,
     PartDeltaEvent,
     PartEndEvent,
+    ResponseCompleteEvent,
     TextPartDelta,
     ToolCallStartEvent,
     ToolCallArgsDelta,
@@ -113,6 +130,7 @@ __all__ = [
     "PartDeltaEvent",
     "PartEndEvent",
     "PartStartEvent",
+    "ResponseCompleteEvent",
     "RunErrorEvent",
     "RunFinishedEvent",
     "RunStartedEvent",

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, fields, replace
-from textwrap import dedent
 
 from typing_extensions import Self
 
@@ -11,22 +10,31 @@ __all__ = ["ModelProfile", "ModelProfileSpec", "DEFAULT_PROFILE"]
 
 @dataclass(kw_only=True)
 class ModelProfile:
+    """Capabilities and wire-format quirks of a specific model.
+
+    Providers return a profile per model name; every field here is consumed by
+    the request paths — capabilities without an implementation behind them
+    don't belong in the profile.
+    """
+
+    # Whether the model supports tool/function calling. Requests that include
+    # tools against a model without support raise instead of failing remotely.
     supports_tools: bool = True
-    supports_json_schema_output: bool = False
-    supports_json_object_output: bool = False
-    default_structured_output_mode: str = "tool"
-    prompted_output_template: str = dedent(
-        """
-        Always respond with a JSON object that's compatible with this schema:
-
-        {schema}
-
-        Don't include any text or Markdown fencing before or after.
-        """
-    )
-    json_schema_transformer: type | None = None
-    thinking_tags: tuple[str, str] = ("<think>", "</think>")
-    ignore_streamed_leading_whitespace: bool = False
+    # Settings from ModelSettings that this specific model rejects (e.g.
+    # `temperature` on reasoning models); they are dropped with a warning.
+    unsupported_model_settings: frozenset[str] = frozenset()
+    # Wire name used for the max-tokens parameter on OpenAI-compatible
+    # endpoints. openai.com models take `max_completion_tokens` (reasoning
+    # models reject the deprecated `max_tokens`), while many compatible
+    # servers only understand `max_tokens`.
+    max_tokens_param: str = "max_tokens"
+    # Whether the endpoint accepts `stream_options={"include_usage": true}`
+    # (OpenAI-compatible endpoints only; disable for servers that reject it).
+    supports_stream_include_usage: bool = True
+    # Output-token limit applied when the provider API requires `max_tokens`
+    # and the caller didn't set one (Anthropic). Kept conservative because
+    # values above a model's output cap make the API reject the request.
+    default_max_tokens: int = 4096
 
     @classmethod
     def from_profile(cls, profile: ModelProfile | None) -> Self:
