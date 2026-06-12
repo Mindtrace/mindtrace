@@ -1906,10 +1906,87 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#mindtrace.core.utils.hashing.PasswordHashPolicy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PasswordHashPolicy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.core.utils.hashing.fingerprint_hasher" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        fingerprint_hasher
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.core.utils.hashing.fingerprint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        fingerprint
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#mindtrace.core.utils.hashing.compute_dir_hash" class="md-nav__link">
     <span class="md-ellipsis">
       
         compute_dir_hash
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.core.utils.hashing.hash_password" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        hash_password
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.core.utils.hashing.verify_password" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        verify_password
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.core.utils.hashing.needs_rehash" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        needs_rehash
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.core.utils.hashing.verify_and_maybe_upgrade" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        verify_and_maybe_upgrade
       
     </span>
   </a>
@@ -4065,10 +4142,87 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#mindtrace.core.utils.hashing.PasswordHashPolicy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PasswordHashPolicy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.core.utils.hashing.fingerprint_hasher" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        fingerprint_hasher
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.core.utils.hashing.fingerprint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        fingerprint
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#mindtrace.core.utils.hashing.compute_dir_hash" class="md-nav__link">
     <span class="md-ellipsis">
       
         compute_dir_hash
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.core.utils.hashing.hash_password" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        hash_password
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.core.utils.hashing.verify_password" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        verify_password
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.core.utils.hashing.needs_rehash" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        needs_rehash
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.core.utils.hashing.verify_and_maybe_upgrade" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        verify_and_maybe_upgrade
       
     </span>
   </a>
@@ -11333,6 +11487,253 @@ print(config_class)  # &lt;class &#39;mindtrace.core.config.Config&#39;&gt;
 
     <div class="doc doc-contents ">
 
+        <p>Hashing utilities for fingerprinting and password management.</p>
+<p>This module provides:
+- Fast fingerprinting functions for general-purpose hashing (identifiers, cache keys, etc.)
+- Secure password hashing with multiple KDF algorithms (Argon2id, bcrypt, scrypt, PBKDF2)
+- Password verification with automatic hash format detection
+- Hash upgrade utilities for migrating between algorithms/parameters</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h4 id="mindtrace.core.utils.hashing.PasswordHashPolicy" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">PasswordHashPolicy</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+</h4>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">PasswordHashPolicy</span><span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">default_kdf</span><span class="p">:</span> <span class="n">PasswordKDF</span> <span class="o">=</span> <span class="s2">&quot;argon2id&quot;</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">argon2_time_cost</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">argon2_memory_cost_kib</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">64</span> <span class="o">*</span> <span class="mi">1024</span><span class="p">,</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">argon2_parallelism</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">argon2_hash_len</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">argon2_salt_len</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">16</span><span class="p">,</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">bcrypt_rounds</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">12</span><span class="p">,</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">scrypt_n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span><span class="o">**</span><span class="mi">14</span><span class="p">,</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">scrypt_r</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">8</span><span class="p">,</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">scrypt_p</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="n">scrypt_dklen</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="n">scrypt_salt_len</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">16</span><span class="p">,</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    <span class="n">pbkdf2_iterations</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">600000</span><span class="p">,</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="n">pbkdf2_salt_len</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">16</span><span class="p">,</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    <span class="n">pbkdf2_dklen</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="p">)</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Holds password hashing defaults.</p>
+<p>Tune these to match your environment and latency targets. The defaults are
+a reasonable starting point for many services, but you should benchmark on
+production-like hardware.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.core.utils.hashing.PasswordHashPolicy.default_kdf">default_kdf</span></code></td>
+            <td>
+                  <code><span title="mindtrace.core.utils.hashing.PasswordKDF">PasswordKDF</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Algorithm to use for newly created password hashes.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.core.utils.hashing.PasswordHashPolicy.argon2_time_cost">argon2_time_cost</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Argon2 time cost (iterations).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.core.utils.hashing.PasswordHashPolicy.argon2_memory_cost_kib">argon2_memory_cost_kib</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Argon2 memory cost in KiB.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.core.utils.hashing.PasswordHashPolicy.argon2_parallelism">argon2_parallelism</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Argon2 parallelism (lanes/threads).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.core.utils.hashing.PasswordHashPolicy.argon2_hash_len">argon2_hash_len</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Length of derived key in bytes.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.core.utils.hashing.PasswordHashPolicy.argon2_salt_len">argon2_salt_len</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Salt length in bytes.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.core.utils.hashing.PasswordHashPolicy.bcrypt_rounds">bcrypt_rounds</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>bcrypt work factor (cost).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.core.utils.hashing.PasswordHashPolicy.scrypt_n">scrypt_n</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>scrypt CPU/memory cost parameter N (must be power of two).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.core.utils.hashing.PasswordHashPolicy.scrypt_r">scrypt_r</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>scrypt block size parameter r.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.core.utils.hashing.PasswordHashPolicy.scrypt_p">scrypt_p</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>scrypt parallelization parameter p.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.core.utils.hashing.PasswordHashPolicy.scrypt_dklen">scrypt_dklen</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>scrypt derived key length in bytes.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.core.utils.hashing.PasswordHashPolicy.scrypt_salt_len">scrypt_salt_len</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>scrypt salt length in bytes.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.core.utils.hashing.PasswordHashPolicy.pbkdf2_iterations">pbkdf2_iterations</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>PBKDF2 iteration count.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.core.utils.hashing.PasswordHashPolicy.pbkdf2_salt_len">pbkdf2_salt_len</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>PBKDF2 salt length in bytes.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="mindtrace.core.utils.hashing.PasswordHashPolicy.pbkdf2_dklen">pbkdf2_dklen</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>PBKDF2 derived key length in bytes.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
 
 
 
@@ -11353,6 +11754,305 @@ print(config_class)  # &lt;class &#39;mindtrace.core.config.Config&#39;&gt;
 
 
 
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="mindtrace.core.utils.hashing.fingerprint_hasher" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">fingerprint_hasher</span>
+
+
+</h4>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">fingerprint_hasher</span><span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="o">*</span><span class="p">,</span> <span class="n">alg</span><span class="p">:</span> <span class="n">FingerprintAlg</span> <span class="o">=</span> <span class="s2">&quot;sha256&quot;</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">bytes</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="p">)</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Creates an incremental fingerprint hasher.</p>
+<p>This returns an object supporting <code>update(data: bytes)</code> and <code>digest()</code> /
+<code>hexdigest()</code>, suitable for hashing streaming data.</p>
+<p>If <code>key</code> is provided, the returned object is an HMAC instance using the given
+digest algorithm. If <code>key</code> is not provided, the returned object is a
+<code>hashlib</code> hash instance.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>alg</code>
+            </td>
+            <td>
+                  <code><span title="mindtrace.core.utils.hashing.FingerprintAlg">FingerprintAlg</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Digest algorithm to use (e.g., "sha256", "blake2b").</p>
+              </div>
+            </td>
+            <td>
+                  <code>&#39;sha256&#39;</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>key</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span> | <span title="bytes">bytes</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Optional secret key to compute an HMAC instead of a plain digest.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>A hash-like object (hashlib hasher or HMAC) supporting incremental updates.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="AttributeError">AttributeError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>alg</code> is not available in <code>hashlib</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="mindtrace.core.utils.hashing.fingerprint" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">fingerprint</span>
+
+
+</h4>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">fingerprint</span><span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">data</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">bytes</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="o">*</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">alg</span><span class="p">:</span> <span class="n">FingerprintAlg</span> <span class="o">=</span> <span class="s2">&quot;sha256&quot;</span><span class="p">,</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">key</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">bytes</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">encoding</span><span class="p">:</span> <span class="n">FingerprintEncoding</span> <span class="o">=</span> <span class="s2">&quot;hex&quot;</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Computes a fast general-purpose fingerprint (digest or HMAC).</p>
+<p>This is intended for identifiers, cache keys, integrity checks, etc.</p>
+
+
+<details class="warning" open>
+  <summary>Warning</summary>
+  <p>Do not use this for password storage. Use a password KDF like Argon2id,
+bcrypt, scrypt, or PBKDF2.</p>
+</details>
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>data</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span> | <span title="bytes">bytes</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Data to fingerprint.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>alg</code>
+            </td>
+            <td>
+                  <code><span title="mindtrace.core.utils.hashing.FingerprintAlg">FingerprintAlg</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Digest algorithm to use.</p>
+              </div>
+            </td>
+            <td>
+                  <code>&#39;sha256&#39;</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>key</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span> | <span title="bytes">bytes</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Optional secret key. If provided, computes HMAC(alg, key, data).</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>encoding</code>
+            </td>
+            <td>
+                  <code><span title="mindtrace.core.utils.hashing.FingerprintEncoding">FingerprintEncoding</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Output encoding:
+- "hex": lowercase hex string (default)
+- "b64": base64 string (standard alphabet, includes padding)
+- "b64url": URL-safe base64 without padding</p>
+              </div>
+            </td>
+            <td>
+                  <code>&#39;hex&#39;</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Encoded fingerprint string.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="AttributeError">AttributeError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>alg</code> is not available in <code>hashlib</code>.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>encoding</code> is not supported.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
 <div class="doc doc-object doc-function">
 
 
@@ -11361,14 +12061,27 @@ print(config_class)  # &lt;class &#39;mindtrace.core.config.Config&#39;&gt;
 
 
 </h4>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">compute_dir_hash</span><span class="p">(</span><span class="n">directory_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">,</span> <span class="n">chunk_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">**</span> <span class="mi">20</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">compute_dir_hash</span><span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">directory_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">chunk_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span><span class="o">**</span><span class="mi">20</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="o">*</span><span class="p">,</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">alg</span><span class="p">:</span> <span class="n">FingerprintAlg</span> <span class="o">=</span> <span class="s2">&quot;sha256&quot;</span><span class="p">,</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">key</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">bytes</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents ">
 
-        <p>Compute SHA256 hash of directory contents.</p>
-<p>Hash is deterministic: files are sorted by path, then each file's content is hashed and combined. This ensures the
-same directory always produces the same hash.</p>
+        <p>Computes a deterministic fingerprint of a directory's contents.</p>
+<p>The hash is deterministic across runs and stable across platforms:
+- Files are sorted by their relative POSIX paths.
+- For each file, the hash includes:
+    1) a marker + relative path
+    2) a marker + file contents (streamed in chunks)
+    3) a file-boundary marker</p>
+<p>The boundary markers avoid ambiguity between path and content concatenation.</p>
+<p>If <code>key</code> is provided, the hash becomes an HMAC, which is appropriate when you
+need tamper-detection against an attacker who can modify directory contents.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -11391,7 +12104,7 @@ same directory always produces the same hash.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Path to the directory to hash</p>
+                <p>Path to the directory to hash.</p>
               </div>
             </td>
             <td>
@@ -11407,17 +12120,679 @@ same directory always produces the same hash.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Size of the chunks (in bytes) to read from the file</p>
+                <p>Size of read chunks in bytes.</p>
               </div>
             </td>
             <td>
                   <code>2 ** 20</code>
             </td>
           </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>alg</code>
+            </td>
+            <td>
+                  <code><span title="mindtrace.core.utils.hashing.FingerprintAlg">FingerprintAlg</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Digest algorithm to use (default "sha256").</p>
+              </div>
+            </td>
+            <td>
+                  <code>&#39;sha256&#39;</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>key</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span> | <span title="bytes">bytes</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Optional secret key for HMAC.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
       </tbody>
     </table>
-        <p>Returns:
-    Hexadecimal SHA256 hash string</p>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Lowercase hexadecimal digest string.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="FileNotFoundError">FileNotFoundError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>directory_path</code> does not exist.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="NotADirectoryError">NotADirectoryError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>directory_path</code> is not a directory.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="OSError">OSError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>For I/O errors while reading files.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="AttributeError">AttributeError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>alg</code> is not available in <code>hashlib</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="mindtrace.core.utils.hashing.hash_password" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">hash_password</span>
+
+
+</h4>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">hash_password</span><span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">password</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="o">*</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">kdf</span><span class="p">:</span> <span class="n">PasswordKDF</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">policy</span><span class="p">:</span> <span class="n">PasswordHashPolicy</span> <span class="o">=</span> <span class="n">DEFAULT_PASSWORD_HASH_POLICY</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Hashes a password using a slow password KDF.</p>
+<p>The returned string is self-describing and safe to store. Verification uses
+the stored hash's prefix/format to select the correct verifier.</p>
+
+
+<details class="note" open>
+  <summary>Note</summary>
+  <p>bcrypt only uses the first 72 bytes of a password, so accepting longer
+passwords would let distinct passwords collide. This function rejects
+passwords over 72 bytes when <code>kdf="bcrypt"</code>; use a different KDF such as
+the default <code>argon2id</code> for longer passwords.</p>
+</details>
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>password</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Plaintext password (unicode string).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>kdf</code>
+            </td>
+            <td>
+                  <code><span title="mindtrace.core.utils.hashing.PasswordKDF">PasswordKDF</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Optional algorithm override. If not provided, uses
+<code>policy.default_kdf</code>.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>policy</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="PasswordHashPolicy
+
+
+  
+      dataclass
+   (mindtrace.core.utils.hashing.PasswordHashPolicy)" href="#mindtrace.core.utils.hashing.PasswordHashPolicy">PasswordHashPolicy</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Password hashing policy and parameters.</p>
+              </div>
+            </td>
+            <td>
+                  <code><span title="mindtrace.core.utils.hashing.DEFAULT_PASSWORD_HASH_POLICY">DEFAULT_PASSWORD_HASH_POLICY</span></code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Encoded password hash string.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If inputs are invalid, the KDF is unsupported, or a bcrypt
+password exceeds 72 bytes.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="mindtrace.core.utils.hashing.verify_password" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">verify_password</span>
+
+
+</h4>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">verify_password</span><span class="p">(</span><span class="n">stored_hash</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">password</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Verifies a candidate password against a stored password hash.</p>
+<p>Returns False for mismatches. Raises an error for malformed/unsupported hash
+formats.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>stored_hash</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Stored password hash string.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>password</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Candidate plaintext password.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>True if the password matches, False otherwise. Candidates longer than 72</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>bytes are reported as a non-match for bcrypt hashes (bcrypt uses only the</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>first 72 bytes).</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the stored hash format is malformed or unsupported.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="mindtrace.core.utils.hashing.needs_rehash" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">needs_rehash</span>
+
+
+</h4>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">needs_rehash</span><span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">stored_hash</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="o">*</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">policy</span><span class="p">:</span> <span class="n">PasswordHashPolicy</span> <span class="o">=</span> <span class="n">DEFAULT_PASSWORD_HASH_POLICY</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Checks whether a stored password hash should be upgraded.</p>
+<p>This enables incremental upgrades when you change algorithms or parameters:
+verify on login, then re-hash with current policy and store the new hash.</p>
+
+
+<details class="behavior" open>
+  <summary>Behavior</summary>
+  <ul>
+<li>If the stored hash uses a different algorithm than <code>policy.default_kdf</code>,
+  returns True.</li>
+<li>If the stored hash uses the same algorithm but different parameters,
+  returns True.</li>
+<li>For malformed/unknown hashes, returns True.</li>
+</ul>
+</details>
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>stored_hash</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Stored password hash string.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>policy</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="PasswordHashPolicy
+
+
+  
+      dataclass
+   (mindtrace.core.utils.hashing.PasswordHashPolicy)" href="#mindtrace.core.utils.hashing.PasswordHashPolicy">PasswordHashPolicy</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Current password hashing policy.</p>
+              </div>
+            </td>
+            <td>
+                  <code><span title="mindtrace.core.utils.hashing.DEFAULT_PASSWORD_HASH_POLICY">DEFAULT_PASSWORD_HASH_POLICY</span></code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>True if the stored hash should be upgraded; False otherwise.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="mindtrace.core.utils.hashing.verify_and_maybe_upgrade" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">verify_and_maybe_upgrade</span>
+
+
+</h4>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">verify_and_maybe_upgrade</span><span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">stored_hash</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">password</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="o">*</span><span class="p">,</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">policy</span><span class="p">:</span> <span class="n">PasswordHashPolicy</span> <span class="o">=</span> <span class="n">DEFAULT_PASSWORD_HASH_POLICY</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">bool</span><span class="p">,</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Verifies a password and optionally returns an upgraded hash.</p>
+
+
+<details class="this-is-designed-for-login-flows" open>
+  <summary>This is designed for login flows</summary>
+  <p>1) Verify password against stored hash.
+2) If it matches and <code>needs_rehash(...)</code> is True, return a new hash
+   computed with the current policy.</p>
+</details>
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>stored_hash</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Stored password hash string.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>password</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Candidate plaintext password.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>policy</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="PasswordHashPolicy
+
+
+  
+      dataclass
+   (mindtrace.core.utils.hashing.PasswordHashPolicy)" href="#mindtrace.core.utils.hashing.PasswordHashPolicy">PasswordHashPolicy</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Password hashing policy used for the upgrade decision.</p>
+              </div>
+            </td>
+            <td>
+                  <code><span title="mindtrace.core.utils.hashing.DEFAULT_PASSWORD_HASH_POLICY">DEFAULT_PASSWORD_HASH_POLICY</span></code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="tuple">tuple</span>[<span title="bool">bool</span>, <span title="str">str</span> | None]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>A tuple (ok, new_hash):
+- ok: True if password verified, else False.
+- new_hash: A new hash to store if upgrade is needed; otherwise None.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If stored hash format is malformed/unsupported.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If password is empty or not a string.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
     </div>
