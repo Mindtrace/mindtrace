@@ -650,39 +650,30 @@ class Registry(Mindtrace):
         response_content_disposition: str | None = None,
         filenames: list[str | None] | None = None,
     ) -> list[str | None]:
-        """Batch presigned GET URLs. Resolves each version then one backend batch call."""
+        """Batch presigned GET URLs. Resolves each version then one backend batch call.
+
+        A version that can't be resolved becomes ``""``; the backend then finds no
+        metadata for it and yields ``None`` in that slot — so the result stays aligned
+        with the inputs without any pre-filtering.
+        """
         if len(names) != len(versions):
             raise ValueError("names and versions must be the same length")
         target_core = self._remote if self._cached else self._core
-        backend = target_core.backend
-        resolved: list[str] = []
-        keep: list[bool] = []
-        for name, version in zip(names, versions):
+
+        def _resolve(name: str, version: str | None) -> str:
             try:
-                resolved.append(target_core._resolve_load_version(name, version))
-                keep.append(True)
-            except Exception:  # noqa: BLE001 — unresolved items become None below
-                resolved.append("")
-                keep.append(False)
-        rcts = response_content_types or [None] * len(names)
-        fns = filenames or [None] * len(names)
-        sub_names = [n for n, k in zip(names, keep) if k]
-        sub_versions = [v for v, k in zip(resolved, keep) if k]
-        sub_rcts = [r for r, k in zip(rcts, keep) if k]
-        sub_fns = [f for f, k in zip(fns, keep) if k]
-        sub_urls = backend.create_direct_download_urls(
-            sub_names,
-            sub_versions,
+                return target_core._resolve_load_version(name, version)
+            except Exception:  # noqa: BLE001 — unresolved → empty version → backend yields None
+                return ""
+
+        return target_core.backend.create_direct_download_urls(
+            names,
+            [_resolve(n, v) for n, v in zip(names, versions)],
             expiration_minutes=expiration_minutes,
-            response_content_types=sub_rcts,
+            response_content_types=response_content_types,
             response_content_disposition=response_content_disposition,
-            filenames=sub_fns,
+            filenames=filenames,
         )
-        out: list[str | None] = []
-        it = iter(sub_urls)
-        for k in keep:
-            out.append(next(it) if k else None)
-        return out
 
     def inspect_direct_upload_target(self, staged_target: dict[str, Any]) -> dict[str, Any]:
         """Inspect a staged direct-upload target."""
