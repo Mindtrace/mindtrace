@@ -315,15 +315,70 @@ timeout = Timeout(timeout=5)
 print(timeout.run(eventually_ready))
 ```
 
-### Hashing and metrics
+### Hashing
+
+`fingerprint` computes a fast, general-purpose digest (or keyed HMAC) for identifiers, cache keys, and integrity checks. It is **not** for passwords — use the password helpers below for those.
 
 ```python
-from mindtrace.core import SystemMetricsCollector, compute_dir_hash
+from mindtrace.core import fingerprint, fingerprint_hasher
+
+
+fingerprint("hello world")                              # sha256 hex by default
+fingerprint("hello world", alg="blake2b", encoding="b64url")
+fingerprint("hello world", key="secret")                # keyed HMAC
+
+# Incremental hashing for streamed data:
+hasher = fingerprint_hasher(alg="sha256")
+hasher.update(b"chunk-1")
+hasher.update(b"chunk-2")
+print(hasher.hexdigest())
+```
+
+`compute_dir_hash` produces a deterministic, cross-platform fingerprint of a directory's contents (files sorted by their POSIX-relative path). Pass `key=` for a tamper-evident HMAC:
+
+```python
+from mindtrace.core import compute_dir_hash
+
+
+compute_dir_hash("./some-directory")
+compute_dir_hash("./some-directory", alg="sha512", key="secret")
+```
+
+### Password hashing
+
+Store and verify passwords with a slow KDF — Argon2id by default, with bcrypt, scrypt, and PBKDF2-SHA256 also supported. Hashes are self-describing, so `verify_password` selects the right algorithm from the stored string.
+
+```python
+from mindtrace.core import hash_password, verify_password
+
+
+stored = hash_password("correct horse battery staple")   # "$argon2id$..."
+verify_password(stored, "correct horse battery staple")   # True
+verify_password(stored, "wrong")                          # False
+```
+
+During login, verify and transparently re-hash credentials whose algorithm or parameters no longer match your current policy. `verify_and_maybe_upgrade` combines the check with the verification (`needs_rehash` exposes the upgrade decision on its own):
+
+```python
+from mindtrace.core import PasswordHashPolicy, verify_and_maybe_upgrade
+
+
+policy = PasswordHashPolicy(default_kdf="argon2id", argon2_time_cost=4)
+ok, new_hash = verify_and_maybe_upgrade(stored, "correct horse battery staple", policy=policy)
+if ok and new_hash is not None:
+    ...  # persist new_hash for this user
+```
+
+> **Note:** bcrypt only uses the first 72 bytes of a password; `hash_password` rejects longer passwords when `kdf="bcrypt"`. Use the default Argon2id for arbitrary-length passwords.
+
+### System metrics
+
+```python
+from mindtrace.core import SystemMetricsCollector
 
 
 collector = SystemMetricsCollector()
 print(collector())
-print(compute_dir_hash("./some-directory"))
 ```
 
 ## Examples
