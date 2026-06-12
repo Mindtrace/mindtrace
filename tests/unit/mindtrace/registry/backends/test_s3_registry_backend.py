@@ -1605,6 +1605,7 @@ def test_s3_commit_direct_upload_metadata_write_error(backend, monkeypatch):
     )
     assert r.is_error
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Presigned download URL Tests
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1660,9 +1661,7 @@ def test_create_direct_download_url_ambiguous_requires_filename(backend, sample_
     assert "model.bin" in url
 
 
-def test_create_direct_download_urls_batch_one_metadata_fetch(
-    backend, single_file_object_dir, monkeypatch
-):
+def test_create_direct_download_urls_batch_one_metadata_fetch(backend, single_file_object_dir, monkeypatch):
     """Batch reads metadata ONCE for all items, then signs each; missing → None, aligned."""
     backend.push("img:a", "1.0.0", single_file_object_dir, {"_files": ["data.txt"]})
     backend.push("img:b", "1.0.0", single_file_object_dir, {"_files": ["data.txt"]})

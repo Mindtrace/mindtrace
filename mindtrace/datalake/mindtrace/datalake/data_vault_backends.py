@@ -640,9 +640,7 @@ class LocalAsyncDataVaultBackend(AsyncDataVaultBackend):
         *,
         expires_in_minutes: int = 15,
     ) -> dict[str, str]:
-        return await self._datalake.get_assets_download_urls(
-            asset_ids, expires_in_minutes=expires_in_minutes
-        )
+        return await self._datalake.get_assets_download_urls(asset_ids, expires_in_minutes=expires_in_minutes)
 
     async def create_asset_from_object(
         self,

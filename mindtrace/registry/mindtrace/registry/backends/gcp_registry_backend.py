@@ -299,9 +299,7 @@ class GCPRegistryBackend(RegistryBackend):
             )
         return urls
 
-    def _download_key_from_meta(
-        self, name: str, version: str, meta: dict[str, Any], filename: str | None
-    ) -> str:
+    def _download_key_from_meta(self, name: str, version: str, meta: dict[str, Any], filename: str | None) -> str:
         """Resolve the bucket key of an object's payload file from its registry metadata."""
         uuid_str = (meta.get("_storage") or {}).get("uuid")
         if not uuid_str:
@@ -316,9 +314,7 @@ class GCPRegistryBackend(RegistryBackend):
         elif "data.txt" in files:
             target_file = "data.txt"
         else:
-            raise ValueError(
-                f"Cannot infer download file for {name}@{version}; pass filename. Manifest: {files}"
-            )
+            raise ValueError(f"Cannot infer download file for {name}@{version}; pass filename. Manifest: {files}")
         return f"{self._object_key_with_uuid(name, version, uuid_str)}/{target_file}"
 
     def cleanup_direct_upload_target(self, staged_target: dict[str, Any]) -> bool:
