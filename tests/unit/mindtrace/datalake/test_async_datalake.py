@@ -21,6 +21,8 @@ from mindtrace.core import utcnow
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake import AsyncDatalake
 from mindtrace.datalake.async_datalake import (
+    PAGINATION_RESOURCE_MODELS,
+    PAGINATION_SORT_SPECS,
     AnnotationSchemaInUseError,
     AnnotationSchemaValidationError,
     DuplicateAnnotationSchemaError,
@@ -392,6 +394,38 @@ class TestAsyncDatalakeUnit:
                     cutoff=datetime(2026, 1, 1, tzinfo=timezone.utc),
                 ),
             )
+
+    def test_pagination_sort_indexes_are_declared_on_models(self):
+        """Cursor pagination sort keys must have matching MongoDB compound indexes."""
+
+        def index_keys(index_def: object) -> tuple[tuple[str, int], ...]:
+            if isinstance(index_def, str):
+                return ((index_def, 1),)
+            if isinstance(index_def, list):
+                return tuple(index_def)
+            from pymongo import IndexModel
+
+            if isinstance(index_def, IndexModel):
+                return tuple(index_def.document["key"])
+            raise TypeError(f"Unsupported index definition: {index_def!r}")
+
+        def reverse_index_keys(keys: tuple[tuple[str, int], ...]) -> tuple[tuple[str, int], ...]:
+            return tuple((field, -direction) for field, direction in keys)
+
+        def index_covers_sort(
+            declared: set[tuple[tuple[str, int], ...]],
+            sort_keys: tuple[tuple[str, int], ...],
+        ) -> bool:
+            return sort_keys in declared or reverse_index_keys(sort_keys) in declared
+
+        for resource, model in PAGINATION_RESOURCE_MODELS.items():
+            declared = {index_keys(index_def) for index_def in model.Settings.indexes}
+            for sort_name, (sort_keys, _) in PAGINATION_SORT_SPECS[resource].items():
+                key = tuple(sort_keys)
+                assert index_covers_sort(declared, key), (
+                    f"{model.__name__}.Settings.indexes has no compound index that can serve sort "
+                    f"{key!r} (forward or exact-reverse scan) required by {resource!r} sort {sort_name!r}"
+                )
 
     @pytest.mark.parametrize(
         ("filter_item", "item", "expected"),
