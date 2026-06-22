@@ -407,6 +407,15 @@ class TestAsyncDatalakeUnit:
                 return tuple(index_def.document["key"])
             raise TypeError(f"Unsupported index definition: {index_def!r}")
 
+        def reverse_index_keys(keys: tuple[tuple[str, int], ...]) -> tuple[tuple[str, int], ...]:
+            return tuple((field, -direction) for field, direction in keys)
+
+        def index_covers_sort(
+            declared: set[tuple[tuple[str, int], ...]],
+            sort_keys: tuple[tuple[str, int], ...],
+        ) -> bool:
+            return sort_keys in declared or reverse_index_keys(sort_keys) in declared
+
         resource_models = {
             "assets": Asset,
             "collections": Collection,
@@ -422,9 +431,9 @@ class TestAsyncDatalakeUnit:
             declared = {index_keys(index_def) for index_def in model.Settings.indexes}
             for sort_name, (sort_keys, _) in AsyncDatalake._sort_specs_for(resource).items():
                 key = tuple(sort_keys)
-                assert key in declared, (
-                    f"{model.__name__}.Settings.indexes is missing compound index {key!r} "
-                    f"required by {resource!r} sort {sort_name!r}"
+                assert index_covers_sort(declared, key), (
+                    f"{model.__name__}.Settings.indexes has no compound index that can serve sort "
+                    f"{key!r} (forward or exact-reverse scan) required by {resource!r} sort {sort_name!r}"
                 )
 
     @pytest.mark.parametrize(
