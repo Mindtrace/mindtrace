@@ -393,6 +393,40 @@ class TestAsyncDatalakeUnit:
                 ),
             )
 
+    def test_pagination_sort_indexes_are_declared_on_models(self):
+        """Cursor pagination sort keys must have matching MongoDB compound indexes."""
+
+        def index_keys(index_def: object) -> tuple[tuple[str, int], ...]:
+            if isinstance(index_def, str):
+                return ((index_def, 1),)
+            if isinstance(index_def, list):
+                return tuple(index_def)
+            from pymongo import IndexModel
+
+            if isinstance(index_def, IndexModel):
+                return tuple(index_def.document["key"])
+            raise TypeError(f"Unsupported index definition: {index_def!r}")
+
+        resource_models = {
+            "assets": Asset,
+            "collections": Collection,
+            "collection_items": CollectionItem,
+            "asset_retentions": AssetRetention,
+            "annotation_schemas": AnnotationSchema,
+            "annotation_sets": AnnotationSet,
+            "annotation_records": AnnotationRecord,
+            "datums": Datum,
+            "dataset_versions": DatasetVersion,
+        }
+        for resource, model in resource_models.items():
+            declared = {index_keys(index_def) for index_def in model.Settings.indexes}
+            for sort_name, (sort_keys, _) in AsyncDatalake._sort_specs_for(resource).items():
+                key = tuple(sort_keys)
+                assert key in declared, (
+                    f"{model.__name__}.Settings.indexes is missing compound index {key!r} "
+                    f"required by {resource!r} sort {sort_name!r}"
+                )
+
     @pytest.mark.parametrize(
         ("filter_item", "item", "expected"),
         [

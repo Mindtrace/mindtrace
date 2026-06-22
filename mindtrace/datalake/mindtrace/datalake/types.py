@@ -362,6 +362,8 @@ class Asset(DatalakeDocument):
             "subject.id",
             "metadata.origin.asset_id",
             [("metadata.origin.asset_id", 1), ("metadata.origin.lake_id", 1)],
+            [("created_at", -1), ("asset_id", -1)],
+            [("created_at", 1), ("asset_id", 1)],
         ]
 
 
@@ -420,6 +422,8 @@ class AnnotationRecord(DatalakeDocument):
             "source.name",
             "subject.kind",
             "subject.id",
+            [("created_at", -1), ("annotation_id", -1)],
+            [("subject.kind", 1), ("subject.id", 1), ("created_at", -1), ("annotation_id", -1)],
         ]
 
 
@@ -454,6 +458,8 @@ class AnnotationSchema(DatalakeDocument):
         indexes = [
             "task_type",
             IndexModel([("name", 1), ("version", 1)], unique=True),
+            [("created_at", -1), ("annotation_schema_id", -1)],
+            [("created_at", 1), ("annotation_schema_id", 1)],
         ]
 
 
@@ -484,7 +490,14 @@ class AnnotationSet(DatalakeDocument):
 
     class Settings:
         name = "datalake_annotation_sets"
-        indexes = ["purpose", "source_type", "status", "annotation_schema_id"]
+        indexes = [
+            "purpose",
+            "source_type",
+            "status",
+            "annotation_schema_id",
+            [("created_at", -1), ("annotation_set_id", -1)],
+            [("created_at", 1), ("annotation_set_id", 1)],
+        ]
 
 
 class Collection(DatalakeDocument):
@@ -504,7 +517,12 @@ class Collection(DatalakeDocument):
 
     class Settings:
         name = "datalake_collections"
-        indexes = ["name", "status"]
+        indexes = [
+            "name",
+            "status",
+            [("created_at", -1), ("collection_id", -1)],
+            [("created_at", 1), ("collection_id", 1)],
+        ]
 
 
 class CollectionItem(DatalakeDocument):
@@ -531,6 +549,8 @@ class CollectionItem(DatalakeDocument):
             "split",
             "status",
             [("collection_id", 1), ("asset_id", 1)],
+            [("added_at", -1), ("collection_item_id", -1)],
+            [("added_at", 1), ("collection_item_id", 1)],
         ]
 
 
@@ -568,6 +588,8 @@ class AssetRetention(DatalakeDocument):
             "owner_id",
             "retention_policy",
             [("asset_id", 1), ("owner_type", 1), ("owner_id", 1)],
+            [("created_at", -1), ("asset_retention_id", -1)],
+            [("created_at", 1), ("asset_retention_id", 1)],
         ]
 
 
@@ -587,7 +609,11 @@ class Datum(DatalakeDocument):
 
     class Settings:
         name = "datalake_datums"
-        indexes = ["split"]
+        indexes = [
+            "split",
+            [("created_at", -1), ("datum_id", -1)],
+            [("split", 1), ("created_at", -1), ("datum_id", -1)],
+        ]
 
 
 class DatasetVersion(DatalakeDocument):
@@ -608,7 +634,11 @@ class DatasetVersion(DatalakeDocument):
 
     class Settings:
         name = "datalake_dataset_versions"
-        indexes = [[("dataset_name", 1), ("version", 1)]]
+        indexes = [
+            [("dataset_name", 1), ("version", 1)],
+            [("created_at", -1), ("dataset_version_id", -1)],
+            [("dataset_name", 1), ("version", -1), ("dataset_version_id", -1)],
+        ]
 
 
 class ResolvedCollectionItem(BaseModel):
