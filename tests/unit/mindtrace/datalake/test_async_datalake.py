@@ -21,6 +21,8 @@ from mindtrace.core import utcnow
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake import AsyncDatalake
 from mindtrace.datalake.async_datalake import (
+    PAGINATION_RESOURCE_MODELS,
+    PAGINATION_SORT_SPECS,
     AnnotationSchemaInUseError,
     AnnotationSchemaValidationError,
     DuplicateAnnotationSchemaError,
@@ -416,20 +418,9 @@ class TestAsyncDatalakeUnit:
         ) -> bool:
             return sort_keys in declared or reverse_index_keys(sort_keys) in declared
 
-        resource_models = {
-            "assets": Asset,
-            "collections": Collection,
-            "collection_items": CollectionItem,
-            "asset_retentions": AssetRetention,
-            "annotation_schemas": AnnotationSchema,
-            "annotation_sets": AnnotationSet,
-            "annotation_records": AnnotationRecord,
-            "datums": Datum,
-            "dataset_versions": DatasetVersion,
-        }
-        for resource, model in resource_models.items():
+        for resource, model in PAGINATION_RESOURCE_MODELS.items():
             declared = {index_keys(index_def) for index_def in model.Settings.indexes}
-            for sort_name, (sort_keys, _) in AsyncDatalake._sort_specs_for(resource).items():
+            for sort_name, (sort_keys, _) in PAGINATION_SORT_SPECS[resource].items():
                 key = tuple(sort_keys)
                 assert index_covers_sort(declared, key), (
                     f"{model.__name__}.Settings.indexes has no compound index that can serve sort "
