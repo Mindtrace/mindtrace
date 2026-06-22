@@ -363,7 +363,6 @@ class Asset(DatalakeDocument):
             "metadata.origin.asset_id",
             [("metadata.origin.asset_id", 1), ("metadata.origin.lake_id", 1)],
             [("created_at", -1), ("asset_id", -1)],
-            [("created_at", 1), ("asset_id", 1)],
         ]
 
 
@@ -459,7 +458,6 @@ class AnnotationSchema(DatalakeDocument):
             "task_type",
             IndexModel([("name", 1), ("version", 1)], unique=True),
             [("created_at", -1), ("annotation_schema_id", -1)],
-            [("created_at", 1), ("annotation_schema_id", 1)],
         ]
 
 
@@ -496,7 +494,6 @@ class AnnotationSet(DatalakeDocument):
             "status",
             "annotation_schema_id",
             [("created_at", -1), ("annotation_set_id", -1)],
-            [("created_at", 1), ("annotation_set_id", 1)],
         ]
 
 
@@ -521,7 +518,6 @@ class Collection(DatalakeDocument):
             "name",
             "status",
             [("created_at", -1), ("collection_id", -1)],
-            [("created_at", 1), ("collection_id", 1)],
         ]
 
 
@@ -550,7 +546,6 @@ class CollectionItem(DatalakeDocument):
             "status",
             [("collection_id", 1), ("asset_id", 1)],
             [("added_at", -1), ("collection_item_id", -1)],
-            [("added_at", 1), ("collection_item_id", 1)],
         ]
 
 
@@ -589,7 +584,6 @@ class AssetRetention(DatalakeDocument):
             "retention_policy",
             [("asset_id", 1), ("owner_type", 1), ("owner_id", 1)],
             [("created_at", -1), ("asset_retention_id", -1)],
-            [("created_at", 1), ("asset_retention_id", 1)],
         ]
 
 
