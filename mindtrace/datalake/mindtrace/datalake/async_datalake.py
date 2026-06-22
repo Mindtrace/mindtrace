@@ -40,6 +40,7 @@ from mindtrace.datalake.types import (
     AssetRetention,
     Collection,
     CollectionItem,
+    DatalakeDocument,
     DatasetImportSession,
     DatasetVersion,
     Datum,
@@ -97,6 +98,107 @@ def _default_store_save_workers() -> int:
     """Return a conservative bounded worker count for blocking store writes."""
 
     return min(32, max(4, (os.cpu_count() or 1) * 2))
+
+
+PaginationSortSpec = tuple[list[tuple[str, int]], list[str]]
+
+PAGINATION_RESOURCE_MODELS: dict[str, type[DatalakeDocument]] = {
+    "assets": Asset,
+    "collections": Collection,
+    "collection_items": CollectionItem,
+    "asset_retentions": AssetRetention,
+    "annotation_schemas": AnnotationSchema,
+    "annotation_sets": AnnotationSet,
+    "annotation_records": AnnotationRecord,
+    "datums": Datum,
+    "dataset_versions": DatasetVersion,
+}
+
+PAGINATION_SNAPSHOT_FIELDS: dict[str, str] = {
+    "assets": "created_at",
+    "collections": "created_at",
+    "collection_items": "added_at",
+    "asset_retentions": "created_at",
+    "annotation_schemas": "created_at",
+    "annotation_sets": "created_at",
+    "annotation_records": "created_at",
+    "datums": "created_at",
+    "dataset_versions": "created_at",
+}
+
+PAGINATION_SORT_SPECS: dict[str, dict[str, PaginationSortSpec]] = {
+    "assets": {
+        "created_desc": ([("created_at", -1), ("asset_id", -1)], ["created_at", "asset_id"]),
+        "created_asc": ([("created_at", 1), ("asset_id", 1)], ["created_at", "asset_id"]),
+    },
+    "collections": {
+        "created_desc": ([("created_at", -1), ("collection_id", -1)], ["created_at", "collection_id"]),
+        "created_asc": ([("created_at", 1), ("collection_id", 1)], ["created_at", "collection_id"]),
+    },
+    "collection_items": {
+        "created_desc": ([("added_at", -1), ("collection_item_id", -1)], ["added_at", "collection_item_id"]),
+        "created_asc": ([("added_at", 1), ("collection_item_id", 1)], ["added_at", "collection_item_id"]),
+    },
+    "asset_retentions": {
+        "created_desc": (
+            [("created_at", -1), ("asset_retention_id", -1)],
+            ["created_at", "asset_retention_id"],
+        ),
+        "created_asc": (
+            [("created_at", 1), ("asset_retention_id", 1)],
+            ["created_at", "asset_retention_id"],
+        ),
+    },
+    "annotation_schemas": {
+        "created_desc": (
+            [("created_at", -1), ("annotation_schema_id", -1)],
+            ["created_at", "annotation_schema_id"],
+        ),
+        "created_asc": (
+            [("created_at", 1), ("annotation_schema_id", 1)],
+            ["created_at", "annotation_schema_id"],
+        ),
+    },
+    "annotation_sets": {
+        "created_desc": (
+            [("created_at", -1), ("annotation_set_id", -1)],
+            ["created_at", "annotation_set_id"],
+        ),
+        "created_asc": (
+            [("created_at", 1), ("annotation_set_id", 1)],
+            ["created_at", "annotation_set_id"],
+        ),
+    },
+    "annotation_records": {
+        "created_desc": (
+            [("created_at", -1), ("annotation_id", -1)],
+            ["created_at", "annotation_id"],
+        ),
+        "subject_created_desc": (
+            [("subject.kind", 1), ("subject.id", 1), ("created_at", -1), ("annotation_id", -1)],
+            ["subject.kind", "subject.id", "created_at", "annotation_id"],
+        ),
+    },
+    "datums": {
+        "created_desc": ([("created_at", -1), ("datum_id", -1)], ["created_at", "datum_id"]),
+        "split_created_desc": (
+            [("split", 1), ("created_at", -1), ("datum_id", -1)],
+            ["split", "created_at", "datum_id"],
+        ),
+    },
+    "dataset_versions": {
+        "created_desc": (
+            [("created_at", -1), ("dataset_version_id", -1)],
+            ["created_at", "dataset_version_id"],
+        ),
+        "dataset_version_desc": (
+            [("dataset_name", 1), ("version", -1), ("dataset_version_id", -1)],
+            ["dataset_name", "version", "dataset_version_id"],
+        ),
+    },
+}
+
+assert set(PAGINATION_RESOURCE_MODELS) == set(PAGINATION_SORT_SPECS) == set(PAGINATION_SNAPSHOT_FIELDS)
 
 
 class AsyncDatalake(Mindtrace):
@@ -378,18 +480,7 @@ class AsyncDatalake(Mindtrace):
 
     @staticmethod
     def _snapshot_field_for(resource: str) -> str | None:
-        snapshot_fields = {
-            "assets": "created_at",
-            "collections": "created_at",
-            "collection_items": "added_at",
-            "asset_retentions": "created_at",
-            "annotation_schemas": "created_at",
-            "annotation_sets": "created_at",
-            "annotation_records": "created_at",
-            "datums": "created_at",
-            "dataset_versions": "created_at",
-        }
-        return snapshot_fields.get(resource)
+        return PAGINATION_SNAPSHOT_FIELDS.get(resource)
 
     @classmethod
     def _encode_snapshot_token(cls, *, resource: str, field: str, cutoff: Any) -> str:
@@ -463,81 +554,10 @@ class AsyncDatalake(Mindtrace):
         return {"$and": [base, extra]}
 
     @staticmethod
-    def _sort_specs_for(resource: str) -> dict[str, tuple[list[tuple[str, int]], list[str]]]:
-        specs: dict[str, dict[str, tuple[list[tuple[str, int]], list[str]]]] = {
-            "assets": {
-                "created_desc": ([("created_at", -1), ("asset_id", -1)], ["created_at", "asset_id"]),
-                "created_asc": ([("created_at", 1), ("asset_id", 1)], ["created_at", "asset_id"]),
-            },
-            "collections": {
-                "created_desc": ([("created_at", -1), ("collection_id", -1)], ["created_at", "collection_id"]),
-                "created_asc": ([("created_at", 1), ("collection_id", 1)], ["created_at", "collection_id"]),
-            },
-            "collection_items": {
-                "created_desc": ([("added_at", -1), ("collection_item_id", -1)], ["added_at", "collection_item_id"]),
-                "created_asc": ([("added_at", 1), ("collection_item_id", 1)], ["added_at", "collection_item_id"]),
-            },
-            "asset_retentions": {
-                "created_desc": (
-                    [("created_at", -1), ("asset_retention_id", -1)],
-                    ["created_at", "asset_retention_id"],
-                ),
-                "created_asc": (
-                    [("created_at", 1), ("asset_retention_id", 1)],
-                    ["created_at", "asset_retention_id"],
-                ),
-            },
-            "annotation_schemas": {
-                "created_desc": (
-                    [("created_at", -1), ("annotation_schema_id", -1)],
-                    ["created_at", "annotation_schema_id"],
-                ),
-                "created_asc": (
-                    [("created_at", 1), ("annotation_schema_id", 1)],
-                    ["created_at", "annotation_schema_id"],
-                ),
-            },
-            "annotation_sets": {
-                "created_desc": (
-                    [("created_at", -1), ("annotation_set_id", -1)],
-                    ["created_at", "annotation_set_id"],
-                ),
-                "created_asc": (
-                    [("created_at", 1), ("annotation_set_id", 1)],
-                    ["created_at", "annotation_set_id"],
-                ),
-            },
-            "annotation_records": {
-                "created_desc": (
-                    [("created_at", -1), ("annotation_id", -1)],
-                    ["created_at", "annotation_id"],
-                ),
-                "subject_created_desc": (
-                    [("subject.kind", 1), ("subject.id", 1), ("created_at", -1), ("annotation_id", -1)],
-                    ["subject.kind", "subject.id", "created_at", "annotation_id"],
-                ),
-            },
-            "datums": {
-                "created_desc": ([("created_at", -1), ("datum_id", -1)], ["created_at", "datum_id"]),
-                "split_created_desc": (
-                    [("split", 1), ("created_at", -1), ("datum_id", -1)],
-                    ["split", "created_at", "datum_id"],
-                ),
-            },
-            "dataset_versions": {
-                "created_desc": (
-                    [("created_at", -1), ("dataset_version_id", -1)],
-                    ["created_at", "dataset_version_id"],
-                ),
-                "dataset_version_desc": (
-                    [("dataset_name", 1), ("version", -1), ("dataset_version_id", -1)],
-                    ["dataset_name", "version", "dataset_version_id"],
-                ),
-            },
-        }
-        if resource not in specs:
+    def _sort_specs_for(resource: str) -> dict[str, PaginationSortSpec]:
+        if resource not in PAGINATION_SORT_SPECS:
             raise ValueError(f"Unsupported pagination resource: {resource}")
-        return specs[resource]
+        return PAGINATION_SORT_SPECS[resource]
 
     @classmethod
     def _resolve_sort_spec(cls, resource: str, sort: str) -> tuple[list[tuple[str, int]], list[str]]:
