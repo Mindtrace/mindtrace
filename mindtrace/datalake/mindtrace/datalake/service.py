@@ -851,10 +851,12 @@ class DatalakeService(Service):
             ) from exc
 
     async def health(self) -> DatalakeHealthOutput:
+        """Return datalake health status (database name and default mount)."""
         datalake = await self._ensure_datalake()
         return DatalakeHealthOutput(**(await datalake.get_health()))
 
     async def summary(self) -> DatalakeSummaryOutput:
+        """Return a human-readable summary of canonical record counts in the datalake."""
         datalake = await self._ensure_datalake()
         return DatalakeSummaryOutput(summary=await datalake.summary())
 
@@ -948,6 +950,7 @@ class DatalakeService(Service):
         return AssetOutput(asset=asset)
 
     async def get_asset(self, payload: GetByIdInput) -> AssetOutput:
+        """Load an asset by ``asset_id``. Returns HTTP 404 when the asset does not exist."""
         datalake = await self._ensure_datalake()
         try:
             asset = await datalake.get_asset(payload.id)
@@ -956,6 +959,7 @@ class DatalakeService(Service):
         return AssetOutput(asset=asset)
 
     async def get_asset_by_alias(self, payload: GetAssetByAliasInput) -> AssetOutput:
+        """Load an asset by alias string. Returns HTTP 404 when the alias is not registered."""
         datalake = await self._ensure_datalake()
         try:
             asset = await datalake.get_asset_by_alias(payload.alias)
@@ -1162,6 +1166,7 @@ class DatalakeService(Service):
     async def get_annotation_schema_by_name_version(
         self, payload: GetAnnotationSchemaByNameVersionInput
     ) -> AnnotationSchemaOutput:
+        """Load an annotation schema by ``name`` and ``version``."""
         datalake = await self._ensure_datalake()
         schema = await datalake.get_annotation_schema_by_name_version(payload.name, payload.version)
         return AnnotationSchemaOutput(annotation_schema=schema)
@@ -1323,6 +1328,10 @@ class DatalakeService(Service):
         return DatumOutput(datum=await datalake.update_datum(payload.datum_id, **payload.changes))
 
     async def resolve_datum(self, payload: GetByIdInput) -> ResolvedDatumOutput:
+        """Fully materialize a datum with linked assets and annotations.
+
+        This is an explicit heavy operation intended for bounded use, not bulk traversal.
+        """
         datalake = await self._ensure_datalake()
         return ResolvedDatumOutput(resolved_datum=await datalake.resolve_datum(payload.id))
 
@@ -1494,11 +1503,13 @@ class DatalakeService(Service):
         return DatasetVersionOutput(dataset_version=dataset_version)
 
     async def get_dataset_version(self, payload: GetDatasetVersionInput) -> DatasetVersionOutput:
+        """Load a dataset version by ``dataset_name`` and ``version``."""
         datalake = await self._ensure_datalake()
         dataset_version = await datalake.get_dataset_version(payload.dataset_name, payload.version)
         return DatasetVersionOutput(dataset_version=dataset_version)
 
     async def list_dataset_versions(self, payload: ListDatasetVersionsInput) -> DatasetVersionListOutput:
+        """List dataset versions, optionally scoped to a ``dataset_name`` and Mongo filters."""
         datalake = await self._ensure_datalake()
         versions = await self._await_client_safe(
             datalake.list_dataset_versions(dataset_name=payload.dataset_name, filters=payload.filters)
@@ -1506,6 +1517,7 @@ class DatalakeService(Service):
         return DatasetVersionListOutput(dataset_versions=versions)
 
     async def list_dataset_versions_page(self, payload: ListDatasetVersionsPageInput) -> DatasetVersionPageOutput:
+        """Page through dataset versions with cursor-based pagination."""
         datalake = await self._ensure_datalake()
         page = await self._await_pagination_client_safe(
             datalake.list_dataset_versions_page(
@@ -1520,11 +1532,19 @@ class DatalakeService(Service):
         return DatasetVersionPageOutput(items=page.items, page=page.page)
 
     async def resolve_dataset_version(self, payload: GetDatasetVersionInput) -> ResolvedDatasetVersionOutput:
+        """Fully materialize every datum in a dataset version.
+
+        This is an explicit heavy operation intended for bounded use, not bulk traversal.
+        """
         datalake = await self._ensure_datalake()
         resolved = await datalake.resolve_dataset_version(payload.dataset_name, payload.version)
         return ResolvedDatasetVersionOutput(resolved_dataset_version=resolved)
 
     async def view_dataset_version_page(self, payload: ViewDatasetVersionPageInput) -> DatasetViewPageOutput:
+        """Page through a dataset version manifest with optional asset/annotation expansion.
+
+        Can be expensive for large manifests, especially with filters or expansions enabled.
+        """
         datalake = await self._ensure_datalake()
         page = await self._await_pagination_client_safe(
             datalake.view_dataset_version_page(
