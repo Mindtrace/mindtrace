@@ -176,6 +176,7 @@ class AsyncDataVaultBackend(ABC):
         *,
         expires_in_minutes: int = 15,
         response_content_type: str | None = None,
+        response_content_disposition: str | None = None,
     ) -> str | None:
         """Mint a presigned GET URL for an asset's payload (None if unsupported).
 
@@ -627,11 +628,13 @@ class LocalAsyncDataVaultBackend(AsyncDataVaultBackend):
         *,
         expires_in_minutes: int = 15,
         response_content_type: str | None = None,
+        response_content_disposition: str | None = None,
     ) -> str | None:
         return await self._datalake.get_asset_download_url(
             asset_id,
             expires_in_minutes=expires_in_minutes,
             response_content_type=response_content_type,
+            response_content_disposition=response_content_disposition,
         )
 
     async def get_assets_download_urls(
@@ -1258,6 +1261,7 @@ class DatalakeServiceAsyncDataVaultBackend(AsyncDataVaultBackend):
         *,
         expires_in_minutes: int = 15,
         response_content_type: str | None = None,
+        response_content_disposition: str | None = None,
     ) -> str | None:
         out = await self._call(
             "aassets_download_url",
@@ -1265,6 +1269,7 @@ class DatalakeServiceAsyncDataVaultBackend(AsyncDataVaultBackend):
                 asset_id=asset_id,
                 expires_in_minutes=expires_in_minutes,
                 response_content_type=response_content_type,
+                response_content_disposition=response_content_disposition,
             ),
         )
         return out.url

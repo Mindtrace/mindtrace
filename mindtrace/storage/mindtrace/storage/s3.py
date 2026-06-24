@@ -71,6 +71,7 @@ class S3StorageHandler(StorageHandler):
         # (browsers). Only built when a distinct presign endpoint is configured;
         # otherwise presigning reuses ``self.client`` so behaviour is unchanged.
         self.presign_endpoint = presign_endpoint or endpoint
+        self.presign_secure = presign_secure
         if presign_endpoint and presign_endpoint != endpoint:
             presign_protocol = "https" if (secure if presign_secure is None else presign_secure) else "http"
             self._presign_client = boto3.client(

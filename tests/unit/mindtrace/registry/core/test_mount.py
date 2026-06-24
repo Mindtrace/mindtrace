@@ -291,7 +291,14 @@ def test_mount_from_registry_s3_best_effort(monkeypatch):
     backend.storage = type(
         "S3StorageStub",
         (),
-        {"bucket_name": "datasets", "endpoint": "minio.local:9000", "secure": False},
+        {
+            "bucket_name": "datasets",
+            "endpoint": "minio.local:9000",
+            "secure": False,
+            # Split-horizon presign config: distinct browser-facing endpoint.
+            "presign_endpoint": "localhost:19000",
+            "presign_secure": False,
+        },
     )()
     backend._prefix = "mindtrace"
     registry = SimpleNamespace(
@@ -307,6 +314,33 @@ def test_mount_from_registry_s3_best_effort(monkeypatch):
     assert mount.backend == "s3"
     assert isinstance(mount.config, S3MountConfig)
     assert mount.auth.mode == "ambient"
+    # Split-horizon presign config survives Registry -> Mount (regression: it used to drop).
+    assert mount.config.presign_endpoint == "localhost:19000"
+    assert mount.config.presign_secure is False
+
+
+def test_mount_from_registry_s3_collapses_default_presign_endpoint(monkeypatch):
+    """When the handler has no distinct presign endpoint it normalizes to ``endpoint``;
+    from_registry should collapse that back to None rather than echoing the endpoint."""
+    backend = DummyS3Backend(uri="s3://datasets/mindtrace")
+    backend.storage = type(
+        "S3StorageStub",
+        (),
+        {
+            "bucket_name": "datasets",
+            "endpoint": "minio.local:9000",
+            "secure": False,
+            "presign_endpoint": "minio.local:9000",  # == endpoint -> no split horizon
+            "presign_secure": None,
+        },
+    )()
+    backend._prefix = "mindtrace"
+    registry = SimpleNamespace(backend=backend, version_objects=True, mutable=True, version_digits=8)
+
+    monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.S3RegistryBackend", DummyS3Backend)
+    mount = Mount.from_registry(registry, name="s3mount")
+    assert mount.config.presign_endpoint is None
+    assert mount.config.presign_secure is None
 
 
 def test_mount_from_registry_gcs_best_effort(monkeypatch):

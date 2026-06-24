@@ -204,6 +204,13 @@ class Mount:
                     prefix=getattr(backend, "_prefix", "") or None,
                     endpoint=backend.storage.endpoint,
                     secure=backend.storage.secure,
+                    # Preserve split-horizon presigning across the round-trip.
+                    presign_endpoint=(
+                        backend.storage.presign_endpoint
+                        if backend.storage.presign_endpoint != backend.storage.endpoint
+                        else None
+                    ),
+                    presign_secure=backend.storage.presign_secure,
                 ),
                 auth=AmbientAuth(),
                 read_only=read_only,
