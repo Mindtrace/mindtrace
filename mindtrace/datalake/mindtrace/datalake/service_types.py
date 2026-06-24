@@ -298,8 +298,45 @@ class CreateAssetFromUploadedObjectInput(BaseModel):
     created_by: str | None = None
 
 
+class GetAssetDownloadUrlInput(BaseModel):
+    asset_id: str
+    expires_in_minutes: int = 15
+    # Override the Content-Type the URL returns. Defaults to the asset's media_type.
+    response_content_type: str | None = None
+    response_content_disposition: str | None = None
+
+
+class AssetDownloadUrlOutput(BaseModel):
+    asset_id: str
+    # None when the backing mount cannot presign (e.g. local filesystem); callers
+    # should fall back to streaming bytes via objects.get.
+    url: str | None = None
+    expires_at: datetime | None = None
+
+
+class GetAssetsDownloadUrlsInput(BaseModel):
+    asset_ids: list[str]
+    expires_in_minutes: int = 15
+
+
+class AssetsDownloadUrlsOutput(BaseModel):
+    # asset_id -> presigned URL; ids that don't resolve or can't presign are omitted.
+    urls: dict[str, str] = Field(default_factory=dict)
+    expires_at: datetime | None = None
+
+
 CreateAssetSchema = TaskSchema(name="assets.create", input_schema=CreateAssetInput, output_schema=AssetOutput)
 GetAssetSchema = TaskSchema(name="assets.get", input_schema=GetByIdInput, output_schema=AssetOutput)
+GetAssetDownloadUrlSchema = TaskSchema(
+    name="assets.download_url",
+    input_schema=GetAssetDownloadUrlInput,
+    output_schema=AssetDownloadUrlOutput,
+)
+GetAssetsDownloadUrlsSchema = TaskSchema(
+    name="assets.download_urls",
+    input_schema=GetAssetsDownloadUrlsInput,
+    output_schema=AssetsDownloadUrlsOutput,
+)
 GetAssetByAliasSchema = TaskSchema(
     name="assets.get_by_alias", input_schema=GetAssetByAliasInput, output_schema=AssetOutput
 )

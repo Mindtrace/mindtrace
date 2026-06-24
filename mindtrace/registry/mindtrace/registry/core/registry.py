@@ -228,6 +228,8 @@ class Registry(Mindtrace):
                 "prefix": cfg.prefix or "",
                 "endpoint": cfg.endpoint,
                 "secure": cfg.secure,
+                "presign_endpoint": cfg.presign_endpoint,
+                "presign_secure": cfg.presign_secure,
             }
             if isinstance(auth, S3AccessKeyAuth):
                 backend_kwargs.update({"access_key": auth.access_key, "secret_key": auth.secret_key})
@@ -609,6 +611,68 @@ class Registry(Mindtrace):
             upload_id,
             content_type=content_type,
             expiration_minutes=expiration_minutes,
+        )
+
+    def create_direct_download_url(
+        self,
+        name: str,
+        version: str | None = None,
+        *,
+        expiration_minutes: int = 15,
+        response_content_type: str | None = None,
+        response_content_disposition: str | None = None,
+        filename: str | None = None,
+    ) -> str | None:
+        """Mint a presigned GET URL for an object version's payload.
+
+        Resolves ``version`` (``None``/``latest`` → concrete) then delegates to the
+        backend. Returns ``None`` for backends that cannot presign.
+        """
+        target_core = self._remote if self._cached else self._core
+        backend = target_core.backend
+        resolved_version = target_core._resolve_load_version(name, version)
+        return backend.create_direct_download_url(
+            name,
+            resolved_version,
+            expiration_minutes=expiration_minutes,
+            response_content_type=response_content_type,
+            response_content_disposition=response_content_disposition,
+            filename=filename,
+        )
+
+    def create_direct_download_urls(
+        self,
+        names: list[str],
+        versions: list[str | None],
+        *,
+        expiration_minutes: int = 15,
+        response_content_types: list[str | None] | None = None,
+        response_content_disposition: str | None = None,
+        filenames: list[str | None] | None = None,
+    ) -> list[str | None]:
+        """Batch presigned GET URLs. Resolves each version then one backend batch call.
+
+        A version that can't be resolved becomes ``""``; the backend then finds no
+        metadata for it and yields ``None`` in that slot — so the result stays aligned
+        with the inputs without any pre-filtering.
+        """
+        if len(names) != len(versions):
+            raise ValueError("names and versions must be the same length")
+        target_core = self._remote if self._cached else self._core
+
+        def _resolve(name: str, version: str | None) -> str:
+            try:
+                return target_core._resolve_load_version(name, version)
+            except Exception:  # noqa: BLE001 — unresolved → empty version → backend yields None
+                return ""
+
+        return target_core.backend.create_direct_download_urls(
+            names,
+            [_resolve(n, v) for n, v in zip(names, versions)],
+            expiration_minutes=expiration_minutes,
+            response_content_types=response_content_types,
+            response_content_disposition=response_content_disposition,
+            filenames=filenames,
         )
 
     def inspect_direct_upload_target(self, staged_target: dict[str, Any]) -> dict[str, Any]:
