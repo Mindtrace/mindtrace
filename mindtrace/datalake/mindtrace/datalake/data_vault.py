@@ -751,13 +751,16 @@ class AsyncDataVault:
         *,
         expires_in_minutes: int = 15,
         content_type: str | None = None,
+        content_disposition: str | None = None,
     ) -> str | None:
         """Mint a short-lived presigned GET URL for an asset's payload.
 
         The URL points directly at object storage (S3/MinIO/GCS), so the bytes never
         transit the datalake service — ideal for browsers loading run images. The
         response Content-Type defaults to the asset's stored ``media_type`` (pass
-        ``content_type`` to override) so images render inline rather than download.
+        ``content_type`` to override) so images render inline rather than download. Pass
+        ``content_disposition`` (e.g. ``attachment; filename="foo.jpg"``) to force a
+        download instead of inline rendering.
 
         Returns ``None`` when the backing store cannot presign (e.g. a local-filesystem
         datalake); fall back to :meth:`get_asset_payload` / ``get_object`` to stream bytes.
@@ -768,6 +771,7 @@ class AsyncDataVault:
             asset_id,
             expires_in_minutes=expires_in_minutes,
             response_content_type=content_type,
+            response_content_disposition=content_disposition,
         )
 
     async def get_download_urls(
