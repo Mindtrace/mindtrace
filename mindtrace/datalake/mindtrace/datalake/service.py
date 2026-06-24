@@ -38,12 +38,14 @@ from mindtrace.datalake.service_types import (
     AnnotationSetOutput,
     AnnotationSetPageOutput,
     AssetAliasOutput,
+    AssetDownloadUrlOutput,
     AssetListOutput,
     AssetOutput,
     AssetPageOutput,
     AssetRetentionListOutput,
     AssetRetentionOutput,
     AssetRetentionPageOutput,
+    AssetsDownloadUrlsOutput,
     CollectionItemListOutput,
     CollectionItemOutput,
     CollectionItemPageOutput,
@@ -155,8 +157,12 @@ from mindtrace.datalake.service_types import (
     GetAnnotationSetSchema,
     GetAssetByAliasInput,
     GetAssetByAliasSchema,
+    GetAssetDownloadUrlInput,
+    GetAssetDownloadUrlSchema,
     GetAssetRetentionSchema,
     GetAssetSchema,
+    GetAssetsDownloadUrlsInput,
+    GetAssetsDownloadUrlsSchema,
     GetByIdInput,
     GetCollectionItemSchema,
     GetCollectionSchema,
@@ -504,6 +510,8 @@ class DatalakeService(Service):
         self.add_endpoint("assets.create", self.create_asset, schema=CreateAssetSchema)
         self.add_endpoint("assets.get", self.get_asset, schema=GetAssetSchema, as_tool=True)
         self.add_endpoint("assets.get_by_alias", self.get_asset_by_alias, schema=GetAssetByAliasSchema, as_tool=True)
+        self.add_endpoint("assets.download_url", self.get_asset_download_url, schema=GetAssetDownloadUrlSchema)
+        self.add_endpoint("assets.download_urls", self.get_assets_download_urls, schema=GetAssetsDownloadUrlsSchema)
         self.add_endpoint("assets.list", self.list_assets, schema=ListAssetsSchema)
         self.add_endpoint("assets.list_page", self.list_assets_page, schema=ListAssetsPageSchema)
         self.add_endpoint("assets.update_metadata", self.update_asset_metadata, schema=UpdateAssetMetadataSchema)
@@ -966,6 +974,34 @@ class DatalakeService(Service):
         except DocumentNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return AssetOutput(asset=asset)
+
+    async def get_asset_download_url(self, payload: GetAssetDownloadUrlInput) -> AssetDownloadUrlOutput:
+        datalake = await self._ensure_datalake()
+        try:
+            url = await datalake.get_asset_download_url(
+                payload.asset_id,
+                expires_in_minutes=payload.expires_in_minutes,
+                response_content_type=payload.response_content_type,
+                response_content_disposition=payload.response_content_disposition,
+            )
+        except DocumentNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (RegistryObjectNotFound, FileNotFoundError) as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "ASSET_PAYLOAD_NOT_READABLE", "message": str(exc), "asset_id": payload.asset_id},
+            ) from exc
+        expires_at = utcnow() + timedelta(minutes=payload.expires_in_minutes) if url else None
+        return AssetDownloadUrlOutput(asset_id=payload.asset_id, url=url, expires_at=expires_at)
+
+    async def get_assets_download_urls(self, payload: GetAssetsDownloadUrlsInput) -> AssetsDownloadUrlsOutput:
+        datalake = await self._ensure_datalake()
+        urls = await datalake.get_assets_download_urls(
+            payload.asset_ids,
+            expires_in_minutes=payload.expires_in_minutes,
+        )
+        expires_at = utcnow() + timedelta(minutes=payload.expires_in_minutes) if urls else None
+        return AssetsDownloadUrlsOutput(urls=urls, expires_at=expires_at)
 
     async def add_alias(self, payload: AddAliasInput) -> AssetAliasOutput:
         datalake = await self._ensure_datalake()

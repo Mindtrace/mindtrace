@@ -28,6 +28,8 @@ class S3StorageHandler(StorageHandler):
         ensure_bucket: bool = True,
         create_if_missing: bool = True,
         region: Optional[str] = None,
+        presign_endpoint: Optional[str] = None,
+        presign_secure: Optional[bool] = None,
     ) -> None:
         """Initialize an S3StorageHandler.
 
@@ -40,6 +42,14 @@ class S3StorageHandler(StorageHandler):
             ensure_bucket: If True, check bucket exists on init.
             create_if_missing: If True, create the bucket if it does not exist.
             region: Optional region for bucket creation.
+            presign_endpoint: Optional separate endpoint used ONLY when minting presigned
+                URLs. Needed for split-horizon deployments (e.g. MinIO reachable at an
+                internal host ``minio:9000`` for server I/O but at ``localhost:19000`` for
+                browsers). Presigning is a local signing operation (no network call), so a
+                second client bound to this endpoint produces URLs whose ``Host`` the client
+                can actually reach while leaving normal I/O on ``endpoint``. When unset,
+                presigned URLs are signed against ``endpoint``.
+            presign_secure: HTTPS for the presign endpoint. Defaults to ``secure``.
         """
         protocol = "https" if secure else "http"
         endpoint_url = f"{protocol}://{endpoint}"
@@ -56,6 +66,24 @@ class S3StorageHandler(StorageHandler):
         self.endpoint = endpoint
         self.secure = secure
         self._region = region or "us-east-1"
+
+        # Separate signing client for presigned URLs handed to external clients
+        # (browsers). Only built when a distinct presign endpoint is configured;
+        # otherwise presigning reuses ``self.client`` so behaviour is unchanged.
+        self.presign_endpoint = presign_endpoint or endpoint
+        self.presign_secure = presign_secure
+        if presign_endpoint and presign_endpoint != endpoint:
+            presign_protocol = "https" if (secure if presign_secure is None else presign_secure) else "http"
+            self._presign_client = boto3.client(
+                "s3",
+                endpoint_url=f"{presign_protocol}://{presign_endpoint}",
+                aws_access_key_id=access_key,
+                aws_secret_access_key=secret_key,
+                region_name=region or "us-east-1",
+                config=Config(signature_version="s3v4"),
+            )
+        else:
+            self._presign_client = self.client
 
         if ensure_bucket:
             self._ensure_bucket(create_if_missing)
@@ -459,6 +487,8 @@ class S3StorageHandler(StorageHandler):
         expiration_minutes: int = 60,
         method: str = "GET",
         content_type: str | None = None,
+        response_content_type: str | None = None,
+        response_content_disposition: str | None = None,
     ) -> str:
         """Get a presigned URL for an object in the bucket.
 
@@ -466,21 +496,33 @@ class S3StorageHandler(StorageHandler):
             remote_path: Path in the bucket.
             expiration_minutes: Minutes until the URL expires.
             method: HTTP method for the URL (e.g., 'GET', 'PUT').
+            content_type: For PUT, binds the upload's Content-Type.
+            response_content_type: For GET, overrides the ``Content-Type`` the store
+                returns (S3 ``ResponseContentType``). Objects materialized as opaque
+                bytes are stored without a meaningful content type; set this so the
+                browser renders the image inline instead of downloading it.
+            response_content_disposition: For GET, overrides ``Content-Disposition``
+                (e.g. ``inline`` / ``attachment; filename=...``).
 
         Returns:
             A presigned URL string.
         """
         if method.upper() == "GET":
-            return self.client.generate_presigned_url(
+            params: dict[str, Any] = {"Bucket": self.bucket_name, "Key": remote_path}
+            if response_content_type is not None:
+                params["ResponseContentType"] = response_content_type
+            if response_content_disposition is not None:
+                params["ResponseContentDisposition"] = response_content_disposition
+            return self._presign_client.generate_presigned_url(
                 "get_object",
-                Params={"Bucket": self.bucket_name, "Key": remote_path},
+                Params=params,
                 ExpiresIn=expiration_minutes * 60,
             )
         elif method.upper() == "PUT":
             params = {"Bucket": self.bucket_name, "Key": remote_path}
             if content_type is not None:
                 params["ContentType"] = content_type
-            return self.client.generate_presigned_url(
+            return self._presign_client.generate_presigned_url(
                 "put_object",
                 Params=params,
                 ExpiresIn=expiration_minutes * 60,

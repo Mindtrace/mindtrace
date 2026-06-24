@@ -447,13 +447,18 @@ class StorageHandler(MindtraceABC, ABC):
         expiration_minutes: int = 60,
         method: str = "GET",
         content_type: str | None = None,
+        response_content_type: str | None = None,
+        response_content_disposition: str | None = None,
     ) -> str:
         """Get a presigned URL for a remote object.
         Args:
             remote_path: Path in the storage backend.
             expiration_minutes: Minutes until the URL expires.
             method: HTTP method for the URL (e.g., 'GET', 'PUT').
-            content_type: Optional content type to bind to the signed request.
+            content_type: Optional content type to bind to the signed request (PUT).
+            response_content_type: For GET, overrides the Content-Type returned by the
+                store (useful for opaque-bytes objects so browsers render inline).
+            response_content_disposition: For GET, overrides the Content-Disposition header.
         Returns:
             A presigned URL string.
         """

@@ -34,6 +34,11 @@ class S3MountConfig:
     prefix: str | None = None
     endpoint: str | None = None
     secure: bool = True
+    # Separate endpoint used ONLY for minting presigned URLs (split-horizon: e.g. an
+    # internal ``minio:9000`` for server I/O but ``localhost:19000`` for browsers).
+    # When None, presigned URLs are signed against ``endpoint``.
+    presign_endpoint: str | None = None
+    presign_secure: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -199,6 +204,13 @@ class Mount:
                     prefix=getattr(backend, "_prefix", "") or None,
                     endpoint=backend.storage.endpoint,
                     secure=backend.storage.secure,
+                    # Preserve split-horizon presigning across the round-trip.
+                    presign_endpoint=(
+                        backend.storage.presign_endpoint
+                        if backend.storage.presign_endpoint != backend.storage.endpoint
+                        else None
+                    ),
+                    presign_secure=backend.storage.presign_secure,
                 ),
                 auth=AmbientAuth(),
                 read_only=read_only,

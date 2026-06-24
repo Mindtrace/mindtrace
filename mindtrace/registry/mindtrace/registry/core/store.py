@@ -365,6 +365,55 @@ class Store(Mindtrace):
         )
         return {"mount": resolved_mount, "name": object_name, **target}
 
+    def create_direct_download_url(
+        self,
+        key: str,
+        *,
+        version: str | None = None,
+        expiration_minutes: int = 15,
+        response_content_type: str | None = None,
+        response_content_disposition: str | None = None,
+        filename: str | None = None,
+    ) -> str | None:
+        """Mint a presigned GET URL for the object addressed by ``key``.
+
+        Returns ``None`` for mounts whose backend cannot presign (local filesystem).
+        """
+        mount, object_name, key_version = self.parse_key(key)
+        resolved_mount = mount or self.default_mount
+        registry = self.get_mount(resolved_mount).registry
+        return registry.create_direct_download_url(
+            object_name,
+            version if version is not None else key_version,
+            expiration_minutes=expiration_minutes,
+            response_content_type=response_content_type,
+            response_content_disposition=response_content_disposition,
+            filename=filename,
+        )
+
+    def create_direct_download_urls(
+        self,
+        mount: str,
+        names: list[str],
+        versions: list[str | None],
+        *,
+        expiration_minutes: int = 15,
+        response_content_types: list[str | None] | None = None,
+        response_content_disposition: str | None = None,
+        filenames: list[str | None] | None = None,
+    ) -> list[str | None]:
+        """Batch presigned GET URLs for objects on a single ``mount``."""
+        resolved_mount = mount or self.default_mount
+        registry = self.get_mount(resolved_mount).registry
+        return registry.create_direct_download_urls(
+            names,
+            versions,
+            expiration_minutes=expiration_minutes,
+            response_content_types=response_content_types,
+            response_content_disposition=response_content_disposition,
+            filenames=filenames,
+        )
+
     def inspect_direct_upload_target(self, key: str, *, staged_target: dict[str, Any]) -> dict[str, Any]:
         mount, _, _ = self.parse_key(key)
         resolved_mount = mount or self.default_mount

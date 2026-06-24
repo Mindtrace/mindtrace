@@ -731,3 +731,51 @@ async def test_async_datalake_pagination_end_to_end(async_datalake: AsyncDatalak
     assert second_view_page.items[0].datum_id == created_datums[2].datum_id
     assert second_view_page.items[0].assets is None
     assert second_view_page.page.has_more is False
+
+
+@pytest.mark.asyncio
+async def test_async_datalake_minio_get_asset_download_url_roundtrip(async_datalake_minio):
+    """End-to-end presigned download against MinIO: create an image asset, mint a
+    presigned GET URL, fetch it, and assert the bytes are byte-identical with the
+    Content-Type defaulted from the asset's media_type. Also covers the batch path."""
+    import asyncio
+    import urllib.request
+
+    png = b"\x89PNG\r\n\x1a\n" + b"presigned-download-roundtrip" * 16
+    asset = await async_datalake_minio.create_asset_from_object(
+        name="vault/presign-download-test",
+        obj=png,
+        kind="image",
+        media_type="image/png",
+    )
+
+    url = await async_datalake_minio.get_asset_download_url(asset.asset_id)
+    assert url, "expected a presigned URL from a MinIO-backed datalake"
+
+    def _fetch(u: str) -> tuple[bytes, str | None]:
+        with urllib.request.urlopen(u) as resp:  # noqa: S310 — signed URL to our test MinIO
+            return resp.read(), resp.headers.get("Content-Type")
+
+    body, content_type = await asyncio.to_thread(_fetch, url)
+    assert body == png, "presigned GET returned different bytes than were stored"
+    assert content_type == "image/png", f"expected image/png, got {content_type!r}"
+
+    # Batch: one resolvable id + one missing id → only the resolvable one returned.
+    urls = await async_datalake_minio.get_assets_download_urls([asset.asset_id, "asset_does_not_exist"])
+    assert set(urls) == {asset.asset_id}
+    assert urls[asset.asset_id]
+
+
+@pytest.mark.asyncio
+async def test_local_datalake_get_asset_download_url_returns_none(async_datalake):
+    """A local-filesystem datalake cannot presign — get_asset_download_url returns None
+    and the batch omits the id. This is the exact 'can't presign' signal callers
+    (e.g. chiron) rely on to fall back to byte-proxying."""
+    asset = await async_datalake.create_asset_from_object(
+        name="vault/local-no-presign",
+        obj=b"\x89PNG\r\n\x1a\nlocal",
+        kind="image",
+        media_type="image/png",
+    )
+    assert await async_datalake.get_asset_download_url(asset.asset_id) is None
+    assert await async_datalake.get_assets_download_urls([asset.asset_id]) == {}
