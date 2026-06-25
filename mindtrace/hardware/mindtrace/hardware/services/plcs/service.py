@@ -5,6 +5,7 @@ This service wraps PLCManager functionality in a Service-based
 architecture with comprehensive MCP tool integration and typed client access.
 """
 
+import logging
 import time
 from typing import Optional
 
@@ -160,7 +161,14 @@ class PLCManagerService(Service):
         )
 
         # Health check endpoint (for container healthcheck - not an MCP tool)
-        self.add_endpoint("health", self.health_check, HealthSchema, methods=["GET"], as_tool=False)
+        self.add_endpoint(
+            "health",
+            self.health_check,
+            HealthSchema,
+            methods=["GET"],
+            as_tool=False,
+            autolog_kwargs={"log_level": logging.DEBUG},
+        )
 
     # Backend & Discovery Operations
     def discover_backends(self) -> BackendsResponse:
