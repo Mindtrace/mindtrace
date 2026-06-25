@@ -8,6 +8,7 @@ architecture with comprehensive MCP tool integration and typed client access.
 import asyncio
 import base64
 import io
+import logging
 import os
 import time
 from typing import Optional, Tuple
@@ -185,7 +186,14 @@ class CameraManagerService(Service):
     def _register_endpoints(self):
         """Register all service endpoints."""
         # Health check endpoint
-        self.add_endpoint("health", self.health_check, HealthSchema, methods=["GET"], as_tool=False)
+        self.add_endpoint(
+            "health",
+            self.health_check,
+            HealthSchema,
+            methods=["GET"],
+            as_tool=False,
+            autolog_kwargs={"log_level": logging.DEBUG},
+        )
 
         # Backend & Discovery
         self.add_endpoint(
