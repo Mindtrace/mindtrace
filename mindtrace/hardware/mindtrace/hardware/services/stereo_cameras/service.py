@@ -6,6 +6,7 @@ Basler Stereo ace cameras with multi-component capture (intensity, disparity, de
 """
 
 import asyncio
+import logging
 import time
 from typing import Dict
 
@@ -121,7 +122,14 @@ class StereoCameraService(Service):
         """Register all REST API endpoints using add_endpoint pattern."""
 
         # Health check endpoint
-        self.add_endpoint("health", self.health_check, HealthSchema, methods=["GET"], as_tool=False)
+        self.add_endpoint(
+            "health",
+            self.health_check,
+            HealthSchema,
+            methods=["GET"],
+            as_tool=False,
+            autolog_kwargs={"log_level": logging.DEBUG},
+        )
 
         # Backend & Discovery
         self.add_endpoint(
