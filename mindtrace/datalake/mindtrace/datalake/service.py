@@ -489,7 +489,13 @@ class DatalakeService(Service):
         if live_service and initialize_on_startup:
             self.app.router.on_startup.append(self._startup_initialize)
 
-        self.add_endpoint("health", self.health, schema=DatalakeHealthSchema, as_tool=True)
+        self.add_endpoint(
+            "health",
+            self.health,
+            schema=DatalakeHealthSchema,
+            as_tool=True,
+            autolog_kwargs={"log_level": logging.DEBUG},
+        )
         self.add_endpoint("summary", self.summary, schema=DatalakeSummarySchema, as_tool=True)
         self.add_endpoint("mounts", self.mounts_info, schema=MountsSchema)
         self.add_endpoint("datalake.wipe", self.wipe_datalake, schema=DatalakeWipeSchema)

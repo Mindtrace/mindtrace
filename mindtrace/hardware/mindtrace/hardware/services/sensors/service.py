@@ -1,5 +1,6 @@
 """Sensor Manager Service providing MCP endpoints for sensor operations."""
 
+import logging
 import time
 from typing import Dict, Optional
 
@@ -61,7 +62,14 @@ class SensorManagerService(Service):
         """Register all sensor management endpoints as MCP tools."""
 
         # Health check endpoint
-        self.add_endpoint("health", self.health_check, HealthSchema, methods=["GET"], as_tool=False)
+        self.add_endpoint(
+            "health",
+            self.health_check,
+            HealthSchema,
+            methods=["GET"],
+            as_tool=False,
+            autolog_kwargs={"log_level": logging.DEBUG},
+        )
 
         # Lifecycle management endpoints
         self.add_endpoint(

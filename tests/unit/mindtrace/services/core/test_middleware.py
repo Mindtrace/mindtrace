@@ -43,6 +43,19 @@ class TestRequestLoggingMiddleware:
         client.get("/docs")
         mock_logger.info.assert_not_called()
 
+    @pytest.mark.parametrize("path", ["/health", "/healthz", "/status", "/heartbeat"])
+    def test_default_liveness_paths_skip_logging(self, mock_logger: MagicMock, path: str) -> None:
+        """Liveness/infra probes are skipped by default (no per-service config)."""
+        client = _client(mock_logger)
+        client.get(path)
+        mock_logger.info.assert_not_called()
+
+    def test_exclude_paths_skips_envelope_logging(self, mock_logger: MagicMock) -> None:
+        """Caller-supplied exclude_paths are skipped alongside the defaults."""
+        client = _client(mock_logger, exclude_paths={"/api/ping"})
+        client.get("/api/ping")
+        mock_logger.info.assert_not_called()
+
     def test_success_logs_started_and_completed(self, mock_logger: MagicMock) -> None:
         client = _client(mock_logger)
         client.get("/api/ping")
