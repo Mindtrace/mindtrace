@@ -5,6 +5,7 @@ This service provides comprehensive REST API and MCP tools for managing
 3D scanners (Photoneo PhoXi, etc.) with multi-component capture capabilities.
 """
 
+import logging
 import time
 from typing import Dict
 
@@ -122,7 +123,14 @@ class Scanner3DService(Service):
         """Register all REST API endpoints using add_endpoint pattern."""
 
         # Health check endpoint
-        self.add_endpoint("health", self.health_check, HealthSchema, methods=["GET"], as_tool=False)
+        self.add_endpoint(
+            "health",
+            self.health_check,
+            HealthSchema,
+            methods=["GET"],
+            as_tool=False,
+            autolog_kwargs={"log_level": logging.DEBUG},
+        )
 
         # Backend & Discovery
         self.add_endpoint(
