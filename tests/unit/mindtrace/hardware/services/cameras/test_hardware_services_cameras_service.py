@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
 import pytest
+from PIL import Image as PILImage
 
 from mindtrace.hardware.core.exceptions import (
     CameraConfigurationError,
@@ -411,16 +412,23 @@ class TestCameraManagerServiceBusinessLogic:
         mock_manager.open.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_capture_image_with_active_camera(self, service_with_mock_manager):
+    async def test_capture_image_with_active_camera(self, service_with_mock_manager, tmp_path):
         """Test capture image business logic with active camera."""
         service, mock_manager = service_with_mock_manager
+        save_path = tmp_path / "test.jpg"
 
-        # Set up active camera
+        # Set up active camera; per the proxy contract, capture writes save_path
+        async def _capture(save_path, output_format):
+            image = PILImage.new("RGB", (1280, 720))
+            image.save(save_path)
+            return image
+
         mock_camera = AsyncMock()
+        mock_camera.capture = AsyncMock(side_effect=_capture)
         mock_manager.active_cameras = ["ActiveCamera"]
         mock_manager.open = AsyncMock(return_value=mock_camera)
 
-        request = CaptureImageRequest(camera="ActiveCamera", save_path="/tmp/test.jpg")
+        request = CaptureImageRequest(camera="ActiveCamera", save_path=str(save_path))
 
         response = await service.capture_image(request)
 
@@ -428,12 +436,14 @@ class TestCameraManagerServiceBusinessLogic:
         assert response.success is True
         assert "Image captured from camera 'ActiveCamera'" in response.message
         assert response.data.success is True
-        assert response.data.image_path == "/tmp/test.jpg"
+        assert response.data.image_path == str(save_path)
+        assert response.data.image_size == (1280, 720)
+        assert response.data.file_size_bytes == save_path.stat().st_size
         assert isinstance(response.data.capture_time, datetime)
 
         # Test business logic: parameters passed correctly
         mock_camera.capture.assert_called_once_with(
-            save_path="/tmp/test.jpg",
+            save_path=str(save_path),
             output_format="pil",  # Default value
         )
 
@@ -915,18 +925,24 @@ class TestCameraManagerServiceCaptureAndHomography:
         assert response.data.error == "capture exploded"
 
     @pytest.mark.asyncio
-    async def test_capture_images_batch_formats_saved_paths(self, service_with_mock_manager):
+    async def test_capture_images_batch_formats_saved_paths(self, service_with_mock_manager, tmp_path):
         service, mock_manager = service_with_mock_manager
-        mock_manager.batch_capture.return_value = {"Basler:cam1": "/tmp/cam1.jpg", "Basler:cam2": None}
+        saved = tmp_path / "cam1.jpg"
+        PILImage.new("RGB", (640, 480)).save(saved)
+        mock_manager.batch_capture.return_value = {"Basler:cam1": str(saved), "Basler:cam2": None}
 
         response = await service.capture_images_batch(
-            CaptureBatchRequest(cameras=["Basler:cam1", "Basler:cam2"], save_path_pattern="/tmp/{camera}.jpg")
+            CaptureBatchRequest(
+                cameras=["Basler:cam1", "Basler:cam2"], save_path_pattern=str(tmp_path / "{camera}.jpg")
+            )
         )
 
         assert response.success is True
         assert response.successful_count == 1
         assert response.failed_count == 1
-        assert response.data["Basler:cam1"].image_path == "/tmp/cam1.jpg"
+        assert response.data["Basler:cam1"].image_path == str(saved)
+        assert response.data["Basler:cam1"].image_size == (640, 480)
+        assert response.data["Basler:cam1"].file_size_bytes == saved.stat().st_size
         assert response.data["Basler:cam2"].success is False
 
     @pytest.mark.asyncio

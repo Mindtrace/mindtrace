@@ -1,6 +1,7 @@
 import time
 import traceback
 import uuid
+from collections.abc import Iterable
 from typing import Any, Optional
 
 import structlog.contextvars
@@ -11,6 +12,22 @@ from starlette.responses import Response
 
 from mindtrace.core.logging.logger import get_logger
 from mindtrace.core.utils.system_metrics_collector import SystemMetricsCollector
+
+# Liveness/infra paths whose request envelopes are noise. Exact-match, so
+# prefixed routes (e.g. "/api/v1/inference/status") are unaffected.
+DEFAULT_FILTERED_PATHS = frozenset(
+    {
+        "/",
+        "/docs",
+        "/favicon.ico",
+        "/health",
+        "/healthz",
+        "/heartbeat",
+        "/openapi.json",
+        "/redoc",
+        "/status",
+    }
+)
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
@@ -36,6 +53,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         metrics_interval: Optional[int] = None,
         metrics_to_collect: Optional[list[str]] = ["cpu_percent", "memory_percent"],
         add_request_id_header: bool = True,
+        exclude_paths: Optional[Iterable[str]] = None,
         logger: Optional[Any] = None,
     ) -> None:
         super().__init__(app)
@@ -43,6 +61,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         self.log_metrics = log_metrics
         self.add_request_id_header = add_request_id_header
         self.service_name = service_name
+        self._filtered = DEFAULT_FILTERED_PATHS | frozenset(exclude_paths or ())
         self.metrics_collector = (
             SystemMetricsCollector(interval=metrics_interval, metrics_to_collect=metrics_to_collect)
             if log_metrics
@@ -50,10 +69,8 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         )
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        # Filter out common web requests that don't need detailed logging
-        filtered_paths = {"/favicon.ico", "/docs", "/openapi.json", "/redoc", "/"}
-        if request.url.path in filtered_paths:
-            # Just pass through without logging
+        if request.url.path in self._filtered:
+            # Pass through without logging (liveness/infra noise).
             return await call_next(request)
 
         # Clear any existing context variables

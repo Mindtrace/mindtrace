@@ -6,7 +6,6 @@ Runners own discovery and aggregation; suites measure operations via :class:`Ben
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from statistics import median, quantiles
 from time import perf_counter
@@ -14,17 +13,13 @@ from typing import Any, Callable, Protocol, TextIO
 
 from pydantic import BaseModel, Field
 
+from mindtrace.core.utils.time import utcnow_iso
+
 
 class CancellationToken(Protocol):
     """Minimal protocol for cooperative cancellation."""
 
     def is_cancelled(self) -> bool: ...
-
-
-def utc_now_iso() -> str:
-    """Return a stable UTC timestamp for result payloads."""
-
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 @dataclass(frozen=True)
@@ -169,7 +164,7 @@ class BenchReporter:
     def event(self, event_type: str, **fields: Any) -> None:
         import json
 
-        payload = {"timestamp": utc_now_iso(), "suite_id": self.suite_id, "event": event_type, **fields}
+        payload = {"timestamp": utcnow_iso(), "suite_id": self.suite_id, "event": event_type, **fields}
         if self.run_id:
             payload["run_id"] = self.run_id
         if self.variant_id:
@@ -188,7 +183,7 @@ class BenchReporter:
         import json
 
         payload = {
-            "timestamp": utc_now_iso(),
+            "timestamp": utcnow_iso(),
             "suite_id": self.suite_id,
             "variant_id": self.variant_id,
             "error_type": type(error).__name__,

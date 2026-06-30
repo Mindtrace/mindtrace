@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import UTC, datetime
 
 from mindtrace.core.testing.runner import TestRunner
+from mindtrace.core.utils.time import utcnow
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -50,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"No suites tagged with profile={args.profile!r}.", file=sys.stderr)
         return 2
 
-    run_id = args.run_id or datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
+    run_id = args.run_id or utcnow().strftime("%Y-%m-%dT%H-%M-%SZ")
 
     def _progress(ev: object) -> None:
         kind = getattr(ev, "kind", "?")

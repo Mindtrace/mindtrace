@@ -8,7 +8,7 @@ import os
 import warnings
 from collections.abc import AsyncIterator, Iterable
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from enum import StrEnum
 from functools import partial
 from pathlib import Path
@@ -16,7 +16,7 @@ from typing import Any, TypeVar
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from mindtrace.core import Mindtrace
+from mindtrace.core import Mindtrace, as_utc, utcnow
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake.pagination_types import (
@@ -40,6 +40,7 @@ from mindtrace.datalake.types import (
     AssetRetention,
     Collection,
     CollectionItem,
+    DatalakeDocument,
     DatasetImportSession,
     DatasetVersion,
     Datum,
@@ -97,6 +98,107 @@ def _default_store_save_workers() -> int:
     """Return a conservative bounded worker count for blocking store writes."""
 
     return min(32, max(4, (os.cpu_count() or 1) * 2))
+
+
+PaginationSortSpec = tuple[list[tuple[str, int]], list[str]]
+
+PAGINATION_RESOURCE_MODELS: dict[str, type[DatalakeDocument]] = {
+    "assets": Asset,
+    "collections": Collection,
+    "collection_items": CollectionItem,
+    "asset_retentions": AssetRetention,
+    "annotation_schemas": AnnotationSchema,
+    "annotation_sets": AnnotationSet,
+    "annotation_records": AnnotationRecord,
+    "datums": Datum,
+    "dataset_versions": DatasetVersion,
+}
+
+PAGINATION_SNAPSHOT_FIELDS: dict[str, str] = {
+    "assets": "created_at",
+    "collections": "created_at",
+    "collection_items": "added_at",
+    "asset_retentions": "created_at",
+    "annotation_schemas": "created_at",
+    "annotation_sets": "created_at",
+    "annotation_records": "created_at",
+    "datums": "created_at",
+    "dataset_versions": "created_at",
+}
+
+PAGINATION_SORT_SPECS: dict[str, dict[str, PaginationSortSpec]] = {
+    "assets": {
+        "created_desc": ([("created_at", -1), ("asset_id", -1)], ["created_at", "asset_id"]),
+        "created_asc": ([("created_at", 1), ("asset_id", 1)], ["created_at", "asset_id"]),
+    },
+    "collections": {
+        "created_desc": ([("created_at", -1), ("collection_id", -1)], ["created_at", "collection_id"]),
+        "created_asc": ([("created_at", 1), ("collection_id", 1)], ["created_at", "collection_id"]),
+    },
+    "collection_items": {
+        "created_desc": ([("added_at", -1), ("collection_item_id", -1)], ["added_at", "collection_item_id"]),
+        "created_asc": ([("added_at", 1), ("collection_item_id", 1)], ["added_at", "collection_item_id"]),
+    },
+    "asset_retentions": {
+        "created_desc": (
+            [("created_at", -1), ("asset_retention_id", -1)],
+            ["created_at", "asset_retention_id"],
+        ),
+        "created_asc": (
+            [("created_at", 1), ("asset_retention_id", 1)],
+            ["created_at", "asset_retention_id"],
+        ),
+    },
+    "annotation_schemas": {
+        "created_desc": (
+            [("created_at", -1), ("annotation_schema_id", -1)],
+            ["created_at", "annotation_schema_id"],
+        ),
+        "created_asc": (
+            [("created_at", 1), ("annotation_schema_id", 1)],
+            ["created_at", "annotation_schema_id"],
+        ),
+    },
+    "annotation_sets": {
+        "created_desc": (
+            [("created_at", -1), ("annotation_set_id", -1)],
+            ["created_at", "annotation_set_id"],
+        ),
+        "created_asc": (
+            [("created_at", 1), ("annotation_set_id", 1)],
+            ["created_at", "annotation_set_id"],
+        ),
+    },
+    "annotation_records": {
+        "created_desc": (
+            [("created_at", -1), ("annotation_id", -1)],
+            ["created_at", "annotation_id"],
+        ),
+        "subject_created_desc": (
+            [("subject.kind", 1), ("subject.id", 1), ("created_at", -1), ("annotation_id", -1)],
+            ["subject.kind", "subject.id", "created_at", "annotation_id"],
+        ),
+    },
+    "datums": {
+        "created_desc": ([("created_at", -1), ("datum_id", -1)], ["created_at", "datum_id"]),
+        "split_created_desc": (
+            [("split", 1), ("created_at", -1), ("datum_id", -1)],
+            ["split", "created_at", "datum_id"],
+        ),
+    },
+    "dataset_versions": {
+        "created_desc": (
+            [("created_at", -1), ("dataset_version_id", -1)],
+            ["created_at", "dataset_version_id"],
+        ),
+        "dataset_version_desc": (
+            [("dataset_name", 1), ("version", -1), ("dataset_version_id", -1)],
+            ["dataset_name", "version", "dataset_version_id"],
+        ),
+    },
+}
+
+assert set(PAGINATION_RESOURCE_MODELS) == set(PAGINATION_SORT_SPECS) == set(PAGINATION_SNAPSHOT_FIELDS)
 
 
 class AsyncDatalake(Mindtrace):
@@ -307,16 +409,6 @@ class AsyncDatalake(Mindtrace):
         return datalake
 
     @staticmethod
-    def _utc_now() -> datetime:
-        return datetime.now(timezone.utc)
-
-    @staticmethod
-    def _coerce_utc(dt: datetime) -> datetime:
-        if dt.tzinfo is None:
-            return dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc)
-
-    @staticmethod
     def _normalize_storage_ref(storage_ref: StorageRef) -> StorageRef:
         return StorageRef(
             mount=storage_ref.mount,
@@ -388,18 +480,7 @@ class AsyncDatalake(Mindtrace):
 
     @staticmethod
     def _snapshot_field_for(resource: str) -> str | None:
-        snapshot_fields = {
-            "assets": "created_at",
-            "collections": "created_at",
-            "collection_items": "added_at",
-            "asset_retentions": "created_at",
-            "annotation_schemas": "created_at",
-            "annotation_sets": "created_at",
-            "annotation_records": "created_at",
-            "datums": "created_at",
-            "dataset_versions": "created_at",
-        }
-        return snapshot_fields.get(resource)
+        return PAGINATION_SNAPSHOT_FIELDS.get(resource)
 
     @classmethod
     def _encode_snapshot_token(cls, *, resource: str, field: str, cutoff: Any) -> str:
@@ -473,81 +554,10 @@ class AsyncDatalake(Mindtrace):
         return {"$and": [base, extra]}
 
     @staticmethod
-    def _sort_specs_for(resource: str) -> dict[str, tuple[list[tuple[str, int]], list[str]]]:
-        specs: dict[str, dict[str, tuple[list[tuple[str, int]], list[str]]]] = {
-            "assets": {
-                "created_desc": ([("created_at", -1), ("asset_id", -1)], ["created_at", "asset_id"]),
-                "created_asc": ([("created_at", 1), ("asset_id", 1)], ["created_at", "asset_id"]),
-            },
-            "collections": {
-                "created_desc": ([("created_at", -1), ("collection_id", -1)], ["created_at", "collection_id"]),
-                "created_asc": ([("created_at", 1), ("collection_id", 1)], ["created_at", "collection_id"]),
-            },
-            "collection_items": {
-                "created_desc": ([("added_at", -1), ("collection_item_id", -1)], ["added_at", "collection_item_id"]),
-                "created_asc": ([("added_at", 1), ("collection_item_id", 1)], ["added_at", "collection_item_id"]),
-            },
-            "asset_retentions": {
-                "created_desc": (
-                    [("created_at", -1), ("asset_retention_id", -1)],
-                    ["created_at", "asset_retention_id"],
-                ),
-                "created_asc": (
-                    [("created_at", 1), ("asset_retention_id", 1)],
-                    ["created_at", "asset_retention_id"],
-                ),
-            },
-            "annotation_schemas": {
-                "created_desc": (
-                    [("created_at", -1), ("annotation_schema_id", -1)],
-                    ["created_at", "annotation_schema_id"],
-                ),
-                "created_asc": (
-                    [("created_at", 1), ("annotation_schema_id", 1)],
-                    ["created_at", "annotation_schema_id"],
-                ),
-            },
-            "annotation_sets": {
-                "created_desc": (
-                    [("created_at", -1), ("annotation_set_id", -1)],
-                    ["created_at", "annotation_set_id"],
-                ),
-                "created_asc": (
-                    [("created_at", 1), ("annotation_set_id", 1)],
-                    ["created_at", "annotation_set_id"],
-                ),
-            },
-            "annotation_records": {
-                "created_desc": (
-                    [("created_at", -1), ("annotation_id", -1)],
-                    ["created_at", "annotation_id"],
-                ),
-                "subject_created_desc": (
-                    [("subject.kind", 1), ("subject.id", 1), ("created_at", -1), ("annotation_id", -1)],
-                    ["subject.kind", "subject.id", "created_at", "annotation_id"],
-                ),
-            },
-            "datums": {
-                "created_desc": ([("created_at", -1), ("datum_id", -1)], ["created_at", "datum_id"]),
-                "split_created_desc": (
-                    [("split", 1), ("created_at", -1), ("datum_id", -1)],
-                    ["split", "created_at", "datum_id"],
-                ),
-            },
-            "dataset_versions": {
-                "created_desc": (
-                    [("created_at", -1), ("dataset_version_id", -1)],
-                    ["created_at", "dataset_version_id"],
-                ),
-                "dataset_version_desc": (
-                    [("dataset_name", 1), ("version", -1), ("dataset_version_id", -1)],
-                    ["dataset_name", "version", "dataset_version_id"],
-                ),
-            },
-        }
-        if resource not in specs:
+    def _sort_specs_for(resource: str) -> dict[str, PaginationSortSpec]:
+        if resource not in PAGINATION_SORT_SPECS:
             raise ValueError(f"Unsupported pagination resource: {resource}")
-        return specs[resource]
+        return PAGINATION_SORT_SPECS[resource]
 
     @classmethod
     def _resolve_sort_spec(cls, resource: str, sort: str) -> tuple[list[tuple[str, int]], list[str]]:
@@ -585,7 +595,7 @@ class AsyncDatalake(Mindtrace):
         sort_spec, cursor_fields = self._resolve_sort_spec(resource, sort)
         snapshot_field = self._snapshot_field_for(resource)
         snapshot_token = (
-            self._encode_snapshot_token(resource=resource, field=snapshot_field, cutoff=self._utc_now())
+            self._encode_snapshot_token(resource=resource, field=snapshot_field, cutoff=utcnow())
             if snapshot_field is not None
             else None
         )
@@ -892,6 +902,135 @@ class AsyncDatalake(Mindtrace):
         key = self.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
         return self.store.info(key, version=storage_ref.version)
 
+    async def get_object_download_url(
+        self,
+        storage_ref: StorageRef,
+        *,
+        expires_in_minutes: int = 15,
+        response_content_type: str | None = None,
+        response_content_disposition: str | None = None,
+    ) -> str | None:
+        """Mint a presigned GET URL for the object at ``storage_ref``.
+
+        Returns ``None`` if the backing mount cannot presign (e.g. local filesystem),
+        signalling callers to fall back to streaming bytes via :meth:`get_object`.
+        The store call (a metadata read + local signing) runs off the event loop.
+        """
+        storage_ref = self._normalize_storage_ref(storage_ref)
+        if not self.store.has_mount(storage_ref.mount):
+            configured = sorted(self.store.list_mounts())
+            raise StoreLocationNotFound(
+                f"Unknown store mount {storage_ref.mount!r} on datalake {self.mongo_db_name!r}; "
+                f"configured mounts: {configured}"
+            )
+        key = self.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            self._store_save_executor,
+            partial(
+                self.store.create_direct_download_url,
+                key,
+                version=storage_ref.version,
+                expiration_minutes=expires_in_minutes,
+                response_content_type=response_content_type,
+                response_content_disposition=response_content_disposition,
+            ),
+        )
+
+    async def get_asset_download_url(
+        self,
+        asset_id: str,
+        *,
+        expires_in_minutes: int = 15,
+        response_content_type: str | None = None,
+        response_content_disposition: str | None = None,
+    ) -> str | None:
+        """Mint a presigned GET URL for an asset's payload.
+
+        Defaults the response Content-Type to the asset's ``media_type`` so browsers
+        render the image inline. Returns ``None`` if the mount cannot presign.
+        """
+        asset = await self.get_asset(asset_id)
+        if asset.payload_status != "present":
+            raise FileNotFoundError(
+                f"Asset {asset_id!r} payload is not available (payload_status={asset.payload_status!r})"
+            )
+        storage_ref = asset.payload_storage_ref or asset.storage_ref
+        return await self.get_object_download_url(
+            storage_ref,
+            expires_in_minutes=expires_in_minutes,
+            response_content_type=response_content_type or asset.media_type,
+            response_content_disposition=response_content_disposition,
+        )
+
+    async def get_assets_download_urls(
+        self,
+        asset_ids: list[str],
+        *,
+        expires_in_minutes: int = 15,
+    ) -> dict[str, str]:
+        """Batch variant: ``{asset_id: url}`` for every asset that resolves and presigns.
+
+        Optimised so the cost is independent of batch size in round-trips:
+
+        1. ONE Mongo query (``$in``) resolves all assets — not N ``get_asset`` calls.
+        2. Storage refs are grouped by mount; each mount issues ONE batched metadata
+           read (parallel ``download_string_batch``) covering all its objects.
+        3. URLs are signed locally (signing is a pure-CPU op — no network — so there is
+           nothing to parallelise there; the metadata read is the only I/O and it is
+           already fanned out).
+
+        Asset ids that are missing, lack a present payload, or whose mount cannot presign
+        are omitted (best-effort — one bad id never fails the batch).
+        """
+        if not asset_ids:
+            return {}
+
+        # 1) Resolve all assets in a single query, preserving request order / dedup.
+        unique_ids = list(dict.fromkeys(asset_ids))
+        assets = await self.asset_database.find({"asset_id": {"$in": unique_ids}})
+        by_id = {a.asset_id: a for a in assets}
+
+        # 2) Bucket presignable refs by mount, remembering each one's content type.
+        per_mount: dict[str, dict[str, list]] = {}
+        for aid in unique_ids:
+            asset = by_id.get(aid)
+            if asset is None or asset.payload_status != "present":
+                continue
+            ref = self._normalize_storage_ref(asset.payload_storage_ref or asset.storage_ref)
+            if not self.store.has_mount(ref.mount):
+                continue
+            bucket = per_mount.setdefault(ref.mount, {"ids": [], "names": [], "versions": [], "rcts": []})
+            bucket["ids"].append(aid)
+            bucket["names"].append(ref.name)
+            bucket["versions"].append(ref.version)
+            bucket["rcts"].append(asset.media_type)
+
+        # 3) One batched store call per mount, off the event loop.
+        loop = asyncio.get_running_loop()
+
+        async def _sign_mount(mount: str, b: dict[str, list]) -> list[str | None]:
+            return await loop.run_in_executor(
+                self._store_save_executor,
+                partial(
+                    self.store.create_direct_download_urls,
+                    mount,
+                    b["names"],
+                    b["versions"],
+                    expiration_minutes=expires_in_minutes,
+                    response_content_types=b["rcts"],
+                ),
+            )
+
+        signed = await asyncio.gather(*(_sign_mount(m, b) for m, b in per_mount.items()))
+
+        out: dict[str, str] = {}
+        for (mount, b), urls in zip(per_mount.items(), signed):
+            for aid, url in zip(b["ids"], urls):
+                if url:
+                    out[aid] = url
+        return out
+
     async def get_asset_payload(self, asset_id: str, **kwargs: Any) -> Any:
         asset = await self.get_asset(asset_id)
         if asset.payload_status != "present":
@@ -904,7 +1043,7 @@ class AsyncDatalake(Mindtrace):
         except Exception as exc:
             asset.payload_status = "corrupt"
             asset.payload_status_reason = f"payload read failed: {exc}"
-            asset.payload_status_updated_at = self._utc_now()
+            asset.payload_status_updated_at = utcnow()
             await self.asset_database.update(asset)
             raise
 
@@ -996,7 +1135,7 @@ class AsyncDatalake(Mindtrace):
             on_conflict=on_conflict,
             upload_method="local_path",
             content_type=content_type,
-            expires_at=self._utc_now() + timedelta(minutes=expires_in_minutes),
+            expires_at=utcnow() + timedelta(minutes=expires_in_minutes),
             created_by=created_by,
         )
         key = self.store.build_key(target_mount, name, version)
@@ -1033,10 +1172,10 @@ class AsyncDatalake(Mindtrace):
 
     async def reconcile_upload_sessions(self, limit: int = 100) -> list[DirectUploadSession]:
         pending = await self.direct_upload_session_database.find({"status": "pending"})
-        now = self._utc_now()
+        now = utcnow()
         reconciled: list[DirectUploadSession] = []
         for session in pending[:limit]:
-            session.expires_at = self._coerce_utc(session.expires_at)
+            session.expires_at = as_utc(session.expires_at)
             if session.expires_at <= now:
                 reconciled.append(
                     await self._verify_and_finalize_upload_session(
@@ -1059,15 +1198,15 @@ class AsyncDatalake(Mindtrace):
 
         key = self.store.build_key(session.mount, session.name, session.requested_version)
         session.verification_attempts += 1
-        session.last_verified_at = self._utc_now()
-        session.expires_at = self._coerce_utc(session.expires_at)
+        session.last_verified_at = utcnow()
+        session.expires_at = as_utc(session.expires_at)
 
         inspection = self.store.inspect_direct_upload_target(key, staged_target=session.staged_reference)
         if not inspection.get("exists"):
-            if allow_pending_missing and session.expires_at <= self._utc_now():
+            if allow_pending_missing and session.expires_at <= utcnow():
                 session.status = "expired"
                 session.failure_reason = "Upload did not complete before expiry."
-                session.cleanup_completed_at = self._utc_now()
+                session.cleanup_completed_at = utcnow()
             await self.direct_upload_session_database.update(session)
             if allow_pending_missing:
                 return session
@@ -1086,7 +1225,7 @@ class AsyncDatalake(Mindtrace):
             session.status = "failed"
             session.failure_reason = str(e)
             if cleanup_ok:
-                session.cleanup_completed_at = self._utc_now()
+                session.cleanup_completed_at = utcnow()
             await self.direct_upload_session_database.update(session)
             raise
 
@@ -1099,7 +1238,7 @@ class AsyncDatalake(Mindtrace):
         )
         session.status = "completed"
         session.failure_reason = None
-        session.completed_at = self._utc_now()
+        session.completed_at = utcnow()
         session.cleanup_completed_at = session.completed_at
         return await self.direct_upload_session_database.update(session)
 
@@ -1119,7 +1258,7 @@ class AsyncDatalake(Mindtrace):
         payload_verified_at: datetime | None = None,
     ) -> Asset:
         normalized_storage_ref = self._normalize_storage_ref(storage_ref)
-        now = self._utc_now()
+        now = utcnow()
         asset = self._build_document(
             Asset,
             kind=kind,
@@ -1158,7 +1297,7 @@ class AsyncDatalake(Mindtrace):
             alias=asset.asset_id,
             asset_id=asset.asset_id,
             is_primary=True,
-            created_at=self._utc_now(),
+            created_at=utcnow(),
         )
         return await self.asset_alias_database.insert(doc)
 
@@ -1191,7 +1330,7 @@ class AsyncDatalake(Mindtrace):
                     alias=asset_id,
                     asset_id=asset_id,
                     is_primary=True,
-                    created_at=self._utc_now(),
+                    created_at=utcnow(),
                 )
             )
         if missing_docs:
@@ -1220,7 +1359,7 @@ class AsyncDatalake(Mindtrace):
             alias=alias,
             asset_id=asset_id,
             is_primary=False,
-            created_at=self._utc_now(),
+            created_at=utcnow(),
         )
         try:
             return await self.asset_alias_database.insert(doc)
@@ -1294,7 +1433,7 @@ class AsyncDatalake(Mindtrace):
     async def update_asset_metadata(self, asset_id: str, metadata: dict[str, Any]) -> Asset:
         asset = await self.get_asset(asset_id)
         asset.metadata = metadata
-        asset.updated_at = self._utc_now()
+        asset.updated_at = utcnow()
         return await self.asset_database.update(asset)
 
     async def delete_asset(self, asset_id: str) -> None:
@@ -1326,7 +1465,7 @@ class AsyncDatalake(Mindtrace):
             status=status,
             metadata=metadata or {},
             created_by=created_by,
-            updated_at=self._utc_now(),
+            updated_at=utcnow(),
         )
         return await self.collection_database.insert(collection)
 
@@ -1363,7 +1502,7 @@ class AsyncDatalake(Mindtrace):
         collection = await self.get_collection(collection_id)
         for key, value in changes.items():
             setattr(collection, key, value)
-        collection.updated_at = self._utc_now()
+        collection.updated_at = utcnow()
         return await self.collection_database.update(collection)
 
     async def delete_collection(self, collection_id: str) -> None:
@@ -1393,7 +1532,7 @@ class AsyncDatalake(Mindtrace):
             status=status,
             metadata=metadata or {},
             added_by=added_by,
-            updated_at=self._utc_now(),
+            updated_at=utcnow(),
         )
         return await self.collection_item_database.insert(collection_item)
 
@@ -1444,7 +1583,7 @@ class AsyncDatalake(Mindtrace):
             await self.get_asset(changes["asset_id"])
         for key, value in changes.items():
             setattr(collection_item, key, value)
-        collection_item.updated_at = self._utc_now()
+        collection_item.updated_at = utcnow()
         return await self.collection_item_database.update(collection_item)
 
     async def delete_collection_item(self, collection_item_id: str) -> None:
@@ -1470,7 +1609,7 @@ class AsyncDatalake(Mindtrace):
             retention_policy=retention_policy,
             metadata=metadata or {},
             created_by=created_by,
-            updated_at=self._utc_now(),
+            updated_at=utcnow(),
         )
         return await self.asset_retention_database.insert(asset_retention)
 
@@ -1509,7 +1648,7 @@ class AsyncDatalake(Mindtrace):
             await self.get_asset(changes["asset_id"])
         for key, value in changes.items():
             setattr(asset_retention, key, value)
-        asset_retention.updated_at = self._utc_now()
+        asset_retention.updated_at = utcnow()
         return await self.asset_retention_database.update(asset_retention)
 
     async def delete_asset_retention(self, asset_retention_id: str) -> None:
@@ -1551,7 +1690,7 @@ class AsyncDatalake(Mindtrace):
             allow_additional_attributes=allow_additional_attributes,
             metadata=metadata or {},
             created_by=created_by,
-            updated_at=self._utc_now(),
+            updated_at=utcnow(),
         )
         try:
             return await self.annotation_schema_database.insert(schema)
@@ -1602,7 +1741,7 @@ class AsyncDatalake(Mindtrace):
             ]
         for key, value in changes.items():
             setattr(schema, key, value)
-        schema.updated_at = self._utc_now()
+        schema.updated_at = utcnow()
         return await self.annotation_schema_database.update(schema)
 
     async def delete_annotation_schema(self, annotation_schema_id: str) -> None:
@@ -1680,7 +1819,7 @@ class AsyncDatalake(Mindtrace):
 
     def _coerce_annotation_record(self, annotation: AnnotationRecord | dict[str, Any]) -> AnnotationRecord:
         if isinstance(annotation, AnnotationRecord):
-            annotation.updated_at = self._utc_now()
+            annotation.updated_at = utcnow()
             return annotation
 
         source = annotation.get("source")
@@ -1700,7 +1839,7 @@ class AsyncDatalake(Mindtrace):
             geometry=annotation.get("geometry", {}),
             attributes=annotation.get("attributes", {}),
             metadata=annotation.get("metadata", {}),
-            updated_at=self._utc_now(),
+            updated_at=utcnow(),
         )
 
     async def _rollback_inserted_annotation_records(self, inserted_records: list[AnnotationRecord]) -> None:
@@ -1738,13 +1877,13 @@ class AsyncDatalake(Mindtrace):
             annotation_schema_id=annotation_schema_id,
             metadata=metadata or {},
             created_by=created_by,
-            updated_at=self._utc_now(),
+            updated_at=utcnow(),
         )
         inserted = await self.annotation_set_database.insert(annotation_set)
         if datum is not None:
             if inserted.annotation_set_id not in datum.annotation_set_ids:
                 datum.annotation_set_ids.append(inserted.annotation_set_id)
-                datum.updated_at = self._utc_now()
+                datum.updated_at = utcnow()
                 try:
                     await self.datum_database.update(datum)
                 except Exception:
@@ -1790,7 +1929,7 @@ class AsyncDatalake(Mindtrace):
             await self.get_annotation_schema(changes["annotation_schema_id"])
         for key, value in changes.items():
             setattr(annotation_set, key, value)
-        annotation_set.updated_at = self._utc_now()
+        annotation_set.updated_at = utcnow()
         return await self.annotation_set_database.update(annotation_set)
 
     def _assert_asset_subject_for_set_less_records(self, records: list[AnnotationRecord]) -> None:
@@ -1952,7 +2091,7 @@ class AsyncDatalake(Mindtrace):
                 next_record_ids.append(inserted.annotation_id)
 
         annotation_set.annotation_record_ids = next_record_ids
-        annotation_set.updated_at = self._utc_now()
+        annotation_set.updated_at = utcnow()
         try:
             await self.annotation_set_database.update(annotation_set)
         except Exception:
@@ -2044,7 +2183,7 @@ class AsyncDatalake(Mindtrace):
             if key == "source" and isinstance(value, dict):
                 value = AnnotationSource(**value)
             setattr(record, key, value)
-        record.updated_at = self._utc_now()
+        record.updated_at = utcnow()
         return await self.annotation_record_database.update(record)
 
     async def delete_annotation_record(self, annotation_id: str) -> None:
@@ -2055,7 +2194,7 @@ class AsyncDatalake(Mindtrace):
                 annotation_set.annotation_record_ids = [
                     existing_id for existing_id in annotation_set.annotation_record_ids if existing_id != annotation_id
                 ]
-                annotation_set.updated_at = self._utc_now()
+                annotation_set.updated_at = utcnow()
                 await self.annotation_set_database.update(annotation_set)
         await self.annotation_record_database.delete(record.id)
 
@@ -2075,7 +2214,7 @@ class AsyncDatalake(Mindtrace):
             asset_refs=asset_refs,
             metadata=metadata or {},
             annotation_set_ids=annotation_set_ids or [],
-            updated_at=self._utc_now(),
+            updated_at=utcnow(),
         )
         return await self.datum_database.insert(datum)
 
@@ -2142,7 +2281,7 @@ class AsyncDatalake(Mindtrace):
             await self._validate_annotation_set_ids_exist(changes["annotation_set_ids"])
         for key, value in changes.items():
             setattr(datum, key, value)
-        datum.updated_at = self._utc_now()
+        datum.updated_at = utcnow()
         return await self.datum_database.update(datum)
 
     async def create_dataset_version(

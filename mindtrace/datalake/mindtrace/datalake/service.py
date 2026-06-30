@@ -10,12 +10,13 @@ import traceback
 from collections.abc import Awaitable
 from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException
 
+from mindtrace.core import as_utc
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DocumentTooLargeError
 from mindtrace.datalake.async_datalake import AsyncDatalake, SlowOperationDisabledError, SlowOpsPolicy
 from mindtrace.datalake.replication import ReplicationManager
@@ -37,12 +38,14 @@ from mindtrace.datalake.service_types import (
     AnnotationSetOutput,
     AnnotationSetPageOutput,
     AssetAliasOutput,
+    AssetDownloadUrlOutput,
     AssetListOutput,
     AssetOutput,
     AssetPageOutput,
     AssetRetentionListOutput,
     AssetRetentionOutput,
     AssetRetentionPageOutput,
+    AssetsDownloadUrlsOutput,
     CollectionItemListOutput,
     CollectionItemOutput,
     CollectionItemPageOutput,
@@ -154,8 +157,12 @@ from mindtrace.datalake.service_types import (
     GetAnnotationSetSchema,
     GetAssetByAliasInput,
     GetAssetByAliasSchema,
+    GetAssetDownloadUrlInput,
+    GetAssetDownloadUrlSchema,
     GetAssetRetentionSchema,
     GetAssetSchema,
+    GetAssetsDownloadUrlsInput,
+    GetAssetsDownloadUrlsSchema,
     GetByIdInput,
     GetCollectionItemSchema,
     GetCollectionSchema,
@@ -267,7 +274,7 @@ from mindtrace.datalake.sync_types import (
     DatasetSyncProgress,
     ObjectPayloadDescriptor,
 )
-from mindtrace.datalake.types import Asset, DatasetImportSession, StorageRef, utc_now
+from mindtrace.datalake.types import Asset, DatasetImportSession, StorageRef, utcnow
 from mindtrace.registry import Mount
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.services import Service
@@ -277,9 +284,8 @@ _LOGGER = logging.getLogger(__name__)
 
 def _import_session_expired(expires_at: datetime, *, now: datetime | None = None) -> bool:
     """Compare session expiry to current UTC time, treating naive datetimes as UTC (Mongo round-trip)."""
-    current = now if now is not None else datetime.now(timezone.utc)
-    deadline = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=timezone.utc)
-    return current > deadline
+    current = now if now is not None else utcnow()
+    return current > as_utc(expires_at)
 
 
 class _ImportSessionProgressWriter:
@@ -315,7 +321,7 @@ class _ImportSessionProgressWriter:
         sess.import_progress_bytes_total = progress.bytes_total
         sess.import_progress_skipped_items = progress.skipped_items
         sess.import_progress_failed_items = progress.failed_items
-        sess.import_progress_updated_at = utc_now()
+        sess.import_progress_updated_at = utcnow()
         sess.metadata_commit_cursor_entity_kind = progress.entity_kind
         sess.metadata_commit_cursor_completed_items = progress.entity_completed_items
         sess.metadata_commit_cursor_total_items = progress.entity_total_items
@@ -483,7 +489,13 @@ class DatalakeService(Service):
         if live_service and initialize_on_startup:
             self.app.router.on_startup.append(self._startup_initialize)
 
-        self.add_endpoint("health", self.health, schema=DatalakeHealthSchema, as_tool=True)
+        self.add_endpoint(
+            "health",
+            self.health,
+            schema=DatalakeHealthSchema,
+            as_tool=True,
+            autolog_kwargs={"log_level": logging.DEBUG},
+        )
         self.add_endpoint("summary", self.summary, schema=DatalakeSummarySchema, as_tool=True)
         self.add_endpoint("mounts", self.mounts_info, schema=MountsSchema)
         self.add_endpoint("datalake.wipe", self.wipe_datalake, schema=DatalakeWipeSchema)
@@ -504,6 +516,8 @@ class DatalakeService(Service):
         self.add_endpoint("assets.create", self.create_asset, schema=CreateAssetSchema)
         self.add_endpoint("assets.get", self.get_asset, schema=GetAssetSchema, as_tool=True)
         self.add_endpoint("assets.get_by_alias", self.get_asset_by_alias, schema=GetAssetByAliasSchema, as_tool=True)
+        self.add_endpoint("assets.download_url", self.get_asset_download_url, schema=GetAssetDownloadUrlSchema)
+        self.add_endpoint("assets.download_urls", self.get_assets_download_urls, schema=GetAssetsDownloadUrlsSchema)
         self.add_endpoint("assets.list", self.list_assets, schema=ListAssetsSchema)
         self.add_endpoint("assets.list_page", self.list_assets_page, schema=ListAssetsPageSchema)
         self.add_endpoint("assets.update_metadata", self.update_asset_metadata, schema=UpdateAssetMetadataSchema)
@@ -851,10 +865,12 @@ class DatalakeService(Service):
             ) from exc
 
     async def health(self) -> DatalakeHealthOutput:
+        """Return datalake health status (database name and default mount)."""
         datalake = await self._ensure_datalake()
         return DatalakeHealthOutput(**(await datalake.get_health()))
 
     async def summary(self) -> DatalakeSummaryOutput:
+        """Return a human-readable summary of canonical record counts in the datalake."""
         datalake = await self._ensure_datalake()
         return DatalakeSummaryOutput(summary=await datalake.summary())
 
@@ -948,12 +964,50 @@ class DatalakeService(Service):
         return AssetOutput(asset=asset)
 
     async def get_asset(self, payload: GetByIdInput) -> AssetOutput:
+        """Load an asset by ``asset_id``. Returns HTTP 404 when the asset does not exist."""
         datalake = await self._ensure_datalake()
-        return AssetOutput(asset=await datalake.get_asset(payload.id))
+        try:
+            asset = await datalake.get_asset(payload.id)
+        except DocumentNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return AssetOutput(asset=asset)
 
     async def get_asset_by_alias(self, payload: GetAssetByAliasInput) -> AssetOutput:
+        """Load an asset by alias string. Returns HTTP 404 when the alias is not registered."""
         datalake = await self._ensure_datalake()
-        return AssetOutput(asset=await datalake.get_asset_by_alias(payload.alias))
+        try:
+            asset = await datalake.get_asset_by_alias(payload.alias)
+        except DocumentNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return AssetOutput(asset=asset)
+
+    async def get_asset_download_url(self, payload: GetAssetDownloadUrlInput) -> AssetDownloadUrlOutput:
+        datalake = await self._ensure_datalake()
+        try:
+            url = await datalake.get_asset_download_url(
+                payload.asset_id,
+                expires_in_minutes=payload.expires_in_minutes,
+                response_content_type=payload.response_content_type,
+                response_content_disposition=payload.response_content_disposition,
+            )
+        except DocumentNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (RegistryObjectNotFound, FileNotFoundError) as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "ASSET_PAYLOAD_NOT_READABLE", "message": str(exc), "asset_id": payload.asset_id},
+            ) from exc
+        expires_at = utcnow() + timedelta(minutes=payload.expires_in_minutes) if url else None
+        return AssetDownloadUrlOutput(asset_id=payload.asset_id, url=url, expires_at=expires_at)
+
+    async def get_assets_download_urls(self, payload: GetAssetsDownloadUrlsInput) -> AssetsDownloadUrlsOutput:
+        datalake = await self._ensure_datalake()
+        urls = await datalake.get_assets_download_urls(
+            payload.asset_ids,
+            expires_in_minutes=payload.expires_in_minutes,
+        )
+        expires_at = utcnow() + timedelta(minutes=payload.expires_in_minutes) if urls else None
+        return AssetsDownloadUrlsOutput(urls=urls, expires_at=expires_at)
 
     async def add_alias(self, payload: AddAliasInput) -> AssetAliasOutput:
         datalake = await self._ensure_datalake()
@@ -1154,6 +1208,7 @@ class DatalakeService(Service):
     async def get_annotation_schema_by_name_version(
         self, payload: GetAnnotationSchemaByNameVersionInput
     ) -> AnnotationSchemaOutput:
+        """Load an annotation schema by ``name`` and ``version``."""
         datalake = await self._ensure_datalake()
         schema = await datalake.get_annotation_schema_by_name_version(payload.name, payload.version)
         return AnnotationSchemaOutput(annotation_schema=schema)
@@ -1315,6 +1370,10 @@ class DatalakeService(Service):
         return DatumOutput(datum=await datalake.update_datum(payload.datum_id, **payload.changes))
 
     async def resolve_datum(self, payload: GetByIdInput) -> ResolvedDatumOutput:
+        """Fully materialize a datum with linked assets and annotations.
+
+        This is an explicit heavy operation intended for bounded use, not bulk traversal.
+        """
         datalake = await self._ensure_datalake()
         return ResolvedDatumOutput(resolved_datum=await datalake.resolve_datum(payload.id))
 
@@ -1486,11 +1545,13 @@ class DatalakeService(Service):
         return DatasetVersionOutput(dataset_version=dataset_version)
 
     async def get_dataset_version(self, payload: GetDatasetVersionInput) -> DatasetVersionOutput:
+        """Load a dataset version by ``dataset_name`` and ``version``."""
         datalake = await self._ensure_datalake()
         dataset_version = await datalake.get_dataset_version(payload.dataset_name, payload.version)
         return DatasetVersionOutput(dataset_version=dataset_version)
 
     async def list_dataset_versions(self, payload: ListDatasetVersionsInput) -> DatasetVersionListOutput:
+        """List dataset versions, optionally scoped to a ``dataset_name`` and Mongo filters."""
         datalake = await self._ensure_datalake()
         versions = await self._await_client_safe(
             datalake.list_dataset_versions(dataset_name=payload.dataset_name, filters=payload.filters)
@@ -1498,6 +1559,7 @@ class DatalakeService(Service):
         return DatasetVersionListOutput(dataset_versions=versions)
 
     async def list_dataset_versions_page(self, payload: ListDatasetVersionsPageInput) -> DatasetVersionPageOutput:
+        """Page through dataset versions with cursor-based pagination."""
         datalake = await self._ensure_datalake()
         page = await self._await_pagination_client_safe(
             datalake.list_dataset_versions_page(
@@ -1512,11 +1574,19 @@ class DatalakeService(Service):
         return DatasetVersionPageOutput(items=page.items, page=page.page)
 
     async def resolve_dataset_version(self, payload: GetDatasetVersionInput) -> ResolvedDatasetVersionOutput:
+        """Fully materialize every datum in a dataset version.
+
+        This is an explicit heavy operation intended for bounded use, not bulk traversal.
+        """
         datalake = await self._ensure_datalake()
         resolved = await datalake.resolve_dataset_version(payload.dataset_name, payload.version)
         return ResolvedDatasetVersionOutput(resolved_dataset_version=resolved)
 
     async def view_dataset_version_page(self, payload: ViewDatasetVersionPageInput) -> DatasetViewPageOutput:
+        """Page through a dataset version manifest with optional asset/annotation expansion.
+
+        Can be expensive for large manifests, especially with filters or expansions enabled.
+        """
         datalake = await self._ensure_datalake()
         page = await self._await_pagination_client_safe(
             datalake.view_dataset_version_page(
@@ -1671,7 +1741,7 @@ class DatalakeService(Service):
                 continue
             setattr(existing, key, value)
         if hasattr(existing, "updated_at"):
-            existing.updated_at = utc_now()
+            existing.updated_at = utcnow()
         updated = await database.update(existing)
         return updated, False
 
@@ -1686,7 +1756,7 @@ class DatalakeService(Service):
             if key in {"id", "_id"}:
                 continue
             setattr(existing, key, value)
-        existing.updated_at = utc_now()
+        existing.updated_at = utcnow()
         updated = await datalake.asset_database.update(existing)
         return updated, False
 
@@ -1694,7 +1764,7 @@ class DatalakeService(Service):
         self, payload: DatasetStreamingImportStartInput
     ) -> DatasetStreamingImportStartOutput:
         datalake = await self._ensure_datalake()
-        now = utc_now()
+        now = utcnow()
         session = DatasetImportSession(
             bundle_data={},
             transfer_policy=payload.transfer_policy,
@@ -1817,7 +1887,7 @@ class DatalakeService(Service):
                         "storage_ref": mapped_storage_ref.model_dump(),
                         "payload_storage_ref": mapped_payload_ref.model_dump(),
                         **resolved_payload_updates,
-                        "updated_at": utc_now(),
+                        "updated_at": utcnow(),
                     }
                 )
                 row, _ = await self._streaming_upsert_asset(datalake, mapped_asset)
@@ -1970,7 +2040,7 @@ class DatalakeService(Service):
         session.import_progress_completed_items = processed_total
         session.import_progress_total_items = session.expected_manifest_total
         session.import_progress_bytes_completed = bytes_completed
-        session.import_progress_updated_at = utc_now()
+        session.import_progress_updated_at = utcnow()
         await datalake.dataset_import_session_database.update(session)
         return DatasetStreamingImportPushBatchOutput(
             session_id=session.import_session_id,
@@ -2037,7 +2107,7 @@ class DatalakeService(Service):
         if rows:
             dataset_version = rows[0]
             dataset_version.manifest = list(session.ordered_manifest_ids)
-            dataset_version.updated_at = utc_now()
+            dataset_version.updated_at = utcnow()
             dataset_version = await datalake.dataset_version_database.update(dataset_version)
         else:
             dataset_version = await datalake.create_dataset_version(
@@ -2153,7 +2223,7 @@ class DatalakeService(Service):
             )
 
         required = [row.asset_id for row in plan.payloads if row.transfer_required]
-        now = utc_now()
+        now = utcnow()
         session = DatasetImportSession(
             bundle_data={},
             transfer_policy=payload.transfer_policy,

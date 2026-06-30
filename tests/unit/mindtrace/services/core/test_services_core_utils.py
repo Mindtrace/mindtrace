@@ -256,7 +256,7 @@ class TestGenerateConnectionManager:
         assert hasattr(ConnectionManagerClass, "safe_endpoint")
         assert hasattr(ConnectionManagerClass, "asafe_endpoint")
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     def test_generated_method_sync_call_success(self, mock_httpx, mock_service_class):
         """Test successful sync method call."""
         mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
@@ -282,7 +282,7 @@ class TestGenerateConnectionManager:
         manager = ConnectionManagerClass(url=parse_url("http://test.com"))
         _ = manager.test_endpoint(test_param="value")
 
-        # Verify httpx call
+        # Verify httpx2 call
         mock_httpx.post.assert_called_once_with("http://test.com/test_endpoint", json={"input": "data"}, timeout=60)
 
         # Verify input schema was called
@@ -291,7 +291,7 @@ class TestGenerateConnectionManager:
         # Verify output schema was called
         mock_output_schema.assert_called_once_with(result="success")
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     def test_generated_method_uses_default_timeout(self, mock_httpx, mock_service_class):
         """Test generated sync methods use the default endpoint timeout."""
         mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
@@ -308,7 +308,7 @@ class TestGenerateConnectionManager:
 
         mock_httpx.post.assert_called_once_with("http://test.com/test_endpoint", json={}, timeout=60)
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     def test_generated_method_allows_timeout_override(self, mock_httpx, mock_service_class):
         """Test generated sync methods allow a method-local timeout override."""
         mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
@@ -325,7 +325,7 @@ class TestGenerateConnectionManager:
 
         mock_httpx.post.assert_called_once_with("http://test.com/test_endpoint", json={}, timeout=5)
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     @pytest.mark.asyncio
     async def test_generated_method_async_call_success(self, mock_httpx, mock_service_class):
         """Test successful async method call."""
@@ -357,7 +357,7 @@ class TestGenerateConnectionManager:
         # Verify async client call
         mock_client.post.assert_called_once_with("http://test.com/test_endpoint", json={"async": "data"}, timeout=60)
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     @pytest.mark.asyncio
     async def test_generated_async_method_allows_timeout_override(self, mock_httpx, mock_service_class):
         """Test generated async methods allow a method-local timeout override."""
@@ -378,7 +378,7 @@ class TestGenerateConnectionManager:
         mock_httpx.AsyncClient.assert_called_once_with(timeout=300)
         mock_client.post.assert_called_once_with("http://test.com/test_endpoint", json={}, timeout=300)
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     def test_generated_method_http_error(self, mock_httpx, mock_service_class):
         """Test HTTP error handling in generated method."""
         mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
@@ -403,7 +403,7 @@ class TestGenerateConnectionManager:
         assert exc_info.value.status_code == 500
         assert exc_info.value.detail == "Internal Server Error"
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     def test_generated_method_no_input_schema(self, mock_httpx, mock_service_class):
         """Test method generation with no input schema."""
         mock_service_class, mock_service, _, mock_endpoint2 = mock_service_class
@@ -426,7 +426,7 @@ class TestGenerateConnectionManager:
         # Should pass kwargs directly as payload (but since input_schema is None, it creates empty payload)
         mock_httpx.post.assert_called_once_with("http://test.com/no_input_endpoint", json={}, timeout=60)
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     def test_generated_method_empty_response(self, mock_httpx, mock_service_class):
         """Test handling of empty response content."""
         mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
@@ -449,7 +449,7 @@ class TestGenerateConnectionManager:
         # Should call output schema with default success response
         mock_endpoint1.output_schema.assert_called_once_with(success=True)
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     def test_generated_method_validation_flags(self, mock_httpx, mock_service_class):
         """Test validate_input and validate_output flags."""
         mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
@@ -481,7 +481,7 @@ class TestGenerateConnectionManager:
         # Should return raw response
         assert result == {"raw": "response"}
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     def test_generated_method_no_input_schema_with_validate_input_false(self, mock_httpx, mock_service_class):
         """Test method generation with no input schema and validate_input=False."""
         mock_service_class, mock_service, _, mock_endpoint2 = mock_service_class
@@ -507,7 +507,7 @@ class TestGenerateConnectionManager:
             "http://test.com/no_input_endpoint", json={"raw_param": "value"}, timeout=60
         )
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     @pytest.mark.asyncio
     async def test_generated_async_method_no_input_schema_with_validate_input_false(
         self, mock_httpx, mock_service_class
@@ -538,7 +538,7 @@ class TestGenerateConnectionManager:
             "http://test.com/no_input_endpoint", json={"async_param": "value"}, timeout=60
         )
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     @pytest.mark.asyncio
     async def test_generated_async_method_http_error(self, mock_httpx, mock_service_class):
         """Test async method HTTP error handling."""
@@ -565,7 +565,7 @@ class TestGenerateConnectionManager:
         assert exc_info.value.status_code == 400
         assert exc_info.value.detail == "Bad Request"
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     @pytest.mark.asyncio
     async def test_generated_async_method_empty_response(self, mock_httpx, mock_service_class):
         """Test async method handling of empty response."""
@@ -591,7 +591,7 @@ class TestGenerateConnectionManager:
         # Should call output schema with default success response
         mock_endpoint1.output_schema.assert_called_once_with(success=True)
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     @pytest.mark.asyncio
     async def test_generated_async_method_no_validate_output(self, mock_httpx, mock_service_class):
         """Test async method with validate_output=False returning raw result."""
@@ -618,7 +618,7 @@ class TestGenerateConnectionManager:
         assert result == {"raw": "async_response_data"}
         mock_endpoint1.output_schema.assert_not_called()
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     def test_generated_method_multiple_args_error(self, mock_httpx, mock_service_class):
         """Test that method raises error when called with multiple args."""
         from pydantic import BaseModel
@@ -637,7 +637,7 @@ class TestGenerateConnectionManager:
         with pytest.raises(ValueError, match="must be called with either kwargs or a single argument"):
             manager.test_endpoint(TestInput(value="test"), "extra_arg")
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     def test_generated_method_wrong_arg_type_error(self, mock_httpx, mock_service_class):
         """Test that method raises error when arg is wrong type."""
         from pydantic import BaseModel
@@ -656,7 +656,7 @@ class TestGenerateConnectionManager:
         with pytest.raises(ValueError, match="must be called with either kwargs or a single argument"):
             manager.test_endpoint("not_a_test_input")
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     def test_generated_method_args_and_kwargs_error(self, mock_httpx, mock_service_class):
         """Test that method raises error when called with both args and kwargs."""
         from pydantic import BaseModel
@@ -675,7 +675,7 @@ class TestGenerateConnectionManager:
         with pytest.raises(ValueError, match="must be called with either kwargs or a single argument"):
             manager.test_endpoint(TestInput(value="test"), extra_param="value")
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     @pytest.mark.asyncio
     async def test_generated_async_method_multiple_args_error(self, mock_httpx, mock_service_class):
         """Test that async method raises error when called with multiple args."""
@@ -695,7 +695,7 @@ class TestGenerateConnectionManager:
         with pytest.raises(ValueError, match="must be called with either kwargs or a single argument"):
             await manager.atest_endpoint(TestInput(value="test"), "extra_arg")
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     @pytest.mark.asyncio
     async def test_generated_async_method_wrong_arg_type_error(self, mock_httpx, mock_service_class):
         """Test that async method raises error when arg is wrong type."""
@@ -715,7 +715,7 @@ class TestGenerateConnectionManager:
         with pytest.raises(ValueError, match="must be called with either kwargs or a single argument"):
             await manager.atest_endpoint("not_a_test_input")
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     @pytest.mark.asyncio
     async def test_generated_async_method_args_and_kwargs_error(self, mock_httpx, mock_service_class):
         """Test that async method raises error when called with both args and kwargs."""
@@ -735,7 +735,7 @@ class TestGenerateConnectionManager:
         with pytest.raises(ValueError, match="must be called with either kwargs or a single argument"):
             await manager.atest_endpoint(TestInput(value="test"), extra_param="value")
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     def test_generated_method_single_valid_arg(self, mock_httpx, mock_service_class):
         """Test that method works with a single valid arg."""
 
@@ -758,11 +758,11 @@ class TestGenerateConnectionManager:
         # Call with single valid arg
         result = manager.test_endpoint(TestInput(value="test"))
 
-        # Should call httpx with dumped payload
+        # Should call httpx2 with dumped payload
         mock_httpx.post.assert_called_once_with("http://test.com/test_endpoint", json={"value": "test"}, timeout=60)
         assert result == {"result": "success"}
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     def test_generated_method_kwargs_uses_json_mode_dump(self, mock_httpx, mock_service_class):
         """Validated kwargs should be serialized with model_dump(mode='json')."""
         mock_service_class, mock_service, mock_endpoint1, _ = mock_service_class
@@ -790,7 +790,7 @@ class TestGenerateConnectionManager:
         )
         assert result == {"result": "success"}
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     def test_generated_method_single_valid_arg_uses_json_mode_dump(self, mock_httpx, mock_service_class):
         """Validated positional inputs should be serialized with model_dump(mode='json')."""
 
@@ -816,7 +816,7 @@ class TestGenerateConnectionManager:
         mock_httpx.post.assert_called_once_with("http://test.com/test_endpoint", json={"value": "test"}, timeout=60)
         assert result == {"result": "success"}
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     @pytest.mark.asyncio
     async def test_generated_async_method_single_valid_arg(self, mock_httpx, mock_service_class):
         """Test that async method works with a single valid arg."""
@@ -846,7 +846,7 @@ class TestGenerateConnectionManager:
         mock_client.post.assert_called_once_with("http://test.com/test_endpoint", json={"value": "test"}, timeout=60)
         assert result == {"result": "async_success"}
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     @pytest.mark.asyncio
     async def test_generated_async_method_kwargs_uses_json_mode_dump(self, mock_httpx, mock_service_class):
         """Async validated kwargs should be serialized with model_dump(mode='json')."""
@@ -877,7 +877,7 @@ class TestGenerateConnectionManager:
         )
         assert result == {"result": "async_success"}
 
-    @patch("mindtrace.services.core.utils.httpx")
+    @patch("mindtrace.services.core.utils.httpx2")
     @pytest.mark.asyncio
     async def test_generated_async_method_single_valid_arg_uses_json_mode_dump(self, mock_httpx, mock_service_class):
         """Async validated positional inputs should be serialized with model_dump(mode='json')."""

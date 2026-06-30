@@ -4,6 +4,8 @@ Bump version across all mindtrace packages in the monorepo.
 
 Usage:
     uv run scripts/bump_version.py 0.7.1
+    uv run scripts/bump_version.py 0.7.1-dev    # pre-release building toward 0.7.1
+    uv run scripts/bump_version.py 0.7.1.dev0   # equivalent canonical form
 """
 
 import argparse
@@ -88,16 +90,42 @@ def find_subpackage_pyprojects(root: Path) -> list[Path]:
     return sorted((root / "mindtrace").glob("*/pyproject.toml"))
 
 
+def normalize_version(raw: str) -> str:
+    """
+    Validate a user-supplied version and return its canonical PEP 440 form.
+
+    Accepts X.Y.Z, optionally with a leading "v" and/or a trailing dev marker
+    (any of "-dev", ".dev", "dev", optionally followed by a number). A dev marker
+    signals a pre-release building toward X.Y.Z and is normalized to the canonical
+    form X.Y.Z.devN (N defaults to 0), so the stored version matches what packaging
+    tools report after install.
+
+    Examples:
+        "0.13.0"      -> "0.13.0"
+        "v0.13.0"     -> "0.13.0"
+        "0.13.0-dev"  -> "0.13.0.dev0"
+        "0.13.0.dev0" -> "0.13.0.dev0"
+        "0.13.0-dev2" -> "0.13.0.dev2"
+
+    Raises:
+        ValueError: if the version does not match the expected format.
+    """
+    match = re.fullmatch(r"(\d+\.\d+\.\d+)(?:[-_.]?dev(\d*))?", raw.lstrip("vV"))
+    if not match:
+        raise ValueError(f"Invalid version format: {raw}. Expected: X.Y.Z, X.Y.Z-dev, or X.Y.Z.dev0")
+    base, dev_number = match.group(1), match.group(2)
+    return base if dev_number is None else f"{base}.dev{dev_number or '0'}"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Bump version across all mindtrace packages")
-    parser.add_argument("version", help="New version (e.g., 0.7.1 or v0.7.1)")
+    parser.add_argument("version", help="New version (e.g., 0.7.1, 0.7.1-dev, or 0.7.1.dev0)")
 
     args = parser.parse_args()
-    new_version = args.version.lstrip("vV")
-
-    # Validate version format
-    if not re.match(r"^\d+\.\d+\.\d+$", new_version):
-        parser.error(f"Invalid version format: {new_version}. Expected: X.Y.Z")
+    try:
+        new_version = normalize_version(args.version)
+    except ValueError as e:
+        parser.error(str(e))
 
     # Find project root (where this script is in scripts/)
     script_dir = Path(__file__).parent

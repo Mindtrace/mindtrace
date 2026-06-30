@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
@@ -9,6 +9,7 @@ from beanie.exceptions import CollectionWasNotInitialized
 from pydantic import BaseModel, Field, model_validator
 from pymongo import IndexModel
 
+from mindtrace.core import utcnow
 from mindtrace.database import MindtraceDocument
 
 AnnotationTaskType = Literal["classification", "detection", "segmentation", "keypoint", "other"]
@@ -25,10 +26,6 @@ AnnotationKind = Literal[
     "instance_mask",
     "pointcloud_segmentation",
 ]
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def new_id(prefix: str) -> str:
@@ -99,7 +96,7 @@ class DirectUploadSession(DatalakeDocument):
     failure_reason: str | None = None
     verification_attempts: int = 0
     last_verified_at: datetime | None = None
-    created_at: datetime = Field(default_factory=utc_now)
+    created_at: datetime = Field(default_factory=utcnow)
     expires_at: datetime
     completed_at: datetime | None = None
     cleanup_completed_at: datetime | None = None
@@ -169,7 +166,7 @@ class DatasetImportSession(DatalakeDocument):
     import_progress_failed_items: int | None = None
     import_progress_updated_at: datetime | None = None
     import_progress_error: str | None = None
-    created_at: datetime = Field(default_factory=utc_now)
+    created_at: datetime = Field(default_factory=utcnow)
     expires_at: datetime
 
     class Settings:
@@ -261,8 +258,8 @@ class ReplicationRule(DatalakeDocument):
     batch_size: int = 100
     max_attempts: int = 5
     metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=utc_now)
-    updated_at: datetime = Field(default_factory=utc_now)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
     class Settings:
         name = "datalake_replication_rules"
@@ -289,7 +286,7 @@ class ReplicationTask(DatalakeDocument):
     include_graph: bool = True
     attempts: int = 0
     max_attempts: int = 5
-    next_attempt_at: datetime = Field(default_factory=utc_now)
+    next_attempt_at: datetime = Field(default_factory=utcnow)
     claimed_by: str | None = None
     claimed_at: datetime | None = None
     lease_expires_at: datetime | None = None
@@ -301,8 +298,8 @@ class ReplicationTask(DatalakeDocument):
     last_progress_bytes_completed: int | None = None
     last_progress_bytes_total: int | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=utc_now)
-    updated_at: datetime = Field(default_factory=utc_now)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
     completed_at: datetime | None = None
 
     class Settings:
@@ -338,7 +335,7 @@ class Asset(DatalakeDocument):
     checksum: str | None = None
     size_bytes: int | None = None
     payload_status: PayloadStatus = "present"
-    payload_status_updated_at: datetime | None = Field(default_factory=utc_now)
+    payload_status_updated_at: datetime | None = Field(default_factory=utcnow)
     payload_status_reason: str | None = None
     payload_storage_ref: StorageRef | None = None
     payload_checksum: str | None = None
@@ -346,9 +343,9 @@ class Asset(DatalakeDocument):
     payload_verified_at: datetime | None = None
     subject: SubjectRef | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=utc_now)
+    created_at: datetime = Field(default_factory=utcnow)
     created_by: str | None = None
-    updated_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utcnow)
 
     class Settings:
         name = "datalake_assets"
@@ -365,6 +362,7 @@ class Asset(DatalakeDocument):
             "subject.id",
             "metadata.origin.asset_id",
             [("metadata.origin.asset_id", 1), ("metadata.origin.lake_id", 1)],
+            [("created_at", -1), ("asset_id", -1)],
         ]
 
 
@@ -379,7 +377,7 @@ class AssetAlias(DatalakeDocument):
     alias: Annotated[str, Indexed(unique=True)]
     asset_id: Annotated[str, Indexed()]
     is_primary: bool = False
-    created_at: datetime = Field(default_factory=utc_now)
+    created_at: datetime = Field(default_factory=utcnow)
 
     class Settings:
         name = "datalake_asset_aliases"
@@ -411,8 +409,8 @@ class AnnotationRecord(DatalakeDocument):
     geometry: dict[str, Any] = Field(default_factory=dict)
     attributes: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=utc_now)
-    updated_at: datetime = Field(default_factory=utc_now)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
     class Settings:
         name = "datalake_annotation_records"
@@ -423,6 +421,8 @@ class AnnotationRecord(DatalakeDocument):
             "source.name",
             "subject.kind",
             "subject.id",
+            [("created_at", -1), ("annotation_id", -1)],
+            [("subject.kind", 1), ("subject.id", 1), ("created_at", -1), ("annotation_id", -1)],
         ]
 
 
@@ -448,15 +448,16 @@ class AnnotationSchema(DatalakeDocument):
     optional_attributes: list[str] = Field(default_factory=list)
     allow_additional_attributes: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=utc_now)
+    created_at: datetime = Field(default_factory=utcnow)
     created_by: str | None = None
-    updated_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utcnow)
 
     class Settings:
         name = "datalake_annotation_schemas"
         indexes = [
             "task_type",
             IndexModel([("name", 1), ("version", 1)], unique=True),
+            [("created_at", -1), ("annotation_schema_id", -1)],
         ]
 
 
@@ -481,13 +482,19 @@ class AnnotationSet(DatalakeDocument):
     annotation_schema_id: str | None = None
     annotation_record_ids: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=utc_now)
+    created_at: datetime = Field(default_factory=utcnow)
     created_by: str | None = None
-    updated_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utcnow)
 
     class Settings:
         name = "datalake_annotation_sets"
-        indexes = ["purpose", "source_type", "status", "annotation_schema_id"]
+        indexes = [
+            "purpose",
+            "source_type",
+            "status",
+            "annotation_schema_id",
+            [("created_at", -1), ("annotation_set_id", -1)],
+        ]
 
 
 class Collection(DatalakeDocument):
@@ -501,13 +508,17 @@ class Collection(DatalakeDocument):
     description: str | None = None
     status: Literal["active", "archived", "deleted"] = "active"
     metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=utc_now)
+    created_at: datetime = Field(default_factory=utcnow)
     created_by: str | None = None
-    updated_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utcnow)
 
     class Settings:
         name = "datalake_collections"
-        indexes = ["name", "status"]
+        indexes = [
+            "name",
+            "status",
+            [("created_at", -1), ("collection_id", -1)],
+        ]
 
 
 class CollectionItem(DatalakeDocument):
@@ -522,9 +533,9 @@ class CollectionItem(DatalakeDocument):
     split: Literal["train", "val", "test"] | None = None
     status: Literal["active", "hidden", "removed"] = "active"
     metadata: dict[str, Any] = Field(default_factory=dict)
-    added_at: datetime = Field(default_factory=utc_now)
+    added_at: datetime = Field(default_factory=utcnow)
     added_by: str | None = None
-    updated_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utcnow)
 
     class Settings:
         name = "datalake_collection_items"
@@ -534,6 +545,7 @@ class CollectionItem(DatalakeDocument):
             "split",
             "status",
             [("collection_id", 1), ("asset_id", 1)],
+            [("added_at", -1), ("collection_item_id", -1)],
         ]
 
 
@@ -559,9 +571,9 @@ class AssetRetention(DatalakeDocument):
     owner_id: str
     retention_policy: Literal["retain", "delete_when_unreferenced", "archive_when_unreferenced"] = "retain"
     metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=utc_now)
+    created_at: datetime = Field(default_factory=utcnow)
     created_by: str | None = None
-    updated_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utcnow)
 
     class Settings:
         name = "datalake_asset_retentions"
@@ -571,6 +583,7 @@ class AssetRetention(DatalakeDocument):
             "owner_id",
             "retention_policy",
             [("asset_id", 1), ("owner_type", 1), ("owner_id", 1)],
+            [("created_at", -1), ("asset_retention_id", -1)],
         ]
 
 
@@ -585,12 +598,16 @@ class Datum(DatalakeDocument):
     asset_refs: dict[str, str] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
     annotation_set_ids: list[str] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=utc_now)
-    updated_at: datetime = Field(default_factory=utc_now)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
     class Settings:
         name = "datalake_datums"
-        indexes = ["split"]
+        indexes = [
+            "split",
+            [("created_at", -1), ("datum_id", -1)],
+            [("split", 1), ("created_at", -1), ("datum_id", -1)],
+        ]
 
 
 class DatasetVersion(DatalakeDocument):
@@ -606,12 +623,16 @@ class DatasetVersion(DatalakeDocument):
     manifest: list[str] = Field(default_factory=list)
     source_dataset_version_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=utc_now)
+    created_at: datetime = Field(default_factory=utcnow)
     created_by: str | None = None
 
     class Settings:
         name = "datalake_dataset_versions"
-        indexes = [[("dataset_name", 1), ("version", 1)]]
+        indexes = [
+            [("dataset_name", 1), ("version", 1)],
+            [("created_at", -1), ("dataset_version_id", -1)],
+            [("dataset_name", 1), ("version", -1), ("dataset_version_id", -1)],
+        ]
 
 
 class ResolvedCollectionItem(BaseModel):

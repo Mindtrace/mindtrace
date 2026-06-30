@@ -1,6 +1,6 @@
 from unittest.mock import AsyncMock, Mock, patch
 
-import httpx
+import httpx2
 import pytest
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -32,7 +32,7 @@ class TestGateway:
         assert hasattr(gateway, "registered_routers")
         assert hasattr(gateway, "client")
         assert gateway.registered_routers == {}
-        assert isinstance(gateway.client, httpx.AsyncClient)
+        assert isinstance(gateway.client, httpx2.AsyncClient)
 
         # Test that CORS middleware was added
         # Note: We can't easily test middleware addition without inspecting FastAPI internals
@@ -159,7 +159,7 @@ class TestGateway:
         mock_request.headers = {}
         mock_request.body = AsyncMock(return_value=b"")
 
-        with patch.object(gateway.client, "request", side_effect=httpx.RequestError("Network error")):
+        with patch.object(gateway.client, "request", side_effect=httpx2.RequestError("Network error")):
             with pytest.raises(HTTPException) as exc_info:
                 await gateway.forward_request(mock_request, "test-service", "endpoint")
 

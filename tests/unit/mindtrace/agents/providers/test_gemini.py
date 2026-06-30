@@ -7,6 +7,8 @@ from unittest.mock import patch
 
 import pytest
 
+pytest.importorskip("openai", reason="provider SDK not installed")
+
 from mindtrace.agents.providers.gemini import GeminiProvider
 
 
@@ -20,22 +22,22 @@ def test_init_with_injected_client_uses_client_directly():
     assert provider.base_url == "https://gemini-proxy.test/v1/"
 
 
-@pytest.mark.parametrize(
-    ("model_name", "expected_json_schema_output"),
-    [
-        ("gemini-2.5-flash", True),
-        ("gemini-1.5-flash-latest", False),
-        ("unknown-model", False),
-    ],
-)
-def test_model_profile_selects_prefix_specific_or_default_profiles(model_name, expected_json_schema_output):
+def test_model_profile_falls_back_to_default():
     provider = GeminiProvider(openai_client=SimpleNamespace(base_url="https://gemini-proxy.test/v1/"))
 
-    profile = provider.model_profile(model_name)
+    # No per-model table: None means Model falls back to DEFAULT_PROFILE.
+    assert provider.model_profile("gemini-2.5-flash") is None
+    assert provider.model_profile("unknown-model") is None
 
-    assert profile.supports_tools is True
-    assert profile.supports_json_schema_output is expected_json_schema_output
-    assert profile.supports_json_object_output is True
+
+def test_init_accepts_base_url_override(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "env-key")
+    constructed_client = SimpleNamespace(base_url="https://gemini-proxy.test/v1/")
+
+    with patch("mindtrace.agents.providers.gemini.AsyncOpenAI", return_value=constructed_client) as async_openai:
+        GeminiProvider(base_url="https://gemini-proxy.test/v1/")
+
+    async_openai.assert_called_once_with(api_key="env-key", base_url="https://gemini-proxy.test/v1/")
 
 
 def test_init_rejects_api_key_with_injected_client():
