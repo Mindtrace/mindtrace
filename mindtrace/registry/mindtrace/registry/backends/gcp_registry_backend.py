@@ -8,11 +8,12 @@ import json
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
 from urllib.parse import quote
 
+from mindtrace.core import utcnow, utcnow_iso
 from mindtrace.registry.backends.registry_backend import (
     ConcreteVersionArg,
     MetadataArg,
@@ -232,6 +233,90 @@ class GCPRegistryBackend(RegistryBackend):
             "path": staged_path,
         }
 
+    def create_direct_download_url(
+        self,
+        name: str,
+        version: str,
+        *,
+        expiration_minutes: int = 15,
+        response_content_type: str | None = None,
+        response_content_disposition: str | None = None,
+        filename: str | None = None,
+    ) -> str:
+        """Mint a presigned GET URL for a committed object's payload file.
+
+        Mirrors :meth:`S3RegistryBackend.create_direct_download_url`. ``version`` must be
+        concrete (resolve ``latest`` at the Registry layer).
+        """
+        op = self.fetch_metadata(name, version).first()
+        if op is None or op.is_error or not op.metadata:
+            raise RegistryObjectNotFound(f"Object {name}@{version} not found")
+        remote_key = self._download_key_from_meta(name, version, op.metadata, filename)
+        return self.gcs.get_presigned_url(
+            remote_key,
+            expiration_minutes=expiration_minutes,
+            method="GET",
+            response_content_type=response_content_type,
+            response_content_disposition=response_content_disposition,
+        )
+
+    def create_direct_download_urls(
+        self,
+        names: list[str],
+        versions: list[str],
+        *,
+        expiration_minutes: int = 15,
+        response_content_types: list[str | None] | None = None,
+        response_content_disposition: str | None = None,
+        filenames: list[str | None] | None = None,
+    ) -> list[str | None]:
+        """Batch variant — one batched ``fetch_metadata`` read, then local signing per item."""
+        if len(names) != len(versions):
+            raise ValueError("names and versions must be the same length")
+        n = len(names)
+        rcts = response_content_types or [None] * n
+        fns = filenames or [None] * n
+        results = self.fetch_metadata(names, versions)
+        urls: list[str | None] = []
+        for i, (name, version) in enumerate(zip(names, versions)):
+            op = results.get((name, version))
+            if op is None or op.is_error or not op.metadata:
+                urls.append(None)
+                continue
+            try:
+                remote_key = self._download_key_from_meta(name, version, op.metadata, fns[i])
+            except (ValueError, RegistryObjectNotFound):
+                urls.append(None)
+                continue
+            urls.append(
+                self.gcs.get_presigned_url(
+                    remote_key,
+                    expiration_minutes=expiration_minutes,
+                    method="GET",
+                    response_content_type=rcts[i],
+                    response_content_disposition=response_content_disposition,
+                )
+            )
+        return urls
+
+    def _download_key_from_meta(self, name: str, version: str, meta: dict[str, Any], filename: str | None) -> str:
+        """Resolve the bucket key of an object's payload file from its registry metadata."""
+        uuid_str = (meta.get("_storage") or {}).get("uuid")
+        if not uuid_str:
+            raise ValueError(f"Object {name}@{version} has corrupted metadata (missing _storage.uuid)")
+        files = meta.get("_files") or []
+        if filename is not None:
+            if files and filename not in files:
+                raise ValueError(f"File {filename!r} not in manifest for {name}@{version}: {files}")
+            target_file = filename
+        elif len(files) == 1:
+            target_file = files[0]
+        elif "data.txt" in files:
+            target_file = "data.txt"
+        else:
+            raise ValueError(f"Cannot infer download file for {name}@{version}; pass filename. Manifest: {files}")
+        return f"{self._object_key_with_uuid(name, version, uuid_str)}/{target_file}"
+
     def cleanup_direct_upload_target(self, staged_target: dict[str, Any]) -> bool:
         staged_path = staged_target.get("path", "")
         if staged_target.get("kind") != "gcs_object":
@@ -274,7 +359,7 @@ class GCPRegistryBackend(RegistryBackend):
             prepared_meta["path"] = f"gs://{self.gcs.bucket_name}/{remote_key}"
             prepared_meta["_storage"] = {
                 "uuid": uuid_str,
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": utcnow_iso(),
             }
             meta_result = self._save_metadata_single(
                 name,
@@ -338,7 +423,7 @@ class GCPRegistryBackend(RegistryBackend):
             - Uses list_blobs to find all UUID folders for that object
             - Deletes UUIDs not matching current metadata's _storage.uuid
         """
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
+        expires_at = utcnow() + timedelta(hours=expires_hours)
 
         plan = {
             "name": name,
@@ -681,7 +766,7 @@ class GCPRegistryBackend(RegistryBackend):
             prepared_meta["path"] = f"gs://{self.gcs.bucket_name}/{remote_key}"
             prepared_meta["_storage"] = {
                 "uuid": uuid_str,
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": utcnow_iso(),
             }
 
             # Step 7: Write metadata (the "commit point")

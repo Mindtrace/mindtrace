@@ -134,14 +134,14 @@ def test_sync_proxy_method_json_error(mock_post):
     assert result.success is True
 
 
-@patch("httpx.AsyncClient")
+@patch("httpx2.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_success(mock_client_class):
     """Test successful async proxy method call."""
     mock_client = AsyncMock()
     mock_response = Mock()  # Use regular Mock, not AsyncMock
     mock_response.status_code = 200
-    mock_response.json.return_value = {"result": "ok"}  # json() is synchronous in httpx
+    mock_response.json.return_value = {"result": "ok"}  # json() is synchronous in httpx2
     mock_client.post.return_value = mock_response
     mock_client_class.return_value.__aenter__.return_value = mock_client
 
@@ -270,7 +270,7 @@ def test_extract_service_endpoints_from_instance_service_class():
     assert "aservice_endpoint" in instance_dict
 
 
-@patch("httpx.AsyncClient")
+@patch("httpx2.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_input_validation_fallback(mock_client_class):
     """Test async proxy method fallback when input validation fails."""
@@ -372,7 +372,7 @@ def test_sync_proxy_method_input_validation_fallback(mock_post):
     assert result.result == "success"
 
 
-@patch("httpx.AsyncClient")
+@patch("httpx2.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_no_input_schema(mock_client_class):
     """Test async proxy method when no input_schema is available."""
@@ -416,7 +416,7 @@ async def test_async_proxy_method_no_input_schema(mock_client_class):
     assert result.result == "no_validation"
 
 
-@patch("httpx.AsyncClient")
+@patch("httpx2.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_missing_input_schema_attribute(mock_client_class):
     """Test async proxy method when input_schema attribute is missing entirely."""
@@ -518,7 +518,7 @@ def test_extract_service_endpoints_from_class_service_class():
     assert "aanother_class_endpoint" in instance_dict
 
 
-@patch("httpx.AsyncClient")
+@patch("httpx2.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_http_error(mock_client_class):
     """Test async proxy method when HTTP request returns non-200 status."""
@@ -545,7 +545,7 @@ async def test_async_proxy_method_http_error(mock_client_class):
         await aerror_endpoint_method(param="value")
 
 
-@patch("httpx.AsyncClient")
+@patch("httpx2.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_json_parsing_error(mock_client_class):
     """Test async proxy method when JSON parsing fails."""
@@ -575,7 +575,7 @@ async def test_async_proxy_method_json_parsing_error(mock_client_class):
     assert result.success is True
 
 
-@patch("httpx.AsyncClient")
+@patch("httpx2.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_output_validation_error(mock_client_class):
     """Test async proxy method when output validation fails."""
@@ -708,7 +708,7 @@ def test_getattr_fallback():
         object.__getattribute__(proxy_cm, "__class__").__getattr__(proxy_cm, "nonexistent_attr")
 
 
-@patch("httpx.AsyncClient")
+@patch("httpx2.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_output_schema_no_validation(mock_client_class):
     """Test async proxy method when output_schema is None."""

@@ -21,13 +21,25 @@ from mindtrace.core.testing import (
     TestSuite,
     UnknownSuiteIdError,
     build_bench_suite_config,
-    utc_now_iso,
     validate_suite_id,
 )
 from mindtrace.core.types.task_schema import TaskSchema
 from mindtrace.core.utils.checks import check_libs, first_not_none, ifnone, ifnone_url
 from mindtrace.core.utils.dynamic import get_class, instantiate_target
-from mindtrace.core.utils.hashing import compute_dir_hash
+from mindtrace.core.utils.hashing import (
+    DEFAULT_PASSWORD_HASH_POLICY,
+    FingerprintAlg,
+    FingerprintEncoding,
+    PasswordHashPolicy,
+    PasswordKDF,
+    compute_dir_hash,
+    fingerprint,
+    fingerprint_hasher,
+    hash_password,
+    needs_rehash,
+    verify_and_maybe_upgrade,
+    verify_password,
+)
 from mindtrace.core.utils.lambdas import named_lambda
 from mindtrace.core.utils.network import (
     LocalIPError,
@@ -44,6 +56,7 @@ from mindtrace.core.utils.network import (
     wait_for_service,
 )
 from mindtrace.core.utils.system_metrics_collector import SystemMetricsCollector
+from mindtrace.core.utils.time import as_utc, utcnow, utcnow_iso
 from mindtrace.core.utils.timers import Timeout, Timer, TimerCollection
 
 __all__ = [
@@ -62,11 +75,24 @@ __all__ = [
     "TestSuite",
     "UnknownSuiteIdError",
     "build_bench_suite_config",
-    "utc_now_iso",
+    "as_utc",
+    "utcnow",
+    "utcnow_iso",
     "validate_suite_id",
     "check_libs",
     "check_port_available",
     "compute_dir_hash",
+    "DEFAULT_PASSWORD_HASH_POLICY",
+    "fingerprint",
+    "fingerprint_hasher",
+    "FingerprintAlg",
+    "FingerprintEncoding",
+    "hash_password",
+    "needs_rehash",
+    "PasswordHashPolicy",
+    "PasswordKDF",
+    "verify_and_maybe_upgrade",
+    "verify_password",
     "ContextListener",
     "Config",
     "CoreConfig",

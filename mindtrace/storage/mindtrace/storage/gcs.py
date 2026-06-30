@@ -427,12 +427,19 @@ class GCSStorageHandler(StorageHandler):
         expiration_minutes: int = 60,
         method: str = "GET",
         content_type: str | None = None,
+        response_content_type: str | None = None,
+        response_content_disposition: str | None = None,
     ) -> str:
         """Get a presigned URL for a blob in the bucket.
         Args:
             remote_path: Path in the bucket.
             expiration_minutes: Minutes until the URL expires.
             method: HTTP method for the URL (e.g., 'GET', 'PUT').
+            content_type: For PUT, binds the upload's Content-Type.
+            response_content_type: For GET, overrides the returned Content-Type
+                (GCS ``response_type``) so opaque-bytes objects render inline.
+            response_content_disposition: For GET, overrides Content-Disposition
+                (GCS ``response_disposition``).
         Returns:
             A presigned URL string.
         """
@@ -444,6 +451,10 @@ class GCSStorageHandler(StorageHandler):
         }
         if content_type is not None:
             kwargs["content_type"] = content_type
+        if response_content_type is not None:
+            kwargs["response_type"] = response_content_type
+        if response_content_disposition is not None:
+            kwargs["response_disposition"] = response_content_disposition
         return blob.generate_signed_url(
             **kwargs,
         )

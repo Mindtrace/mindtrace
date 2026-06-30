@@ -6,7 +6,7 @@ from types import MappingProxyType
 
 import pytest
 
-from mindtrace.core.testing.bench_framework import BenchReporter, BenchResult, utc_now_iso
+from mindtrace.core.testing.bench_framework import BenchReporter, BenchResult, utcnow_iso
 from mindtrace.core.testing.bench_suite import BenchTestSuite, build_bench_suite_config
 from mindtrace.core.testing.runner import TestRunner
 
@@ -32,8 +32,8 @@ class DummyBenchSuite(BenchTestSuite):
         return BenchResult(
             suite_id=config.suite_id,
             status="passed",
-            started_at=utc_now_iso(),
-            ended_at=utc_now_iso(),
+            started_at=utcnow_iso(),
+            ended_at=utcnow_iso(),
             duration_seconds=0.0,
         )
 

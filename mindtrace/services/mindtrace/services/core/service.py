@@ -144,12 +144,19 @@ class Service(Mindtrace):
             schema=EndpointsSchema,
             as_tool=True,
         )
-        self.add_endpoint(path="/status", func=self.status_func, schema=StatusSchema, as_tool=True)
+        self.add_endpoint(
+            path="/status",
+            func=self.status_func,
+            schema=StatusSchema,
+            as_tool=True,
+            autolog_kwargs={"log_level": logging.DEBUG},
+        )
         self.add_endpoint(
             path="/heartbeat",
             func=self.heartbeat_func,
             schema=HeartbeatSchema,
             as_tool=True,
+            autolog_kwargs={"log_level": logging.DEBUG},
         )
         self.add_endpoint(
             path="/server_id", func=named_lambda("server_id", lambda: {"server_id": self.id}), schema=ServerIDSchema

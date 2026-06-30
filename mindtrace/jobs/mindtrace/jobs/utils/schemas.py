@@ -1,6 +1,6 @@
 import uuid
-from datetime import datetime
 
+from mindtrace.core import utcnow_iso
 from mindtrace.jobs.types.job_specs import Job, JobSchema
 
 
@@ -25,7 +25,7 @@ def job_from_schema(schema: JobSchema, input_data) -> Job:
         name=schema.name,
         schema_name=schema.name,
         payload=payload,
-        created_at=datetime.now().isoformat(),
+        created_at=utcnow_iso(),
     )
 
     return job

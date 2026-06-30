@@ -1,11 +1,12 @@
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 from pymongo import MongoClient
 
+from mindtrace.core import utcnow
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake import Datalake, DatalakeDirectUploadClient
 from mindtrace.datalake.types import AnnotationLabelDefinition, SubjectRef
@@ -352,7 +353,7 @@ def test_sync_datalake_reconcile_upload_sessions(sync_datalake: Datalake):
         collection = mongo_client[sync_datalake.mongo_db_name]["datalake_direct_upload_sessions"]
         collection.update_one(
             {"upload_session_id": session.upload_session_id},
-            {"$set": {"expires_at": datetime.now(timezone.utc) - timedelta(seconds=1)}},
+            {"$set": {"expires_at": utcnow() - timedelta(seconds=1)}},
         )
     finally:
         mongo_client.close()

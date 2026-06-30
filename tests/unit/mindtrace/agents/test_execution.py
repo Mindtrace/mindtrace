@@ -10,7 +10,7 @@ import pytest
 
 from mindtrace.agents import DistributedAgent, MindtraceAgent
 from mindtrace.agents.execution import AbstractTaskQueue, AgentTask, LocalTaskQueue, TaskStatus
-from mindtrace.agents.models import ModelResponse
+from mindtrace.agents.models import ModelResponse, ToolCall
 
 from .conftest import FakeModel, text_response
 
@@ -146,7 +146,7 @@ class TestLocalTaskQueueSubmit:
         responses = [
             ModelResponse(
                 text="",
-                tool_calls=[{"name": "slow_tool", "id": "t1", "arguments": "{}"}],
+                tool_calls=[ToolCall(name="slow_tool", id="t1", arguments="{}")],
             ),
             text_response("complete"),
         ]
@@ -179,7 +179,7 @@ class TestLocalTaskQueueSubmit:
         responses = [
             ModelResponse(
                 text="",
-                tool_calls=[{"name": "blocking_tool", "id": "t1", "arguments": "{}"}],
+                tool_calls=[ToolCall(name="blocking_tool", id="t1", arguments="{}")],
             ),
             text_response("done"),
         ]

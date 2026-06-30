@@ -17,9 +17,12 @@ from export_test_utils import (
     resolved_dataset_version as export_fixture_resolved_dataset_version,
 )
 
+from mindtrace.core import utcnow
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 from mindtrace.datalake import AsyncDatalake
 from mindtrace.datalake.async_datalake import (
+    PAGINATION_RESOURCE_MODELS,
+    PAGINATION_SORT_SPECS,
     AnnotationSchemaInUseError,
     AnnotationSchemaValidationError,
     DuplicateAnnotationSchemaError,
@@ -248,17 +251,6 @@ class TestAsyncDatalakeUnit:
 
         async_datalake._guard_slow_list_operation.assert_called()
 
-    def test_utc_now_returns_timezone_aware_datetime(self, async_datalake):
-        now = async_datalake._utc_now()
-        assert now.tzinfo is not None
-
-    def test_coerce_utc_attaches_timezone_to_naive_datetime(self, async_datalake):
-        naive = datetime(2026, 1, 1, 12, 0, 0)
-
-        coerced = async_datalake._coerce_utc(naive)
-
-        assert coerced.tzinfo is not None
-
     def test_build_document_uses_model_construct(self, async_datalake):
         class Dummy:
             @classmethod
@@ -403,6 +395,38 @@ class TestAsyncDatalakeUnit:
                 ),
             )
 
+    def test_pagination_sort_indexes_are_declared_on_models(self):
+        """Cursor pagination sort keys must have matching MongoDB compound indexes."""
+
+        def index_keys(index_def: object) -> tuple[tuple[str, int], ...]:
+            if isinstance(index_def, str):
+                return ((index_def, 1),)
+            if isinstance(index_def, list):
+                return tuple(index_def)
+            from pymongo import IndexModel
+
+            if isinstance(index_def, IndexModel):
+                return tuple(index_def.document["key"])
+            raise TypeError(f"Unsupported index definition: {index_def!r}")
+
+        def reverse_index_keys(keys: tuple[tuple[str, int], ...]) -> tuple[tuple[str, int], ...]:
+            return tuple((field, -direction) for field, direction in keys)
+
+        def index_covers_sort(
+            declared: set[tuple[tuple[str, int], ...]],
+            sort_keys: tuple[tuple[str, int], ...],
+        ) -> bool:
+            return sort_keys in declared or reverse_index_keys(sort_keys) in declared
+
+        for resource, model in PAGINATION_RESOURCE_MODELS.items():
+            declared = {index_keys(index_def) for index_def in model.Settings.indexes}
+            for sort_name, (sort_keys, _) in PAGINATION_SORT_SPECS[resource].items():
+                key = tuple(sort_keys)
+                assert index_covers_sort(declared, key), (
+                    f"{model.__name__}.Settings.indexes has no compound index that can serve sort "
+                    f"{key!r} (forward or exact-reverse scan) required by {resource!r} sort {sort_name!r}"
+                )
+
     @pytest.mark.parametrize(
         ("filter_item", "item", "expected"),
         [
@@ -507,7 +531,7 @@ class TestAsyncDatalakeUnit:
         mock_odm.find_window = AsyncMock(side_effect=find_window_side_effect)
         mock_odm.count_documents = AsyncMock(return_value=2)
 
-        with patch.object(async_datalake, "_utc_now", return_value=cutoff):
+        with patch("mindtrace.datalake.async_datalake.utcnow", return_value=cutoff):
             first_page = await async_datalake.list_assets_page(
                 filters={"kind": "image"},
                 limit=1,
@@ -1036,7 +1060,7 @@ class TestAsyncDatalakeUnit:
             upload_method="local_path",
             upload_path="/tmp/direct-upload/data.txt",
             staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
-            expires_at=async_datalake._utc_now(),
+            expires_at=utcnow(),
         )
         mock_odm.find.return_value = [session]
 
@@ -1060,7 +1084,7 @@ class TestAsyncDatalakeUnit:
             upload_method="local_path",
             upload_path="/tmp/direct-upload/data.txt",
             staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
-            expires_at=async_datalake._utc_now(),
+            expires_at=utcnow(),
         )
         mock_odm.find.return_value = [session]
 
@@ -1079,7 +1103,7 @@ class TestAsyncDatalakeUnit:
             upload_method="local_path",
             upload_path="/tmp/direct-upload/data.txt",
             staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
-            expires_at=async_datalake._utc_now(),
+            expires_at=utcnow(),
         )
         mock_odm.find.return_value = [session]
         mock_store.inspect_direct_upload_target.return_value = {"exists": False}
@@ -1102,7 +1126,7 @@ class TestAsyncDatalakeUnit:
             upload_method="local_path",
             upload_path="/tmp/direct-upload/data.txt",
             staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
-            expires_at=async_datalake._utc_now(),
+            expires_at=utcnow(),
         )
         mock_odm.find.return_value = [session]
         mock_store.inspect_direct_upload_target.return_value = {"exists": False}
@@ -1123,7 +1147,7 @@ class TestAsyncDatalakeUnit:
             status="completed",
             upload_path="/tmp/direct-upload/data.txt",
             staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
-            expires_at=async_datalake._utc_now(),
+            expires_at=utcnow(),
         )
 
         completed = await async_datalake._verify_and_finalize_upload_session(
@@ -1147,7 +1171,7 @@ class TestAsyncDatalakeUnit:
             upload_method="local_path",
             upload_path="/tmp/direct-upload/data.txt",
             staged_reference={"kind": "local_file", "path": "/tmp/direct-upload/data.txt"},
-            expires_at=async_datalake._utc_now(),
+            expires_at=utcnow(),
         )
         mock_odm.find.return_value = [session]
         mock_store.commit_direct_upload.side_effect = RuntimeError("commit failed")
@@ -2744,7 +2768,7 @@ def _alias_fixture_row(alias: str, asset_id: str, *, is_primary: bool = False) -
         alias=alias,
         asset_id=asset_id,
         is_primary=is_primary,
-        created_at=datetime.now(timezone.utc),
+        created_at=utcnow(),
     )
 
 

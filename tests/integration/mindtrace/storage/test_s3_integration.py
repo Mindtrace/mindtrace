@@ -268,6 +268,30 @@ def test_get_presigned_url(s3_handler, sample_files, s3_test_bucket):
     assert remote_path in url
 
 
+def test_get_presigned_url_get_fetches_with_content_type_override(s3_handler, sample_files, s3_test_bucket):
+    """A presigned GET URL actually serves the object's bytes, and
+    ``response_content_type`` overrides the returned ``Content-Type`` — so an
+    object stored as opaque bytes can be made to render inline in a browser."""
+    import urllib.request
+
+    remote_path = f"{s3_handler._test_prefix}/presigned-get/payload.bin"
+    s3_handler.upload(str(sample_files / "file1.txt"), remote_path)
+    expected = (sample_files / "file1.txt").read_bytes()
+
+    url = s3_handler.get_presigned_url(
+        remote_path,
+        expiration_minutes=60,
+        method="GET",
+        response_content_type="image/png",
+    )
+    with urllib.request.urlopen(url) as resp:  # noqa: S310 — signed URL to our test MinIO
+        body = resp.read()
+        content_type = resp.headers.get("Content-Type")
+
+    assert body == expected, "presigned GET returned different bytes than were uploaded"
+    assert content_type == "image/png", f"expected overridden Content-Type, got {content_type!r}"
+
+
 def test_get_object_metadata(s3_handler, sample_files, s3_test_bucket):
     """Test getting object metadata."""
     remote_path = f"{s3_handler._test_prefix}/metadata/file1.txt"

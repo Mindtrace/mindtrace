@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
 
-import httpx
+import httpx2
 import pytest
 import requests
 from fastapi import HTTPException
@@ -358,7 +358,7 @@ class TestConnectionManagerAsyncStatus:
             "uptime": 123.45,
         }
 
-        with patch("httpx.AsyncClient") as mock_client_class:
+        with patch("httpx2.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value.__aenter__.return_value = mock_client
             mock_client.post.return_value = mock_response
@@ -375,7 +375,7 @@ class TestConnectionManagerAsyncStatus:
         mock_response = Mock()
         mock_response.status_code = 500
 
-        with patch("httpx.AsyncClient") as mock_client_class:
+        with patch("httpx2.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value.__aenter__.return_value = mock_client
             mock_client.post.return_value = mock_response
@@ -388,10 +388,10 @@ class TestConnectionManagerAsyncStatus:
     @pytest.mark.asyncio
     async def test_astatus_connection_error(self):
         """Test async status when connection fails."""
-        with patch("httpx.AsyncClient") as mock_client_class:
+        with patch("httpx2.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value.__aenter__.return_value = mock_client
-            mock_client.post.side_effect = httpx.ConnectError("Connection failed")
+            mock_client.post.side_effect = httpx2.ConnectError("Connection failed")
 
             result = await self.cm.astatus()
 
@@ -401,10 +401,10 @@ class TestConnectionManagerAsyncStatus:
     @pytest.mark.asyncio
     async def test_astatus_timeout_error(self):
         """Test async status when request times out."""
-        with patch("httpx.AsyncClient") as mock_client_class:
+        with patch("httpx2.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value.__aenter__.return_value = mock_client
-            mock_client.post.side_effect = httpx.TimeoutException("Request timeout")
+            mock_client.post.side_effect = httpx2.TimeoutException("Request timeout")
 
             result = await self.cm.astatus()
 
@@ -414,10 +414,10 @@ class TestConnectionManagerAsyncStatus:
     @pytest.mark.asyncio
     async def test_astatus_general_request_error(self):
         """Test async status with general request exception."""
-        with patch("httpx.AsyncClient") as mock_client_class:
+        with patch("httpx2.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value.__aenter__.return_value = mock_client
-            mock_client.post.side_effect = httpx.RequestError("General error")
+            mock_client.post.side_effect = httpx2.RequestError("General error")
 
             result = await self.cm.astatus()
 
