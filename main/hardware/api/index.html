@@ -112666,10 +112666,10 @@ sub-queries overlap and hides per-call asyncio overhead).</p>
 
         <p>Capture a single image with timeout protection.</p>
 <p>When <code>save_path</code> is set, the image is written to disk and the response
-carries <code>image_path</code>. When it is omitted, the image is encoded inline
-as a base64 JPEG in <code>image_data</code> (with <code>image_size</code> and
-<code>file_size_bytes</code> populated) so callers don't need a stream or a
-round-trip through <code>/cameras/images/...</code>.</p>
+carries <code>image_path</code> plus <code>image_size</code> and <code>file_size_bytes</code> for
+the saved file. When <code>save_path</code> is omitted, the image is encoded
+inline as base64 in <code>image_data</code> (with the same size fields) so
+callers don't need a stream or a round-trip through <code>/cameras/images/...</code>.</p>
 
 
     </div>
@@ -127035,10 +127035,10 @@ sub-queries overlap and hides per-call asyncio overhead).</p>
 
         <p>Capture a single image with timeout protection.</p>
 <p>When <code>save_path</code> is set, the image is written to disk and the response
-carries <code>image_path</code>. When it is omitted, the image is encoded inline
-as a base64 JPEG in <code>image_data</code> (with <code>image_size</code> and
-<code>file_size_bytes</code> populated) so callers don't need a stream or a
-round-trip through <code>/cameras/images/...</code>.</p>
+carries <code>image_path</code> plus <code>image_size</code> and <code>file_size_bytes</code> for
+the saved file. When <code>save_path</code> is omitted, the image is encoded
+inline as base64 in <code>image_data</code> (with the same size fields) so
+callers don't need a stream or a round-trip through <code>/cameras/images/...</code>.</p>
 
 
     </div>
