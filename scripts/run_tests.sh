@@ -44,6 +44,11 @@ run_pytest_with_coverage() {
     coverage run --rcfile="$COVERAGE_CONFIG" --parallel-mode -m pytest "$@"
 }
 
+# Tear down containers, removing volumes so no stale data leaks into future runs.
+docker_down() {
+    $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down --volumes --remove-orphans
+}
+
 # Parse all arguments in a single pass
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -121,7 +126,7 @@ if [ ${#SPECIFIC_PATHS[@]} -gt 0 ]; then
     # Stop docker containers if they were started
     if [ "$NEEDS_DOCKER" = true ]; then
         echo "Stopping docker containers..."
-        $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
+        docker_down
     fi
 
     echo "Exiting with code: $EXIT_CODE"
@@ -183,7 +188,7 @@ if [ "$RUN_UNIT" = true ]; then
         # Stop docker containers if they were started
         if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
             echo "Stopping docker containers..."
-            $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
+            docker_down
         fi
         exit $OVERALL_EXIT_CODE
     fi
@@ -217,7 +222,7 @@ if [ "$RUN_INTEGRATION" = true ]; then
         # Stop docker containers if they were started
         if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
             echo "Stopping docker containers..."
-            $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
+            docker_down
         fi
         exit $OVERALL_EXIT_CODE
     fi
@@ -235,7 +240,7 @@ if [ "$RUN_UTILS" = true ]; then
             # Stop docker containers if they were started
             if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
                 echo "Stopping docker containers..."
-                $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
+                docker_down
             fi
             exit $OVERALL_EXIT_CODE
         fi
@@ -285,7 +290,7 @@ if [ "$RUN_STRESS" = true ]; then
         # Stop docker containers if they were started
         if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
             echo "Stopping docker containers..."
-            $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
+            docker_down
         fi
         exit $OVERALL_EXIT_CODE
     fi
@@ -298,7 +303,7 @@ fi
 # Stop docker containers if they were started
 if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
     echo "Stopping docker containers..."
-    $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
+    docker_down
 fi
 
 # Exit with overall status
