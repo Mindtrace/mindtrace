@@ -2,7 +2,7 @@ import asyncio
 from enum import Enum
 from typing import Dict, List, Optional, Type, TypeVar, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from redis_om.model.model import model_registry
 
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
@@ -39,15 +39,11 @@ class UnifiedMindtraceDocument(BaseModel):
     # Optional ID field that can be used by both backends
     id: Optional[str] = Field(default=None, description="Document ID")
 
-    class Config:
-        """Common configuration for unified documents."""
-
-        # Allow arbitrary types for flexibility
-        arbitrary_types_allowed = True
-        # Use enum values for serialization
-        use_enum_values = True
-        # Validate assignment
-        validate_assignment = True
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        use_enum_values=True,
+        validate_assignment=True,
+    )
 
     class Meta:
         """
