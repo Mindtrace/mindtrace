@@ -1,6 +1,6 @@
 from typing import Any, Type
 
-import httpx
+import httpx2
 from fastapi import HTTPException, Path, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -20,7 +20,7 @@ class Gateway(Service):
         super().__init__(**kwargs)
 
         self.registered_routers = {}
-        self.client = httpx.AsyncClient()
+        self.client = httpx2.AsyncClient()
 
         # Enable CORS for the gateway
         self.app.add_middleware(
@@ -66,7 +66,7 @@ class Gateway(Service):
             response = await self.client.request(method, url, headers=headers, content=content)
             self.logger.debug(f"Returning response for {request} from {app_name} at {path}.")
             return JSONResponse(content=response.json(), status_code=response.status_code)
-        except httpx.RequestError as e:
+        except httpx2.RequestError as e:
             self.logger.warning(f"Exception was raised on forwarded request {request} to {app_name} at {path}.")
             raise HTTPException(status_code=500, detail=str(e))
 

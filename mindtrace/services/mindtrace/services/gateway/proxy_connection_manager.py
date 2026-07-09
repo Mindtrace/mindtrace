@@ -1,6 +1,6 @@
 from typing import Any, Dict
 
-import httpx
+import httpx2
 from fastapi import HTTPException
 from urllib3.util.url import Url
 
@@ -60,7 +60,7 @@ class ProxyConnectionManager:
 
             async def async_proxy_method(**kwargs):
                 payload = _build_payload(endpoint_schema, kwargs)
-                async with httpx.AsyncClient(timeout=60) as client:
+                async with httpx2.AsyncClient(timeout=60) as client:
                     response = await client.post(endpoint_url, json=payload)
                 return _build_result(endpoint_schema, response)
 
@@ -70,7 +70,7 @@ class ProxyConnectionManager:
 
         def sync_proxy_method(**kwargs):
             payload = _build_payload(endpoint_schema, kwargs)
-            response = httpx.post(endpoint_url, json=payload, timeout=60)
+            response = httpx2.post(endpoint_url, json=payload, timeout=60)
             return _build_result(endpoint_schema, response)
 
         sync_proxy_method.__name__ = endpoint_name
@@ -92,7 +92,7 @@ def _build_payload(endpoint_schema: Any, kwargs: dict) -> dict:
         return kwargs
 
 
-def _build_result(endpoint_schema: Any, response: httpx.Response):
+def _build_result(endpoint_schema: Any, response: httpx2.Response):
     """Parse a proxy response; raises ``HTTPException`` on non-200, tolerates empty bodies, validates output if a schema is provided."""
     if response.status_code != 200:
         raise HTTPException(response.status_code, response.text)

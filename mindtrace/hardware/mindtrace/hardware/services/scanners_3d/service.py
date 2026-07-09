@@ -5,8 +5,8 @@ This service provides comprehensive REST API and MCP tools for managing
 3D scanners (Photoneo PhoXi, etc.) with multi-component capture capabilities.
 """
 
+import logging
 import time
-from datetime import datetime, timezone
 from typing import Dict
 
 import numpy as np
@@ -14,6 +14,7 @@ import psutil
 from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from mindtrace.core import utcnow_iso
 from mindtrace.hardware.core.exceptions import (
     CameraNotFoundError,
 )
@@ -122,7 +123,14 @@ class Scanner3DService(Service):
         """Register all REST API endpoints using add_endpoint pattern."""
 
         # Health check endpoint
-        self.add_endpoint("health", self.health_check, HealthSchema, methods=["GET"], as_tool=False)
+        self.add_endpoint(
+            "health",
+            self.health_check,
+            HealthSchema,
+            methods=["GET"],
+            as_tool=False,
+            autolog_kwargs={"log_level": logging.DEBUG},
+        )
 
         # Backend & Discovery
         self.add_endpoint(
@@ -702,7 +710,7 @@ class Scanner3DService(Service):
                 confidence_saved_path=request.save_confidence_path if result.confidence is not None else None,
                 normal_saved_path=request.save_normal_path if result.normal_map is not None else None,
                 color_saved_path=request.save_color_path if result.color is not None else None,
-                capture_timestamp=datetime.now(timezone.utc).isoformat(),
+                capture_timestamp=utcnow_iso(),
             )
 
             return ScanCaptureResponse(success=True, message="Scan captured", data=capture_result)
@@ -743,7 +751,7 @@ class Scanner3DService(Service):
                     frame_number=result.frame_number,
                     range_shape=result.range_map.shape if result.range_map is not None else None,
                     intensity_shape=result.intensity.shape if result.intensity is not None else None,
-                    capture_timestamp=datetime.now(timezone.utc).isoformat(),
+                    capture_timestamp=utcnow_iso(),
                 )
 
                 results.append(capture_result)
@@ -796,7 +804,7 @@ class Scanner3DService(Service):
                 saved_path=request.save_path,
                 points_shape=point_cloud.points.shape if point_cloud.points is not None else None,
                 colors_shape=point_cloud.colors.shape if point_cloud.colors is not None else None,
-                capture_timestamp=datetime.now(timezone.utc).isoformat(),
+                capture_timestamp=utcnow_iso(),
             )
 
             return PointCloudResponse(success=True, message="Point cloud captured", data=result)
@@ -832,7 +840,7 @@ class Scanner3DService(Service):
                     scanner_name=scanner_name,
                     num_points=point_cloud.num_points,
                     has_colors=point_cloud.has_colors,
-                    capture_timestamp=datetime.now(timezone.utc).isoformat(),
+                    capture_timestamp=utcnow_iso(),
                 )
 
                 results.append(result)

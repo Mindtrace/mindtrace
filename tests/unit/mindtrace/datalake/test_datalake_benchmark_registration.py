@@ -1,4 +1,4 @@
-"""Datalake's embedded benchmark module exposes the package-level registration hook and schemas."""
+"""``mindtrace.datalake.testing`` registers its embedded benchmark suites and schemas."""
 
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-core"
-version = "0.11.0"
+version = "0.14.0.dev0"
 description = "Core functionality for Mindtrace"
 readme = "README.md"
 license = "Apache-2.0"
@@ -12,6 +12,8 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
+    "argon2-cffi>=23.1.0",
+    "bcrypt>=4.0.0",
     "pillow>=11.2.1",
     "psutil>=5.9.0",
     "pydantic>=2.11.1",

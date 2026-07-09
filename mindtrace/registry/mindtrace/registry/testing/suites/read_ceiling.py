@@ -17,7 +17,7 @@ from mindtrace.core import (
     BenchSuiteConfig,
     BenchTestSuite,
     TaskSchema,
-    utc_now_iso,
+    utcnow_iso,
 )
 from mindtrace.core.testing.workloads import deterministic_payload, parse_size_bytes, run_threaded_until_deadline
 from mindtrace.registry.testing.suites._backends import RegistryBackendResources, build_registry
@@ -58,7 +58,7 @@ class RegistryReadCeilingSuite(BenchTestSuite):
     )
 
     def execute_bench(self, config: BenchSuiteConfig, reporter: BenchReporter) -> BenchResult:
-        started = utc_now_iso()
+        started = utcnow_iso()
         monotonic_start = time.perf_counter()
         backend = str(config.parameters.get("backend", "local")).lower()
         payload_size = parse_size_bytes(config.parameters.get("payload_size"), default=64 * 1024)
@@ -112,7 +112,7 @@ class RegistryReadCeilingSuite(BenchTestSuite):
             suite_id=config.suite_id,
             status="passed" if reporter.failures == 0 else "failed",
             started_at=started,
-            ended_at=utc_now_iso(),
+            ended_at=utcnow_iso(),
             duration_seconds=elapsed,
             operations=reporter.operations,
             successes=reporter.successes,

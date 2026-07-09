@@ -1,6 +1,6 @@
 from unittest.mock import AsyncMock, Mock, patch
 
-import httpx
+import httpx2
 import pytest
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -32,7 +32,7 @@ class TestGateway:
         assert hasattr(gateway, "registered_routers")
         assert hasattr(gateway, "client")
         assert gateway.registered_routers == {}
-        assert isinstance(gateway.client, httpx.AsyncClient)
+        assert isinstance(gateway.client, httpx2.AsyncClient)
 
         # Test that CORS middleware was added
         # Note: We can't easily test middleware addition without inspecting FastAPI internals
@@ -159,7 +159,7 @@ class TestGateway:
         mock_request.headers = {}
         mock_request.body = AsyncMock(return_value=b"")
 
-        with patch.object(gateway.client, "request", side_effect=httpx.RequestError("Network error")):
+        with patch.object(gateway.client, "request", side_effect=httpx2.RequestError("Network error")):
             with pytest.raises(HTTPException) as exc_info:
                 await gateway.forward_request(mock_request, "test-service", "endpoint")
 
@@ -350,7 +350,7 @@ class TestProxyConnectionManagerIntegration:
 
     def test_proxy_method_call_success(self, proxy_cm):
         """Test successful method call through proxy."""
-        with patch("mindtrace.services.gateway.proxy_connection_manager.httpx") as mock_httpx:
+        with patch("mindtrace.services.gateway.proxy_connection_manager.httpx2") as mock_httpx:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.json.return_value = {"echoed": "test message"}
@@ -366,7 +366,7 @@ class TestProxyConnectionManagerIntegration:
 
     def test_proxy_method_call_no_args(self, proxy_cm):
         """Test method call with no arguments through proxy."""
-        with patch("mindtrace.services.gateway.proxy_connection_manager.httpx") as mock_httpx:
+        with patch("mindtrace.services.gateway.proxy_connection_manager.httpx2") as mock_httpx:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.json.return_value = {"status": "ok"}
@@ -378,7 +378,7 @@ class TestProxyConnectionManagerIntegration:
 
     def test_proxy_method_call_failure(self, proxy_cm):
         """Test failed method call through proxy raises HTTPException."""
-        with patch("mindtrace.services.gateway.proxy_connection_manager.httpx") as mock_httpx:
+        with patch("mindtrace.services.gateway.proxy_connection_manager.httpx2") as mock_httpx:
             mock_response = Mock()
             mock_response.status_code = 500
             mock_response.text = "Internal Server Error"

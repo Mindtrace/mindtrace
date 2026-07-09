@@ -4605,9 +4605,28 @@ class TestRegistryFacadeCoverage:
             "prefix": "prefix",
             "endpoint": "minio.local",
             "secure": False,
+            "presign_endpoint": None,
+            "presign_secure": None,
             "access_key": "abc",
             "secret_key": "xyz",
         }
+
+        # presign_endpoint / presign_secure thread through when set on the mount.
+        s3_presign_mount = Mount(
+            name="s3p",
+            backend="s3",
+            config=S3MountConfig(
+                bucket="datasets",
+                endpoint="internal:9000",
+                secure=False,
+                presign_endpoint="localhost:19000",
+                presign_secure=False,
+            ),
+            auth=S3AccessKeyAuth(access_key="abc", secret_key="xyz"),
+        )
+        s3p_backend = Registry._backend_from_mount(s3_presign_mount)
+        assert s3p_backend.kwargs["presign_endpoint"] == "localhost:19000"
+        assert s3p_backend.kwargs["presign_secure"] is False
 
         bad_s3_mount = Mount(name="bad-s3", backend="s3", config=S3MountConfig(bucket="datasets"), auth=AmbientAuth())
         object.__setattr__(bad_s3_mount, "config", LocalMountConfig(uri="/tmp/local"))

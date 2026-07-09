@@ -1,6 +1,6 @@
 from typing import Type
 
-import httpx
+import httpx2
 from fastapi import HTTPException
 
 from mindtrace.services.core.connection_manager import ConnectionManager
@@ -70,7 +70,7 @@ def _validate_payload(args, kwargs, input_schema, endpoint_name: str, validate_i
     return input_schema(**kwargs).model_dump(mode="json")
 
 
-def _parse_response(response: httpx.Response, output_schema, validate_output: bool):
+def _parse_response(response: httpx2.Response, output_schema, validate_output: bool):
     """Return the parsed response, raising ``HTTPException`` on non-200; tolerates empty bodies."""
     if response.status_code != 200:
         raise HTTPException(response.status_code, response.text)
@@ -88,12 +88,12 @@ def _make_endpoint_methods(endpoint_name: str, endpoint_path: str, input_schema,
 
     def method(self, *args, validate_input: bool = True, validate_output: bool = True, timeout=60, **kwargs):
         payload = _validate_payload(args, kwargs, input_schema, endpoint_name, validate_input)
-        res = httpx.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=timeout)
+        res = httpx2.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=timeout)
         return _parse_response(res, output_schema, validate_output)
 
     async def amethod(self, *args, validate_input: bool = True, validate_output: bool = True, timeout=60, **kwargs):
         payload = _validate_payload(args, kwargs, input_schema, endpoint_name, validate_input)
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx2.AsyncClient(timeout=timeout) as client:
             res = await client.post(
                 str(self.url).rstrip("/") + endpoint_path,
                 json=payload,

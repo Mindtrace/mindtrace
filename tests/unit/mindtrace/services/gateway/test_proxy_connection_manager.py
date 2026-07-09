@@ -127,7 +127,7 @@ def test_getattr_raises_attribute_error():
         _ = proxy_cm.nonexistent
 
 
-@patch("mindtrace.services.gateway.proxy_connection_manager.httpx")
+@patch("mindtrace.services.gateway.proxy_connection_manager.httpx2")
 def test_sync_proxy_method_success(mock_httpx):
     """Test successful sync proxy method call."""
     mock_response = Mock()
@@ -147,7 +147,7 @@ def test_sync_proxy_method_success(mock_httpx):
     mock_httpx.post.assert_called_once_with("http://gateway/app/dummy", json={"foo": "bar"}, timeout=60)
 
 
-@patch("mindtrace.services.gateway.proxy_connection_manager.httpx")
+@patch("mindtrace.services.gateway.proxy_connection_manager.httpx2")
 def test_sync_proxy_method_http_error(mock_httpx):
     """Test sync proxy method with HTTP error raises HTTPException."""
     mock_response = Mock()
@@ -166,7 +166,7 @@ def test_sync_proxy_method_http_error(mock_httpx):
     assert exc_info.value.detail == "Internal Server Error"
 
 
-@patch("mindtrace.services.gateway.proxy_connection_manager.httpx")
+@patch("mindtrace.services.gateway.proxy_connection_manager.httpx2")
 def test_sync_proxy_method_json_error(mock_httpx):
     """Sync proxy falls back to ``{'success': True}`` when the response body is unparseable."""
     mock_response = Mock()
@@ -184,7 +184,7 @@ def test_sync_proxy_method_json_error(mock_httpx):
     assert result.success is True
 
 
-@patch("mindtrace.services.gateway.proxy_connection_manager.httpx")
+@patch("mindtrace.services.gateway.proxy_connection_manager.httpx2")
 def test_sync_proxy_method_input_validation_fallback(mock_httpx):
     """Sync proxy falls back to raw kwargs when ``input_schema(**kwargs)`` raises."""
 
@@ -218,7 +218,7 @@ def test_sync_proxy_method_input_validation_fallback(mock_httpx):
     assert result.result == "success"
 
 
-@patch("mindtrace.services.gateway.proxy_connection_manager.httpx")
+@patch("mindtrace.services.gateway.proxy_connection_manager.httpx2")
 def test_sync_proxy_method_output_schema_no_validation(mock_httpx):
     """Sync proxy returns the raw result when ``output_schema`` is None."""
 
@@ -240,7 +240,7 @@ def test_sync_proxy_method_output_schema_no_validation(mock_httpx):
     assert proxy_cm.no_output_schema(param="value") == {"result": "raw_result"}
 
 
-@patch("mindtrace.services.gateway.proxy_connection_manager.httpx")
+@patch("mindtrace.services.gateway.proxy_connection_manager.httpx2")
 def test_sync_proxy_method_output_validation_error(mock_httpx):
     """Sync proxy returns the raw result when ``output_schema(**result)`` raises."""
 
@@ -266,7 +266,7 @@ def test_sync_proxy_method_output_validation_error(mock_httpx):
     assert proxy_cm.failing_output(param="value") == {"result": "success"}
 
 
-@patch("httpx.AsyncClient")
+@patch("httpx2.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_success(mock_client_class):
     """Test successful async proxy method call."""
@@ -289,7 +289,7 @@ async def test_async_proxy_method_success(mock_client_class):
     mock_client.post.assert_awaited_once_with("http://gateway/app/dummy", json={"foo": "bar"})
 
 
-@patch("httpx.AsyncClient")
+@patch("httpx2.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_http_error(mock_client_class):
     """Async proxy raises HTTPException on non-200 status."""
@@ -311,7 +311,7 @@ async def test_async_proxy_method_http_error(mock_client_class):
     assert exc_info.value.detail == "Internal Server Error"
 
 
-@patch("httpx.AsyncClient")
+@patch("httpx2.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_json_parsing_error(mock_client_class):
     """Async proxy falls back to ``{'success': True}`` when the response body is unparseable."""
@@ -332,7 +332,7 @@ async def test_async_proxy_method_json_parsing_error(mock_client_class):
     assert result.success is True
 
 
-@patch("httpx.AsyncClient")
+@patch("httpx2.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_input_validation_fallback(mock_client_class):
     """Async proxy falls back to raw kwargs when ``input_schema(**kwargs)`` raises."""
@@ -369,7 +369,7 @@ async def test_async_proxy_method_input_validation_fallback(mock_client_class):
     assert result.result == "success"
 
 
-@patch("httpx.AsyncClient")
+@patch("httpx2.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_no_input_schema(mock_client_class):
     """Async proxy passes raw kwargs through when ``input_schema`` is None."""
@@ -399,7 +399,7 @@ async def test_async_proxy_method_no_input_schema(mock_client_class):
     assert result.result == "no_validation"
 
 
-@patch("httpx.AsyncClient")
+@patch("httpx2.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_missing_input_schema_attribute(mock_client_class):
     """Async proxy passes raw kwargs through when the schema lacks an ``input_schema`` attribute entirely."""
@@ -428,7 +428,7 @@ async def test_async_proxy_method_missing_input_schema_attribute(mock_client_cla
     assert result.result == "no_input_attr"
 
 
-@patch("httpx.AsyncClient")
+@patch("httpx2.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_output_schema_no_validation(mock_client_class):
     """Async proxy returns the raw result when ``output_schema`` is None."""
@@ -453,7 +453,7 @@ async def test_async_proxy_method_output_schema_no_validation(mock_client_class)
     assert await proxy_cm.ano_output_schema(param="value") == {"result": "raw_result"}
 
 
-@patch("httpx.AsyncClient")
+@patch("httpx2.AsyncClient")
 @pytest.mark.asyncio
 async def test_async_proxy_method_output_validation_error(mock_client_class):
     """Async proxy returns the raw result when ``output_schema(**result)`` raises."""
