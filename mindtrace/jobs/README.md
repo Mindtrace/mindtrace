@@ -72,6 +72,35 @@ orchestrator.publish("maths_operations", job)
 consumer.consume(num_messages=1)
 ```
 
+## Batch publishing
+
+Use `publish_batch()` when several jobs should be sent to the same queue with
+the same backend options:
+
+```python
+jobs = [
+    job_from_schema(schema, MathsInput(operation="add", a=1, b=2)),
+    job_from_schema(schema, MathsInput(operation="multiply", a=3, b=4)),
+]
+
+result = orchestrator.publish_batch("maths_operations", jobs)
+
+print(result.job_ids)
+print(result.successful_indices)
+print(result.failed_indices)
+print(result.unattempted_indices)
+```
+
+The complete input batch is validated before it reaches the backend. Batch
+publication itself is not atomic: if a backend fails while publishing an item,
+earlier messages may already be queued. `BatchPublishResult` preserves their
+job IDs, records the failed item, and identifies later items that were not
+attempted.
+
+RabbitMQ publishes a non-empty batch through one connection and channel. Local,
+Redis, and custom backends use the backend-neutral fallback unless they provide
+their own optimized `publish_batch()` implementation.
+
 In practice, the jobs package is built around four concepts:
 
 - a **schema** describing the job payload
