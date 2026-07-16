@@ -252,6 +252,23 @@ def test_publish_batch_closes_connection_when_channel_creation_fails():
     connection.close.assert_called_once_with()
 
 
+def test_publish_batch_logs_cleanup_failures_without_masking_result():
+    client = make_client()
+    channel = MagicMock()
+    channel.is_open = True
+    channel.close.side_effect = RuntimeError("channel close failed")
+    connection = MagicMock()
+    connection.get_channel.return_value = channel
+    connection.close.side_effect = RuntimeError("connection close failed")
+
+    with patch("mindtrace.jobs.rabbitmq.client.RabbitMQConnection", return_value=connection):
+        result = client.publish_batch("q", [DummyModel()])
+
+    assert result.all_succeeded is True
+    client.logger.warning.assert_any_call("Failed to close RabbitMQ batch channel: channel close failed")
+    client.logger.warning.assert_any_call("Failed to close RabbitMQ batch connection: connection close failed")
+
+
 def test_clean_queue_success():
     client = make_client()
     client.channel.queue_purge = MagicMock(return_value=None)
