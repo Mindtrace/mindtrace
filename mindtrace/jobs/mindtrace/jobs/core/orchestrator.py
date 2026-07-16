@@ -1,11 +1,12 @@
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Sequence
 
 from pydantic import BaseModel
 
 from mindtrace.core import Mindtrace
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
 from mindtrace.jobs.local.client import LocalClient
+from mindtrace.jobs.types.batch import BatchPublishResult
 from mindtrace.jobs.types.job_specs import Job, JobSchema
 from mindtrace.jobs.utils.schemas import job_from_schema
 
@@ -34,6 +35,17 @@ class Orchestrator(Mindtrace):
         self.backend = backend
         self._schema_mapping: Dict[str, Dict[str, Any]] = {}
 
+    def _prepare_job(self, queue_name: str, job: Job | BaseModel) -> Job:
+        """Validate and normalize a job before sending it to a backend."""
+        if isinstance(job, Job):
+            return job
+        if isinstance(job, BaseModel):
+            schema = self._schema_mapping.get(queue_name, None)
+            if schema is None:
+                raise ValueError(f"Schema '{queue_name}' not found.")
+            return job_from_schema(schema["schema"], job)
+        raise ValueError(f"Invalid job type: {type(job)}, expected Job or TaskSchema.")
+
     def publish(self, queue_name: str, job: Job | BaseModel, **kwargs) -> str:
         """Send a job or task input model to the specified queue.
 
@@ -49,17 +61,39 @@ class Orchestrator(Mindtrace):
         Raises:
             ValueError: If publishing a BaseModel to a queue that has not been registered.
         """
-        if isinstance(job, Job):
-            pass
-        elif isinstance(job, BaseModel):
-            schema = self._schema_mapping.get(queue_name, None)
-            if schema is None:
-                raise ValueError(f"Schema '{queue_name}' not found.")
-            job = job_from_schema(schema["schema"], job)
-        else:
-            raise ValueError(f"Invalid job type: {type(job)}, expected Job or TaskSchema.")
+        return self.backend.publish(queue_name, self._prepare_job(queue_name, job), **kwargs)
 
-        return self.backend.publish(queue_name, job, **kwargs)
+    def publish_batch(
+        self,
+        queue_name: str,
+        jobs: Sequence[Job | BaseModel],
+        **kwargs,
+    ) -> BatchPublishResult:
+        """Send an ordered batch of jobs to the specified queue.
+
+        The complete batch is validated and normalized before the backend is
+        called, preventing a validation error from causing a partially
+        published batch.
+
+        Args:
+            queue_name: Name of the target queue.
+            jobs: Ordered jobs or task input models to publish.
+            **kwargs: Additional parameters passed to the backend.
+
+        Returns:
+            Ordered publication results, including partial-failure details.
+
+        Raises:
+            ValueError: If any job is invalid or requires an unregistered schema.
+        """
+        prepared_jobs = []
+        for index, job in enumerate(jobs):
+            try:
+                prepared_jobs.append(self._prepare_job(queue_name, job))
+            except ValueError as exc:
+                raise ValueError(f"Invalid job at index {index}: {exc}") from exc
+
+        return self.backend.publish_batch(queue_name, prepared_jobs, **kwargs)
 
     def clean_queue(self, queue_name: str, **kwargs) -> None:
         """Clear all messages from specified queue.
