@@ -32,11 +32,7 @@ class BatchPublishResult:
     @property
     def unattempted_indices(self) -> list[int]:
         """Indices not attempted because an earlier publish failed."""
-        return [
-            index
-            for index, job_id in enumerate(self.job_ids)
-            if job_id is None and index not in self.errors
-        ]
+        return [index for index, job_id in enumerate(self.job_ids) if job_id is None and index not in self.errors]
 
     @property
     def success_count(self) -> int:
@@ -53,4 +49,3 @@ class BatchPublishResult:
     @property
     def all_succeeded(self) -> bool:
         return self.failure_count == 0 and self.unattempted_count == 0
-
