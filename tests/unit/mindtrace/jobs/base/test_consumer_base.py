@@ -15,6 +15,13 @@ class TestConsumerBackendBase:
 
         assert consumer.queue_name == "test-queue"
         assert consumer.consumer_frontend == frontend
+        assert consumer.stopped is False
+
+        consumer.stop()
+        assert consumer.stopped is True
+
+        consumer._start_consuming()
+        assert consumer.stopped is False
 
     def test_process_message_with_exception(self, mock_consumer, mock_bad_consumer_frontend):
         """Test processing message that raises exception."""

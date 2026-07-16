@@ -200,6 +200,26 @@ consumer.connect_to_orchestrator(orchestrator, "build_report")
 consumer.consume(num_messages=1)
 ```
 
+With RabbitMQ, messages are acknowledged only after `run()` succeeds. Failed
+messages are dead-lettered by default (`basic_nack(requeue=False)`); when the
+queue has no dead-letter exchange, RabbitMQ discards them. Select another
+policy when connecting if needed:
+
+```python
+from mindtrace.jobs import ConsumerFailurePolicy
+
+consumer.connect_to_orchestrator(
+    orchestrator,
+    "build_report",
+    failure_policy=ConsumerFailurePolicy.REQUEUE,
+)
+```
+
+Calling `consumer.stop()` requests graceful shutdown. An in-flight job finishes
+and is acknowledged or rejected before the blocking consume loop exits.
+RabbitMQ channels and connections close automatically whenever `consume()`
+returns; a later call reconnects.
+
 ### Consuming until empty
 
 ```python

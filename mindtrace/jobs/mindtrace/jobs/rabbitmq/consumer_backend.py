@@ -134,6 +134,16 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             channel.basic_ack(delivery_tag=delivery.delivery_tag)
         return success
 
+    def _reject_delivery(self, channel, delivery_tag: int) -> None:
+        if self.auto_ack:
+            return
+        if self.failure_policy is ConsumerFailurePolicy.REQUEUE:
+            channel.basic_nack(delivery_tag=delivery_tag, requeue=True)
+        elif self.failure_policy is ConsumerFailurePolicy.DEAD_LETTER:
+            channel.basic_nack(delivery_tag=delivery_tag, requeue=False)
+        else:
+            channel.basic_ack(delivery_tag=delivery_tag)
+
     def process_message(self, message) -> bool:
         """Process a single message and return its observable success status."""
         if not isinstance(message, dict):
@@ -175,8 +185,13 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                 method, properties, body = channel.basic_get(queue=queue_name, auto_ack=self.auto_ack)
                 if method:
                     self.logger.info(f"Received message from queue '{queue_name}'.")
+                    try:
+                        message = json.loads(body.decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        self._reject_delivery(channel, method.delivery_tag)
+                        raise
                     return RabbitMQDelivery(
-                        message=json.loads(body.decode("utf-8")),
+                        message=message,
                         delivery_tag=method.delivery_tag,
                         exchange=method.exchange,
                         routing_key=method.routing_key,
@@ -199,6 +214,8 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         """Close resources owned by the active consume call."""
         channel = self._active_channel
         self._active_channel = None
-        if channel is not None and getattr(channel, "is_open", False):
-            channel.close()
-        self.connection.close()
+        try:
+            if channel is not None and getattr(channel, "is_open", False):
+                channel.close()
+        finally:
+            self.connection.close()

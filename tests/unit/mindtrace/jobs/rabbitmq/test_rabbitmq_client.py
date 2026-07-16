@@ -436,6 +436,18 @@ def test_create_consumer_backend():
         assert result == mock_backend
 
 
+def test_consumer_backend_configuration_survives_backend_args_and_can_be_overridden():
+    with patch.object(RabbitMQClient, "create_connection", MagicMock(return_value=DummyChannel())):
+        with patch("mindtrace.jobs.rabbitmq.client.RabbitMQConsumerBackend") as backend_class:
+            client = RabbitMQClient(consumer_backend_kwargs={"failure_policy": "requeue", "prefetch_count": 4})
+
+            assert client.consumer_backend_args["kwargs"]["failure_policy"] == "requeue"
+            client.create_consumer_backend(MagicMock(), "q", failure_policy="discard")
+
+    assert backend_class.call_args.kwargs["failure_policy"] == "discard"
+    assert backend_class.call_args.kwargs["prefetch_count"] == 4
+
+
 def test_declare_queue_with_queue_type_warning():
     """Test declare_queue with queue_type parameter triggers warning."""
     client = make_client()

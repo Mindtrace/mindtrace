@@ -23,6 +23,7 @@ class RabbitMQClient(OrchestratorBackend):
         port: int | None = None,
         username: str | None = None,
         password: str | None = None,
+        consumer_backend_kwargs: dict | None = None,
     ):
         """Initialize the RabbitMQ client with connection parameters.
         Args:
@@ -36,6 +37,7 @@ class RabbitMQClient(OrchestratorBackend):
         self._port = port
         self._username = username
         self._password = password
+        self._consumer_backend_kwargs = consumer_backend_kwargs or {}
         self._connection = None
         self._channel = None
         self.declare_exchange(exchange="default", exchange_type="direct", durable=True, auto_delete=False)
@@ -82,13 +84,15 @@ class RabbitMQClient(OrchestratorBackend):
                 "port": self._port,
                 "username": self._username,
                 "password": self._password,
+                **self._consumer_backend_kwargs,
             },
         }
 
     def create_consumer_backend(
         self, consumer_frontend: Consumer, queue_name: str, **kwargs
     ) -> RabbitMQConsumerBackend:
-        return RabbitMQConsumerBackend(queue_name, consumer_frontend, **self.consumer_backend_args["kwargs"], **kwargs)
+        backend_kwargs = self.consumer_backend_args["kwargs"] | kwargs
+        return RabbitMQConsumerBackend(queue_name, consumer_frontend, **backend_kwargs)
 
     def declare_exchange(
         self,

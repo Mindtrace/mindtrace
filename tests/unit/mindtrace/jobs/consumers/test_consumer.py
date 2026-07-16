@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock
+
 import pytest
 
 from mindtrace.jobs import Consumer, JobSchema, Orchestrator
@@ -223,6 +225,28 @@ class TestConsumer:
 
         with pytest.raises(RuntimeError, match="Consumer not connected. Call connect\\(\\) first"):
             consumer.consume_until_empty()
+
+    def test_stop_and_close_proxy_to_backend(self):
+        class Worker(Consumer):
+            def run(self, job_dict):
+                return {}
+
+        consumer = Worker()
+        consumer.consumer_backend = MagicMock()
+
+        consumer.stop()
+        consumer.close()
+
+        consumer.consumer_backend.stop.assert_called_once_with()
+        consumer.consumer_backend.close.assert_called_once_with()
+
+    def test_stop_requires_connection(self):
+        class Worker(Consumer):
+            def run(self, job_dict):
+                return {}
+
+        with pytest.raises(RuntimeError, match="Consumer not connected"):
+            Worker().stop()
 
     def test_abstract_run_method(self):
         """Test that Consumer is abstract and run method must be implemented."""
