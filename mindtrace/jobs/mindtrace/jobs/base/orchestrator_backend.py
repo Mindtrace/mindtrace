@@ -1,10 +1,11 @@
 from abc import abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 
 import pydantic
 
 from mindtrace.core import MindtraceABC
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
+from mindtrace.jobs.types.batch import BatchPublishResult
 
 if TYPE_CHECKING:  # pragma: no cover
     from mindtrace.jobs.consumers.consumer import Consumer
@@ -45,6 +46,30 @@ class OrchestratorBackend(MindtraceABC):
             message: Pydantic model to publish
         """
         raise NotImplementedError
+
+    def publish_batch(
+        self,
+        queue_name: str,
+        messages: Sequence[pydantic.BaseModel],
+        **kwargs,
+    ) -> BatchPublishResult:
+        """Publish an ordered batch using the backend's single-message API.
+
+        Backends may override this method with a more efficient implementation.
+        Publishing stops after the first failure because earlier jobs may
+        already have been accepted by the backend.
+        """
+        result = BatchPublishResult.for_batch_size(len(messages))
+        for index, message in enumerate(messages):
+            try:
+                result.job_ids[index] = self.publish(queue_name, message, **kwargs)
+            except Exception as exc:
+                result.errors[index] = {
+                    "error": type(exc).__name__,
+                    "message": str(exc),
+                }
+                break
+        return result
 
     @abstractmethod
     def clean_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
