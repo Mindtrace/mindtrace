@@ -30,18 +30,21 @@ class RedisConsumerBackend(ConsumerBackendBase):
             self.logger.warning("No queues provided; nothing to consume.")
             return
 
-        messages_consumed = 0
+        self._start_consuming()
+        messages_attempted = 0
         try:
-            while num_messages == 0 or messages_consumed < num_messages:
+            while not self.stopped and (num_messages == 0 or messages_attempted < num_messages):
                 for queue in queues:
+                    if self.stopped or (num_messages > 0 and messages_attempted >= num_messages):
+                        break
                     try:
                         message = self.receive_message(queue, block=block, timeout=self.poll_timeout)
                         if message:
                             self.logger.debug(
-                                f"Received message from queue '{queue}': processing {messages_consumed + 1}"
+                                f"Received message from queue '{queue}': processing {messages_attempted + 1}"
                             )
-                            if self.process_message(message):
-                                messages_consumed += 1
+                            messages_attempted += 1
+                            self.process_message(message)
                         elif not block:
                             return
                     except Exception as e:

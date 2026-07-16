@@ -24,7 +24,7 @@ class OrchestratorBackend(MindtraceABC):
     def consumer_backend_args(self) -> dict:
         raise NotImplementedError
 
-    def create_consumer_backend(self, consumer_frontend: "Consumer", queue_name: str) -> ConsumerBackendBase:
+    def create_consumer_backend(self, consumer_frontend: "Consumer", queue_name: str, **kwargs) -> ConsumerBackendBase:
         """Create a consumer backend for the given schema and consumer frontend."""
         raise NotImplementedError
 

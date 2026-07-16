@@ -28,8 +28,8 @@ class RedisClient(OrchestratorBackend):
     def consumer_backend_args(self):
         return {"cls": "mindtrace.jobs.redis.consumer_backend.RedisConsumerBackend", "kwargs": self.redis_params}
 
-    def create_consumer_backend(self, consumer_frontend: Consumer, queue_name: str) -> RedisConsumerBackend:
-        return RedisConsumerBackend(queue_name, consumer_frontend, **self.consumer_backend_args["kwargs"])
+    def create_consumer_backend(self, consumer_frontend: Consumer, queue_name: str, **kwargs) -> RedisConsumerBackend:
+        return RedisConsumerBackend(queue_name, consumer_frontend, **self.consumer_backend_args["kwargs"], **kwargs)
 
     def declare_queue(self, queue_name: str, queue_type: str = "fifo", **kwargs) -> dict[str, str]:
         """Declare a Redis-backed queue of type 'fifo', 'stack', or 'priority'."""

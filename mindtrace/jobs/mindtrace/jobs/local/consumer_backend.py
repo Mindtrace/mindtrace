@@ -24,22 +24,21 @@ class LocalConsumerBackend(ConsumerBackendBase):
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
-        messages_consumed = 0
+        self._start_consuming()
+        messages_attempted = 0
 
         try:
-            while num_messages == 0 or messages_consumed < num_messages:
+            while not self.stopped and (num_messages == 0 or messages_attempted < num_messages):
                 no_messages_found = True
                 for queue in queues:
+                    if self.stopped or (num_messages > 0 and messages_attempted >= num_messages):
+                        break
                     try:
                         message = self.orchestrator.receive_message(queue, block=block, timeout=self.poll_timeout)
                         if message:
                             no_messages_found = False
-                            try:
-                                self.process_message(message)
-                                messages_consumed += 1
-                            except Exception as process_error:
-                                self.logger.debug(f"Error processing message from queue {queue}: {process_error}")
-                                messages_consumed += 1
+                            messages_attempted += 1
+                            self.process_message(message)
                     except Exception as e:
                         self.logger.debug(f"Error consuming from queue {queue}: {e}")
                         if block is False:

@@ -24,12 +24,12 @@ class Consumer(Mindtrace):
         self.job_schema: Optional[JobSchema] = None
         self.queue_name: Optional[str] = None
 
-    def connect_to_orchestrator(self, orchestrator: "Orchestrator", queue_name: str) -> None:
+    def connect_to_orchestrator(self, orchestrator: "Orchestrator", queue_name: str, **backend_kwargs) -> None:
         """Connect to orchestrator and create the appropriate consumer backend."""
         if self.consumer_backend:
             raise RuntimeError("Consumer already connected.")
 
-        self.consumer_backend = orchestrator.backend.create_consumer_backend(self, queue_name)
+        self.consumer_backend = orchestrator.backend.create_consumer_backend(self, queue_name, **backend_kwargs)
 
     def connect_to_orchestator_via_backend_args(self, backend_args: dict, queue_name: str) -> None:
         """Connect to orchestrator and create the appropriate consumer backend."""
@@ -64,6 +64,17 @@ class Consumer(Mindtrace):
             raise RuntimeError("Consumer not connected. Call connect() first.")
 
         self.consumer_backend.consume_until_empty(queues=queues, block=block)
+
+    def stop(self) -> None:
+        """Request graceful shutdown after any in-flight job completes."""
+        if not self.consumer_backend:
+            raise RuntimeError("Consumer not connected. Call connect() first.")
+        self.consumer_backend.stop()
+
+    def close(self) -> None:
+        """Close resources owned by the consumer backend."""
+        if self.consumer_backend:
+            self.consumer_backend.close()
 
     @abstractmethod
     def run(self, job_dict: dict) -> dict:

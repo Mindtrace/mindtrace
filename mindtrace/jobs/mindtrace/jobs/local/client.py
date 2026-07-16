@@ -70,8 +70,8 @@ class LocalClient(OrchestratorBackend):
     def consumer_backend_args(self):
         raise NotImplementedError("LocalConsumerBackend needs to be created with access to a LocalClient instance.")
 
-    def create_consumer_backend(self, consumer_frontend: "Consumer", queue_name: str) -> LocalConsumerBackend:
-        return LocalConsumerBackend(queue_name, consumer_frontend, self)
+    def create_consumer_backend(self, consumer_frontend: "Consumer", queue_name: str, **kwargs) -> LocalConsumerBackend:
+        return LocalConsumerBackend(queue_name, consumer_frontend, self, **kwargs)
 
     def declare_queue(self, queue_name: str, queue_type: str = "fifo", **kwargs) -> dict[str, str]:
         """Declare a queue of type 'fifo', 'stack', or 'priority'."""

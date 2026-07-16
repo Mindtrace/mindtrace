@@ -85,8 +85,10 @@ class RabbitMQClient(OrchestratorBackend):
             },
         }
 
-    def create_consumer_backend(self, consumer_frontend: Consumer, queue_name: str) -> RabbitMQConsumerBackend:
-        return RabbitMQConsumerBackend(queue_name, consumer_frontend, **self.consumer_backend_args["kwargs"])
+    def create_consumer_backend(
+        self, consumer_frontend: Consumer, queue_name: str, **kwargs
+    ) -> RabbitMQConsumerBackend:
+        return RabbitMQConsumerBackend(queue_name, consumer_frontend, **self.consumer_backend_args["kwargs"], **kwargs)
 
     def declare_exchange(
         self,
