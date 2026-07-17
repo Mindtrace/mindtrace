@@ -172,6 +172,12 @@ class TestOrchestratorPublish:
         assert result is expected
         mock_backend.publish_batch.assert_called_once_with("test-queue", jobs, priority=10)
 
+    def test_publish_batch_propagates_backend_setup_error(self, orchestrator, sample_job, mock_backend):
+        mock_backend.publish_batch.side_effect = ConnectionError("broker unavailable")
+
+        with pytest.raises(ConnectionError, match="broker unavailable"):
+            orchestrator.publish_batch("test-queue", [sample_job])
+
     def test_publish_batch_converts_registered_task_models(self, orchestrator, sample_task_schema, mock_backend):
         schema = MockJobSchema()
         orchestrator.register(schema)
