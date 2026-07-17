@@ -181,6 +181,103 @@ def test_publish_other_exception():
         client.publish("q", dummy)
 
 
+def test_publish_batch_uses_one_connection_and_channel():
+    client = make_client()
+    channel = MagicMock()
+    channel.is_open = True
+    connection = MagicMock()
+    connection.get_channel.return_value = channel
+
+    with patch("mindtrace.jobs.rabbitmq.client.RabbitMQConnection", return_value=connection) as connection_class:
+        result = client.publish_batch("q", [DummyModel(foo="one"), DummyModel(foo="two")], priority=7)
+
+    assert result.success_count == 2
+    assert result.all_succeeded is True
+    assert all(isinstance(job_id, str) for job_id in result.job_ids)
+    client.logger.debug.assert_any_call("Publishing RabbitMQ batch of 2 messages to exchange: default, routing_key: q")
+    assert (
+        sum(args[0].startswith("Publishing RabbitMQ batch") for args, _kwargs in client.logger.debug.call_args_list)
+        == 1
+    )
+    connection_class.assert_called_once_with(host="localhost", port=5671, username="user", password="password")
+    connection.connect.assert_called_once_with()
+    connection.get_channel.assert_called_once_with()
+    assert channel.basic_publish.call_count == 2
+    for call in channel.basic_publish.call_args_list:
+        assert call.kwargs["exchange"] == "default"
+        assert call.kwargs["routing_key"] == "q"
+        assert call.kwargs["mandatory"] is True
+        assert call.kwargs["properties"].priority == 7
+        assert call.kwargs["properties"].headers["routing_key"] == "q"
+    channel.close.assert_called_once_with()
+    connection.close.assert_called_once_with()
+
+
+def test_publish_batch_empty_does_not_connect():
+    client = make_client()
+
+    with patch("mindtrace.jobs.rabbitmq.client.RabbitMQConnection") as connection_class:
+        result = client.publish_batch("q", [])
+
+    assert result.job_ids == []
+    assert result.all_succeeded is True
+    connection_class.assert_not_called()
+
+
+def test_publish_batch_reports_partial_failure_and_closes_resources():
+    client = make_client()
+    channel = MagicMock()
+    channel.is_open = True
+    channel.basic_publish.side_effect = [None, RuntimeError("publish failed")]
+    connection = MagicMock()
+    connection.get_channel.return_value = channel
+
+    with patch("mindtrace.jobs.rabbitmq.client.RabbitMQConnection", return_value=connection):
+        result = client.publish_batch("q", [DummyModel(), DummyModel(), DummyModel()])
+
+    assert isinstance(result.job_ids[0], str)
+    assert result.job_ids[1:] == [None, None]
+    assert result.failed_indices == [1]
+    assert result.unattempted_indices == [2]
+    assert result.errors[1] == {"error": "RuntimeError", "message": "publish failed"}
+    assert channel.basic_publish.call_count == 2
+    channel.close.assert_called_once_with()
+    connection.close.assert_called_once_with()
+
+
+@pytest.mark.parametrize("failure_stage", ["connect", "channel"])
+def test_publish_batch_raises_setup_failure_and_closes_connection(failure_stage):
+    client = make_client()
+    connection = MagicMock()
+    if failure_stage == "connect":
+        connection.connect.side_effect = RuntimeError("connect failed")
+    else:
+        connection.get_channel.side_effect = RuntimeError("channel failed")
+
+    with patch("mindtrace.jobs.rabbitmq.client.RabbitMQConnection", return_value=connection):
+        with pytest.raises(RuntimeError, match=f"{failure_stage} failed"):
+            client.publish_batch("q", [DummyModel(), DummyModel()])
+
+    connection.close.assert_called_once_with()
+
+
+def test_publish_batch_logs_cleanup_failures_without_masking_result():
+    client = make_client()
+    channel = MagicMock()
+    channel.is_open = True
+    channel.close.side_effect = RuntimeError("channel close failed")
+    connection = MagicMock()
+    connection.get_channel.return_value = channel
+    connection.close.side_effect = RuntimeError("connection close failed")
+
+    with patch("mindtrace.jobs.rabbitmq.client.RabbitMQConnection", return_value=connection):
+        result = client.publish_batch("q", [DummyModel()])
+
+    assert result.all_succeeded is True
+    client.logger.warning.assert_any_call("Failed to close RabbitMQ batch channel: channel close failed")
+    client.logger.warning.assert_any_call("Failed to close RabbitMQ batch connection: connection close failed")
+
+
 def test_clean_queue_success():
     client = make_client()
     client.channel.queue_purge = MagicMock(return_value=None)
