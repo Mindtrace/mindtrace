@@ -6,13 +6,13 @@ from mindtrace.jobs import ConsumerFailurePolicy
 from mindtrace.jobs.rabbitmq.consumer_backend import RabbitMQConsumerBackend, RabbitMQDelivery
 
 
-def delivery(message=None, delivery_tag=1):
+def delivery(message=None, delivery_tag=1, redelivered=False):
     return RabbitMQDelivery(
         message=message or {"id": 1},
         delivery_tag=delivery_tag,
         exchange="default",
         routing_key="q",
-        redelivered=False,
+        redelivered=redelivered,
         properties=MagicMock(),
     )
 
@@ -234,7 +234,7 @@ def test_receive_message_dead_letters_invalid_json(backend):
 )
 def test_invalid_json_rejection_honors_ack_policy(backend, auto_ack, policy, expected_action):
     channel = MagicMock()
-    method = MagicMock(delivery_tag=42)
+    method = MagicMock(delivery_tag=42, redelivered=False)
     channel.basic_get.return_value = (method, MagicMock(), b"not-json")
     backend.auto_ack = auto_ack
     backend.failure_policy = policy
@@ -293,6 +293,29 @@ def test_failed_delivery_applies_policy(backend, policy, acknowledged, requeue):
     else:
         channel.basic_nack.assert_called_once_with(delivery_tag=42, requeue=requeue)
         channel.basic_ack.assert_not_called()
+
+
+def test_requeued_delivery_is_dead_lettered_after_one_retry(backend):
+    channel = MagicMock()
+    backend.failure_policy = ConsumerFailurePolicy.REQUEUE
+    backend.process_message = MagicMock(return_value=False)
+
+    assert backend._process_delivery(channel, delivery(delivery_tag=42, redelivered=True)) is False
+
+    channel.basic_nack.assert_called_once_with(delivery_tag=42, requeue=False)
+    channel.basic_ack.assert_not_called()
+
+
+def test_redelivered_invalid_json_is_dead_lettered_after_one_retry(backend):
+    channel = MagicMock()
+    method = MagicMock(delivery_tag=42, redelivered=True)
+    channel.basic_get.return_value = (method, MagicMock(), b"not-json")
+    backend.failure_policy = ConsumerFailurePolicy.REQUEUE
+
+    with pytest.raises(RuntimeError):
+        backend.receive_message(channel, "q")
+
+    channel.basic_nack.assert_called_once_with(delivery_tag=42, requeue=False)
 
 
 def test_successful_delivery_acknowledged_after_processing(backend):

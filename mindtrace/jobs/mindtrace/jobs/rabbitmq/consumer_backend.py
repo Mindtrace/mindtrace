@@ -126,18 +126,18 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         if success:
             channel.basic_ack(delivery_tag=delivery.delivery_tag)
         elif self.failure_policy is ConsumerFailurePolicy.REQUEUE:
-            channel.basic_nack(delivery_tag=delivery.delivery_tag, requeue=True)
+            channel.basic_nack(delivery_tag=delivery.delivery_tag, requeue=not delivery.redelivered)
         elif self.failure_policy is ConsumerFailurePolicy.DEAD_LETTER:
             channel.basic_nack(delivery_tag=delivery.delivery_tag, requeue=False)
         else:
             channel.basic_ack(delivery_tag=delivery.delivery_tag)
         return success
 
-    def _reject_delivery(self, channel, delivery_tag: int) -> None:
+    def _reject_delivery(self, channel, delivery_tag: int, *, redelivered: bool = False) -> None:
         if self.auto_ack:
             return
         if self.failure_policy is ConsumerFailurePolicy.REQUEUE:
-            channel.basic_nack(delivery_tag=delivery_tag, requeue=True)
+            channel.basic_nack(delivery_tag=delivery_tag, requeue=not redelivered)
         elif self.failure_policy is ConsumerFailurePolicy.DEAD_LETTER:
             channel.basic_nack(delivery_tag=delivery_tag, requeue=False)
         else:
@@ -188,7 +188,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                     try:
                         message = json.loads(body.decode("utf-8"))
                     except (UnicodeDecodeError, json.JSONDecodeError):
-                        self._reject_delivery(channel, method.delivery_tag)
+                        self._reject_delivery(channel, method.delivery_tag, redelivered=method.redelivered)
                         raise
                     return RabbitMQDelivery(
                         message=message,

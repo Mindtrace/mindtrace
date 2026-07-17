@@ -3,7 +3,7 @@ from unittest.mock import Mock
 import pydantic
 import pytest
 
-from mindtrace.jobs import Consumer, Orchestrator
+from mindtrace.jobs import Consumer, ConsumerFailurePolicy, Orchestrator
 
 
 class SampleMessage(pydantic.BaseModel):
@@ -40,6 +40,20 @@ class EffectivelyAbstractConsumer(Consumer):
 
 class TestLocalConsumerBackend:
     """Tests for LocalConsumerBackend."""
+
+    @pytest.mark.parametrize(
+        "failure_policy",
+        [ConsumerFailurePolicy.REQUEUE, ConsumerFailurePolicy.DEAD_LETTER],
+    )
+    def test_rejects_unsupported_failure_policies(self, temp_local_client, failure_policy):
+        orchestrator = Orchestrator(backend=temp_local_client)
+        consumer = SimpleConsumer()
+
+        with pytest.raises(
+            NotImplementedError,
+            match=f"Local consumer backend does not support failure policy '{failure_policy.value}'",
+        ):
+            consumer.connect_to_orchestrator(orchestrator, "test-queue", failure_policy=failure_policy)
 
     def test_publish_and_consume(self, temp_local_client):
         """Test basic publishing and consuming functionality."""

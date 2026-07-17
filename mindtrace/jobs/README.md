@@ -205,8 +205,10 @@ consumer.consume(num_messages=1)
 
 With RabbitMQ, messages are acknowledged only after `run()` succeeds. Failed
 messages are dead-lettered by default (`basic_nack(requeue=False)`); when the
-queue has no dead-letter exchange, RabbitMQ discards them. Select another
-policy when connecting if needed:
+queue has no dead-letter exchange, RabbitMQ discards them. `REQUEUE` retries a
+failed delivery once, then dead-letters it if it fails again. RabbitMQ reports
+the prior delivery through its `redelivered` flag, so no message retry counter
+is required:
 
 ```python
 from mindtrace.jobs import ConsumerFailurePolicy
@@ -217,6 +219,11 @@ consumer.connect_to_orchestrator(
     failure_policy=ConsumerFailurePolicy.REQUEUE,
 )
 ```
+
+Local and Redis consumers support only `DISCARD`. Connecting either backend
+with `REQUEUE` or `DEAD_LETTER` raises `NotImplementedError`; those policies
+require backend-specific retry or dead-letter storage that they do not yet
+provide.
 
 Calling `consumer.stop()` requests graceful shutdown. An in-flight job finishes
 and is acknowledged or rejected before the blocking consume loop exits. The

@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 
 from mindtrace.core import ifnone
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
+from mindtrace.jobs.types.consumer import ConsumerFailurePolicy
 
 if TYPE_CHECKING:  # pragma: no cover
     from mindtrace.jobs.local.client import LocalClient
@@ -11,8 +12,20 @@ if TYPE_CHECKING:  # pragma: no cover
 class LocalConsumerBackend(ConsumerBackendBase):
     """Local in-memory consumer backend."""
 
-    def __init__(self, queue_name: str, consumer_frontend, orchestrator: "LocalClient", poll_timeout: float = 1):
+    def __init__(
+        self,
+        queue_name: str,
+        consumer_frontend,
+        orchestrator: "LocalClient",
+        poll_timeout: float = 1,
+        failure_policy: ConsumerFailurePolicy | str = ConsumerFailurePolicy.DISCARD,
+    ):
         super().__init__(queue_name, consumer_frontend)
+        self.failure_policy = ConsumerFailurePolicy(failure_policy)
+        if self.failure_policy is not ConsumerFailurePolicy.DISCARD:
+            raise NotImplementedError(
+                f"Local consumer backend does not support failure policy '{self.failure_policy.value}'. Use 'discard'."
+            )
         self.poll_timeout = poll_timeout
         self.orchestrator = orchestrator
         self.queues = [queue_name] if queue_name else []

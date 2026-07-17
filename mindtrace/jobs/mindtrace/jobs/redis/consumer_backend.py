@@ -6,13 +6,28 @@ from typing import Optional
 from mindtrace.core import ifnone
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.redis.connection import RedisConnection
+from mindtrace.jobs.types.consumer import ConsumerFailurePolicy
 
 
 class RedisConsumerBackend(ConsumerBackendBase):
     """Redis consumer backend with blocking operations."""
 
-    def __init__(self, queue_name: str, consumer_frontend, host: str, port: int, db: int, poll_timeout: int = 5):
+    def __init__(
+        self,
+        queue_name: str,
+        consumer_frontend,
+        host: str,
+        port: int,
+        db: int,
+        poll_timeout: int = 5,
+        failure_policy: ConsumerFailurePolicy | str = ConsumerFailurePolicy.DISCARD,
+    ):
         super().__init__(queue_name, consumer_frontend)
+        self.failure_policy = ConsumerFailurePolicy(failure_policy)
+        if self.failure_policy is not ConsumerFailurePolicy.DISCARD:
+            raise NotImplementedError(
+                f"Redis consumer backend does not support failure policy '{self.failure_policy.value}'. Use 'discard'."
+            )
         self.poll_timeout = poll_timeout
         self.queues = [queue_name] if queue_name else []
         self.connection = RedisConnection(host=host, port=port, db=db)

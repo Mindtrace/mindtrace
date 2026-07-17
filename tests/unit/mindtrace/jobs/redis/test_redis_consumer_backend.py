@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from mindtrace.jobs import ConsumerFailurePolicy
 from mindtrace.jobs.redis.consumer_backend import RedisConsumerBackend
 
 
@@ -14,6 +15,25 @@ def backend():
         backend = RedisConsumerBackend("q", MagicMock(), "localhost", 6379, 0)
         backend.connection = mock_conn
         yield backend, mock_conn
+
+
+@pytest.mark.parametrize(
+    "failure_policy",
+    [ConsumerFailurePolicy.REQUEUE, ConsumerFailurePolicy.DEAD_LETTER],
+)
+def test_rejects_unsupported_failure_policies(failure_policy):
+    with pytest.raises(
+        NotImplementedError,
+        match=f"Redis consumer backend does not support failure policy '{failure_policy.value}'",
+    ):
+        RedisConsumerBackend(
+            "q",
+            MagicMock(),
+            "localhost",
+            6379,
+            0,
+            failure_policy=failure_policy,
+        )
 
 
 def test_consume_processes_messages(backend):

@@ -4,8 +4,10 @@ import uuid
 import pytest
 
 from mindtrace.jobs import Consumer, ConsumerFailurePolicy, JobSchema, Orchestrator
+from mindtrace.jobs.local.client import LocalClient
 from mindtrace.jobs.rabbitmq.client import RabbitMQClient
 from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
+from mindtrace.jobs.redis.client import RedisClient
 
 from .conftest import SampleConsumer, SampleJobInput, SampleJobOutput, create_test_job
 
@@ -19,7 +21,12 @@ def unique_queue(prefix):
 
 
 class FailingConsumer(Consumer):
+    def __init__(self):
+        super().__init__()
+        self.attempts = 0
+
     def run(self, job_dict):
+        self.attempts += 1
         raise RuntimeError("processing failed")
 
 
@@ -43,27 +50,70 @@ def test_success_acknowledges_delivery_and_closes_connection():
 
 
 @pytest.mark.rabbitmq
-def test_requeue_policy_redelivers_failed_delivery():
+def test_requeue_policy_retries_once_then_dead_letters():
+    source = unique_queue("consumer-requeue")
+    dead_letter_queue = f"{source}-dlq"
+    dead_letter_exchange = f"{source}-dlx"
+    connection = RabbitMQConnection(host="localhost", port=5673, username="user", password="password")
+    connection.connect()
+    channel = connection.get_channel()
+    channel.exchange_declare(exchange="default", exchange_type="direct", durable=True)
+    channel.exchange_declare(exchange=dead_letter_exchange, exchange_type="direct", durable=True)
+    channel.queue_declare(queue=dead_letter_queue, durable=True)
+    channel.queue_bind(queue=dead_letter_queue, exchange=dead_letter_exchange, routing_key=source)
+    channel.queue_declare(
+        queue=source,
+        durable=True,
+        arguments={
+            "x-dead-letter-exchange": dead_letter_exchange,
+            "x-dead-letter-routing-key": source,
+        },
+    )
+    channel.queue_bind(queue=source, exchange="default", routing_key=source)
+
     client = rabbitmq_client()
     orchestrator = Orchestrator(backend=client)
-    queue = unique_queue("consumer-requeue")
-    orchestrator.register(JobSchema(name=queue, input_schema=SampleJobInput, output_schema=SampleJobOutput))
-    orchestrator.publish(queue, create_test_job("failure", queue))
+    orchestrator.register(JobSchema(name=source, input_schema=SampleJobInput, output_schema=SampleJobOutput))
+    orchestrator.publish(source, create_test_job("failure", source))
     consumer = FailingConsumer()
-    consumer.connect_to_orchestrator(orchestrator, queue, failure_policy=ConsumerFailurePolicy.REQUEUE)
+    consumer.connect_to_orchestrator(orchestrator, source, failure_policy=ConsumerFailurePolicy.REQUEUE)
 
     try:
-        consumer.consume(num_messages=1)
-        connection = RabbitMQConnection(host="localhost", port=5673, username="user", password="password")
-        connection.connect()
-        channel = connection.get_channel()
-        method, _, _ = channel.basic_get(queue=queue, auto_ack=True)
+        consumer.consume(num_messages=2)
 
-        assert method is not None
-        assert method.redelivered is True
-        connection.close()
+        assert consumer.attempts == 2
+        assert channel.queue_declare(queue=source, passive=True).method.message_count == 0
+        assert channel.queue_declare(queue=dead_letter_queue, passive=True).method.message_count == 1
     finally:
-        client.delete_queue(queue)
+        channel.queue_delete(queue=source)
+        channel.queue_delete(queue=dead_letter_queue)
+        channel.exchange_delete(exchange=dead_letter_exchange)
+        connection.close()
+
+
+@pytest.mark.parametrize("failure_policy", [ConsumerFailurePolicy.REQUEUE, ConsumerFailurePolicy.DEAD_LETTER])
+def test_local_backend_rejects_unsupported_failure_policies(tmp_path, failure_policy):
+    orchestrator = Orchestrator(backend=LocalClient(client_dir=tmp_path / "local-client"))
+    consumer = FailingConsumer()
+
+    with pytest.raises(
+        NotImplementedError,
+        match=f"Local consumer backend does not support failure policy '{failure_policy.value}'",
+    ):
+        consumer.connect_to_orchestrator(orchestrator, "unsupported-policy", failure_policy=failure_policy)
+
+
+@pytest.mark.redis
+@pytest.mark.parametrize("failure_policy", [ConsumerFailurePolicy.REQUEUE, ConsumerFailurePolicy.DEAD_LETTER])
+def test_redis_backend_rejects_unsupported_failure_policies(failure_policy):
+    orchestrator = Orchestrator(backend=RedisClient(host="localhost", port=6380, db=0))
+    consumer = FailingConsumer()
+
+    with pytest.raises(
+        NotImplementedError,
+        match=f"Redis consumer backend does not support failure policy '{failure_policy.value}'",
+    ):
+        consumer.connect_to_orchestrator(orchestrator, "unsupported-policy", failure_policy=failure_policy)
 
 
 @pytest.mark.rabbitmq
