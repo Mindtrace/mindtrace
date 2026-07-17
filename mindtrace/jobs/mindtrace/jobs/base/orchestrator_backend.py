@@ -57,7 +57,8 @@ class OrchestratorBackend(MindtraceABC):
 
         Backends may override this method with a more efficient implementation.
         Publishing stops after the first failure because earlier jobs may
-        already have been accepted by the backend.
+        already have been accepted by the backend. Backend errors that occur
+        before item publishing begins may be raised by an override.
         """
         result = BatchPublishResult.for_batch_size(len(messages))
         for index, message in enumerate(messages):

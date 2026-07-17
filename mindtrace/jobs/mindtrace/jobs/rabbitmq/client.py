@@ -240,8 +240,6 @@ class RabbitMQClient(OrchestratorBackend):
         delivery_mode = kwargs.get("delivery_mode", DeliveryMode.Persistent)
         mandatory = kwargs.get("mandatory", True)
         priority = kwargs.get("priority", 0)
-        self.logger.info(f"exchange: {exchange}, routing_key: {routing_key}")
-
         message_dict = message.model_dump()
         channel.basic_publish(
             exchange=exchange,
@@ -300,6 +298,8 @@ class RabbitMQClient(OrchestratorBackend):
         """
         channel = self.create_connection()
         exchange = kwargs.get("exchange", "default")
+        routing_key = kwargs.get("routing_key", queue_name)
+        self.logger.debug(f"exchange: {exchange}, routing_key: {routing_key}")
         try:
             return self._publish_on_channel(channel, queue_name, message, **kwargs)
         except pika.exceptions.UnroutableError as e:
@@ -323,13 +323,23 @@ class RabbitMQClient(OrchestratorBackend):
     ) -> BatchPublishResult:
         """Publish a batch using one RabbitMQ connection and channel.
 
-        The operation is not atomic. Publishing stops after the first failure,
-        preserving job IDs for the successfully published prefix.
+        The operation is not atomic. Publishing stops after the first synchronous
+        publish error and preserves job IDs returned before that error. Publisher
+        confirms are not enabled, so a returned job ID means ``basic_publish``
+        completed without a synchronous error, not that the broker confirmed
+        acceptance. Asynchronous broker rejection may surface later and cannot be
+        attributed precisely to an input index. Connection and channel setup
+        errors are raised before any item is attempted.
         """
         result = BatchPublishResult.for_batch_size(len(messages))
         if not messages:
             return result
 
+        exchange = kwargs.get("exchange", "default")
+        routing_key = kwargs.get("routing_key", queue_name)
+        self.logger.debug(
+            f"Publishing RabbitMQ batch of {len(messages)} messages to exchange: {exchange}, routing_key: {routing_key}"
+        )
         with self._batch_channel() as channel:
             for index, message in enumerate(messages):
                 try:

@@ -194,6 +194,11 @@ def test_publish_batch_uses_one_connection_and_channel():
     assert result.success_count == 2
     assert result.all_succeeded is True
     assert all(isinstance(job_id, str) for job_id in result.job_ids)
+    client.logger.debug.assert_any_call("Publishing RabbitMQ batch of 2 messages to exchange: default, routing_key: q")
+    assert (
+        sum(args[0].startswith("Publishing RabbitMQ batch") for args, _kwargs in client.logger.debug.call_args_list)
+        == 1
+    )
     connection_class.assert_called_once_with(host="localhost", port=5671, username="user", password="password")
     connection.connect.assert_called_once_with()
     connection.get_channel.assert_called_once_with()
@@ -240,14 +245,18 @@ def test_publish_batch_reports_partial_failure_and_closes_resources():
     connection.close.assert_called_once_with()
 
 
-def test_publish_batch_closes_connection_when_channel_creation_fails():
+@pytest.mark.parametrize("failure_stage", ["connect", "channel"])
+def test_publish_batch_raises_setup_failure_and_closes_connection(failure_stage):
     client = make_client()
     connection = MagicMock()
-    connection.get_channel.side_effect = RuntimeError("channel failed")
+    if failure_stage == "connect":
+        connection.connect.side_effect = RuntimeError("connect failed")
+    else:
+        connection.get_channel.side_effect = RuntimeError("channel failed")
 
     with patch("mindtrace.jobs.rabbitmq.client.RabbitMQConnection", return_value=connection):
-        with pytest.raises(RuntimeError, match="channel failed"):
-            client.publish_batch("q", [DummyModel()])
+        with pytest.raises(RuntimeError, match=f"{failure_stage} failed"):
+            client.publish_batch("q", [DummyModel(), DummyModel()])
 
     connection.close.assert_called_once_with()
 

@@ -99,7 +99,10 @@ attempted.
 
 RabbitMQ publishes a non-empty batch through one connection and channel. Local,
 Redis, and custom backends use the backend-neutral fallback unless they provide
-their own optimized `publish_batch()` implementation.
+their own optimized `publish_batch()` implementation. RabbitMQ publisher confirms
+are not enabled, so returned job IDs represent calls that completed without a
+synchronous publish error rather than broker-confirmed acceptance. A later
+asynchronous broker rejection may not map precisely to the reported input index.
 
 In practice, the jobs package is built around four concepts:
 
