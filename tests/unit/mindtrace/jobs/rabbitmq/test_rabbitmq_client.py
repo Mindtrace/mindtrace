@@ -240,15 +240,26 @@ def test_publish_batch_reports_partial_failure_and_closes_resources():
     connection.close.assert_called_once_with()
 
 
-def test_publish_batch_closes_connection_when_channel_creation_fails():
+@pytest.mark.parametrize("failure_stage", ["connect", "channel"])
+def test_publish_batch_reports_setup_failure_and_closes_connection(failure_stage):
     client = make_client()
     connection = MagicMock()
-    connection.get_channel.side_effect = RuntimeError("channel failed")
+    if failure_stage == "connect":
+        connection.connect.side_effect = RuntimeError("connect failed")
+    else:
+        connection.get_channel.side_effect = RuntimeError("channel failed")
 
     with patch("mindtrace.jobs.rabbitmq.client.RabbitMQConnection", return_value=connection):
-        with pytest.raises(RuntimeError, match="channel failed"):
-            client.publish_batch("q", [DummyModel()])
+        result = client.publish_batch("q", [DummyModel(), DummyModel()])
 
+    assert result.job_ids == [None, None]
+    assert result.failed_indices == []
+    assert result.unattempted_indices == [0, 1]
+    assert result.failure_count == 1
+    assert result.setup_error == {
+        "error": "RuntimeError",
+        "message": f"{failure_stage} failed",
+    }
     connection.close.assert_called_once_with()
 
 

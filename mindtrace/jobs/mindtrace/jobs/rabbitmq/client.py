@@ -324,17 +324,24 @@ class RabbitMQClient(OrchestratorBackend):
         if not messages:
             return result
 
-        with self._batch_channel() as channel:
-            for index, message in enumerate(messages):
-                try:
-                    result.job_ids[index] = self._publish_on_channel(channel, queue_name, message, **kwargs)
-                except Exception as exc:
-                    self.logger.error(f"Failed to publish RabbitMQ batch item {index}: {exc}")
-                    result.errors[index] = {
-                        "error": type(exc).__name__,
-                        "message": str(exc),
-                    }
-                    break
+        try:
+            with self._batch_channel() as channel:
+                for index, message in enumerate(messages):
+                    try:
+                        result.job_ids[index] = self._publish_on_channel(channel, queue_name, message, **kwargs)
+                    except Exception as exc:
+                        self.logger.error(f"Failed to publish RabbitMQ batch item {index}: {exc}")
+                        result.errors[index] = {
+                            "error": type(exc).__name__,
+                            "message": str(exc),
+                        }
+                        break
+        except Exception as exc:
+            self.logger.error(f"Failed to initialize RabbitMQ batch publisher: {exc}")
+            result.setup_error = {
+                "error": type(exc).__name__,
+                "message": str(exc),
+            }
 
         return result
 

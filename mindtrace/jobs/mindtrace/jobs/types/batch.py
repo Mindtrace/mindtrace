@@ -8,11 +8,13 @@ class BatchPublishResult:
     ``job_ids`` has one entry per input job. Failed and unattempted jobs have
     a value of ``None``. ``errors`` contains details for jobs whose publish was
     attempted and failed; later jobs left unattempted after a failure are not
-    included in ``errors``.
+    included in ``errors``. ``setup_error`` reports a batch-level failure that
+    occurred before any item was attempted.
     """
 
     job_ids: list[str | None]
     errors: dict[int, dict[str, str]] = field(default_factory=dict)
+    setup_error: dict[str, str] | None = None
 
     @classmethod
     def for_batch_size(cls, size: int) -> "BatchPublishResult":
@@ -40,7 +42,7 @@ class BatchPublishResult:
 
     @property
     def failure_count(self) -> int:
-        return len(self.failed_indices)
+        return len(self.failed_indices) + (1 if self.setup_error is not None else 0)
 
     @property
     def unattempted_count(self) -> int:
