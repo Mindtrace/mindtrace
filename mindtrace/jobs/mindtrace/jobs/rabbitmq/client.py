@@ -322,7 +322,8 @@ class RabbitMQClient(OrchestratorBackend):
         confirms are not enabled, so a returned job ID means ``basic_publish``
         completed without a synchronous error, not that the broker confirmed
         acceptance. Asynchronous broker rejection may surface later and cannot be
-        attributed precisely to an input index.
+        attributed precisely to an input index. Connection and channel setup
+        errors are raised before any item is attempted.
         """
         result = BatchPublishResult.for_batch_size(len(messages))
         if not messages:
@@ -333,24 +334,17 @@ class RabbitMQClient(OrchestratorBackend):
         self.logger.debug(
             f"Publishing RabbitMQ batch of {len(messages)} messages to exchange: {exchange}, routing_key: {routing_key}"
         )
-        try:
-            with self._batch_channel() as channel:
-                for index, message in enumerate(messages):
-                    try:
-                        result.job_ids[index] = self._publish_on_channel(channel, queue_name, message, **kwargs)
-                    except Exception as exc:
-                        self.logger.error(f"Failed to publish RabbitMQ batch item {index}: {exc}")
-                        result.errors[index] = {
-                            "error": type(exc).__name__,
-                            "message": str(exc),
-                        }
-                        break
-        except Exception as exc:
-            self.logger.error(f"Failed to initialize RabbitMQ batch publisher: {exc}")
-            result.setup_error = {
-                "error": type(exc).__name__,
-                "message": str(exc),
-            }
+        with self._batch_channel() as channel:
+            for index, message in enumerate(messages):
+                try:
+                    result.job_ids[index] = self._publish_on_channel(channel, queue_name, message, **kwargs)
+                except Exception as exc:
+                    self.logger.error(f"Failed to publish RabbitMQ batch item {index}: {exc}")
+                    result.errors[index] = {
+                        "error": type(exc).__name__,
+                        "message": str(exc),
+                    }
+                    break
 
         return result
 

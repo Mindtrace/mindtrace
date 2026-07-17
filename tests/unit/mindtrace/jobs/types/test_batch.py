@@ -21,13 +21,3 @@ def test_empty_batch_publish_result_succeeds():
 
     assert result.job_ids == []
     assert result.all_succeeded is True
-
-
-def test_setup_failure_leaves_all_items_unattempted():
-    result = BatchPublishResult.for_batch_size(2)
-    result.setup_error = {"error": "ConnectionError", "message": "broker unavailable"}
-
-    assert result.failed_indices == []
-    assert result.unattempted_indices == [0, 1]
-    assert result.failure_count == 1
-    assert result.all_succeeded is False

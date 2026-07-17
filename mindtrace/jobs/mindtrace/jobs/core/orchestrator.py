@@ -85,6 +85,7 @@ class Orchestrator(Mindtrace):
 
         Raises:
             ValueError: If any job is invalid or requires an unregistered schema.
+            Exception: Backend setup errors raised before any item is attempted.
         """
         prepared_jobs = []
         for index, job in enumerate(jobs):
