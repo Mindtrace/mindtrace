@@ -234,8 +234,6 @@ class RabbitMQClient(OrchestratorBackend):
         delivery_mode = kwargs.get("delivery_mode", DeliveryMode.Persistent)
         mandatory = kwargs.get("mandatory", True)
         priority = kwargs.get("priority", 0)
-        self.logger.info(f"exchange: {exchange}, routing_key: {routing_key}")
-
         message_dict = message.model_dump()
         channel.basic_publish(
             exchange=exchange,
@@ -294,6 +292,8 @@ class RabbitMQClient(OrchestratorBackend):
         """
         channel = self.create_connection()
         exchange = kwargs.get("exchange", "default")
+        routing_key = kwargs.get("routing_key", queue_name)
+        self.logger.info(f"exchange: {exchange}, routing_key: {routing_key}")
         try:
             return self._publish_on_channel(channel, queue_name, message, **kwargs)
         except pika.exceptions.UnroutableError as e:
@@ -324,6 +324,11 @@ class RabbitMQClient(OrchestratorBackend):
         if not messages:
             return result
 
+        exchange = kwargs.get("exchange", "default")
+        routing_key = kwargs.get("routing_key", queue_name)
+        self.logger.info(
+            f"Publishing RabbitMQ batch of {len(messages)} messages to exchange: {exchange}, routing_key: {routing_key}"
+        )
         try:
             with self._batch_channel() as channel:
                 for index, message in enumerate(messages):

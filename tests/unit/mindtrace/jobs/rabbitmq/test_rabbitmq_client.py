@@ -194,6 +194,9 @@ def test_publish_batch_uses_one_connection_and_channel():
     assert result.success_count == 2
     assert result.all_succeeded is True
     assert all(isinstance(job_id, str) for job_id in result.job_ids)
+    client.logger.info.assert_called_once_with(
+        "Publishing RabbitMQ batch of 2 messages to exchange: default, routing_key: q"
+    )
     connection_class.assert_called_once_with(host="localhost", port=5671, username="user", password="password")
     connection.connect.assert_called_once_with()
     connection.get_channel.assert_called_once_with()
