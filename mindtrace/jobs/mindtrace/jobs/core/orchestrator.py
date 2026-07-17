@@ -44,7 +44,7 @@ class Orchestrator(Mindtrace):
             if schema is None:
                 raise ValueError(f"Schema '{queue_name}' not found.")
             return job_from_schema(schema["schema"], job)
-        raise ValueError(f"Invalid job type: {type(job)}, expected Job or TaskSchema.")
+        raise ValueError(f"Invalid job type: {type(job)}, expected Job or BaseModel.")
 
     def publish(self, queue_name: str, job: Job | BaseModel, **kwargs) -> str:
         """Send a job or task input model to the specified queue.

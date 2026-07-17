@@ -152,7 +152,7 @@ class TestOrchestratorPublish:
         """Test publishing an invalid job type."""
         invalid_job = {"invalid": "job"}
 
-        with pytest.raises(ValueError, match="Invalid job type: <class 'dict'>, expected Job or TaskSchema."):
+        with pytest.raises(ValueError, match="Invalid job type: <class 'dict'>, expected Job or BaseModel."):
             orchestrator.publish("test-queue", invalid_job)
 
     def test_publish_backend_error(self, orchestrator, sample_job, mock_backend):
