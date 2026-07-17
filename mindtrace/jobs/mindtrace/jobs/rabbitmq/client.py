@@ -317,8 +317,12 @@ class RabbitMQClient(OrchestratorBackend):
     ) -> BatchPublishResult:
         """Publish a batch using one RabbitMQ connection and channel.
 
-        The operation is not atomic. Publishing stops after the first failure,
-        preserving job IDs for the successfully published prefix.
+        The operation is not atomic. Publishing stops after the first synchronous
+        publish error and preserves job IDs returned before that error. Publisher
+        confirms are not enabled, so a returned job ID means ``basic_publish``
+        completed without a synchronous error, not that the broker confirmed
+        acceptance. Asynchronous broker rejection may surface later and cannot be
+        attributed precisely to an input index.
         """
         result = BatchPublishResult.for_batch_size(len(messages))
         if not messages:
