@@ -66,10 +66,16 @@ class Consumer(Mindtrace):
         self.consumer_backend.consume_until_empty(queues=queues, block=block)
 
     def stop(self) -> None:
-        """Request graceful shutdown after any in-flight job completes."""
+        """Request terminal shutdown after any in-flight job completes."""
         if not self.consumer_backend:
             raise RuntimeError("Consumer not connected. Call connect() first.")
         self.consumer_backend.stop()
+
+    def reset(self) -> None:
+        """Allow consumption to resume after :meth:`stop` was called."""
+        if not self.consumer_backend:
+            raise RuntimeError("Consumer not connected. Call connect() first.")
+        self.consumer_backend.reset()
 
     def close(self) -> None:
         """Close resources owned by the consumer backend."""

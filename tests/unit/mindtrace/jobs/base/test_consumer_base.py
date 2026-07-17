@@ -20,7 +20,19 @@ class TestConsumerBackendBase:
         consumer.stop()
         assert consumer.stopped is True
 
-        consumer._start_consuming()
+        consumer.reset()
+        assert consumer.stopped is False
+
+    def test_stop_is_terminal_until_explicit_reset(self, mock_consumer):
+        consumer = mock_consumer("test-queue", Mock())
+
+        consumer.stop()
+        consumer.consume(num_messages=1)
+
+        assert consumer.stopped is True
+
+        consumer.reset()
+
         assert consumer.stopped is False
 
     def test_process_message_with_exception(self, mock_consumer, mock_bad_consumer_frontend):

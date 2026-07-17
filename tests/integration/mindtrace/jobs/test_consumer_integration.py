@@ -2,7 +2,7 @@ import time
 
 import pytest
 
-from mindtrace.jobs import Orchestrator
+from mindtrace.jobs import Consumer, Orchestrator
 from mindtrace.jobs.local.client import LocalClient
 from mindtrace.jobs.rabbitmq.client import RabbitMQClient
 from mindtrace.jobs.redis.client import RedisClient
@@ -361,6 +361,44 @@ class TestConsumerIntegration:
         consumer.connect_to_orchestrator(orchestrator, queue)
         consumer.consume_until_empty()
         assert len(consumer.processed_jobs) == 3
+
+    def test_local_stop_during_drain_requires_explicit_reset(self, unique_queue_name):
+        class StopAfterTwoConsumer(Consumer):
+            def __init__(self):
+                super().__init__()
+                self.processed = 0
+
+            def run(self, job_dict):
+                self.processed += 1
+                if self.processed == 2:
+                    self.stop()
+                return {"result": "processed"}
+
+        local_client = LocalClient()
+        orchestrator = Orchestrator(backend=local_client)
+        queue = unique_queue_name("local-terminal-stop")
+        schema = JobSchema(name=queue, input_schema=SampleJobInput, output_schema=SampleJobOutput)
+        orchestrator.register(schema)
+        for index in range(50):
+            orchestrator.publish(queue, create_test_job(f"job_{index}", queue))
+
+        consumer = StopAfterTwoConsumer()
+        consumer.connect_to_orchestrator(orchestrator, queue)
+        consumer.consume_until_empty(block=False)
+
+        assert consumer.processed == 2
+        assert orchestrator.count_queue_messages(queue) == 48
+
+        consumer.consume_until_empty(block=False)
+
+        assert consumer.processed == 2
+        assert orchestrator.count_queue_messages(queue) == 48
+
+        consumer.reset()
+        consumer.consume_until_empty(block=False)
+
+        assert consumer.processed == 50
+        assert orchestrator.count_queue_messages(queue) == 0
 
     @pytest.mark.rabbitmq
     def test_rabbitmq_consume_even_if_closed(self):

@@ -219,7 +219,9 @@ consumer.connect_to_orchestrator(
 ```
 
 Calling `consumer.stop()` requests graceful shutdown. An in-flight job finishes
-and is acknowledged or rejected before the blocking consume loop exits.
+and is acknowledged or rejected before the blocking consume loop exits. The
+stop request is terminal: later consume calls remain stopped until the caller
+explicitly invokes `consumer.reset()`.
 RabbitMQ channels and connections close automatically whenever `consume()`
 returns; a later call reconnects.
 

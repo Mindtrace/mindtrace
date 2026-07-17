@@ -29,15 +29,18 @@ class ConsumerBackendBase(MindtraceABC):
         return self._stop_event.is_set()
 
     def stop(self) -> None:
-        """Request that the active consume loop stop after its current delivery."""
+        """Request terminal shutdown after the current delivery completes.
+
+        The stop request remains set until :meth:`reset` is called explicitly.
+        """
         self._stop_event.set()
+
+    def reset(self) -> None:
+        """Allow consumption to resume after a prior stop request."""
+        self._stop_event.clear()
 
     def close(self) -> None:
         """Close backend resources, if any."""
-
-    def _start_consuming(self) -> None:
-        """Reset a prior stop request before starting a new consume loop."""
-        self._stop_event.clear()
 
     @abstractmethod
     def consume(self, num_messages: int = 0, **kwargs) -> None:

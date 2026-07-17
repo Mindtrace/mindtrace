@@ -61,7 +61,6 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             self.logger.warning("No queues provided; nothing to consume.")
             return
 
-        self._start_consuming()
         if not self.connection.is_connected():
             self.connection.connect()
         channel = self.connection.get_channel()
@@ -165,7 +164,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
-        while True:
+        while not self.stopped:
             if not self.connection.is_connected():
                 self.connection.connect()
             pending = sum(self.connection.count_queue_messages(queue) for queue in queues)
@@ -173,7 +172,8 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                 self.close()
                 break
             self.consume(num_messages=pending, queues=queues, block=block)
-        self.logger.info(f"Finished draining queues: {queues}. All queues empty.")
+        if not self.stopped:
+            self.logger.info(f"Finished draining queues: {queues}. All queues empty.")
 
     def receive_message(
         self, channel, queue_name: str, *, block: bool = False, timeout: float | None = None

@@ -30,7 +30,6 @@ class RedisConsumerBackend(ConsumerBackendBase):
             self.logger.warning("No queues provided; nothing to consume.")
             return
 
-        self._start_consuming()
         messages_attempted = 0
         try:
             while not self.stopped and (num_messages == 0 or messages_attempted < num_messages):
@@ -80,10 +79,13 @@ class RedisConsumerBackend(ConsumerBackendBase):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
 
-        while any(self.connection.count_queue_messages(q) > 0 for q in queues):
+        while not self.stopped and any(self.connection.count_queue_messages(q) > 0 for q in queues):
             self.consume(num_messages=1, queues=queues, block=block)
 
-        self.logger.info(f"Stopped consuming messages from queues: {queues} (queues empty).")
+        if self.stopped:
+            self.logger.info(f"Stopped draining queues after shutdown request: {queues}.")
+        else:
+            self.logger.info(f"Stopped consuming messages from queues: {queues} (queues empty).")
 
     def close(self):
         """Close the Redis connection and clean up resources."""

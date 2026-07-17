@@ -36,6 +36,17 @@ def test_finite_consume_stops_before_polling_next_queue(backend):
     backend.receive_message.assert_called_once_with("q1", block=False, timeout=backend.poll_timeout)
 
 
+def test_consume_does_not_clear_prior_stop_request(backend):
+    backend, _ = backend
+    backend.receive_message = MagicMock(return_value={"id": 1})
+
+    backend.stop()
+    backend.consume(num_messages=1, block=False)
+
+    backend.receive_message.assert_not_called()
+    assert backend.stopped is True
+
+
 def test_consume_until_empty(backend):
     backend, mock_conn = backend
     backend.queues = ["q"]
@@ -44,6 +55,18 @@ def test_consume_until_empty(backend):
     backend.logger = MagicMock()
     backend.consume_until_empty(block=False)
     backend.consume.assert_called_with(num_messages=1, queues=["q"], block=False)
+
+
+def test_consume_until_empty_honors_prior_stop_request(backend):
+    backend, mock_conn = backend
+    backend.queues = ["q"]
+    backend.logger = MagicMock()
+    backend.stop()
+
+    backend.consume_until_empty(block=False)
+
+    mock_conn.count_queue_messages.assert_not_called()
+    backend.logger.info.assert_called_with("Stopped draining queues after shutdown request: ['q'].")
 
 
 def test_process_message_dict_success(backend):

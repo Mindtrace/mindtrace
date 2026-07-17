@@ -69,6 +69,15 @@ def test_consume_with_no_queues_returns_without_opening_channel(backend):
     backend.logger.warning.assert_called_once_with("No queues provided; nothing to consume.")
 
 
+def test_consume_until_empty_honors_prior_stop_request(backend):
+    backend.connection.count_queue_messages = MagicMock()
+    backend.stop()
+
+    backend.consume_until_empty(queues="q", block=False)
+
+    backend.connection.count_queue_messages.assert_not_called()
+
+
 def test_finite_consume_stops_before_polling_next_queue(backend):
     channel = MagicMock()
     backend.receive_message = MagicMock(return_value=delivery())
@@ -77,6 +86,16 @@ def test_finite_consume_stops_before_polling_next_queue(backend):
     backend._consume_finite_messages(channel, 1, ["q1", "q2"], block=False)
 
     backend.receive_message.assert_called_once_with(channel, "q1", block=False)
+
+
+def test_consume_does_not_clear_prior_stop_request(backend):
+    backend.receive_message = MagicMock(return_value=delivery())
+
+    backend.stop()
+    backend.consume(num_messages=1, queues="q", block=False)
+
+    backend.receive_message.assert_not_called()
+    assert backend.stopped is True
 
 
 def test_consume_finite_messages_exception(backend):

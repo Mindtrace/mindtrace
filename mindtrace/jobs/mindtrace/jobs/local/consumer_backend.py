@@ -24,7 +24,6 @@ class LocalConsumerBackend(ConsumerBackendBase):
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
-        self._start_consuming()
         messages_attempted = 0
 
         try:
@@ -59,7 +58,7 @@ class LocalConsumerBackend(ConsumerBackendBase):
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
-        while any(self.orchestrator.count_queue_messages(q) > 0 for q in queues):
+        while not self.stopped and any(self.orchestrator.count_queue_messages(q) > 0 for q in queues):
             self.consume(num_messages=1, queues=queues, block=block)
 
     def process_message(self, message) -> bool:

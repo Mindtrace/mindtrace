@@ -161,6 +161,42 @@ class TestLocalConsumerBackend:
             "queue1", block=False, timeout=consumer.consumer_backend.poll_timeout
         )
 
+    def test_stop_during_drain_remains_terminal_until_reset(self, temp_local_client):
+        class StopAfterTwoConsumer(Consumer):
+            def __init__(self):
+                super().__init__()
+                self.processed = 0
+
+            def run(self, job_dict: dict) -> dict:
+                self.processed += 1
+                if self.processed == 2:
+                    self.stop()
+                return {"result": "success"}
+
+        orchestrator = Orchestrator(backend=temp_local_client)
+        queue_name = "terminal-stop-queue"
+        orchestrator.backend.declare_queue(queue_name)
+        for index in range(50):
+            orchestrator.backend.publish(queue_name, SampleMessage(data=f"message-{index}"))
+
+        consumer = StopAfterTwoConsumer()
+        consumer.connect_to_orchestrator(orchestrator, queue_name)
+        consumer.consume_until_empty(block=False)
+
+        assert consumer.processed == 2
+        assert orchestrator.count_queue_messages(queue_name) == 48
+
+        consumer.consume_until_empty(block=False)
+
+        assert consumer.processed == 2
+        assert orchestrator.count_queue_messages(queue_name) == 48
+
+        consumer.reset()
+        consumer.consume_until_empty(block=False)
+
+        assert consumer.processed == 50
+        assert orchestrator.count_queue_messages(queue_name) == 0
+
     def test_non_blocking_consume_empty(self, temp_local_client):
         """Test non-blocking consume behavior with empty queues."""
         orchestrator = Orchestrator(backend=temp_local_client)
