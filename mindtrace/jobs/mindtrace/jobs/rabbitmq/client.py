@@ -293,7 +293,7 @@ class RabbitMQClient(OrchestratorBackend):
         channel = self.create_connection()
         exchange = kwargs.get("exchange", "default")
         routing_key = kwargs.get("routing_key", queue_name)
-        self.logger.info(f"exchange: {exchange}, routing_key: {routing_key}")
+        self.logger.debug(f"exchange: {exchange}, routing_key: {routing_key}")
         try:
             return self._publish_on_channel(channel, queue_name, message, **kwargs)
         except pika.exceptions.UnroutableError as e:
