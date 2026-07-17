@@ -60,6 +60,25 @@ def test_consume_finite_messages(backend):
     backend.process_message.assert_called_with({"id": 1})
 
 
+def test_consume_with_no_queues_returns_without_opening_channel(backend):
+    backend.queues = []
+
+    backend.consume(num_messages=1)
+
+    backend.connection.get_channel.assert_not_called()
+    backend.logger.warning.assert_called_once_with("No queues provided; nothing to consume.")
+
+
+def test_finite_consume_stops_before_polling_next_queue(backend):
+    channel = MagicMock()
+    backend.receive_message = MagicMock(return_value=delivery())
+    backend.process_message = MagicMock(return_value=True)
+
+    backend._consume_finite_messages(channel, 1, ["q1", "q2"], block=False)
+
+    backend.receive_message.assert_called_once_with(channel, "q1", block=False)
+
+
 def test_consume_finite_messages_exception(backend):
     backend.receive_message = MagicMock(side_effect=Exception("fail"))
     backend.process_message = MagicMock(return_value=True)
@@ -186,6 +205,35 @@ def test_receive_message_dead_letters_invalid_json(backend):
     channel.basic_nack.assert_called_once_with(delivery_tag=42, requeue=False)
 
 
+@pytest.mark.parametrize(
+    ("auto_ack", "policy", "expected_action"),
+    [
+        (True, ConsumerFailurePolicy.DEAD_LETTER, None),
+        (False, ConsumerFailurePolicy.REQUEUE, ("nack", True)),
+        (False, ConsumerFailurePolicy.DISCARD, ("ack", None)),
+    ],
+)
+def test_invalid_json_rejection_honors_ack_policy(backend, auto_ack, policy, expected_action):
+    channel = MagicMock()
+    method = MagicMock(delivery_tag=42)
+    channel.basic_get.return_value = (method, MagicMock(), b"not-json")
+    backend.auto_ack = auto_ack
+    backend.failure_policy = policy
+
+    with pytest.raises(RuntimeError):
+        backend.receive_message(channel, "q")
+
+    if expected_action is None:
+        channel.basic_ack.assert_not_called()
+        channel.basic_nack.assert_not_called()
+    elif expected_action[0] == "nack":
+        channel.basic_nack.assert_called_once_with(delivery_tag=42, requeue=expected_action[1])
+        channel.basic_ack.assert_not_called()
+    else:
+        channel.basic_ack.assert_called_once_with(delivery_tag=42)
+        channel.basic_nack.assert_not_called()
+
+
 def test_consume_infinite_messages_exception_handling_with_continue(backend):
     """Test exception handling in _consume_infinite_messages with continue."""
     # First call raises a regular exception (caught), second call raises KeyboardInterrupt to break the loop
@@ -288,6 +336,30 @@ def test_stop_finishes_current_delivery_before_exiting(backend):
 
     backend.process_message.assert_called_once_with({"id": 1})
     channel.basic_ack.assert_called_once_with(delivery_tag=42)
+
+
+def test_stop_finishes_current_delivery_before_checking_next_queue(backend):
+    channel = MagicMock()
+    backend.receive_message = MagicMock(return_value=delivery(delivery_tag=42))
+
+    def process_and_stop(message):
+        backend.stop()
+        return True
+
+    backend.process_message = MagicMock(side_effect=process_and_stop)
+
+    backend._consume_infinite_messages(channel, ["q1", "q2"])
+
+    backend.receive_message.assert_called_once_with(channel, "q1", block=True)
+    channel.basic_ack.assert_called_once_with(delivery_tag=42)
+
+
+def test_receive_message_returns_none_when_already_stopped(backend):
+    channel = MagicMock()
+    backend.stop()
+
+    assert backend.receive_message(channel, "q", block=True) is None
+    channel.basic_get.assert_not_called()
 
 
 def test_default_failure_policy_is_dead_letter(backend):

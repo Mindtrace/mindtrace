@@ -148,6 +148,19 @@ class TestLocalConsumerBackend:
         for queue in queues:
             assert orchestrator.count_queue_messages(queue) == 0
 
+    def test_finite_consume_stops_before_polling_next_queue(self, temp_local_client):
+        orchestrator = Orchestrator(backend=temp_local_client)
+        consumer = SimpleConsumer()
+        consumer.connect_to_orchestrator(orchestrator, "queue1")
+        consumer.consumer_backend.orchestrator.receive_message = Mock(return_value={"id": 1})
+        consumer.consumer_backend.process_message = Mock(return_value=True)
+
+        consumer.consume(num_messages=1, queues=["queue1", "queue2"], block=False)
+
+        consumer.consumer_backend.orchestrator.receive_message.assert_called_once_with(
+            "queue1", block=False, timeout=consumer.consumer_backend.poll_timeout
+        )
+
     def test_non_blocking_consume_empty(self, temp_local_client):
         """Test non-blocking consume behavior with empty queues."""
         orchestrator = Orchestrator(backend=temp_local_client)

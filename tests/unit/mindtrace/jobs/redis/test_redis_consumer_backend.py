@@ -26,6 +26,16 @@ def test_consume_processes_messages(backend):
     backend.process_message.assert_called_once_with({"id": 1})
 
 
+def test_finite_consume_stops_before_polling_next_queue(backend):
+    backend, _ = backend
+    backend.receive_message = MagicMock(return_value={"id": 1})
+    backend.process_message = MagicMock(return_value=True)
+
+    backend.consume(num_messages=1, queues=["q1", "q2"], block=False)
+
+    backend.receive_message.assert_called_once_with("q1", block=False, timeout=backend.poll_timeout)
+
+
 def test_consume_until_empty(backend):
     backend, mock_conn = backend
     backend.queues = ["q"]
