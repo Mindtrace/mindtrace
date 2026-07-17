@@ -330,7 +330,7 @@ class RabbitMQClient(OrchestratorBackend):
 
         exchange = kwargs.get("exchange", "default")
         routing_key = kwargs.get("routing_key", queue_name)
-        self.logger.info(
+        self.logger.debug(
             f"Publishing RabbitMQ batch of {len(messages)} messages to exchange: {exchange}, routing_key: {routing_key}"
         )
         try:
