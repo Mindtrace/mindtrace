@@ -176,6 +176,29 @@ def test_consume_until_empty(backend):
     backend.logger.info.assert_called()
 
 
+def test_consume_until_empty_with_no_queues_returns_without_connecting(backend):
+    backend.queues = []
+
+    backend.consume_until_empty()
+
+    backend.connection.connect.assert_not_called()
+    backend.connection.get_channel.assert_not_called()
+    backend.logger.warning.assert_called_once_with("No queues provided; nothing to consume.")
+
+
+def test_consume_until_empty_keyboard_interrupt_closes_resources(backend):
+    channel = MagicMock(is_open=True)
+    backend.connection.get_channel.return_value = channel
+    backend.connection.count_queue_messages.side_effect = KeyboardInterrupt
+    backend.connection.close = MagicMock()
+
+    backend.consume_until_empty(queues="q")
+
+    backend.logger.info.assert_any_call("Consumption interrupted by user.")
+    channel.close.assert_called_once_with()
+    backend.connection.close.assert_called_once_with()
+
+
 def test_receive_message_block_exits_after_stop_request(backend):
     mock_channel = MagicMock()
 
