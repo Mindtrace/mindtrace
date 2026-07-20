@@ -232,10 +232,25 @@ cancellation is not part of the public consumer API. Finite
 `consume(num_messages=N)` and `consume_until_empty()` continue to use pull
 semantics for exact-count and drain behavior.
 
+Malformed RabbitMQ deliveries are rejected according to the configured
+failure policy. A bare, long-lived `consume()` logs the malformed delivery and
+continues receiving later work. During finite consumption or draining, the
+affected queue is abandoned for the remainder of that call while other queues
+may continue; a later public consume call can try the queue again.
+
+Only delivery-local decoding failures are contained by the push callback.
+Failures while acknowledging or rejecting a delivery, and unexpected channel
+or connection errors, end the current consume operation because the delivery
+settlement and channel state are no longer reliable. Operation-owned resources
+are still cleaned up before the error returns to the caller.
+
 Calling `consumer.stop()` requests graceful shutdown. An in-flight job finishes
 and is acknowledged or rejected before the blocking consume loop exits. The
 stop request is terminal: later consume calls remain stopped until the caller
-explicitly invokes `consumer.reset()`.
+explicitly invokes `consumer.reset()`. If cancellation cannot be scheduled
+because the RabbitMQ connection is already unavailable, `stop()` releases the
+stale operation resources directly; unlike `close()`, it does not permanently
+close the backend.
 RabbitMQ channels and connections close automatically whenever `consume()`
 returns; a later call reconnects.
 
