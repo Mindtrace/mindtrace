@@ -82,6 +82,14 @@ class MockDahengDevice:
         self.AcquisitionMode = MockGxFeature(0)
         self.PixelFormat = MockGxFeature("BGR8")
         self.BalanceWhiteAuto = MockGxFeature(0)
+        self.GammaEnable = MockGxFeature(False)
+        self.GammaMode = MockGxFeature(1)
+        self.BlackLevel = MockGxFeature(4.0, 0.0, 255.0)
+        self.ContrastParam = MockGxFeature(0, -50, 100)
+        self.Sharpness = MockGxFeature(0.0, 0.0, 3.0)
+        self.SharpnessMode = MockGxFeature(0)
+        self.Saturation = MockGxFeature(64, 0, 128)
+        self.SaturationMode = MockGxFeature(0)
         self.OffsetX = MockGxFeature(0, 0, width)
         self.OffsetY = MockGxFeature(0, 0, height)
         self.Width = MockGxFeature(width, 1, width)
@@ -459,6 +467,74 @@ class TestDahengConfiguration:
         """Test setting negative capture timeout."""
         with pytest.raises(ValueError):
             await initialized_daheng.set_capture_timeout(-1)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Color Correction Tests
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestDahengColorCorrection:
+    """Test DahengCameraBackend color-correction controls."""
+
+    @pytest.mark.asyncio
+    async def test_gamma_enable_set_and_get(self, initialized_daheng):
+        """Test enabling gamma selects the sRGB curve and round-trips."""
+        await initialized_daheng.set_gamma_enable(True)
+        assert initialized_daheng.camera.GammaEnable._value is True
+        assert initialized_daheng.camera.GammaMode._value == 0
+        assert await initialized_daheng.get_gamma_enable() is True
+
+        await initialized_daheng.set_gamma_enable(False)
+        assert await initialized_daheng.get_gamma_enable() is False
+
+    @pytest.mark.asyncio
+    async def test_black_level_set_and_get(self, initialized_daheng):
+        """Test black level control."""
+        await initialized_daheng.set_black_level(8.0)
+        assert await initialized_daheng.get_black_level() == 8.0
+
+    @pytest.mark.asyncio
+    async def test_contrast_set_and_get(self, initialized_daheng):
+        """Test contrast control."""
+        await initialized_daheng.set_contrast(25)
+        assert await initialized_daheng.get_contrast() == 25
+
+    @pytest.mark.asyncio
+    async def test_sharpness_enables_mode_and_sets_value(self, initialized_daheng):
+        """Test sharpness control turns sharpness mode on."""
+        await initialized_daheng.set_sharpness(2.5)
+        assert initialized_daheng.camera.SharpnessMode._value == 1
+        assert await initialized_daheng.get_sharpness() == 2.5
+
+    @pytest.mark.asyncio
+    async def test_saturation_set_and_get(self, initialized_daheng):
+        """Test saturation control turns saturation mode on."""
+        await initialized_daheng.set_saturation(100)
+        assert initialized_daheng.camera.SaturationMode._value == 1
+        assert await initialized_daheng.get_saturation() == 100
+
+    @pytest.mark.asyncio
+    async def test_setter_noop_when_feature_not_implemented(self, initialized_daheng):
+        """Test setters are silent no-ops when the camera lacks the node."""
+        initialized_daheng.camera.GammaEnable._implemented = False
+        initialized_daheng.camera.GammaEnable._value = False
+        await initialized_daheng.set_gamma_enable(True)
+        assert initialized_daheng.camera.GammaEnable._value is False
+        assert await initialized_daheng.get_gamma_enable() is False
+
+    @pytest.mark.asyncio
+    async def test_color_method_requires_initialization(self, daheng_camera):
+        """Test color methods raise when the camera is not initialized."""
+        with pytest.raises(CameraConnectionError):
+            await daheng_camera.set_gamma_enable(True)
+
+    @pytest.mark.asyncio
+    async def test_configure_camera_applies_color_defaults(self, initialized_daheng):
+        """Test connect applies sRGB gamma and zero black level defaults."""
+        assert initialized_daheng.camera.GammaEnable._value is True
+        assert initialized_daheng.camera.GammaMode._value == 0
+        assert initialized_daheng.camera.BlackLevel._value == 0.0
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

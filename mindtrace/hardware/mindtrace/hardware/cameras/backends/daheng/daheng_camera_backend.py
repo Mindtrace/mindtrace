@@ -356,6 +356,21 @@ class DahengCameraBackend(CameraBackend):
                 if cam.AcquisitionMode.is_implemented():
                     cam.AcquisitionMode.set(gx.GxAcquisitionModeEntry.CONTINUOUS)
 
+                # Color-correction defaults: sRGB gamma on, black level 0, for
+                # rendering matched with the Basler backend (nodes are model-dependent)
+                try:
+                    if cam.GammaMode.is_implemented():
+                        cam.GammaMode.set(0)  # 0 = sRGB
+                    if cam.GammaEnable.is_implemented():
+                        cam.GammaEnable.set(True)
+                except Exception as e:
+                    self.logger.debug(f"Gamma defaults not applied for camera '{self.camera_name}': {e}")
+                try:
+                    if cam.BlackLevel.is_implemented():
+                        cam.BlackLevel.set(0.0)
+                except Exception as e:
+                    self.logger.debug(f"Black level default not applied for camera '{self.camera_name}': {e}")
+
                 # Start streaming
                 cam.stream_on()
 
@@ -1036,6 +1051,210 @@ class DahengCameraBackend(CameraBackend):
             self.logger.debug(f"Balance ratios set (R={red}, G={green}, B={blue}) for camera '{self.camera_name}'")
         except Exception as e:
             self.logger.warning(f"Failed to set balance ratios for camera '{self.camera_name}': {e}")
+
+    # ── Gamma ──
+
+    async def get_gamma_enable(self) -> bool:
+        """Get current gamma enable state."""
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+        try:
+
+            def _get():
+                cam = self.camera
+                if cam.GammaEnable.is_implemented():
+                    return bool(cam.GammaEnable.get())
+                return False
+
+            return await self._run_blocking(_get)
+        except Exception as e:
+            self.logger.warning(f"Gamma not available for camera '{self.camera_name}': {e}")
+            return False
+
+    async def set_gamma_enable(self, enabled: bool):
+        """Enable or disable in-camera gamma.
+
+        When enabling, the sRGB gamma curve is selected so both supported
+        backends render with matched tone curves.
+
+        Args:
+            enabled: True to enable sRGB gamma, False for linear output
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+        try:
+
+            def _set():
+                cam = self.camera
+                if enabled and cam.GammaMode.is_implemented():
+                    cam.GammaMode.set(0)  # 0 = sRGB
+                if cam.GammaEnable.is_implemented():
+                    cam.GammaEnable.set(enabled)
+
+            await self._run_blocking(_set)
+            self.logger.debug(f"Gamma enable set to {enabled} for camera '{self.camera_name}'")
+        except Exception as e:
+            self.logger.warning(f"Failed to set gamma enable for camera '{self.camera_name}': {e}")
+
+    # ── Black Level ──
+
+    async def get_black_level(self) -> float:
+        """Get current black level."""
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+        try:
+
+            def _get():
+                cam = self.camera
+                if cam.BlackLevel.is_implemented():
+                    return float(cam.BlackLevel.get())
+                return 0.0
+
+            return await self._run_blocking(_get)
+        except Exception as e:
+            self.logger.warning(f"Black level not available for camera '{self.camera_name}': {e}")
+            return 0.0
+
+    async def set_black_level(self, level: float):
+        """Set black level (shadow floor).
+
+        Args:
+            level: Black level value in camera units
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+        try:
+
+            def _set():
+                cam = self.camera
+                if cam.BlackLevel.is_implemented():
+                    cam.BlackLevel.set(level)
+
+            await self._run_blocking(_set)
+            self.logger.debug(f"Black level set to {level} for camera '{self.camera_name}'")
+        except Exception as e:
+            self.logger.warning(f"Failed to set black level for camera '{self.camera_name}': {e}")
+
+    # ── Contrast ──
+
+    async def get_contrast(self) -> int:
+        """Get current contrast parameter."""
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+        try:
+
+            def _get():
+                cam = self.camera
+                if cam.ContrastParam.is_implemented():
+                    return int(cam.ContrastParam.get())
+                return 0
+
+            return await self._run_blocking(_get)
+        except Exception as e:
+            self.logger.warning(f"Contrast not available for camera '{self.camera_name}': {e}")
+            return 0
+
+    async def set_contrast(self, value: int):
+        """Set contrast parameter.
+
+        Args:
+            value: Contrast value in camera units
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+        try:
+
+            def _set():
+                cam = self.camera
+                if cam.ContrastParam.is_implemented():
+                    cam.ContrastParam.set(int(value))
+
+            await self._run_blocking(_set)
+            self.logger.debug(f"Contrast set to {value} for camera '{self.camera_name}'")
+        except Exception as e:
+            self.logger.warning(f"Failed to set contrast for camera '{self.camera_name}': {e}")
+
+    # ── Sharpness ──
+
+    async def get_sharpness(self) -> float:
+        """Get current sharpness value."""
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+        try:
+
+            def _get():
+                cam = self.camera
+                if cam.Sharpness.is_implemented():
+                    return float(cam.Sharpness.get())
+                return 0.0
+
+            return await self._run_blocking(_get)
+        except Exception as e:
+            self.logger.warning(f"Sharpness not available for camera '{self.camera_name}': {e}")
+            return 0.0
+
+    async def set_sharpness(self, value: float):
+        """Set sharpness (edge enhancement) value.
+
+        Args:
+            value: Sharpness value in camera units
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+        try:
+
+            def _set():
+                cam = self.camera
+                if cam.SharpnessMode.is_implemented():
+                    cam.SharpnessMode.set(1)  # 1 = ON
+                if cam.Sharpness.is_implemented():
+                    cam.Sharpness.set(value)
+
+            await self._run_blocking(_set)
+            self.logger.debug(f"Sharpness set to {value} for camera '{self.camera_name}'")
+        except Exception as e:
+            self.logger.warning(f"Failed to set sharpness for camera '{self.camera_name}': {e}")
+
+    # ── Saturation ──
+
+    async def get_saturation(self) -> int:
+        """Get current saturation value."""
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+        try:
+
+            def _get():
+                cam = self.camera
+                if cam.Saturation.is_implemented():
+                    return int(cam.Saturation.get())
+                return 0
+
+            return await self._run_blocking(_get)
+        except Exception as e:
+            self.logger.warning(f"Saturation not available for camera '{self.camera_name}': {e}")
+            return 0
+
+    async def set_saturation(self, value: int):
+        """Set color saturation value.
+
+        Args:
+            value: Saturation value in camera units
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+        try:
+
+            def _set():
+                cam = self.camera
+                if cam.SaturationMode.is_implemented():
+                    cam.SaturationMode.set(1)  # 1 = ON
+                if cam.Saturation.is_implemented():
+                    cam.Saturation.set(int(value))
+
+            await self._run_blocking(_set)
+            self.logger.debug(f"Saturation set to {value} for camera '{self.camera_name}'")
+        except Exception as e:
+            self.logger.warning(f"Failed to set saturation for camera '{self.camera_name}': {e}")
 
     # ── User Set (Save/Load/Default) ──
 
