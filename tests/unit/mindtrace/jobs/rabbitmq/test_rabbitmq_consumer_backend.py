@@ -378,6 +378,21 @@ def test_push_consumer_continues_after_invalid_json(backend):
     channel.basic_ack.assert_called_once_with(delivery_tag=42)
 
 
+def test_push_consumer_continues_after_job_failure(backend):
+    channel = MagicMock()
+    failed_method = MagicMock(delivery_tag=41, redelivered=False)
+    successful_method = MagicMock(delivery_tag=42, redelivered=False)
+    backend.failure_policy = ConsumerFailurePolicy.REQUEUE
+    backend.process_message = MagicMock(side_effect=[False, True])
+
+    backend._on_message(channel, failed_method, MagicMock(), b'{"id": 1}')
+    backend._on_message(channel, successful_method, MagicMock(), b'{"id": 2}')
+
+    assert backend.process_message.call_args_list == [call({"id": 1}), call({"id": 2})]
+    channel.basic_nack.assert_called_once_with(delivery_tag=41, requeue=True)
+    channel.basic_ack.assert_called_once_with(delivery_tag=42)
+
+
 def test_push_callback_error_escapes_consumer(backend):
     channel = MagicMock()
     channel.start_consuming.side_effect = RuntimeError("channel failed")
