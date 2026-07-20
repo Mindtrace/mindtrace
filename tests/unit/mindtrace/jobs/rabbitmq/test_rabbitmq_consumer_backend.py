@@ -557,7 +557,7 @@ def test_consume_until_empty_reuses_one_connection_for_full_drain(backend):
 
 def test_stop_finishes_current_delivery_before_exiting(backend):
     channel = MagicMock(is_open=True)
-    backend.connection.add_callback_threadsafe = MagicMock()
+    backend.connection.add_callback_threadsafe = MagicMock(return_value=True)
     with backend._active_lock:
         backend._active_channel = channel
 
@@ -596,7 +596,7 @@ def test_prior_stop_prevents_push_consumer_registration(backend):
 
 def test_stop_schedules_push_consumer_cancellation(backend):
     channel = MagicMock(is_open=True)
-    backend.connection.add_callback_threadsafe = MagicMock()
+    backend.connection.add_callback_threadsafe = MagicMock(return_value=True)
     with backend._active_lock:
         backend._active_channel = channel
         backend._push_consuming = True
@@ -613,7 +613,7 @@ def test_stop_schedules_push_consumer_cancellation(backend):
 
 def test_close_schedules_active_push_consumer_cancellation(backend):
     channel = MagicMock(is_open=True)
-    backend.connection.add_callback_threadsafe = MagicMock()
+    backend.connection.add_callback_threadsafe = MagicMock(return_value=True)
     backend.connection.close = MagicMock()
     with backend._active_lock:
         backend._active_channel = channel
@@ -628,10 +628,26 @@ def test_close_schedules_active_push_consumer_cancellation(backend):
     backend.connection.close.assert_not_called()
 
 
+def test_close_cleans_stale_resources_when_cancellation_cannot_be_scheduled(backend):
+    channel = MagicMock(is_open=False)
+    backend.connection.add_callback_threadsafe = MagicMock(return_value=False)
+    backend.connection.close = MagicMock()
+    with backend._active_lock:
+        backend._active_channel = channel
+        backend._push_consuming = True
+
+    backend.close()
+
+    assert backend.closed is True
+    backend.connection.add_callback_threadsafe.assert_called_once()
+    backend.connection.close.assert_called_once_with()
+    assert backend._active_channel is None
+
+
 def test_close_during_push_startup_uses_threadsafe_cancellation(backend):
     channel = MagicMock(is_open=True)
     backend.connection.get_channel.return_value = channel
-    backend.connection.add_callback_threadsafe = MagicMock()
+    backend.connection.add_callback_threadsafe = MagicMock(return_value=True)
 
     def close_during_startup(channel, queues):
         backend.close()

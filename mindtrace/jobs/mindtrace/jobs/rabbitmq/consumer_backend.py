@@ -258,8 +258,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         if channel is None or not push_consuming:
             return False
 
-        self.connection.add_callback_threadsafe(lambda: self._stop_consuming(channel))
-        return True
+        return self.connection.add_callback_threadsafe(lambda: self._stop_consuming(channel))
 
     @staticmethod
     def _stop_consuming(channel) -> None:

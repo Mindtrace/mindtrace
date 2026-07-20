@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pika.exceptions import AMQPConnectionError, ChannelClosedByBroker
+from pika.exceptions import AMQPConnectionError, ChannelClosedByBroker, ConnectionWrongStateError
 
 from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
 
@@ -92,16 +92,25 @@ class TestRabbitMQConnection:
         callback = MagicMock()
         rabbitmq_conn.connection = mock_conn
 
-        rabbitmq_conn.add_callback_threadsafe(callback)
+        scheduled = rabbitmq_conn.add_callback_threadsafe(callback)
 
+        assert scheduled is True
         mock_conn.add_callback_threadsafe.assert_called_once_with(callback)
 
     def test_add_callback_threadsafe_ignores_disconnected_connection(self, rabbitmq_conn):
         callback = MagicMock()
 
-        rabbitmq_conn.add_callback_threadsafe(callback)
+        scheduled = rabbitmq_conn.add_callback_threadsafe(callback)
 
+        assert scheduled is False
         callback.assert_not_called()
+
+    def test_add_callback_threadsafe_handles_connection_closing_race(self, rabbitmq_conn):
+        mock_conn = MagicMock(is_open=True)
+        mock_conn.add_callback_threadsafe.side_effect = ConnectionWrongStateError
+        rabbitmq_conn.connection = mock_conn
+
+        assert rabbitmq_conn.add_callback_threadsafe(MagicMock()) is False
 
     def test_count_queue_messages_success(self, rabbitmq_conn):
         mock_channel = MagicMock()

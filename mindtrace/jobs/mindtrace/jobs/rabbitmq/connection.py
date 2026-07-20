@@ -71,11 +71,15 @@ class RabbitMQConnection(BrokerConnectionBase):
         else:
             return None  # type: ignore
 
-    def add_callback_threadsafe(self, callback: Callable[[], None]) -> None:
-        """Schedule ``callback`` on the BlockingConnection I/O thread."""
+    def add_callback_threadsafe(self, callback: Callable[[], None]) -> bool:
+        """Schedule ``callback`` on the I/O thread, returning whether it was queued."""
         if not self.is_connected():
-            return
-        self.connection.add_callback_threadsafe(callback)
+            return False
+        try:
+            self.connection.add_callback_threadsafe(callback)
+        except exceptions.ConnectionWrongStateError:
+            return False
+        return True
 
     def count_queue_messages(self, queue_name: str, **kwargs) -> int:
         """Get the number of messages in a queue."""
