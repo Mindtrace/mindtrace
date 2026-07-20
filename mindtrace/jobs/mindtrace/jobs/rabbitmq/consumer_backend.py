@@ -111,8 +111,6 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         if self.stopped:
             return
 
-        with self._active_lock:
-            self._push_consuming = True
         try:
             for queue in queues:
                 channel.basic_consume(

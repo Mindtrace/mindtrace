@@ -560,6 +560,7 @@ def test_stop_finishes_current_delivery_before_exiting(backend):
     backend.connection.add_callback_threadsafe = MagicMock(return_value=True)
     with backend._active_lock:
         backend._active_channel = channel
+        backend._push_consuming = True
 
     def process_and_stop(message):
         backend.stop()
