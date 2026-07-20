@@ -232,6 +232,13 @@ explicitly invokes `consumer.reset()`.
 RabbitMQ channels and connections close automatically whenever `consume()`
 returns; a later call reconnects.
 
+Bare RabbitMQ `consume()` runs `Consumer.run()` synchronously in Pika's
+connection I/O thread. A long-running job therefore pauses other AMQP I/O on
+that connection until the job returns. Workloads whose jobs run for hours or
+days need a separate execution/acknowledgement design before RabbitMQ
+heartbeats can be enabled safely; this consumer does not move job execution to
+a worker thread or process.
+
 `consume(..., block=True)` waits indefinitely until the requested number of
 messages has been attempted, shutdown is requested, or the caller interrupts
 the operation. With `block=False`, consumption returns as soon as no message is
