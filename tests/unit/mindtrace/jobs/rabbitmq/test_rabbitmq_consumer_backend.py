@@ -10,10 +10,7 @@ def delivery(message=None, delivery_tag=1, redelivered=False):
     return RabbitMQDelivery(
         message=message or {"id": 1},
         delivery_tag=delivery_tag,
-        exchange="default",
-        routing_key="q",
         redelivered=redelivered,
-        properties=MagicMock(),
     )
 
 

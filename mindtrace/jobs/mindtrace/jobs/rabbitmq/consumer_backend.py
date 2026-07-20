@@ -4,7 +4,6 @@ import json
 import time
 import traceback
 from dataclasses import dataclass
-from typing import Any
 
 from mindtrace.core import ifnone
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
@@ -14,14 +13,11 @@ from mindtrace.jobs.types.consumer import ConsumerFailurePolicy
 
 @dataclass(frozen=True)
 class RabbitMQDelivery:
-    """Message data and broker context retained until processing completes."""
+    """Delivery state required until processing and acknowledgement complete."""
 
     message: dict
     delivery_tag: int
-    exchange: str
-    routing_key: str
     redelivered: bool
-    properties: Any
 
 
 class RabbitMQConsumerBackend(ConsumerBackendBase):
@@ -191,7 +187,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         """Retrieve one delivery, waiting indefinitely when ``block`` is true."""
         try:
             while not self.stopped:
-                method, properties, body = channel.basic_get(queue=queue_name, auto_ack=self.auto_ack)
+                method, _, body = channel.basic_get(queue=queue_name, auto_ack=self.auto_ack)
                 if method:
                     self.logger.info(f"Received message from queue '{queue_name}'.")
                     try:
@@ -202,10 +198,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                     return RabbitMQDelivery(
                         message=message,
                         delivery_tag=method.delivery_tag,
-                        exchange=method.exchange,
-                        routing_key=method.routing_key,
                         redelivered=method.redelivered,
-                        properties=properties,
                     )
                 if not block:
                     self.logger.debug(f"No message available in queue '{queue_name}'.")
