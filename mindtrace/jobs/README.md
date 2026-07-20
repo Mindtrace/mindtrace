@@ -225,6 +225,13 @@ with `REQUEUE` or `DEAD_LETTER` raises `NotImplementedError`; those policies
 require backend-specific retry or dead-letter storage that they do not yet
 provide.
 
+Bare RabbitMQ `consume()` registers every requested queue on one channel and
+uses broker-pushed delivery. `consumer.stop()` stops that whole consumption
+operation and cancels all queue registrations on the channel; per-queue
+cancellation is not part of the public consumer API. Finite
+`consume(num_messages=N)` and `consume_until_empty()` continue to use pull
+semantics for exact-count and drain behavior.
+
 Calling `consumer.stop()` requests graceful shutdown. An in-flight job finishes
 and is acknowledged or rejected before the blocking consume loop exits. The
 stop request is terminal: later consume calls remain stopped until the caller
