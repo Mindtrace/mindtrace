@@ -189,7 +189,7 @@ def test_consume_until_empty_with_no_queues_returns_without_connecting(backend):
 def test_consume_until_empty_keyboard_interrupt_closes_resources(backend):
     channel = MagicMock(is_open=True)
     backend.connection.get_channel.return_value = channel
-    backend.connection.count_queue_messages.side_effect = KeyboardInterrupt
+    backend.connection.count_queue_messages = MagicMock(side_effect=KeyboardInterrupt)
     backend.connection.close = MagicMock()
 
     backend.consume_until_empty(queues="q")
