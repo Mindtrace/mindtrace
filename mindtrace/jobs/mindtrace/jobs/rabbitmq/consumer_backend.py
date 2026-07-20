@@ -51,7 +51,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
     def consume(
         self, num_messages: int = 0, *, queues: str | list[str] | None = None, block: bool = True, **kwargs
     ) -> None:
-        """Consume deliveries, waiting indefinitely when ``block`` is true."""
+        """Consume a finite pull batch or run a broker-pushed worker indefinitely."""
         self._ensure_open()
         if isinstance(queues, str):
             queues = [queues]
@@ -65,6 +65,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             channel = self.connection.get_channel()
             with self._active_lock:
                 self._active_channel = channel
+                self._push_consuming = num_messages == 0
             channel.basic_qos(prefetch_count=self.prefetch_count)
             if num_messages > 0:
                 self._consume_finite_messages(channel, num_messages, queues, block=block)
@@ -201,6 +202,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             channel = self.connection.get_channel()
             with self._active_lock:
                 self._active_channel = channel
+                self._push_consuming = False
             channel.basic_qos(prefetch_count=self.prefetch_count)
             while not self.stopped:
                 pending = sum(self.connection.count_queue_messages(queue) for queue in queues)

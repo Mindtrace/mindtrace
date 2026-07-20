@@ -87,6 +87,22 @@ class TestRabbitMQConnection:
         rabbitmq_conn.connection = None
         assert rabbitmq_conn.get_channel() is None
 
+    def test_add_callback_threadsafe_forwards_to_connection(self, rabbitmq_conn):
+        mock_conn = MagicMock(is_open=True)
+        callback = MagicMock()
+        rabbitmq_conn.connection = mock_conn
+
+        rabbitmq_conn.add_callback_threadsafe(callback)
+
+        mock_conn.add_callback_threadsafe.assert_called_once_with(callback)
+
+    def test_add_callback_threadsafe_ignores_disconnected_connection(self, rabbitmq_conn):
+        callback = MagicMock()
+
+        rabbitmq_conn.add_callback_threadsafe(callback)
+
+        callback.assert_not_called()
+
     def test_count_queue_messages_success(self, rabbitmq_conn):
         mock_channel = MagicMock()
         mock_result = MagicMock()
