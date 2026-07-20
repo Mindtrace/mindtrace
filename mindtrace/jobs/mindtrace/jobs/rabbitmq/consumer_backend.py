@@ -52,7 +52,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
     def consume(
         self, num_messages: int = 0, *, queues: str | list[str] | None = None, block: bool = True, **kwargs
     ) -> None:
-        """Consume deliveries using a connection owned by this operation."""
+        """Consume deliveries, waiting indefinitely when ``block`` is true."""
         self._ensure_open()
         if isinstance(queues, str):
             queues = [queues]
@@ -159,7 +159,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             return False
 
     def consume_until_empty(self, *, queues: str | list[str] | None = None, block: bool = True, **kwargs) -> None:
-        """Drain queue(s) using one connection for the entire operation."""
+        """Drain currently available deliveries without waiting for new work."""
         self._ensure_open()
         if isinstance(queues, str):
             queues = [queues]
@@ -179,7 +179,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                 pending = sum(self.connection.count_queue_messages(queue) for queue in queues)
                 if pending == 0:
                     break
-                self._consume_finite_messages(channel, pending, queues, block=block)
+                self._consume_finite_messages(channel, pending, queues, block=False)
         except KeyboardInterrupt:
             self.logger.info("Consumption interrupted by user.")
         finally:
@@ -187,11 +187,8 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         if not self.stopped:
             self.logger.info(f"Finished draining queues: {queues}. All queues empty.")
 
-    def receive_message(
-        self, channel, queue_name: str, *, block: bool = False, timeout: float | None = None
-    ) -> RabbitMQDelivery | None:
-        """Retrieve one delivery while retaining its acknowledgement context."""
-        start_time = time.monotonic()
+    def receive_message(self, channel, queue_name: str, *, block: bool = False) -> RabbitMQDelivery | None:
+        """Retrieve one delivery, waiting indefinitely when ``block`` is true."""
         try:
             while not self.stopped:
                 method, properties, body = channel.basic_get(queue=queue_name, auto_ack=self.auto_ack)
@@ -212,9 +209,6 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                     )
                 if not block:
                     self.logger.debug(f"No message available in queue '{queue_name}'.")
-                    return None
-                if timeout is not None and time.monotonic() - start_time >= timeout:
-                    self.logger.warning(f"Timeout reached while waiting for a message from queue '{queue_name}'.")
                     return None
                 time.sleep(0.1)
             return None

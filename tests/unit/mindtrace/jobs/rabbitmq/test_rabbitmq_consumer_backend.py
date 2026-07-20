@@ -144,21 +144,25 @@ def test_consume_until_empty(backend):
     backend.logger = MagicMock()
     backend.consume_until_empty(queues="q")
     backend.connection.connect.assert_called_once_with()
-    backend.receive_message.assert_called_once_with(channel, "q", block=True)
+    backend.receive_message.assert_called_once_with(channel, "q", block=False)
     backend.logger.info.assert_called()
 
 
-def test_receive_message_block_and_timeout(backend):
+def test_receive_message_block_exits_after_stop_request(backend):
     mock_channel = MagicMock()
-    # Simulate no message, then timeout
-    mock_channel.basic_get.side_effect = [(None, None, None)] * 5
-    with (
-        patch.object(backend.connection, "is_connected", return_value=True),
-        patch.object(backend.connection, "get_channel", return_value=mock_channel),
-    ):
-        backend.logger = MagicMock()
-        result = backend.receive_message(mock_channel, "q", block=True, timeout=0.1)
-        assert result is None
+
+    def stop_while_polling(**kwargs):
+        backend.stop()
+        return None, None, None
+
+    mock_channel.basic_get.side_effect = stop_while_polling
+    backend.logger = MagicMock()
+    with patch("mindtrace.jobs.rabbitmq.consumer_backend.time.sleep") as mock_sleep:
+        result = backend.receive_message(mock_channel, "q", block=True)
+
+    assert result is None
+    mock_channel.basic_get.assert_called_once_with(queue="q", auto_ack=backend.auto_ack)
+    mock_sleep.assert_called_once_with(0.1)
 
 
 def test_receive_message_non_block(backend):
@@ -198,7 +202,7 @@ def test_receive_message_success_2(backend):
         patch.object(backend.connection, "get_channel", return_value=mock_channel),
     ):
         backend.logger = MagicMock()
-        result = backend.receive_message(mock_channel, "q", block=True, timeout=0.1)
+        result = backend.receive_message(mock_channel, "q", block=True)
         assert result.message == {"id": 1}
         backend.logger.info.assert_called()
 

@@ -232,6 +232,13 @@ explicitly invokes `consumer.reset()`.
 RabbitMQ channels and connections close automatically whenever `consume()`
 returns; a later call reconnects.
 
+`consume(..., block=True)` waits indefinitely until the requested number of
+messages has been attempted, shutdown is requested, or the caller interrupts
+the operation. With `block=False`, consumption returns as soon as no message is
+immediately available, even if the requested count has not been reached.
+`consume_until_empty()` drains only currently available RabbitMQ messages and
+does not wait for new work to arrive.
+
 Calling `consumer.close()` is different from normal per-operation cleanup: it
 permanently closes the consumer backend. It is safe to call more than once,
 but later calls to `consume()`, `consume_until_empty()`, or `reset()` raise a

@@ -46,7 +46,8 @@ class Consumer(Mindtrace):
         Args:
             num_messages: Number of messages to process. If 0, runs indefinitely.
             queues: Queue(s) to consume from. If None, uses the consumer's default queue.
-            block: Whether to block when no messages are available.
+            block: If True, wait indefinitely for requested messages until stopped or interrupted.
+                If False, return when no message is immediately available.
         """
         if not self.consumer_backend:
             raise RuntimeError("Consumer not connected. Call connect() first.")
