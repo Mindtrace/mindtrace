@@ -2522,9 +2522,7 @@ class BaslerCameraBackend(CameraBackend):
 
             node = self._find_node("ColorTransformationEnable", writable=True)
             if node is None:
-                raise HardwareOperationError(
-                    f"ColorTransformation feature not writable on camera '{self.camera_name}'"
-                )
+                raise HardwareOperationError(f"ColorTransformation feature not writable on camera '{self.camera_name}'")
             await self._run_blocking(node.SetValue, enabled, timeout=self._op_timeout_s)
             self.logger.debug(f"Color transformation set to {enabled} for camera '{self.camera_name}'")
         except (CameraConnectionError, HardwareOperationError):

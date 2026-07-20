@@ -117,8 +117,15 @@ async def test_async_camera_configure_color_settings():
 
             return _set
 
-        for key in ("gamma_enable", "black_level", "color_transformation", "light_source_preset",
-                    "contrast", "sharpness", "saturation"):
+        for key in (
+            "gamma_enable",
+            "black_level",
+            "color_transformation",
+            "light_source_preset",
+            "contrast",
+            "sharpness",
+            "saturation",
+        ):
             setattr(backend, f"set_{key}", _recorder(key))
 
         async def _set_balance_ratios(red=None, green=None, blue=None):
