@@ -101,6 +101,77 @@ async def test_async_camera_configure_all_settings(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_async_camera_configure_color_settings():
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name)
+
+        # Record what each color setter receives
+        backend = cam.backend
+        recorded = {}
+
+        def _recorder(key):
+            async def _set(value):
+                recorded[key] = value
+
+            return _set
+
+        for key in ("gamma_enable", "black_level", "color_transformation", "light_source_preset",
+                    "contrast", "sharpness", "saturation"):
+            setattr(backend, f"set_{key}", _recorder(key))
+
+        async def _set_balance_ratios(red=None, green=None, blue=None):
+            recorded["balance_ratios"] = {"red": red, "green": green, "blue": blue}
+
+        backend.set_balance_ratios = _set_balance_ratios  # type: ignore[attr-defined]
+
+        await cam.configure(
+            gamma_enable=True,
+            black_level=0.0,
+            color_transformation=True,
+            light_source_preset="Daylight5000K",
+            balance_ratios={"red": 1.2, "blue": 1.4},
+            contrast=1.1,
+            sharpness=1.5,
+            saturation=1.0,
+        )
+
+        assert recorded["gamma_enable"] is True
+        assert recorded["black_level"] == 0.0
+        assert recorded["color_transformation"] is True
+        assert recorded["light_source_preset"] == "Daylight5000K"
+        assert recorded["balance_ratios"] == {"red": 1.2, "green": None, "blue": 1.4}
+        assert recorded["contrast"] == 1.1
+        assert recorded["sharpness"] == 1.5
+        assert recorded["saturation"] == 1.0
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_async_camera_configure_skips_unsupported_color_settings():
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name)
+
+        # A backend without any color setters must be skipped, not crash
+        class _BareBackend:
+            pass
+
+        original_backend = cam._backend
+        try:
+            cam._backend = _BareBackend()
+            result = await cam.configure(gamma_enable=True, balance_ratios={"red": 1.0})
+            assert result is True
+        finally:
+            cam._backend = original_backend
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_async_camera_capture_retries_then_success(monkeypatch):
     manager = AsyncCameraManager(include_mocks=True)
     try:

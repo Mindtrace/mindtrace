@@ -136,6 +136,14 @@ class MockBaslerCameraBackend(CameraBackend):
         self.gain = 1.0
         self.roi = {"x": 0, "y": 0, "width": 1920, "height": 1080}
         self.white_balance_mode = "off"
+        self.gamma_enable = True
+        self.black_level = 0.0
+        self.color_transformation = False
+        self.light_source_preset = "Off"
+        self.balance_ratios = {"red": 1.0, "green": 1.0, "blue": 1.0}
+        self.contrast = 0.0
+        self.sharpness = 1.0
+        self.saturation = 1.0
         self.triggermode = self.camera_config.cameras.trigger_mode
         self.image_counter = 0
 
@@ -674,6 +682,83 @@ class MockBaslerCameraBackend(CameraBackend):
         # Simulate async operation
         await self._sleep(0.001)
         return ["off", "once", "continuous"]
+
+    async def get_gamma_enable(self) -> bool:
+        """Get current gamma enable state."""
+        return self.gamma_enable
+
+    async def set_gamma_enable(self, enabled: bool):
+        """Enable or disable in-camera gamma."""
+        self.gamma_enable = bool(enabled)
+        self.logger.debug(f"Gamma enable set to {enabled} for mock camera '{self.camera_name}'")
+
+    async def get_black_level(self) -> float:
+        """Get current black level."""
+        return self.black_level
+
+    async def set_black_level(self, level: float):
+        """Set black level."""
+        self.black_level = float(level)
+        self.logger.debug(f"Black level set to {level} for mock camera '{self.camera_name}'")
+
+    async def get_color_transformation(self) -> bool:
+        """Get current color transformation enable state."""
+        return self.color_transformation
+
+    async def set_color_transformation(self, enabled: bool):
+        """Enable or disable color transformation."""
+        self.color_transformation = bool(enabled)
+        self.logger.debug(f"Color transformation set to {enabled} for mock camera '{self.camera_name}'")
+
+    async def get_light_source_preset(self) -> str:
+        """Get current light source preset."""
+        return self.light_source_preset
+
+    async def set_light_source_preset(self, preset: str):
+        """Set light source preset."""
+        self.light_source_preset = preset
+        self.logger.debug(f"Light source preset set to '{preset}' for mock camera '{self.camera_name}'")
+
+    async def get_balance_ratios(self) -> Dict[str, float]:
+        """Get current R/G/B balance ratios."""
+        return self.balance_ratios.copy()
+
+    async def set_balance_ratios(self, red: float = None, green: float = None, blue: float = None):
+        """Set R/G/B balance ratios."""
+        if red is not None:
+            self.balance_ratios["red"] = float(red)
+        if green is not None:
+            self.balance_ratios["green"] = float(green)
+        if blue is not None:
+            self.balance_ratios["blue"] = float(blue)
+        self.logger.debug(f"Balance ratios set (R={red}, G={green}, B={blue}) for mock camera '{self.camera_name}'")
+
+    async def get_contrast(self) -> float:
+        """Get current contrast value."""
+        return self.contrast
+
+    async def set_contrast(self, value: float):
+        """Set contrast value."""
+        self.contrast = float(value)
+        self.logger.debug(f"Contrast set to {value} for mock camera '{self.camera_name}'")
+
+    async def get_sharpness(self) -> float:
+        """Get current sharpness value."""
+        return self.sharpness
+
+    async def set_sharpness(self, value: float):
+        """Set sharpness value."""
+        self.sharpness = float(value)
+        self.logger.debug(f"Sharpness set to {value} for mock camera '{self.camera_name}'")
+
+    async def get_saturation(self) -> float:
+        """Get current saturation value."""
+        return self.saturation
+
+    async def set_saturation(self, value: float):
+        """Set saturation value."""
+        self.saturation = float(value)
+        self.logger.debug(f"Saturation set to {value} for mock camera '{self.camera_name}'")
 
     async def get_pixel_format_range(self) -> List[str]:
         """Get available pixel formats.

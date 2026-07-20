@@ -303,7 +303,10 @@ class AsyncCamera(Mindtrace):
 
         Args:
             **settings: Supported keys include exposure, gain, roi=(x, y, w, h), trigger_mode,
-                pixel_format, white_balance, image_enhancement, capture_timeout, optical_power.
+                pixel_format, white_balance, image_enhancement, capture_timeout, optical_power,
+                gamma_enable, black_level, color_transformation, light_source_preset,
+                balance_ratios={"red": r, "green": g, "blue": b}, contrast, sharpness, saturation.
+                Color-correction keys are skipped when the backend does not implement them.
 
         Raises:
             CameraConfigurationError: If a provided value is invalid for the backend.
@@ -329,6 +332,34 @@ class AsyncCamera(Mindtrace):
                 await self._backend.set_auto_wb_once(settings["white_balance"])
             if "image_enhancement" in settings:
                 self._backend.set_image_quality_enhancement(settings["image_enhancement"])
+            # Color-correction settings (model/backend-dependent; skipped when unsupported)
+            color_setters = {
+                "gamma_enable": "set_gamma_enable",
+                "black_level": "set_black_level",
+                "color_transformation": "set_color_transformation",
+                "light_source_preset": "set_light_source_preset",
+                "contrast": "set_contrast",
+                "sharpness": "set_sharpness",
+                "saturation": "set_saturation",
+            }
+            for key, method_name in color_setters.items():
+                if key in settings:
+                    setter = getattr(self._backend, method_name, None)
+                    if setter is None:
+                        self.logger.warning(
+                            f"Backend for camera '{self._full_name}' does not support '{key}'; skipping"
+                        )
+                    else:
+                        await setter(settings[key])
+            if "balance_ratios" in settings:
+                setter = getattr(self._backend, "set_balance_ratios", None)
+                if setter is None:
+                    self.logger.warning(
+                        f"Backend for camera '{self._full_name}' does not support 'balance_ratios'; skipping"
+                    )
+                else:
+                    ratios = settings["balance_ratios"] or {}
+                    await setter(red=ratios.get("red"), green=ratios.get("green"), blue=ratios.get("blue"))
             # Handle both "capture_timeout" and "timeout_ms" for backwards compatibility
             if "capture_timeout" in settings:
                 await self._backend.set_capture_timeout(settings["capture_timeout"])
@@ -979,6 +1010,88 @@ class AsyncCamera(Mindtrace):
         """Get available white balance modes (backend-specific method)."""
         async with self._lock:
             return await self._backend.get_wb_range()
+
+    async def get_gamma_enable(self) -> Optional[bool]:
+        """Get gamma enable state (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.get_gamma_enable()
+
+    async def set_gamma_enable(self, enabled: bool):
+        """Enable or disable in-camera sRGB gamma (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.set_gamma_enable(enabled)
+
+    async def get_black_level(self) -> Optional[float]:
+        """Get black level (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.get_black_level()
+
+    async def set_black_level(self, level: float):
+        """Set black level (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.set_black_level(level)
+
+    async def get_color_transformation(self) -> Optional[bool]:
+        """Get color transformation enable state (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.get_color_transformation()
+
+    async def set_color_transformation(self, enabled: bool):
+        """Enable or disable color transformation (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.set_color_transformation(enabled)
+
+    async def get_light_source_preset(self) -> Optional[str]:
+        """Get light source preset (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.get_light_source_preset()
+
+    async def set_light_source_preset(self, preset: str):
+        """Set light source preset (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.set_light_source_preset(preset)
+
+    async def get_balance_ratios(self) -> Optional[Dict[str, float]]:
+        """Get R/G/B balance ratios (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.get_balance_ratios()
+
+    async def set_balance_ratios(
+        self, red: Optional[float] = None, green: Optional[float] = None, blue: Optional[float] = None
+    ):
+        """Set R/G/B balance ratios (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.set_balance_ratios(red=red, green=green, blue=blue)
+
+    async def get_contrast(self) -> Optional[float]:
+        """Get contrast value (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.get_contrast()
+
+    async def set_contrast(self, value: Union[int, float]):
+        """Set contrast value (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.set_contrast(value)
+
+    async def get_sharpness(self) -> Optional[float]:
+        """Get sharpness value (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.get_sharpness()
+
+    async def set_sharpness(self, value: Union[int, float]):
+        """Set sharpness value (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.set_sharpness(value)
+
+    async def get_saturation(self) -> Optional[float]:
+        """Get saturation value (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.get_saturation()
+
+    async def set_saturation(self, value: Union[int, float]):
+        """Set saturation value (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.set_saturation(value)
 
     async def export_config(self, config_path: str):
         """Export camera configuration (backend-specific method)."""
