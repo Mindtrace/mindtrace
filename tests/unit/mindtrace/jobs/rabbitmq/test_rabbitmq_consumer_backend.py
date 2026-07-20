@@ -644,6 +644,23 @@ def test_stop_schedules_push_consumer_cancellation(backend):
     channel.stop_consuming.assert_called_once_with()
 
 
+def test_stop_cleans_stale_resources_when_cancellation_cannot_be_scheduled(backend):
+    channel = MagicMock(is_open=False)
+    backend.connection.add_callback_threadsafe = MagicMock(return_value=False)
+    backend.connection.close = MagicMock()
+    with backend._active_lock:
+        backend._active_channel = channel
+        backend._active_push_channel = channel
+
+    backend.stop()
+
+    assert backend.stopped is True
+    assert backend.closed is False
+    backend.connection.add_callback_threadsafe.assert_called_once()
+    backend.connection.close.assert_called_once_with()
+    assert backend._active_channel is None
+
+
 def test_close_schedules_active_push_consumer_cancellation(backend):
     channel = MagicMock(is_open=True)
     backend.connection.add_callback_threadsafe = MagicMock(return_value=True)

@@ -249,7 +249,8 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
     def stop(self) -> None:
         """Request shutdown and wake an active broker-pushed consumer."""
         super().stop()
-        self._request_consumer_stop()
+        if not self._request_consumer_stop():
+            self._close_active_resources()
 
     def _request_consumer_stop(self) -> bool:
         """Schedule cancellation when a push consumer is active."""
