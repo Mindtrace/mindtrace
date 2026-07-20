@@ -47,13 +47,12 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         self.durable = durable
         self.queues = [queue_name] if queue_name else []
         self.connection = RabbitMQConnection(host=host, port=port, username=username, password=password)
-        self.connection.connect()
         self._active_channel = None
 
     def consume(
         self, num_messages: int = 0, *, queues: str | list[str] | None = None, block: bool = True, **kwargs
     ) -> None:
-        """Consume deliveries, closing the owned channel and connection on exit."""
+        """Consume deliveries using a connection owned by this operation."""
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
@@ -61,12 +60,11 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             self.logger.warning("No queues provided; nothing to consume.")
             return
 
-        if not self.connection.is_connected():
-            self.connection.connect()
-        channel = self.connection.get_channel()
-        self._active_channel = channel
-        channel.basic_qos(prefetch_count=self.prefetch_count)
         try:
+            self.connection.connect()
+            channel = self.connection.get_channel()
+            self._active_channel = channel
+            channel.basic_qos(prefetch_count=self.prefetch_count)
             if num_messages > 0:
                 self._consume_finite_messages(channel, num_messages, queues, block=block)
             else:
@@ -160,18 +158,30 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             return False
 
     def consume_until_empty(self, *, queues: str | list[str] | None = None, block: bool = True, **kwargs) -> None:
-        """Consume messages from the queue(s) until empty."""
+        """Drain queue(s) using one connection for the entire operation."""
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
-        while not self.stopped:
-            if not self.connection.is_connected():
-                self.connection.connect()
-            pending = sum(self.connection.count_queue_messages(queue) for queue in queues)
-            if pending == 0:
-                self.close()
-                break
-            self.consume(num_messages=pending, queues=queues, block=block)
+        if not queues:
+            self.logger.warning("No queues provided; nothing to consume.")
+            return
+        if self.stopped:
+            return
+
+        try:
+            self.connection.connect()
+            channel = self.connection.get_channel()
+            self._active_channel = channel
+            channel.basic_qos(prefetch_count=self.prefetch_count)
+            while not self.stopped:
+                pending = sum(self.connection.count_queue_messages(queue) for queue in queues)
+                if pending == 0:
+                    break
+                self._consume_finite_messages(channel, pending, queues, block=block)
+        except KeyboardInterrupt:
+            self.logger.info("Consumption interrupted by user.")
+        finally:
+            self.close()
         if not self.stopped:
             self.logger.info(f"Finished draining queues: {queues}. All queues empty.")
 
@@ -211,7 +221,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             raise RuntimeError(f"Error receiving message from queue '{queue_name}': {exc}") from exc
 
     def close(self) -> None:
-        """Close resources owned by the active consume call."""
+        """Close resources owned by the active consumption operation."""
         channel = self._active_channel
         self._active_channel = None
         try:

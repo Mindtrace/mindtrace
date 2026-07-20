@@ -44,11 +44,11 @@ def backend(consumer_frontend):
         return backend
 
 
-def test_init_calls_connect(consumer_frontend):
+def test_init_does_not_connect(consumer_frontend):
     with patch("mindtrace.jobs.rabbitmq.connection.RabbitMQConnection.connect") as mock_connect:
         with patch("mindtrace.jobs.rabbitmq.connection.RabbitMQConnection.get_channel"):
             _ = RabbitMQConsumerBackend("q", consumer_frontend)
-            mock_connect.assert_called_once()
+            mock_connect.assert_not_called()
 
 
 def test_consume_finite_messages(backend):
@@ -138,11 +138,13 @@ def test_process_message_non_dict(backend):
 
 
 def test_consume_until_empty(backend):
+    channel = backend.connection.get_channel.return_value
     backend.connection.count_queue_messages = MagicMock(side_effect=[1, 0])
-    backend.consume = MagicMock()
+    backend.receive_message = MagicMock(return_value=delivery())
     backend.logger = MagicMock()
     backend.consume_until_empty(queues="q")
-    backend.consume.assert_called_with(num_messages=1, queues=["q"], block=True)
+    backend.connection.connect.assert_called_once_with()
+    backend.receive_message.assert_called_once_with(channel, "q", block=True)
     backend.logger.info.assert_called()
 
 
@@ -362,6 +364,36 @@ def test_consume_closes_channel_and_connection(backend):
 
     channel.close.assert_called_once_with()
     backend.connection.close.assert_called_once_with()
+
+
+def test_repeated_consume_calls_open_separate_connections(backend):
+    channel = MagicMock(is_open=True)
+    backend.connection.get_channel.return_value = channel
+    backend.connection.close = MagicMock()
+    backend.receive_message = MagicMock(return_value=None)
+
+    backend.consume(num_messages=1, queues="q", block=False)
+    backend.consume(num_messages=1, queues="q", block=False)
+
+    assert backend.connection.connect.call_count == 2
+    assert backend.connection.close.call_count == 2
+    assert channel.close.call_count == 2
+
+
+def test_consume_until_empty_reuses_one_connection_for_full_drain(backend):
+    channel = MagicMock(is_open=True)
+    backend.connection.get_channel.return_value = channel
+    backend.connection.count_queue_messages = MagicMock(side_effect=[2, 0])
+    backend.connection.close = MagicMock()
+    backend.receive_message = MagicMock(side_effect=[delivery(delivery_tag=1), delivery(delivery_tag=2)])
+
+    backend.consume_until_empty(queues="q", block=False)
+
+    backend.connection.connect.assert_called_once_with()
+    backend.connection.get_channel.assert_called_once_with()
+    backend.connection.close.assert_called_once_with()
+    channel.close.assert_called_once_with()
+    assert backend.receive_message.call_count == 2
 
 
 def test_stop_finishes_current_delivery_before_exiting(backend):
