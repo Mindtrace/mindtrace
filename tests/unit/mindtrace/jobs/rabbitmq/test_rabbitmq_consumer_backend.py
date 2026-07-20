@@ -1,4 +1,3 @@
-import json
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -359,10 +358,24 @@ def test_push_callback_rejects_invalid_json(backend):
     channel = MagicMock()
     method = MagicMock(delivery_tag=42, redelivered=False)
 
-    with pytest.raises(json.JSONDecodeError):
-        backend._on_message(channel, method, MagicMock(), b"not-json")
+    backend._on_message(channel, method, MagicMock(), b"not-json")
 
     channel.basic_nack.assert_called_once_with(delivery_tag=42, requeue=False)
+    backend.logger.error.assert_called_once()
+
+
+def test_push_consumer_continues_after_invalid_json(backend):
+    channel = MagicMock()
+    invalid_method = MagicMock(delivery_tag=41, redelivered=False)
+    valid_method = MagicMock(delivery_tag=42, redelivered=False)
+    backend.process_message = MagicMock(return_value=True)
+
+    backend._on_message(channel, invalid_method, MagicMock(), b"not-json")
+    backend._on_message(channel, valid_method, MagicMock(), b'{"id": 7}')
+
+    backend.process_message.assert_called_once_with({"id": 7})
+    channel.basic_nack.assert_called_once_with(delivery_tag=41, requeue=False)
+    channel.basic_ack.assert_called_once_with(delivery_tag=42)
 
 
 def test_push_callback_error_escapes_consumer(backend):

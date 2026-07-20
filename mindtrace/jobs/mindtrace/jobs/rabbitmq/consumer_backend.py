@@ -129,7 +129,11 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
     def _on_message(self, channel, method, _properties, body) -> None:
         """Decode and process one broker-pushed delivery."""
         self.logger.info("Received message from RabbitMQ.")
-        delivery = self._decode_delivery(channel, method, body)
+        try:
+            delivery = self._decode_delivery(channel, method, body)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            self.logger.error(f"Rejected malformed RabbitMQ delivery: {exc}")
+            return
         self._process_delivery(channel, delivery)
 
     def _decode_delivery(self, channel, method, body) -> RabbitMQDelivery:
