@@ -46,7 +46,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         self.connection = RabbitMQConnection(host=host, port=port, username=username, password=password)
         self._active_channel = None
         self._active_lock = Lock()
-        self._push_consuming = False
+        self._active_push_channel = None
 
     def consume(
         self, num_messages: int = 0, *, queues: str | list[str] | None = None, block: bool = True, **kwargs
@@ -65,7 +65,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             channel = self.connection.get_channel()
             with self._active_lock:
                 self._active_channel = channel
-                self._push_consuming = num_messages == 0
+                self._active_push_channel = channel if num_messages == 0 else None
             channel.basic_qos(prefetch_count=self.prefetch_count)
             if num_messages > 0:
                 self._consume_finite_messages(channel, num_messages, queues, block=block)
@@ -122,7 +122,8 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                 channel.start_consuming()
         finally:
             with self._active_lock:
-                self._push_consuming = False
+                if self._active_push_channel is channel:
+                    self._active_push_channel = None
 
     def _on_message(self, channel, method, _properties, body) -> None:
         """Decode and process one broker-pushed delivery."""
@@ -204,7 +205,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             channel = self.connection.get_channel()
             with self._active_lock:
                 self._active_channel = channel
-                self._push_consuming = False
+                self._active_push_channel = None
             channel.basic_qos(prefetch_count=self.prefetch_count)
             while not self.stopped:
                 pending = sum(self.connection.count_queue_messages(queue) for queue in queues)
@@ -251,9 +252,8 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
     def _request_consumer_stop(self) -> bool:
         """Schedule cancellation when a push consumer is active."""
         with self._active_lock:
-            channel = self._active_channel
-            push_consuming = self._push_consuming
-        if channel is None or not push_consuming:
+            channel = self._active_push_channel
+        if channel is None:
             return False
 
         return self.connection.add_callback_threadsafe(lambda: self._stop_consuming(channel))
@@ -269,7 +269,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         with self._active_lock:
             channel = self._active_channel
             self._active_channel = None
-            self._push_consuming = False
+            self._active_push_channel = None
         try:
             if channel is not None and getattr(channel, "is_open", False):
                 channel.close()

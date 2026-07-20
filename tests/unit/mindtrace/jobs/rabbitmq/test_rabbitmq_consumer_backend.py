@@ -560,7 +560,7 @@ def test_stop_finishes_current_delivery_before_exiting(backend):
     backend.connection.add_callback_threadsafe = MagicMock(return_value=True)
     with backend._active_lock:
         backend._active_channel = channel
-        backend._push_consuming = True
+        backend._active_push_channel = channel
 
     def process_and_stop(message):
         backend.stop()
@@ -600,7 +600,7 @@ def test_stop_schedules_push_consumer_cancellation(backend):
     backend.connection.add_callback_threadsafe = MagicMock(return_value=True)
     with backend._active_lock:
         backend._active_channel = channel
-        backend._push_consuming = True
+        backend._active_push_channel = channel
 
     backend.stop()
 
@@ -618,7 +618,7 @@ def test_close_schedules_active_push_consumer_cancellation(backend):
     backend.connection.close = MagicMock()
     with backend._active_lock:
         backend._active_channel = channel
-        backend._push_consuming = True
+        backend._active_push_channel = channel
 
     backend.close()
 
@@ -635,7 +635,7 @@ def test_close_cleans_stale_resources_when_cancellation_cannot_be_scheduled(back
     backend.connection.close = MagicMock()
     with backend._active_lock:
         backend._active_channel = channel
-        backend._push_consuming = True
+        backend._active_push_channel = channel
 
     backend.close()
 
