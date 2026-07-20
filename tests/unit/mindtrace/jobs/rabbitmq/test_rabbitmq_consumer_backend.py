@@ -104,6 +104,37 @@ def test_consume_finite_messages_exception(backend):
     backend.logger.error.assert_called()
 
 
+def test_finite_consume_continues_other_queues_after_error(backend):
+    channel = MagicMock()
+    next_tag = iter([1, 2])
+
+    def receive_message(channel, queue, *, block):
+        if queue == "q1":
+            raise RuntimeError("q1 unavailable")
+        return delivery(delivery_tag=next(next_tag))
+
+    backend.receive_message = MagicMock(side_effect=receive_message)
+    backend.process_message = MagicMock(return_value=True)
+
+    backend._consume_finite_messages(channel, 2, ["q1", "q2"], block=False)
+
+    attempted_queues = [call.args[1] for call in backend.receive_message.call_args_list]
+    assert attempted_queues == ["q1", "q2", "q2"]
+    assert backend.process_message.call_count == 2
+    assert channel.basic_ack.call_count == 2
+
+
+def test_finite_consume_exits_after_all_queues_fail(backend):
+    channel = MagicMock()
+    backend.receive_message = MagicMock(side_effect=RuntimeError("unavailable"))
+
+    backend._consume_finite_messages(channel, 2, ["q1", "q2"], block=True)
+
+    attempted_queues = [call.args[1] for call in backend.receive_message.call_args_list]
+    assert attempted_queues == ["q1", "q2"]
+    backend.logger.error.assert_called()
+
+
 def test_consume_infinite_messages_keyboard_interrupt(backend):
     backend.receive_message = MagicMock(side_effect=[delivery(), KeyboardInterrupt])
     backend.process_message = MagicMock(return_value=True)

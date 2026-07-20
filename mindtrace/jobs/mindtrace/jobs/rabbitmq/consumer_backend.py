@@ -76,11 +76,14 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         """Consume at most ``num_messages`` deliveries across all queues."""
         self.logger.info(f"Consuming up to {num_messages} messages from queues: {queues}.")
         attempted = 0
+        failed_queues: set[str] = set()
         while attempted < num_messages and not self.stopped:
             found_message = False
             for queue in queues:
                 if attempted >= num_messages or self.stopped:
                     break
+                if queue in failed_queues:
+                    continue
                 try:
                     delivery = self.receive_message(channel, queue, block=block)
                     if delivery is None:
@@ -91,7 +94,9 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                     self._process_delivery(channel, delivery)
                 except Exception as exc:
                     self.logger.error(f"Error during finite consumption from {queue}: {exc}\n{traceback.format_exc()}")
-                    return
+                    failed_queues.add(queue)
+            if len(failed_queues) == len(queues):
+                return
             if not found_message and not block:
                 return
 
