@@ -4,6 +4,7 @@ import json
 import time
 import traceback
 from dataclasses import dataclass
+from threading import Lock
 
 from mindtrace.core import ifnone
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
@@ -44,6 +45,8 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         self.queues = [queue_name] if queue_name else []
         self.connection = RabbitMQConnection(host=host, port=port, username=username, password=password)
         self._active_channel = None
+        self._active_lock = Lock()
+        self._push_consuming = False
 
     def consume(
         self, num_messages: int = 0, *, queues: str | list[str] | None = None, block: bool = True, **kwargs
@@ -60,7 +63,8 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         try:
             self.connection.connect()
             channel = self.connection.get_channel()
-            self._active_channel = channel
+            with self._active_lock:
+                self._active_channel = channel
             channel.basic_qos(prefetch_count=self.prefetch_count)
             if num_messages > 0:
                 self._consume_finite_messages(channel, num_messages, queues, block=block)
@@ -101,23 +105,44 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                 return
 
     def _consume_infinite_messages(self, channel, queues: list[str]) -> None:
-        """Consume messages until graceful shutdown is requested."""
+        """Register broker-pushed consumers and wait for graceful shutdown."""
         self.logger.info(f"Started consuming messages indefinitely from queues: {queues}.")
-        processed = 0
-        while not self.stopped:
+        if self.stopped:
+            return
+
+        with self._active_lock:
+            self._push_consuming = True
+        try:
             for queue in queues:
-                if self.stopped:
-                    break
-                try:
-                    delivery = self.receive_message(channel, queue, block=True)
-                    if delivery is not None:
-                        processed += 1
-                        self.logger.debug(f"Received message from queue '{queue}': processing message {processed}")
-                        self._process_delivery(channel, delivery)
-                except Exception as exc:
-                    self.logger.error(
-                        f"Error during infinite consumption from {queue}: {exc}\n{traceback.format_exc()}"
-                    )
+                channel.basic_consume(
+                    queue=queue,
+                    on_message_callback=self._on_message,
+                    auto_ack=self.auto_ack,
+                )
+            if not self.stopped:
+                channel.start_consuming()
+        finally:
+            with self._active_lock:
+                self._push_consuming = False
+
+    def _on_message(self, channel, method, _properties, body) -> None:
+        """Decode and process one broker-pushed delivery."""
+        self.logger.info("Received message from RabbitMQ.")
+        delivery = self._decode_delivery(channel, method, body)
+        self._process_delivery(channel, delivery)
+
+    def _decode_delivery(self, channel, method, body) -> RabbitMQDelivery:
+        """Decode a Pika delivery while preserving acknowledgement state."""
+        try:
+            message = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self._reject_delivery(channel, method.delivery_tag, redelivered=method.redelivered)
+            raise
+        return RabbitMQDelivery(
+            message=message,
+            delivery_tag=method.delivery_tag,
+            redelivered=method.redelivered,
+        )
 
     def _process_delivery(self, channel, delivery: RabbitMQDelivery) -> bool:
         success = self.process_message(delivery.message)
@@ -174,7 +199,8 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         try:
             self.connection.connect()
             channel = self.connection.get_channel()
-            self._active_channel = channel
+            with self._active_lock:
+                self._active_channel = channel
             channel.basic_qos(prefetch_count=self.prefetch_count)
             while not self.stopped:
                 pending = sum(self.connection.count_queue_messages(queue) for queue in queues)
@@ -195,16 +221,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                 method, _, body = channel.basic_get(queue=queue_name, auto_ack=self.auto_ack)
                 if method:
                     self.logger.info(f"Received message from queue '{queue_name}'.")
-                    try:
-                        message = json.loads(body.decode("utf-8"))
-                    except (UnicodeDecodeError, json.JSONDecodeError):
-                        self._reject_delivery(channel, method.delivery_tag, redelivered=method.redelivered)
-                        raise
-                    return RabbitMQDelivery(
-                        message=message,
-                        delivery_tag=method.delivery_tag,
-                        redelivered=method.redelivered,
-                    )
+                    return self._decode_delivery(channel, method, body)
                 if not block:
                     self.logger.debug(f"No message available in queue '{queue_name}'.")
                     return None
@@ -219,12 +236,37 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         if self.closed:
             return
         super().close()
-        self._close_active_resources()
+        if not self._request_consumer_stop():
+            self._close_active_resources()
+
+    def stop(self) -> None:
+        """Request shutdown and wake an active broker-pushed consumer."""
+        super().stop()
+        self._request_consumer_stop()
+
+    def _request_consumer_stop(self) -> bool:
+        """Schedule cancellation when a push consumer is active."""
+        with self._active_lock:
+            channel = self._active_channel
+            push_consuming = self._push_consuming
+        if channel is None or not push_consuming:
+            return False
+
+        self.connection.add_callback_threadsafe(lambda: self._stop_consuming(channel))
+        return True
+
+    @staticmethod
+    def _stop_consuming(channel) -> None:
+        """Stop all consumers registered on an open channel."""
+        if getattr(channel, "is_open", False):
+            channel.stop_consuming()
 
     def _close_active_resources(self) -> None:
         """Release operation-owned resources without closing the backend."""
-        channel = self._active_channel
-        self._active_channel = None
+        with self._active_lock:
+            channel = self._active_channel
+            self._active_channel = None
+            self._push_consuming = False
         try:
             if channel is not None and getattr(channel, "is_open", False):
                 channel.close()
