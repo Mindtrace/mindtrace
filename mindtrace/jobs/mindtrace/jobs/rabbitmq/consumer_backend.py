@@ -113,6 +113,8 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
 
         try:
             for queue in queues:
+                if self.stopped:
+                    break
                 channel.basic_consume(
                     queue=queue,
                     on_message_callback=self._on_message,

@@ -595,6 +595,23 @@ def test_prior_stop_prevents_push_consumer_registration(backend):
     channel.start_consuming.assert_not_called()
 
 
+def test_stop_during_registration_skips_remaining_queues_and_cleans_up(backend):
+    channel = MagicMock(is_open=True)
+    backend.connection.get_channel.return_value = channel
+    backend.connection.add_callback_threadsafe = MagicMock(return_value=True)
+    backend.connection.close = MagicMock()
+    channel.basic_consume.side_effect = lambda **kwargs: backend.stop()
+
+    backend.consume(num_messages=0, queues=["q1", "q2"])
+
+    channel.basic_consume.assert_called_once_with(
+        queue="q1", on_message_callback=backend._on_message, auto_ack=False
+    )
+    channel.start_consuming.assert_not_called()
+    channel.close.assert_called_once_with()
+    backend.connection.close.assert_called_once_with()
+
+
 def test_stop_schedules_push_consumer_cancellation(backend):
     channel = MagicMock(is_open=True)
     backend.connection.add_callback_threadsafe = MagicMock(return_value=True)
