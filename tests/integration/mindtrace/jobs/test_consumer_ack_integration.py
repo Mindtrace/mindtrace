@@ -1,5 +1,4 @@
 import threading
-import time
 import uuid
 
 import pytest
@@ -214,14 +213,11 @@ def test_push_consumer_survives_poison_delivery_and_stops_from_another_thread():
     thread.start()
 
     try:
-        deadline = time.monotonic() + 5
-        while consumer.consumer_backend._active_push_channel is None and time.monotonic() < deadline:
-            time.sleep(0.01)
-        assert consumer.consumer_backend._active_push_channel is not None
-
         client.channel.basic_publish(exchange="default", routing_key=queue, body=b"not-json")
         orchestrator.publish(queue, create_test_job("valid-after-poison", queue))
 
+        # Processing the valid delivery proves that the push consumer is live;
+        # avoid coupling this integration test to backend readiness internals.
         assert processed.wait(timeout=5)
         consumer.stop()
         thread.join(timeout=5)
