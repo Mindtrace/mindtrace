@@ -53,6 +53,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         self, num_messages: int = 0, *, queues: str | list[str] | None = None, block: bool = True, **kwargs
     ) -> None:
         """Consume deliveries using a connection owned by this operation."""
+        self._ensure_open()
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
@@ -72,7 +73,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         except KeyboardInterrupt:
             self.logger.info("Consumption interrupted by user.")
         finally:
-            self.close()
+            self._close_active_resources()
             self.logger.info(f"Stopped consuming messages from queues: {queues}.")
 
     def _consume_finite_messages(self, channel, num_messages: int, queues: list[str], block: bool = True) -> None:
@@ -159,6 +160,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
 
     def consume_until_empty(self, *, queues: str | list[str] | None = None, block: bool = True, **kwargs) -> None:
         """Drain queue(s) using one connection for the entire operation."""
+        self._ensure_open()
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
@@ -181,7 +183,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         except KeyboardInterrupt:
             self.logger.info("Consumption interrupted by user.")
         finally:
-            self.close()
+            self._close_active_resources()
         if not self.stopped:
             self.logger.info(f"Finished draining queues: {queues}. All queues empty.")
 
@@ -221,7 +223,14 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             raise RuntimeError(f"Error receiving message from queue '{queue_name}': {exc}") from exc
 
     def close(self) -> None:
-        """Close resources owned by the active consumption operation."""
+        """Permanently close the backend and any active RabbitMQ resources."""
+        if self.closed:
+            return
+        super().close()
+        self._close_active_resources()
+
+    def _close_active_resources(self) -> None:
+        """Release operation-owned resources without closing the backend."""
         channel = self._active_channel
         self._active_channel = None
         try:

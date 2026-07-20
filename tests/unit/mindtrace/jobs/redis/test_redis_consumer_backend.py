@@ -89,6 +89,22 @@ def test_consume_until_empty_honors_prior_stop_request(backend):
     backend.logger.info.assert_called_with("Stopped draining queues after shutdown request: ['q'].")
 
 
+def test_close_is_terminal_and_idempotent(backend):
+    backend, mock_conn = backend
+
+    backend.close()
+    backend.close()
+
+    assert backend.closed is True
+    mock_conn.close.assert_called_once_with()
+    with pytest.raises(RuntimeError, match="Consumer backend is closed"):
+        backend.consume(num_messages=1, block=False)
+    with pytest.raises(RuntimeError, match="Consumer backend is closed"):
+        backend.consume_until_empty(block=False)
+    with pytest.raises(RuntimeError, match="Consumer backend is closed"):
+        backend.reset()
+
+
 def test_process_message_dict_success(backend):
     backend, _ = backend
     frontend = MagicMock()

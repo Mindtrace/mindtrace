@@ -223,6 +223,22 @@ class TestLocalConsumerBackend:
         consumer.consume(num_messages=1, queues=queue_name, block=False)
         assert True
 
+    def test_close_is_terminal_for_local_backend(self, temp_local_client):
+        orchestrator = Orchestrator(backend=temp_local_client)
+        consumer = SimpleConsumer()
+        consumer.connect_to_orchestrator(orchestrator, "test-queue")
+
+        consumer.close()
+        consumer.close()
+
+        assert consumer.consumer_backend.closed is True
+        with pytest.raises(RuntimeError, match="Consumer backend is closed"):
+            consumer.consume(num_messages=1, block=False)
+        with pytest.raises(RuntimeError, match="Consumer backend is closed"):
+            consumer.consume_until_empty(block=False)
+        with pytest.raises(RuntimeError, match="Consumer backend is closed"):
+            consumer.reset()
+
     def test_consumer_no_run_method(self, temp_local_client):
         """Test consumer with no run method set."""
         _ = Orchestrator(backend=temp_local_client)

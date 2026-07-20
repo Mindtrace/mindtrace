@@ -22,11 +22,22 @@ class ConsumerBackendBase(MindtraceABC):
         self.queue_name = queue_name
         self.consumer_frontend = consumer_frontend
         self._stop_event = Event()
+        self._closed_event = Event()
 
     @property
     def stopped(self) -> bool:
         """Whether graceful shutdown has been requested."""
         return self._stop_event.is_set()
+
+    @property
+    def closed(self) -> bool:
+        """Whether this backend has been permanently closed."""
+        return self._closed_event.is_set()
+
+    def _ensure_open(self) -> None:
+        """Raise when an operation is attempted after :meth:`close`."""
+        if self.closed:
+            raise RuntimeError("Consumer backend is closed.")
 
     def stop(self) -> None:
         """Request terminal shutdown after the current delivery completes.
@@ -37,10 +48,13 @@ class ConsumerBackendBase(MindtraceABC):
 
     def reset(self) -> None:
         """Allow consumption to resume after a prior stop request."""
+        self._ensure_open()
         self._stop_event.clear()
 
     def close(self) -> None:
-        """Close backend resources, if any."""
+        """Permanently stop this backend and mark it closed."""
+        self._stop_event.set()
+        self._closed_event.set()
 
     @abstractmethod
     def consume(self, num_messages: int = 0, **kwargs) -> None:

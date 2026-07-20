@@ -364,6 +364,27 @@ def test_consume_closes_channel_and_connection(backend):
 
     channel.close.assert_called_once_with()
     backend.connection.close.assert_called_once_with()
+    assert backend.closed is False
+
+
+def test_close_is_terminal_and_idempotent(backend):
+    channel = MagicMock(is_open=True)
+    backend._active_channel = channel
+    backend.connection.close = MagicMock()
+
+    backend.close()
+    backend.close()
+
+    assert backend.closed is True
+    assert backend.stopped is True
+    channel.close.assert_called_once_with()
+    backend.connection.close.assert_called_once_with()
+    with pytest.raises(RuntimeError, match="Consumer backend is closed"):
+        backend.consume(num_messages=1, queues="q", block=False)
+    with pytest.raises(RuntimeError, match="Consumer backend is closed"):
+        backend.consume_until_empty(queues="q", block=False)
+    with pytest.raises(RuntimeError, match="Consumer backend is closed"):
+        backend.reset()
 
 
 def test_repeated_consume_calls_open_separate_connections(backend):

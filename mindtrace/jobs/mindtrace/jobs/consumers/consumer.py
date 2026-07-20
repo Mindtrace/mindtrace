@@ -78,7 +78,7 @@ class Consumer(Mindtrace):
         self.consumer_backend.reset()
 
     def close(self) -> None:
-        """Close resources owned by the consumer backend."""
+        """Permanently close the consumer backend and release its resources."""
         if self.consumer_backend:
             self.consumer_backend.close()
 

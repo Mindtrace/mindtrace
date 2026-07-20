@@ -232,6 +232,12 @@ explicitly invokes `consumer.reset()`.
 RabbitMQ channels and connections close automatically whenever `consume()`
 returns; a later call reconnects.
 
+Calling `consumer.close()` is different from normal per-operation cleanup: it
+permanently closes the consumer backend. It is safe to call more than once,
+but later calls to `consume()`, `consume_until_empty()`, or `reset()` raise a
+clear `RuntimeError`. This terminal close contract is the same for Local,
+Redis, and RabbitMQ consumers.
+
 ### Consuming until empty
 
 ```python

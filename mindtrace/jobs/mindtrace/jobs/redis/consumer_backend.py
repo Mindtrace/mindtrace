@@ -36,6 +36,7 @@ class RedisConsumerBackend(ConsumerBackendBase):
         self, num_messages: int = 0, *, queues: str | list[str] | None = None, block: bool = True, **kwargs
     ) -> None:
         """Consume messages from Redis queue(s)."""
+        self._ensure_open()
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
@@ -90,6 +91,7 @@ class RedisConsumerBackend(ConsumerBackendBase):
 
     def consume_until_empty(self, *, queues: str | list[str] | None = None, block: bool = True, **kwargs) -> None:
         """Consume messages from the queue(s) until empty."""
+        self._ensure_open()
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
@@ -103,7 +105,8 @@ class RedisConsumerBackend(ConsumerBackendBase):
             self.logger.info(f"Stopped consuming messages from queues: {queues} (queues empty).")
 
     def close(self):
-        """Close the Redis connection and clean up resources."""
+        """Permanently close the backend and its Redis resources."""
+        super().close()
         if hasattr(self, "connection") and self.connection is not None:
             self.connection.close()
             self.connection = None

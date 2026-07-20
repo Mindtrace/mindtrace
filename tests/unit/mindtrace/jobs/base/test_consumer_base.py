@@ -35,6 +35,17 @@ class TestConsumerBackendBase:
 
         assert consumer.stopped is False
 
+    def test_close_is_terminal_and_idempotent(self, mock_consumer):
+        consumer = mock_consumer("test-queue", Mock())
+
+        consumer.close()
+        consumer.close()
+
+        assert consumer.closed is True
+        assert consumer.stopped is True
+        with pytest.raises(RuntimeError, match="Consumer backend is closed"):
+            consumer.reset()
+
     def test_process_message_with_exception(self, mock_consumer, mock_bad_consumer_frontend):
         """Test processing message that raises exception."""
         frontend = mock_bad_consumer_frontend()
