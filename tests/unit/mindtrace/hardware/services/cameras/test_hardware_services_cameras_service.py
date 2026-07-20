@@ -588,6 +588,14 @@ class TestCameraManagerServiceBusinessLogic:
         mock_camera.get_bandwidth_limit.return_value = 800.0
         mock_camera.get_packet_size.side_effect = RuntimeError("no packet")
         mock_camera.get_inter_packet_delay.return_value = 100
+        mock_camera.get_gamma_enable.return_value = True
+        mock_camera.get_black_level.return_value = 0.0
+        mock_camera.get_color_transformation.side_effect = RuntimeError("no color transform")
+        mock_camera.get_light_source_preset.return_value = "Daylight5000K"
+        mock_camera.get_balance_ratios.return_value = {"red": 1.0, "green": 1.0, "blue": 1.0}
+        mock_camera.get_contrast.side_effect = RuntimeError("no contrast")
+        mock_camera.get_sharpness.return_value = 1.5
+        mock_camera.get_saturation.side_effect = RuntimeError("no saturation")
         mock_manager.open = AsyncMock(return_value=mock_camera)
 
         response = await service.get_camera_configuration(CameraQueryRequest(camera="MockBasler:Camera1"))
@@ -603,6 +611,14 @@ class TestCameraManagerServiceBusinessLogic:
         assert response.data.bandwidth_limit == 800.0
         assert response.data.packet_size is None
         assert response.data.inter_packet_delay == 100
+        assert response.data.gamma_enable is True
+        assert response.data.black_level == 0.0
+        assert response.data.color_transformation is None
+        assert response.data.light_source_preset == "Daylight5000K"
+        assert response.data.balance_ratios == {"red": 1.0, "green": 1.0, "blue": 1.0}
+        assert response.data.contrast is None
+        assert response.data.sharpness == 1.5
+        assert response.data.saturation is None
 
     @pytest.mark.asyncio
     async def test_import_and_export_camera_config_delegate_to_proxy(self, service_with_mock_manager):
