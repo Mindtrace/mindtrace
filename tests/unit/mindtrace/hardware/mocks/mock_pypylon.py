@@ -206,6 +206,11 @@ def create_fake_pypylon():
                 "BalanceRatio": Parameter(1.0, 0.0, 10.0),
                 "BlackLevel": Parameter(0.0, 0.0, 100.0),
                 "Gamma": Parameter(1.0, 0.0, 2.0),
+                "GammaEnable": Parameter(False),
+                "GammaSelector": EnumParameter("User", ["User", "sRGB"]),
+                "ColorTransformationEnable": Parameter(False),
+                "SharpnessEnhancement": Parameter(1.0, 0.0, 3.98),
+                "BslSaturation": Parameter(1.0, 0.0, 2.0),
                 "LightSourcePreset": EnumParameter("Off", ["Off", "Daylight5000K", "Tungsten2800K"]),
             }
 
@@ -441,6 +446,11 @@ def create_fake_pypylon():
     genicam.TimeoutException = TimeoutException
     genicam.RuntimeException = RuntimeException
     genicam.AccessException = AccessException
+
+    # Access mode constants
+    genicam.RW = "RW"
+    genicam.RO = "RO"
+    genicam.WO = "WO"
 
     # Assign sub-modules
     pypylon.pylon = pylon

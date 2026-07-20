@@ -132,6 +132,20 @@ class MockPylonCamera:
         self._offset_x_param = MockParameter(0, min_val=0, max_val=1920, camera_attr="offset_x", camera_obj=self)
         self._offset_y_param = MockParameter(0, min_val=0, max_val=1080, camera_attr="offset_y", camera_obj=self)
 
+        # Color-correction parameters (BslContrast/Contrast intentionally absent
+        # to exercise the unsupported-node path)
+        self._gamma_enable_param = MockParameter(False)
+        self._gamma_selector_param = MockEnumParameter("User", ["User", "sRGB"])
+        self._black_level_param = MockParameter(4.0, min_val=0.0, max_val=255.0)
+        self._color_transformation_enable_param = MockParameter(False)
+        self._light_source_preset_param = MockEnumParameter(
+            "Off", ["Off", "Daylight5000K", "Daylight6500K", "Tungsten2800K"]
+        )
+        self._balance_ratio_selector_param = MockEnumParameter("Red", ["Red", "Green", "Blue"])
+        self._balance_ratio_param = MockBalanceRatioParameter(self._balance_ratio_selector_param)
+        self._sharpness_enhancement_param = MockParameter(1.0, min_val=0.0, max_val=3.98)
+        self._bsl_saturation_param = MockParameter(1.0, min_val=0.0, max_val=2.0)
+
     def Attach(self, device_info):
         self.device_info = device_info
 
@@ -238,6 +252,42 @@ class MockPylonCamera:
     def OffsetY(self):
         return self._offset_y_param
 
+    @property
+    def GammaEnable(self):
+        return self._gamma_enable_param
+
+    @property
+    def GammaSelector(self):
+        return self._gamma_selector_param
+
+    @property
+    def BlackLevel(self):
+        return self._black_level_param
+
+    @property
+    def ColorTransformationEnable(self):
+        return self._color_transformation_enable_param
+
+    @property
+    def LightSourcePreset(self):
+        return self._light_source_preset_param
+
+    @property
+    def BalanceRatioSelector(self):
+        return self._balance_ratio_selector_param
+
+    @property
+    def BalanceRatio(self):
+        return self._balance_ratio_param
+
+    @property
+    def SharpnessEnhancement(self):
+        return self._sharpness_enhancement_param
+
+    @property
+    def BslSaturation(self):
+        return self._bsl_saturation_param
+
 
 class MockParameter:
     """Mock parameter for camera settings."""
@@ -322,6 +372,22 @@ class MockEnumParameter:
     def GetEntries(self):
         """Get available entries for enumeration parameters."""
         return self.valid_values
+
+
+class MockBalanceRatioParameter(MockParameter):
+    """Mock balance ratio parameter with per-channel storage driven by a selector."""
+
+    def __init__(self, selector):
+        super().__init__(1.0, min_val=0.0, max_val=15.98)
+        self._selector = selector
+        self._values = {"Red": 1.0, "Green": 1.0, "Blue": 1.0}
+
+    def GetValue(self):
+        return self._values[self._selector.GetValue()]
+
+    def SetValue(self, value):
+        super().SetValue(value)
+        self._values[self._selector.GetValue()] = value
 
 
 class MockGrabResult:
@@ -987,6 +1053,99 @@ class TestBaslerCameraBackendWhiteBalance:
         # Setting should raise when not writable
         with pytest.raises(HardwareOperationError):
             await basler_camera.set_auto_wb_once("once")
+
+
+class TestBaslerColorCorrection:
+    """Test color-correction functionality."""
+
+    @pytest.mark.asyncio
+    async def test_set_gamma_enable_selects_srgb(self, basler_camera):
+        """Test enabling gamma selects the sRGB curve and round-trips."""
+        await basler_camera.initialize()
+
+        await basler_camera.set_gamma_enable(True)
+        assert basler_camera.camera.GammaEnable.GetValue() is True
+        assert basler_camera.camera.GammaSelector.GetValue() == "sRGB"
+        assert await basler_camera.get_gamma_enable() is True
+
+        await basler_camera.set_gamma_enable(False)
+        assert await basler_camera.get_gamma_enable() is False
+
+    @pytest.mark.asyncio
+    async def test_black_level_set_and_get(self, basler_camera):
+        """Test black level control."""
+        await basler_camera.initialize()
+
+        await basler_camera.set_black_level(8.0)
+        assert await basler_camera.get_black_level() == 8.0
+
+    @pytest.mark.asyncio
+    async def test_color_transformation_set_and_get(self, basler_camera):
+        """Test color transformation enable control."""
+        await basler_camera.initialize()
+
+        await basler_camera.set_color_transformation(True)
+        assert await basler_camera.get_color_transformation() is True
+
+    @pytest.mark.asyncio
+    async def test_balance_ratios_partial_set_and_get(self, basler_camera):
+        """Test setting a subset of balance ratios leaves other channels untouched."""
+        await basler_camera.initialize()
+
+        await basler_camera.set_balance_ratios(red=1.2, blue=1.4)
+        ratios = await basler_camera.get_balance_ratios()
+        assert ratios == {"red": 1.2, "green": 1.0, "blue": 1.4}
+
+    @pytest.mark.asyncio
+    async def test_light_source_preset_set_and_get(self, basler_camera):
+        """Test light source preset control."""
+        await basler_camera.initialize()
+
+        await basler_camera.set_light_source_preset("Daylight5000K")
+        assert await basler_camera.get_light_source_preset() == "Daylight5000K"
+
+    @pytest.mark.asyncio
+    async def test_light_source_preset_invalid_raises(self, basler_camera):
+        """Test invalid light source preset raises a configuration error."""
+        await basler_camera.initialize()
+
+        with pytest.raises(CameraConfigurationError, match="Invalid light source preset"):
+            await basler_camera.set_light_source_preset("NotAPreset")
+
+    @pytest.mark.asyncio
+    async def test_sharpness_and_saturation_set_and_get(self, basler_camera):
+        """Test sharpness and saturation controls."""
+        await basler_camera.initialize()
+
+        await basler_camera.set_sharpness(2.5)
+        assert await basler_camera.get_sharpness() == 2.5
+
+        await basler_camera.set_saturation(1.5)
+        assert await basler_camera.get_saturation() == 1.5
+
+    @pytest.mark.asyncio
+    async def test_set_contrast_unsupported_raises(self, basler_camera):
+        """Test contrast setter raises when the camera has no contrast node."""
+        await basler_camera.initialize()
+
+        with pytest.raises(HardwareOperationError, match="Contrast feature not writable"):
+            await basler_camera.set_contrast(1.0)
+        assert await basler_camera.get_contrast() is None
+
+    @pytest.mark.asyncio
+    async def test_color_method_requires_initialization(self, basler_camera):
+        """Test color methods raise when the camera is not initialized."""
+        with pytest.raises(CameraConnectionError, match="not initialized"):
+            await basler_camera.set_gamma_enable(True)
+
+    @pytest.mark.asyncio
+    async def test_configure_camera_applies_color_defaults(self, basler_camera):
+        """Test connect applies sRGB gamma and zero black level defaults."""
+        await basler_camera.initialize()
+
+        assert basler_camera.camera.GammaEnable.GetValue() is True
+        assert basler_camera.camera.GammaSelector.GetValue() == "sRGB"
+        assert basler_camera.camera.BlackLevel.GetValue() == 0.0
 
 
 class TestBaslerCameraBackendRangeQueries:

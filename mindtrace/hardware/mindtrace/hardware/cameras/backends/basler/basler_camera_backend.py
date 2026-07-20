@@ -576,6 +576,27 @@ class BaslerCameraBackend(CameraBackend):
         except Exception as e:
             raise CameraConnectionError(f"Failed to ensure camera '{self.camera_name}' is open: {e}") from e
 
+    def _find_node(self, *names: str, writable: bool = False):
+        """Return the first available camera node from names, or None.
+
+        Node availability is model-dependent; missing attributes and
+        insufficient access modes are treated as unavailable.
+
+        Args:
+            names: Candidate node names, tried in order
+            writable: If True, only accept nodes with RW access
+        """
+        assert genicam is not None, "genicam is not available"
+        for name in names:
+            try:
+                node = getattr(self.camera, name)
+                mode = node.GetAccessMode()
+            except Exception:
+                continue
+            if mode == genicam.RW or (not writable and mode == genicam.RO):
+                return node
+        return None
+
     async def _ensure_grabbing(self):
         """Ensure camera is grabbing images.
 
@@ -668,6 +689,28 @@ class BaslerCameraBackend(CameraBackend):
 
             await self._run_blocking(_set_trigger_mode, timeout=self._op_timeout_s)
             self.triggermode = "trigger"
+
+            # Color-correction defaults: sRGB gamma on, black level 0, for
+            # rendering matched with the Daheng backend (nodes are model-dependent)
+            def _set_color_defaults():
+                try:
+                    node = self._find_node("GammaEnable", writable=True)
+                    if node is not None:
+                        node.SetValue(True)
+                    node = self._find_node("GammaSelector", writable=True)
+                    if node is not None:
+                        node.SetValue("sRGB")
+                    node = self._find_node("BlackLevel", writable=True)
+                    if node is not None:
+                        node.SetValue(0.0)
+                    else:
+                        node = self._find_node("BlackLevelRaw", writable=True)
+                        if node is not None:
+                            node.SetValue(0)
+                except Exception as color_error:
+                    self.logger.warning(f"Could not apply color-correction defaults: {color_error}")
+
+            await self._run_blocking(_set_color_defaults, timeout=self._op_timeout_s)
 
             # Configure multicast streaming BEFORE starting grabbing if enabled
             # This is critical for proper multicast setup
@@ -2301,6 +2344,490 @@ class BaslerCameraBackend(CameraBackend):
         except Exception as e:
             self.logger.error(f"Error setting white balance for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to set white balance: {str(e)}")
+
+    def _require_initialized(self):
+        """Raise unless the camera is initialized and the SDK is loaded."""
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+        assert genicam is not None, "camera is initialized but genicam is not available"
+
+    async def get_gamma_enable(self) -> Optional[bool]:
+        """Get whether in-camera gamma is enabled.
+
+        Returns:
+            True/False, or None if the camera exposes no gamma node
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If gamma retrieval fails
+        """
+        self._require_initialized()
+        try:
+            if not self.camera.IsOpen():
+                self.camera.Open()
+
+            node = self._find_node("GammaEnable")
+            if node is not None:
+                return bool(await self._run_blocking(node.GetValue, timeout=self._op_timeout_s))
+            node = self._find_node("GammaSelector")
+            if node is not None:
+                return await self._run_blocking(node.GetValue, timeout=self._op_timeout_s) == "sRGB"
+            self.logger.warning(f"Gamma feature not available on camera '{self.camera_name}'")
+            return None
+        except CameraConnectionError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Error getting gamma enable for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to get gamma enable: {str(e)}")
+
+    async def set_gamma_enable(self, enabled: bool):
+        """Enable or disable in-camera gamma.
+
+        When enabling, the sRGB gamma curve is selected so both supported
+        backends render with matched tone curves.
+
+        Args:
+            enabled: True to enable sRGB gamma, False for linear output
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If no gamma node is writable or setting fails
+        """
+        self._require_initialized()
+        try:
+            if not self.camera.IsOpen():
+                self.camera.Open()
+
+            enable_node = self._find_node("GammaEnable", writable=True)
+            selector_node = self._find_node("GammaSelector", writable=True)
+            if enable_node is None and selector_node is None:
+                raise HardwareOperationError(f"Gamma feature not writable on camera '{self.camera_name}'")
+
+            if enable_node is not None:
+                await self._run_blocking(enable_node.SetValue, enabled, timeout=self._op_timeout_s)
+                actual = await self._run_blocking(enable_node.GetValue, timeout=self._op_timeout_s)
+                if bool(actual) != enabled:
+                    raise HardwareOperationError(
+                        f"Failed to set gamma enable for camera '{self.camera_name}'. "
+                        f"Target: {enabled}, Actual: {actual}"
+                    )
+            if enabled and selector_node is not None:
+                await self._run_blocking(selector_node.SetValue, "sRGB", timeout=self._op_timeout_s)
+
+            self.logger.debug(f"Gamma enable set to {enabled} for camera '{self.camera_name}'")
+        except (CameraConnectionError, HardwareOperationError):
+            raise
+        except Exception as e:
+            self.logger.error(f"Error setting gamma enable for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to set gamma enable: {str(e)}")
+
+    async def get_black_level(self) -> Optional[float]:
+        """Get the current black level.
+
+        Returns:
+            Black level in camera units, or None if unavailable
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If black level retrieval fails
+        """
+        self._require_initialized()
+        try:
+            if not self.camera.IsOpen():
+                self.camera.Open()
+
+            node = self._find_node("BlackLevel", "BlackLevelRaw")
+            if node is None:
+                self.logger.warning(f"BlackLevel feature not available on camera '{self.camera_name}'")
+                return None
+            return float(await self._run_blocking(node.GetValue, timeout=self._op_timeout_s))
+        except CameraConnectionError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Error getting black level for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to get black level: {str(e)}")
+
+    async def set_black_level(self, level: float):
+        """Set the black level (shadow floor).
+
+        Args:
+            level: Black level value in camera units
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If no black level node is writable or setting fails
+        """
+        self._require_initialized()
+        try:
+            if not self.camera.IsOpen():
+                self.camera.Open()
+
+            node = self._find_node("BlackLevel", writable=True)
+            if node is not None:
+                await self._run_blocking(node.SetValue, float(level), timeout=self._op_timeout_s)
+            else:
+                # Older acA GigE models expose the integer raw node instead
+                node = self._find_node("BlackLevelRaw", writable=True)
+                if node is None:
+                    raise HardwareOperationError(f"BlackLevel feature not writable on camera '{self.camera_name}'")
+                await self._run_blocking(node.SetValue, int(round(level)), timeout=self._op_timeout_s)
+
+            self.logger.debug(f"Black level set to {level} for camera '{self.camera_name}'")
+        except (CameraConnectionError, HardwareOperationError):
+            raise
+        except Exception as e:
+            self.logger.error(f"Error setting black level for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to set black level: {str(e)}")
+
+    async def get_color_transformation(self) -> Optional[bool]:
+        """Get whether the color transformation matrix is enabled.
+
+        Returns:
+            True/False, or None if unavailable
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If retrieval fails
+        """
+        self._require_initialized()
+        try:
+            if not self.camera.IsOpen():
+                self.camera.Open()
+
+            node = self._find_node("ColorTransformationEnable")
+            if node is None:
+                self.logger.warning(f"ColorTransformation feature not available on camera '{self.camera_name}'")
+                return None
+            return bool(await self._run_blocking(node.GetValue, timeout=self._op_timeout_s))
+        except CameraConnectionError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Error getting color transformation for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to get color transformation: {str(e)}")
+
+    async def set_color_transformation(self, enabled: bool):
+        """Enable or disable the color transformation matrix.
+
+        Args:
+            enabled: True to enable, False to disable
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If the node is not writable or setting fails
+        """
+        self._require_initialized()
+        try:
+            if not self.camera.IsOpen():
+                self.camera.Open()
+
+            node = self._find_node("ColorTransformationEnable", writable=True)
+            if node is None:
+                raise HardwareOperationError(
+                    f"ColorTransformation feature not writable on camera '{self.camera_name}'"
+                )
+            await self._run_blocking(node.SetValue, enabled, timeout=self._op_timeout_s)
+            self.logger.debug(f"Color transformation set to {enabled} for camera '{self.camera_name}'")
+        except (CameraConnectionError, HardwareOperationError):
+            raise
+        except Exception as e:
+            self.logger.error(f"Error setting color transformation for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to set color transformation: {str(e)}")
+
+    async def get_light_source_preset(self) -> Optional[str]:
+        """Get the current light source preset.
+
+        Returns:
+            Preset name, or None if unavailable
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If retrieval fails
+        """
+        self._require_initialized()
+        try:
+            if not self.camera.IsOpen():
+                self.camera.Open()
+
+            node = self._find_node("LightSourcePreset")
+            if node is None:
+                self.logger.warning(f"LightSourcePreset feature not available on camera '{self.camera_name}'")
+                return None
+            return str(await self._run_blocking(node.GetValue, timeout=self._op_timeout_s))
+        except CameraConnectionError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Error getting light source preset for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to get light source preset: {str(e)}")
+
+    async def set_light_source_preset(self, preset: str):
+        """Set the light source preset (color-temperature preset).
+
+        Args:
+            preset: Preset name, e.g. "Off", "Daylight5000K", "Tungsten2800K"
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            CameraConfigurationError: If the preset is not supported by the camera
+            HardwareOperationError: If the node is not writable or setting fails
+        """
+        self._require_initialized()
+        try:
+            if not self.camera.IsOpen():
+                self.camera.Open()
+
+            node = self._find_node("LightSourcePreset", writable=True)
+            if node is None:
+                raise HardwareOperationError(f"LightSourcePreset feature not writable on camera '{self.camera_name}'")
+
+            try:
+                valid_presets = list(node.GetSymbolics())
+            except Exception:
+                valid_presets = None
+            if valid_presets is not None and preset not in valid_presets:
+                raise CameraConfigurationError(
+                    f"Invalid light source preset '{preset}' for camera '{self.camera_name}'. "
+                    f"Available presets: {valid_presets}"
+                )
+
+            await self._run_blocking(node.SetValue, preset, timeout=self._op_timeout_s)
+            self.logger.debug(f"Light source preset set to '{preset}' for camera '{self.camera_name}'")
+        except (CameraConnectionError, CameraConfigurationError, HardwareOperationError):
+            raise
+        except Exception as e:
+            self.logger.error(f"Error setting light source preset for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to set light source preset: {str(e)}")
+
+    async def get_balance_ratios(self) -> Optional[Dict[str, float]]:
+        """Get the current R/G/B white balance ratios.
+
+        Returns:
+            Dict with 'red', 'green', 'blue' ratio values, or None if unavailable
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If retrieval fails
+        """
+        self._require_initialized()
+        try:
+            if not self.camera.IsOpen():
+                self.camera.Open()
+
+            selector = self._find_node("BalanceRatioSelector", writable=True)
+            ratio = self._find_node("BalanceRatio", "BalanceRatioAbs")
+            if selector is None or ratio is None:
+                self.logger.warning(f"BalanceRatio feature not available on camera '{self.camera_name}'")
+                return None
+
+            def _get():
+                ratios = {}
+                for channel in ("Red", "Green", "Blue"):
+                    selector.SetValue(channel)
+                    ratios[channel.lower()] = float(ratio.GetValue())
+                return ratios
+
+            return await self._run_blocking(_get, timeout=self._op_timeout_s)
+        except CameraConnectionError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Error getting balance ratios for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to get balance ratios: {str(e)}")
+
+    async def set_balance_ratios(
+        self, red: Optional[float] = None, green: Optional[float] = None, blue: Optional[float] = None
+    ):
+        """Set R/G/B white balance ratios (manual color cast correction).
+
+        Only channels passed as non-None are written. Most models require
+        BalanceWhiteAuto to be "Off" for the ratios to be writable.
+
+        Args:
+            red: Red channel ratio
+            green: Green channel ratio
+            blue: Blue channel ratio
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If the nodes are not writable or setting fails
+        """
+        self._require_initialized()
+        try:
+            if not self.camera.IsOpen():
+                self.camera.Open()
+
+            selector = self._find_node("BalanceRatioSelector", writable=True)
+            ratio = self._find_node("BalanceRatio", "BalanceRatioAbs", writable=True)
+            if selector is None or ratio is None:
+                raise HardwareOperationError(f"BalanceRatio feature not writable on camera '{self.camera_name}'")
+
+            def _set():
+                for channel, value in (("Red", red), ("Green", green), ("Blue", blue)):
+                    if value is not None:
+                        selector.SetValue(channel)
+                        ratio.SetValue(float(value))
+
+            await self._run_blocking(_set, timeout=self._op_timeout_s)
+            self.logger.debug(f"Balance ratios set (R={red}, G={green}, B={blue}) for camera '{self.camera_name}'")
+        except (CameraConnectionError, HardwareOperationError):
+            raise
+        except Exception as e:
+            self.logger.error(f"Error setting balance ratios for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to set balance ratios: {str(e)}")
+
+    async def get_contrast(self) -> Optional[float]:
+        """Get the current contrast value.
+
+        Returns:
+            Contrast value, or None if unavailable (common on acA models)
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If retrieval fails
+        """
+        self._require_initialized()
+        try:
+            if not self.camera.IsOpen():
+                self.camera.Open()
+
+            node = self._find_node("BslContrast", "Contrast")
+            if node is None:
+                self.logger.warning(f"Contrast feature not available on camera '{self.camera_name}'")
+                return None
+            return float(await self._run_blocking(node.GetValue, timeout=self._op_timeout_s))
+        except CameraConnectionError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Error getting contrast for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to get contrast: {str(e)}")
+
+    async def set_contrast(self, value: float):
+        """Set the contrast value.
+
+        Args:
+            value: Contrast value in camera units
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If no contrast node is writable or setting fails
+        """
+        self._require_initialized()
+        try:
+            if not self.camera.IsOpen():
+                self.camera.Open()
+
+            node = self._find_node("BslContrast", "Contrast", writable=True)
+            if node is None:
+                raise HardwareOperationError(f"Contrast feature not writable on camera '{self.camera_name}'")
+            await self._run_blocking(node.SetValue, float(value), timeout=self._op_timeout_s)
+            self.logger.debug(f"Contrast set to {value} for camera '{self.camera_name}'")
+        except (CameraConnectionError, HardwareOperationError):
+            raise
+        except Exception as e:
+            self.logger.error(f"Error setting contrast for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to set contrast: {str(e)}")
+
+    async def get_sharpness(self) -> Optional[float]:
+        """Get the current sharpness enhancement value.
+
+        Returns:
+            Sharpness value, or None if unavailable
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If retrieval fails
+        """
+        self._require_initialized()
+        try:
+            if not self.camera.IsOpen():
+                self.camera.Open()
+
+            node = self._find_node("SharpnessEnhancement", "BslSharpnessEnhancement")
+            if node is None:
+                self.logger.warning(f"Sharpness feature not available on camera '{self.camera_name}'")
+                return None
+            return float(await self._run_blocking(node.GetValue, timeout=self._op_timeout_s))
+        except CameraConnectionError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Error getting sharpness for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to get sharpness: {str(e)}")
+
+    async def set_sharpness(self, value: float):
+        """Set the sharpness enhancement value.
+
+        Args:
+            value: Sharpness value in camera units
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If no sharpness node is writable or setting fails
+        """
+        self._require_initialized()
+        try:
+            if not self.camera.IsOpen():
+                self.camera.Open()
+
+            node = self._find_node("SharpnessEnhancement", "BslSharpnessEnhancement", writable=True)
+            if node is None:
+                raise HardwareOperationError(f"Sharpness feature not writable on camera '{self.camera_name}'")
+            await self._run_blocking(node.SetValue, float(value), timeout=self._op_timeout_s)
+            self.logger.debug(f"Sharpness set to {value} for camera '{self.camera_name}'")
+        except (CameraConnectionError, HardwareOperationError):
+            raise
+        except Exception as e:
+            self.logger.error(f"Error setting sharpness for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to set sharpness: {str(e)}")
+
+    async def get_saturation(self) -> Optional[float]:
+        """Get the current color saturation value.
+
+        Returns:
+            Saturation value, or None if unavailable
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If retrieval fails
+        """
+        self._require_initialized()
+        try:
+            if not self.camera.IsOpen():
+                self.camera.Open()
+
+            node = self._find_node("BslSaturation", "BslSaturationValue")
+            if node is None:
+                self.logger.warning(f"Saturation feature not available on camera '{self.camera_name}'")
+                return None
+            return float(await self._run_blocking(node.GetValue, timeout=self._op_timeout_s))
+        except CameraConnectionError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Error getting saturation for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to get saturation: {str(e)}")
+
+    async def set_saturation(self, value: float):
+        """Set the color saturation value.
+
+        Args:
+            value: Saturation value in camera units
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If no saturation node is writable or setting fails
+        """
+        self._require_initialized()
+        try:
+            if not self.camera.IsOpen():
+                self.camera.Open()
+
+            node = self._find_node("BslSaturation", "BslSaturationValue", writable=True)
+            if node is None:
+                raise HardwareOperationError(f"Saturation feature not writable on camera '{self.camera_name}'")
+            await self._run_blocking(node.SetValue, float(value), timeout=self._op_timeout_s)
+            self.logger.debug(f"Saturation set to {value} for camera '{self.camera_name}'")
+        except (CameraConnectionError, HardwareOperationError):
+            raise
+        except Exception as e:
+            self.logger.error(f"Error setting saturation for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to set saturation: {str(e)}")
 
     async def get_trigger_modes(self) -> List[str]:
         """Get available trigger modes for Basler cameras.
