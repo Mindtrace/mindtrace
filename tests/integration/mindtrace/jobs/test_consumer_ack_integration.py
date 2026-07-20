@@ -1,4 +1,5 @@
 import threading
+import time
 import uuid
 
 import pytest
@@ -175,7 +176,7 @@ def test_stop_waits_for_in_flight_job_before_acknowledging():
     orchestrator.publish(queue, create_test_job("blocking", queue))
     consumer = BlockingConsumer()
     consumer.connect_to_orchestrator(orchestrator, queue)
-    thread = threading.Thread(target=consumer.consume)
+    thread = threading.Thread(target=consumer.consume, daemon=True)
     thread.start()
 
     try:
@@ -192,3 +193,43 @@ def test_stop_waits_for_in_flight_job_before_acknowledging():
         release.set()
         thread.join(timeout=5)
         client.delete_queue(queue)
+
+
+@pytest.mark.rabbitmq
+def test_push_consumer_survives_poison_delivery_and_stops_from_another_thread():
+    processed = threading.Event()
+
+    class SignalingConsumer(Consumer):
+        def run(self, job_dict):
+            processed.set()
+            return {"result": "processed"}
+
+    client = rabbitmq_client()
+    orchestrator = Orchestrator(backend=client)
+    queue = unique_queue("consumer-push")
+    orchestrator.register(JobSchema(name=queue, input_schema=SampleJobInput, output_schema=SampleJobOutput))
+    consumer = SignalingConsumer()
+    consumer.connect_to_orchestrator(orchestrator, queue)
+    thread = threading.Thread(target=consumer.consume, daemon=True)
+    thread.start()
+
+    try:
+        deadline = time.monotonic() + 5
+        while consumer.consumer_backend._active_push_channel is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert consumer.consumer_backend._active_push_channel is not None
+
+        client.channel.basic_publish(exchange="default", routing_key=queue, body=b"not-json")
+        orchestrator.publish(queue, create_test_job("valid-after-poison", queue))
+
+        assert processed.wait(timeout=5)
+        consumer.stop()
+        thread.join(timeout=5)
+
+        assert thread.is_alive() is False
+        assert consumer.consumer_backend.connection.is_connected() is False
+    finally:
+        consumer.stop()
+        thread.join(timeout=5)
+        client.delete_queue(queue)
+        client.connection.close()
