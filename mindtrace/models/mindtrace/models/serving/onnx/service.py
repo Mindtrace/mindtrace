@@ -201,24 +201,41 @@ class OnnxModelService(ModelService):
         if self.warmup > 0:
             self._warmup_session()
 
+    #: Default size substituted for non-batch symbolic dimensions during
+    #: warmup (e.g. dynamic spatial dims); the batch dimension resolves to 1.
+    _WARMUP_DYNAMIC_DIM = 64
+
     def _warmup_session(self) -> None:
         """Run ``self.warmup`` zero-tensor inferences to warm the session.
 
-        Inputs are zero-filled numpy arrays shaped like the model inputs;
-        dynamic dimensions (symbolic names or ``None``) are resolved to ``1``.
+        Inputs are zero-filled numpy arrays shaped like the model inputs.
+        The batch dimension (dim 0) resolves to ``1``; other symbolic
+        dimensions resolve to ``_WARMUP_DYNAMIC_DIM`` (dynamic spatial dims
+        warmed at 1 pixel would be useless and can crash pooling layers).
+        Warmup is best-effort: any failure is logged and never aborts
+        ``load_model`` or service startup.
         """
-        feeds: dict[str, np.ndarray] = {}
-        for inp in self.session.get_inputs():
-            shape = tuple(dim if isinstance(dim, int) and dim > 0 else 1 for dim in inp.shape)
-            dtype = _ONNX_TO_NUMPY_DTYPE.get(inp.type, np.float32)
-            feeds[inp.name] = np.zeros(shape, dtype=dtype)
-        for _ in range(self.warmup):
-            self.session.run(self.output_names, feeds)
-        self.logger.info(
-            "Warmup complete: %d inference pass(es) on provider %s.",
-            self.warmup,
-            self.active_provider,
-        )
+        try:
+            feeds: dict[str, np.ndarray] = {}
+            for inp in self.session.get_inputs():
+                shape = tuple(
+                    dim if isinstance(dim, int) and dim > 0 else (1 if index == 0 else self._WARMUP_DYNAMIC_DIM)
+                    for index, dim in enumerate(inp.shape)
+                )
+                dtype = _ONNX_TO_NUMPY_DTYPE.get(inp.type, np.float32)
+                feeds[inp.name] = np.zeros(shape, dtype=dtype)
+            for _ in range(self.warmup):
+                self.session.run(self.output_names, feeds)
+            self.logger.info(
+                "Warmup complete: %d inference pass(es) on provider %s.",
+                self.warmup,
+                self.active_provider,
+            )
+        except Exception:  # noqa: BLE001 — warmup is an optimization, never fatal
+            self.logger.warning(
+                "Warmup failed; the service will start cold (first predict pays session spin-up).",
+                exc_info=True,
+            )
 
     def predict(self, request: PredictRequest) -> PredictResponse:
         """Run inference on a :class:`PredictRequest` (images as file paths / base64).

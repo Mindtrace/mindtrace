@@ -138,3 +138,80 @@ def test_targets_listing_marks_buildable_runtimes(agent):
     assert by_name["jetson-orin-nx"].runtime == "tensorrt"
     assert by_name["jetson-orin-nx"].buildable is False  # no tensorrt here
     assert by_name["executorch-generic"].buildable is False
+
+
+def _register_fake_trt_compiler(monkeypatch):
+    """Register a stand-in tensorrt compiler that writes a .plan file."""
+    from mindtrace.models.optimization.compile.base import _COMPILERS, CompiledArtifact
+
+    def _fake_trt(onnx_path, target, output_dir, **opts):
+        plan = output_dir / "model.plan"
+        plan.write_bytes(b"\x00engine\x00" * 64)
+        return CompiledArtifact(path=plan, target=target.name, runtime="tensorrt", meta={})
+
+    monkeypatch.setitem(_COMPILERS, "tensorrt", _fake_trt)
+
+
+def test_tensorrt_artifact_skips_benchmark_and_returns(agent, tiny_onnx_model, monkeypatch):
+    """A built engine must be reported (report=None), not lost to a bench crash."""
+    from mindtrace.models.serving.compile_agent import CompileJobInput
+
+    _register_fake_trt_compiler(monkeypatch)
+    out = agent.compile_job(CompileJobInput(model_path=tiny_onnx_model, target="jetson-orin-nx"))
+    assert out.runtime == "tensorrt"
+    assert out.artifact_path.endswith(".plan")
+    assert out.report is None
+    assert Path(out.artifact_path).exists()
+
+
+def test_tensorrt_artifact_stored_via_engine_archiver(tmp_path, tiny_onnx_model, monkeypatch):
+    from mindtrace.models.archivers.tensorrt.tensorrt_archiver import TensorRTEngine
+    from mindtrace.models.serving.compile_agent import CompileAgentService, CompileJobInput
+    from mindtrace.registry import Registry
+
+    _register_fake_trt_compiler(monkeypatch)
+    registry = Registry(str(tmp_path / "registry"))
+    agent = CompileAgentService(registry=registry, work_dir=str(tmp_path / "work"))
+    out = agent.compile_job(
+        CompileJobInput(model_path=tiny_onnx_model, target="jetson-orin-nx", output_key="engines:line3")
+    )
+    assert out.stored_key == "engines:line3"
+    loaded = registry.load("engines:line3")
+    assert isinstance(loaded, TensorRTEngine)
+
+
+def test_registry_model_tempdir_cleaned_after_job(tmp_path):
+    import onnx as onnx_lib
+
+    from mindtrace.models.optimization.export.onnx_export import export_onnx
+    from mindtrace.models.serving.compile_agent import CompileAgentService, CompileJobInput
+    from mindtrace.registry import Registry
+
+    source = tmp_path / "src.onnx"
+    export_onnx(torch.nn.Linear(4, 2), source, static_shape=(1, 4), dynamic_batch=True, simplify=False, check=False)
+    registry = Registry(str(tmp_path / "registry"))
+    registry.save("models:tiny", onnx_lib.load(str(source)))
+
+    work_dir = tmp_path / "work"
+    agent = CompileAgentService(registry=registry, work_dir=str(work_dir))
+    agent.compile_job(CompileJobInput(model="models:tiny", target="ort-cpu", benchmark=False))
+    leftovers = list(work_dir.glob("model-*"))
+    assert leftovers == []  # per-job download dir removed
+
+
+def test_buildable_runtimes_gates_ort_on_availability(monkeypatch):
+    from mindtrace.models.serving import compile_agent as ca
+
+    monkeypatch.setattr(ca, "_ORT_AVAILABLE", False)
+    assert "ort" not in ca._buildable_runtimes()
+    monkeypatch.setattr(ca, "_ORT_AVAILABLE", True)
+    assert "ort" in ca._buildable_runtimes()
+
+
+def test_self_target_without_any_runtime_raises(monkeypatch):
+    from mindtrace.models.serving import compile_agent as ca
+
+    monkeypatch.setattr(ca, "_ORT_AVAILABLE", False)
+    monkeypatch.setattr(ca.importlib.util, "find_spec", lambda name: None)
+    with pytest.raises(RuntimeError, match="No compile runtime"):
+        ca._resolve_self_target()

@@ -95,6 +95,30 @@ def compile_tensorrt(onnx_path: Path, target: TargetSpec, output_dir: Path, **op
         config.set_flag(trt.BuilderFlag.INT8)
         enabled_flags.append("int8")
 
+    # Dynamic input dims (e.g. a dynamic batch axis) require an optimization
+    # profile or the build fails outright.  min pins every dynamic dim to 1,
+    # opt/max scale the leading (batch) dim via opts / TargetSpec.extra.
+    opt_batch = int(opts.get("opt_batch", target.extra.get("opt_batch", 1)))
+    max_batch = int(opts.get("max_batch", target.extra.get("max_batch", 8)))
+    profile = None
+    for index in range(int(network.num_inputs)):
+        tensor = network.get_input(index)
+        dims = tuple(tensor.shape)
+        if not any(int(dim) < 0 for dim in dims):
+            continue
+        if profile is None:
+            profile = builder.create_optimization_profile()
+        min_shape = tuple(1 if int(dim) < 0 else int(dim) for dim in dims)
+        opt_shape = tuple(
+            (opt_batch if position == 0 else 1) if int(dim) < 0 else int(dim) for position, dim in enumerate(dims)
+        )
+        max_shape = tuple(
+            (max_batch if position == 0 else 1) if int(dim) < 0 else int(dim) for position, dim in enumerate(dims)
+        )
+        profile.set_shape(tensor.name, min_shape, opt_shape, max_shape)
+    if profile is not None:
+        config.add_optimization_profile(profile)
+
     engine = builder.build_serialized_network(network, config)
     if engine is None:
         raise RuntimeError(f"TensorRT engine build failed for '{onnx_path}' (target '{target.name}').")
