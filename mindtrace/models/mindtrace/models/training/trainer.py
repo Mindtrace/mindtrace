@@ -7,6 +7,7 @@ training, LR scheduling, callback dispatch, and metric history tracking.
 
 from __future__ import annotations
 
+import inspect
 from typing import Any, Callable
 
 import torch
@@ -75,6 +76,7 @@ class Trainer(Mindtrace):
         batch_fn: Callable | None = None,
         gradient_checkpointing: bool = False,
         ddp: bool = False,
+        teacher: nn.Module | None = None,
     ) -> None:
         """Initialise the trainer.
 
@@ -118,6 +120,12 @@ class Trainer(Mindtrace):
                 when available; falls back to native PyTorch DDP.  Has no
                 effect when no distributed process group is initialised or
                 when world size is 1.
+            teacher: Optional frozen teacher model for knowledge distillation.
+                When set, it is moved to the trainer device, put in eval mode,
+                and its outputs are computed under ``torch.no_grad()`` and
+                passed to ``loss_fn`` as the ``teacher_outputs`` keyword —
+                only when ``loss_fn`` accepts that keyword (e.g.
+                ``DistillationLoss``); otherwise behaviour is unchanged.
 
         Raises:
             ValueError: If *gradient_accumulation_steps* < 1.
@@ -137,7 +145,17 @@ class Trainer(Mindtrace):
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.clip_grad_norm = clip_grad_norm
         self.batch_fn = batch_fn
+        self.teacher = teacher
         self._ddp = ddp
+
+        # Distillation: does loss_fn accept a 'teacher_outputs' keyword?
+        self._loss_accepts_teacher_outputs = False
+        if loss_fn is not None:
+            _loss_callable = loss_fn.forward if isinstance(loss_fn, nn.Module) else loss_fn
+            try:
+                self._loss_accepts_teacher_outputs = "teacher_outputs" in inspect.signature(_loss_callable).parameters
+            except (TypeError, ValueError):
+                self._loss_accepts_teacher_outputs = False
         self._default_train_loader = train_loader
         self._default_val_loader = val_loader
 
@@ -161,6 +179,11 @@ class Trainer(Mindtrace):
         self._total_epochs: int = 0
 
         self.model.to(self.device)
+
+        # Teacher model for knowledge distillation: frozen, on-device, eval mode
+        if self.teacher is not None:
+            self.teacher.to(self.device)
+            self.teacher.eval()
 
         # Gradient checkpointing — reduces VRAM at the cost of recomputation
         if gradient_checkpointing:
@@ -534,7 +557,12 @@ class Trainer(Mindtrace):
         """
         if self.loss_fn is not None:
             outputs = self.model(inputs)
-            loss: torch.Tensor = self.loss_fn(outputs, targets)
+            if self.teacher is not None and self._loss_accepts_teacher_outputs:
+                with torch.no_grad():
+                    teacher_outputs = self.teacher(inputs)
+                loss: torch.Tensor = self.loss_fn(outputs, targets, teacher_outputs=teacher_outputs)
+            else:
+                loss = self.loss_fn(outputs, targets)
             return loss, outputs
 
         result = self.model(inputs, targets)
