@@ -28,7 +28,16 @@ from mindtrace.models.serving.compile_agent import (
     TargetInfo,
     TargetsOutput,
 )
+from mindtrace.models.serving.deployment import (
+    ConfidenceMonitor,
+    Deployment,
+    ShadowDecision,
+    ShadowEvaluation,
+)
 from mindtrace.models.serving.edge import EdgeModelService, probe_runtimes
+from mindtrace.models.serving.inprocess import InProcessPredictor
+from mindtrace.models.serving.openvino_service import OpenVINOModelService
+from mindtrace.models.serving.queue import InferenceQueue
 from mindtrace.models.serving.results import (
     ClassificationResult,
     DetectionResult,
@@ -36,6 +45,7 @@ from mindtrace.models.serving.results import (
 )
 from mindtrace.models.serving.schemas import ModelInfo, PredictRequest, PredictResponse
 from mindtrace.models.serving.service import ModelService, resolve_device
+from mindtrace.models.serving.thermal import ThermalGovernor, read_temperature_c
 from mindtrace.models.serving.tiling import TileDetection, TiledInference
 
 __all__ = [
@@ -58,4 +68,16 @@ __all__ = [
     "ClassificationResult",
     "DetectionResult",
     "SegmentationResult",
+    # Async inference queue and thermal load shedding
+    "InferenceQueue",
+    "ThermalGovernor",
+    "read_temperature_c",
+    # OTA deployment safety
+    "ConfidenceMonitor",
+    "Deployment",
+    "ShadowDecision",
+    "ShadowEvaluation",
+    # In-process (zero-copy) and native OpenVINO inference
+    "InProcessPredictor",
+    "OpenVINOModelService",
 ]
