@@ -62,6 +62,20 @@ def _require_onnxruntime() -> Any:
         ) from exc
 
 
+#: Mapping from ONNX tensor element types to numpy dtypes, used to build
+#: zero-filled warmup inputs.  Unlisted types fall back to ``np.float32``.
+_ONNX_TO_NUMPY_DTYPE: dict[str, Any] = {
+    "tensor(float)": np.float32,
+    "tensor(float16)": np.float16,
+    "tensor(double)": np.float64,
+    "tensor(int64)": np.int64,
+    "tensor(int32)": np.int32,
+    "tensor(int8)": np.int8,
+    "tensor(uint8)": np.uint8,
+    "tensor(bool)": np.bool_,
+}
+
+
 def _default_providers() -> list[str]:
     """Return CUDA provider when available, otherwise CPU."""
     ort = _require_onnxruntime()
@@ -91,6 +105,12 @@ class OnnxModelService(ModelService):
             to auto-detection (CUDA when available, else CPU).
         session_options: An ``onnxruntime.SessionOptions`` instance for
             advanced session configuration.  ``None`` uses the defaults.
+        warmup: Number of zero-tensor inference passes to run right after the
+            session is created in :meth:`load_model`, so that the first real
+            ``/predict`` request does not pay cold-start costs (lazy kernel
+            compilation, memory-arena growth, EP graph optimisation).  Dynamic
+            input dimensions are resolved to ``1``.  ``0`` (default) disables
+            warmup.
         **kwargs: Forwarded to :class:`~mindtrace.models.serving.service.ModelService`.
     """
 
@@ -102,11 +122,13 @@ class OnnxModelService(ModelService):
         model_path: str | Path | None = None,
         providers: list[str] | None = None,
         session_options: Any = None,
+        warmup: int = 0,
         **kwargs: Any,
     ) -> None:
         self.model_path: Path | None = Path(model_path) if model_path else None
         self.providers: list[str] = providers or _default_providers()
         self.session_options: Any = session_options
+        self.warmup: int = int(warmup)
         self.session: Any = None  # onnxruntime.InferenceSession
         self._onnx_metadata: dict = {}  # populated from ModelProto when using registry
 
@@ -174,6 +196,28 @@ class OnnxModelService(ModelService):
             self.input_names,
             self.output_names,
             self.session.get_providers(),
+        )
+
+        if self.warmup > 0:
+            self._warmup_session()
+
+    def _warmup_session(self) -> None:
+        """Run ``self.warmup`` zero-tensor inferences to warm the session.
+
+        Inputs are zero-filled numpy arrays shaped like the model inputs;
+        dynamic dimensions (symbolic names or ``None``) are resolved to ``1``.
+        """
+        feeds: dict[str, np.ndarray] = {}
+        for inp in self.session.get_inputs():
+            shape = tuple(dim if isinstance(dim, int) and dim > 0 else 1 for dim in inp.shape)
+            dtype = _ONNX_TO_NUMPY_DTYPE.get(inp.type, np.float32)
+            feeds[inp.name] = np.zeros(shape, dtype=dtype)
+        for _ in range(self.warmup):
+            self.session.run(self.output_names, feeds)
+        self.logger.info(
+            "Warmup complete: %d inference pass(es) on provider %s.",
+            self.warmup,
+            self.active_provider,
         )
 
     def predict(self, request: PredictRequest) -> PredictResponse:
@@ -261,6 +305,19 @@ class OnnxModelService(ModelService):
     # ------------------------------------------------------------------
 
     @property
+    def active_provider(self) -> str:
+        """The execution provider onnxruntime actually selected.
+
+        This is the first entry of ``session.get_providers()`` — the provider
+        that handles the graph (later entries are fallbacks).  Returns an
+        empty string when no session is loaded.
+        """
+        if self.session is None:
+            return ""
+        providers = self.session.get_providers()
+        return providers[0] if providers else ""
+
+    @property
     def input_names(self) -> list[str]:
         """Names of all model input tensors."""
         if self.session is None:
@@ -298,6 +355,8 @@ class OnnxModelService(ModelService):
         extra: dict[str, Any] = {
             "model_path": str(self.model_path) if self.model_path else None,
             "providers": self.providers,
+            "active_provider": self.active_provider,
+            "warmup": self.warmup,
             "input_names": self.input_names,
             "output_names": self.output_names,
             "input_shapes": self.input_shapes,

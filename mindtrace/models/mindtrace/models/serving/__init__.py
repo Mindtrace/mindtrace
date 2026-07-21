@@ -21,6 +21,7 @@ Optional subpackages (each requires additional dependencies):
     Requires: ``torch-model-archiver``, ``torchserve``.
 """
 
+from mindtrace.models.serving.edge import EdgeModelService, probe_runtimes
 from mindtrace.models.serving.results import (
     ClassificationResult,
     DetectionResult,
@@ -30,10 +31,12 @@ from mindtrace.models.serving.schemas import ModelInfo, PredictRequest, PredictR
 from mindtrace.models.serving.service import ModelService, resolve_device
 
 __all__ = [
+    "EdgeModelService",
     "ModelInfo",
     "ModelService",
     "PredictRequest",
     "PredictResponse",
+    "probe_runtimes",
     "resolve_device",
     # Typed results
     "ClassificationResult",
