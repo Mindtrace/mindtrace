@@ -438,15 +438,16 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         if "_id" in data:
             data.pop("_id")
 
-        # Note: caller-supplied ``id``/``_id`` were stripped above, so ``model_cls(**data)``
-        # gives new-doc semantics. We intentionally do NOT null ``doc.id`` afterward: a model
-        # ``@model_validator`` may derive a deterministic id from other fields.
+        # Keep a validator-minted instance ObjectId (read via __dict__ — plain doc.id can leak the
+        # class-level ExpressionField on generated Document classes); null anything else.
         doc = self.model_cls(**data)
+        if not isinstance(doc.__dict__.get("id"), ObjectId):
+            doc.id = None
 
         try:
             if self._motor_routing:
                 raw = self._motor_model_dump(doc)
-                # Only strip ``_id`` when the model did not mint one; preserve validator-derived ids.
+                # Strip _id only when the model minted none.
                 if doc.id is None:
                     raw.pop("_id", None)
                 if raw.get("id") is None:
@@ -485,9 +486,10 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                 data = obj.model_dump(mode="python", by_alias=True, serialize_as_any=True)
             data.pop("id", None)
             data.pop("_id", None)
-            # Same rationale as insert(): caller ids are stripped above, but a model validator
-            # may mint a deterministic id that must be preserved (don't null doc.id).
+            # Same as insert(): keep a validator-minted instance id, null anything else.
             doc = self.model_cls(**data)
+            if not isinstance(doc.__dict__.get("id"), ObjectId):
+                doc.id = None
             raw = self._motor_model_dump(doc)
             if doc.id is None:
                 raw.pop("_id", None)
