@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,10 @@ from mindtrace.models.optimization.bench import Benchmark
 from mindtrace.models.optimization.compile import CompiledArtifact, compile_model
 from mindtrace.models.optimization.targets import get_target, list_targets
 from mindtrace.services import Service
+
+# Benchmark runtimes executable in-process, keyed by compile runtime.  Compiled
+# artifacts for anything else (e.g. TensorRT engines) skip benchmarking.
+_BENCH_RUNTIMES: dict[str, str] = {"ort": "onnxruntime", "openvino": "openvino"}
 
 # ---------------------------------------------------------------------------
 # Optional imports — guarded so the module always imports cleanly.
@@ -151,7 +156,9 @@ def _buildable_runtimes() -> set[str]:
         Set of runtime keys from the target registry (e.g. ``{"ort",
         "openvino"}``).
     """
-    runtimes = {"ort"}
+    runtimes: set[str] = set()
+    if _ORT_AVAILABLE:
+        runtimes.add("ort")
     if importlib.util.find_spec("openvino") is not None:
         runtimes.add("openvino")
     if importlib.util.find_spec("tensorrt") is not None:
@@ -173,7 +180,13 @@ def _resolve_self_target() -> str:
         return "ort-cuda"
     if importlib.util.find_spec("openvino") is not None:
         return "intel-cpu-openvino"
-    return "ort-cpu"
+    if _ORT_AVAILABLE:
+        return "ort-cpu"
+    raise RuntimeError(
+        "No compile runtime is available on this machine — install one of the edge extras "
+        "(pip install mindtrace-models[edge] or [openvino]). Buildable runtimes: "
+        f"{sorted(_buildable_runtimes()) or 'none'}."
+    )
 
 
 def _input_shape_from_onnx(onnx_path: Path) -> tuple[int, ...]:
@@ -261,52 +274,69 @@ class CompileAgentService(Service):
             KeyError: If ``target`` names an unregistered target.
             FileNotFoundError: If ``model_path`` does not exist.
         """
-        onnx_path = self._resolve_model(payload)
+        onnx_path, owned_dir = self._resolve_model(payload)
+        try:
+            target_name = payload.target or "self"
+            if target_name == "self":
+                target_name = _resolve_self_target()
+                self.logger.info("Resolved target 'self' -> '%s'.", target_name)
+            spec = get_target(target_name)  # KeyError with available targets listed.
 
-        target_name = payload.target or "self"
-        if target_name == "self":
-            target_name = _resolve_self_target()
-            self.logger.info("Resolved target 'self' -> '%s'.", target_name)
-        spec = get_target(target_name)  # KeyError with available targets listed.
+            opts = dict(payload.opts)
+            input_shape_override = opts.pop("input_shape", None)
 
-        opts = dict(payload.opts)
-        input_shape_override = opts.pop("input_shape", None)
-
-        artifact = compile_model(
-            onnx_path,
-            spec,
-            output_dir=self.work_dir / spec.name,
-            **opts,
-        )
-        self.logger.info("Compiled '%s' for target '%s' -> %s", onnx_path, spec.name, artifact.path)
-
-        report: dict | None = None
-        if payload.benchmark:
-            input_shape = tuple(input_shape_override) if input_shape_override else _input_shape_from_onnx(onnx_path)
-            bench_runtime = "openvino" if artifact.path.suffix == ".xml" else "onnxruntime"
-            report = (
-                Benchmark(
-                    runtime=bench_runtime,
-                    artifact=str(artifact.path),
-                    input_shape=input_shape,
-                    warmup=3,
-                    iterations=20,
-                )
-                .run()
-                .to_dict()
+            artifact = compile_model(
+                onnx_path,
+                spec,
+                output_dir=self.work_dir / spec.name,
+                **opts,
             )
+            self.logger.info("Compiled '%s' for target '%s' -> %s", onnx_path, spec.name, artifact.path)
 
-        stored_key = ""
-        if payload.output_key and self.registry is not None:
-            stored_key = self._store_artifact(artifact, payload.output_key)
+            report: dict | None = None
+            if payload.benchmark:
+                bench_runtime = _BENCH_RUNTIMES.get(artifact.runtime)
+                if bench_runtime is None:
+                    self.logger.warning(
+                        "Runtime '%s' cannot be benchmarked in-process; returning report=None. "
+                        "Benchmark the artifact with its native runtime on this device.",
+                        artifact.runtime,
+                    )
+                else:
+                    try:
+                        input_shape = (
+                            tuple(input_shape_override) if input_shape_override else _input_shape_from_onnx(onnx_path)
+                        )
+                        report = (
+                            Benchmark(
+                                runtime=bench_runtime,
+                                artifact=str(artifact.path),
+                                input_shape=input_shape,
+                                warmup=3,
+                                iterations=20,
+                            )
+                            .run()
+                            .to_dict()
+                        )
+                    except Exception:  # noqa: BLE001 — a benchmark failure must not lose the built artifact
+                        self.logger.warning(
+                            "Benchmarking the compiled artifact failed; returning report=None.", exc_info=True
+                        )
 
-        return CompileJobOutput(
-            artifact_path=str(artifact.path),
-            target=artifact.target,
-            runtime=artifact.runtime,
-            report=report,
-            stored_key=stored_key,
-        )
+            stored_key = ""
+            if payload.output_key and self.registry is not None:
+                stored_key = self._store_artifact(artifact, payload.output_key)
+
+            return CompileJobOutput(
+                artifact_path=str(artifact.path),
+                target=artifact.target,
+                runtime=artifact.runtime,
+                report=report,
+                stored_key=stored_key,
+            )
+        finally:
+            if owned_dir is not None:
+                shutil.rmtree(owned_dir, ignore_errors=True)
 
     def targets(self) -> TargetsOutput:
         """List registered deployment targets with local buildability.
@@ -362,7 +392,7 @@ class CompileAgentService(Service):
                 )
         return None
 
-    def _resolve_model(self, payload: CompileJobInput) -> Path:
+    def _resolve_model(self, payload: CompileJobInput) -> tuple[Path, Path | None]:
         """Resolve the source ONNX model to a local file path.
 
         Args:
@@ -370,7 +400,9 @@ class CompileAgentService(Service):
                 precedence over ``model_path``.
 
         Returns:
-            Path to a local ONNX file.
+            Tuple of the local ONNX file path and the temporary directory this
+            job owns (to be deleted when the job finishes), or ``None`` when
+            the caller's file was used directly.
 
         Raises:
             ValueError: If neither source is provided, or ``model`` is given
@@ -393,13 +425,13 @@ class CompileAgentService(Service):
             onnx_path = local_dir / "model.onnx"
             onnx.save(model, str(onnx_path))
             self.logger.info("Pulled model '%s' from registry to %s", payload.model, onnx_path)
-            return onnx_path
+            return onnx_path, local_dir
 
         if payload.model_path:
             onnx_path = Path(payload.model_path)
             if not onnx_path.is_file():
                 raise FileNotFoundError(f"Model file not found: {onnx_path}")
-            return onnx_path
+            return onnx_path, None
 
         raise ValueError("Provide either 'model' (a registry key) or 'model_path' (a local ONNX file).")
 
@@ -440,6 +472,22 @@ class CompileAgentService(Service):
             model = onnx.load(str(artifact.path))
             self.registry.save(output_key, model)
             return output_key
+
+        if suffix in {".plan", ".engine"} or artifact.runtime == "tensorrt":
+            try:
+                from mindtrace.models.archivers.tensorrt.tensorrt_archiver import TensorRTEngine
+
+                engine = TensorRTEngine.from_path(artifact.path)
+                self.registry.save(output_key, engine)
+                return output_key
+            except Exception:  # noqa: BLE001 — storage failure must not lose the on-disk artifact
+                self.logger.warning(
+                    "Failed to store TensorRT engine '%s' in the registry; it remains at %s.",
+                    output_key,
+                    artifact.path,
+                    exc_info=True,
+                )
+                return ""
 
         self.logger.warning(
             "No registry archiver for '%s' artifacts (runtime '%s'); leaving artifact on disk at %s.",

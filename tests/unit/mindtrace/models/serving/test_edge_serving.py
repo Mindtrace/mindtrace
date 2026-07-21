@@ -222,3 +222,47 @@ def test_select_providers_rejects_unknown_runtime(monkeypatch):
 
     with pytest.raises(ValueError, match="Unknown runtime preference"):
         select_providers(["npu"])
+
+
+def _export_dynamic_spatial_model(tmp_path):
+    """Model with dynamic H/W whose 8x8 pooling crashes on 1-pixel inputs."""
+    import torch
+
+    class Pool(torch.nn.Module):
+        def forward(self, x):
+            return torch.nn.functional.avg_pool2d(x, 8)
+
+    path = tmp_path / "pool.onnx"
+    torch.onnx.export(
+        Pool().eval(),
+        (torch.randn(1, 3, 64, 64),),
+        str(path),
+        input_names=["input"],
+        output_names=["output"],
+        dynamic_axes={"input": {0: "batch", 2: "h", 3: "w"}},
+        dynamo=False,
+    )
+    return path
+
+
+def test_warmup_resolves_dynamic_spatial_dims(tmp_path):
+    """Warmup must not feed 1-pixel images to models with dynamic spatial dims."""
+    from mindtrace.models.serving.onnx.service import OnnxModelService
+
+    path = _export_dynamic_spatial_model(tmp_path)
+    # Before the fix this crashed load_model (all symbolic dims resolved to 1).
+    service = OnnxModelService(model_name="pool", model_version="v1", model_path=path, warmup=2)
+    assert service.session is not None
+    assert service.info().extra["warmup"] == 2
+
+
+def test_warmup_failure_never_aborts_startup(tmp_path, monkeypatch):
+    from mindtrace.models.serving.onnx.service import OnnxModelService
+
+    def _boom(self):
+        raise RuntimeError("warmup blew up")
+
+    path = _export_dynamic_spatial_model(tmp_path)
+    monkeypatch.setattr(OnnxModelService, "_WARMUP_DYNAMIC_DIM", property(_boom), raising=True)
+    service = OnnxModelService(model_name="m", model_version="v1", model_path=path, warmup=1)
+    assert service.session is not None  # startup survived the warmup failure

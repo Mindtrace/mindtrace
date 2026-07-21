@@ -201,3 +201,42 @@ def test_unknown_runtime_raises_value_error(tiny_onnx: Path):
     assert "executorch" in message
     for runtime in ("ort", "openvino", "tensorrt"):
         assert runtime in message  # registered runtimes are listed
+
+
+def _mock_trt_with_input(monkeypatch, shape):
+    """Mock tensorrt whose parsed network has one input of the given shape."""
+    mock_trt = MagicMock(name="tensorrt")
+    builder = mock_trt.Builder.return_value
+    parser = mock_trt.OnnxParser.return_value
+    parser.parse.return_value = True
+    parser.num_errors = 0
+    builder.build_serialized_network.return_value = b"fake-engine-bytes"
+    network = builder.create_network.return_value
+    network.num_inputs = 1
+    tensor = MagicMock()
+    tensor.shape = shape
+    tensor.name = "input"
+    network.get_input.return_value = tensor
+    monkeypatch.setitem(sys.modules, "tensorrt", mock_trt)
+    return mock_trt, builder
+
+
+def test_tensorrt_dynamic_input_gets_optimization_profile(tiny_onnx: Path, tmp_path: Path, monkeypatch):
+    """Dynamic dims must produce an optimization profile or real builds fail."""
+    mock_trt, builder = _mock_trt_with_input(monkeypatch, (-1, 3, 8, 8))
+
+    compile_model(tiny_onnx, "jetson-orin-nx", output_dir=tmp_path, max_batch=4)
+
+    builder.create_optimization_profile.assert_called_once()
+    profile = builder.create_optimization_profile.return_value
+    profile.set_shape.assert_called_once_with("input", (1, 3, 8, 8), (1, 3, 8, 8), (4, 3, 8, 8))
+    config = builder.create_builder_config.return_value
+    config.add_optimization_profile.assert_called_once_with(profile)
+
+
+def test_tensorrt_static_input_skips_optimization_profile(tiny_onnx: Path, tmp_path: Path, monkeypatch):
+    _, builder = _mock_trt_with_input(monkeypatch, (1, 3, 8, 8))
+
+    compile_model(tiny_onnx, "jetson-orin-nx", output_dir=tmp_path)
+
+    builder.create_optimization_profile.assert_not_called()
