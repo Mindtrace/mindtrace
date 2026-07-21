@@ -82,6 +82,29 @@ def test_builtin_targets_registered():
     assert get_target("executorch-generic").runtime == "executorch"
 
 
+def test_npu_targets_registered_and_uncompilable(tiny_onnx: Path):
+    hailo = get_target("hailo-8")
+    assert hailo.runtime == "hailo"
+    assert hailo.device == "NPU"
+    assert hailo.precisions == ("int8",)
+    assert "note" in hailo.extra
+
+    rknn = get_target("rknn-3588")
+    assert rknn.runtime == "rknn"
+    assert rknn.device == "NPU"
+    assert set(rknn.precisions) == {"int8", "fp16"}
+
+    # No compiler backends exist for these NPU runtimes: compile_model must
+    # surface the unknown-runtime ValueError listing the registered runtimes.
+    for target_name, runtime in (("hailo-8", "hailo"), ("rknn-3588", "rknn")):
+        with pytest.raises(ValueError, match="not yet supported") as excinfo:
+            compile_model(tiny_onnx, target_name)
+        message = str(excinfo.value)
+        assert runtime in message
+        for registered in ("ort", "openvino", "tensorrt"):
+            assert registered in message
+
+
 def test_get_target_unknown_lists_available():
     with pytest.raises(KeyError) as excinfo:
         get_target("no-such-target")

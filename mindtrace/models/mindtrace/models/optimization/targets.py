@@ -139,6 +139,21 @@ _BUILTIN_TARGETS: tuple[TargetSpec, ...] = (
         cpu_features=("neon",),
     ),
     TargetSpec(name="executorch-generic", runtime="executorch", device="CPU", precisions=("fp32", "int8")),
+    TargetSpec(
+        name="hailo-8",
+        runtime="hailo",
+        device="NPU",
+        precisions=("int8",),
+        extra={
+            "note": "Compile offline with the Hailo Dataflow Compiler on an x86 host; the device executes HEF binaries."
+        },
+    ),
+    TargetSpec(
+        name="rknn-3588",
+        runtime="rknn",
+        device="NPU",
+        precisions=("int8", "fp16"),
+    ),
 )
 
 for _spec in _BUILTIN_TARGETS:
