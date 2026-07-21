@@ -1,9 +1,11 @@
+import hashlib
 from typing import Annotated, Optional
 from uuid import uuid4
 
 import pytest
 from beanie import Indexed, PydanticObjectId
-from pydantic import BaseModel
+from bson import ObjectId
+from pydantic import BaseModel, model_validator
 from pymongo import MongoClient
 from pymongo.errors import OperationFailure
 
@@ -45,6 +47,37 @@ class UserCreate(BaseModel):
     name: str
     age: int
     email: str
+
+
+def _derive_id(slug: str) -> ObjectId:
+    """Deterministically derive an ObjectId from a slug (mirrors chiron's convergence pattern)."""
+    return ObjectId(hashlib.sha256(f"test:{slug}".encode()).digest()[:12])
+
+
+class SluggedDoc(MindtraceDocument):
+    """Document whose ``_id`` is minted from ``slug`` by a ``model_validator(mode="before")``.
+
+    Exercises the multi-site fan-in identity convergence: the same slug must always resolve to
+    the same ``_id`` regardless of the insert path (Beanie ``doc.insert()`` vs raw Motor routing).
+    """
+
+    slug: str
+    label: str
+
+    class Settings:
+        name = "slugged_docs"
+        use_cache = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _mint_deterministic_id(cls, data):
+        if isinstance(data, dict):
+            slug = data.get("slug")
+            # Only mint when the caller did not already supply an id (new-doc paths strip ids
+            # before construction, so this fires for every repository-mediated insert).
+            if slug is not None and not data.get("id") and not data.get("_id"):
+                data["id"] = _derive_id(slug)
+        return data
 
 
 @pytest.mark.asyncio
@@ -265,6 +298,86 @@ async def test_initialize_multiple_calls(mongo_backend):
     user = UserCreate(name="Alice", age=30, email="alice@test.com")
     inserted = await mongo_backend.insert(user)
     assert inserted.name == "Alice"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mongo_backend", [SluggedDoc], indirect=True)
+async def test_model_minted_id_survives_insert_beanie_path(mongo_backend):
+    """A validator-derived ``_id`` must be persisted (Beanie ``doc.insert()`` path).
+
+    The first backend for a model class is the one that runs ``init_beanie``, so this insert
+    goes through ``await doc.insert()`` rather than raw Motor routing.
+    """
+    assert mongo_backend._motor_routing is False  # first backend => Beanie insert path
+
+    expected = _derive_id("acme-plant")
+    inserted = await mongo_backend.insert(SluggedDoc(slug="acme-plant", label="Acme Plant"))
+    assert inserted.id == expected
+
+    # Round-trip: assert the *persisted* _id equals the derived value, not just the returned object.
+    raw = await mongo_backend.client["test_db"]["slugged_docs"].find_one({"slug": "acme-plant"})
+    assert raw is not None
+    assert raw["_id"] == expected
+
+    fetched = await mongo_backend.get(str(expected))
+    assert fetched.label == "Acme Plant"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mongo_backend", [SluggedDoc], indirect=True)
+async def test_model_minted_id_survives_insert_motor_path(mongo_backend):
+    """A validator-derived ``_id`` must be persisted through the raw Motor routing path too.
+
+    A second backend for an already-initialized model class routes through raw Motor writes
+    (``insert_one``) instead of Beanie; this covers the ``raw.pop("_id", ...)`` branch of the fix.
+    """
+    # ``mongo_backend`` already registered SluggedDoc, so a second backend routes via Motor.
+    motor_backend = MongoMindtraceODM(SluggedDoc, "mongodb://localhost:27018", "test_db")
+    await motor_backend.initialize()
+    assert motor_backend._motor_routing is True
+
+    expected = _derive_id("beta-plant")
+    inserted = await motor_backend.insert(SluggedDoc(slug="beta-plant", label="Beta Plant"))
+    assert inserted.id == expected
+
+    raw = await motor_backend.client["test_db"]["slugged_docs"].find_one({"slug": "beta-plant"})
+    assert raw is not None
+    assert raw["_id"] == expected
+
+    motor_backend.client.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mongo_backend", [UserDoc], indirect=True)
+async def test_new_doc_semantics_strips_caller_supplied_id(mongo_backend):
+    """For a model WITHOUT an id-minting validator, a caller-supplied id is discarded.
+
+    ``insert()`` must preserve "new document" semantics: caller ids are stripped and Mongo
+    generates a fresh ObjectId.
+    """
+    caller_id = ObjectId()
+    inserted = await mongo_backend.insert(
+        {"id": caller_id, "name": "Alice", "age": 30, "email": "alice@newdoc.test"}
+    )
+
+    # A fresh random id was minted; the caller-supplied id did not survive.
+    assert inserted.id is not None
+    assert ObjectId(str(inserted.id)) != caller_id
+
+    raw = await mongo_backend.client["test_db"]["users"].find_one({"email": "alice@newdoc.test"})
+    assert raw is not None
+    assert raw["_id"] != caller_id
+    assert raw["_id"] == ObjectId(str(inserted.id))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mongo_backend", [SluggedDoc], indirect=True)
+async def test_duplicate_derived_id_raises_duplicate_insert_error(mongo_backend):
+    """Inserting the same slug twice collides on the deterministic ``_id`` => DuplicateInsertError."""
+    await mongo_backend.insert(SluggedDoc(slug="gamma-plant", label="Gamma Plant"))
+
+    with pytest.raises(DuplicateInsertError):
+        await mongo_backend.insert(SluggedDoc(slug="gamma-plant", label="Gamma Plant (dupe)"))
 
 
 def test_mongo_backend_find_iter_sync_streams_with_real_mongo():
