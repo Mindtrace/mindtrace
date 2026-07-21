@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import base64
 import binascii
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
@@ -25,6 +25,9 @@ except Exception as e:  # pragma: no cover - import guard for optional runtime d
     _ULTRALYTICS_IMPORT_ERROR = e
 else:
     _ULTRALYTICS_IMPORT_ERROR = None
+
+if TYPE_CHECKING:  # pragma: no cover - typing-only import
+    from mindtrace.models.optimization.recipes import OptimizationRecipe
 
 
 class AutoSegmenterInput(BaseModel):
@@ -94,6 +97,40 @@ class AutoSegmenter(Pipeline):
         self._sam: Any | None = None
 
         self.add_endpoint(path="/auto_segment", func=self.auto_segment, schema=AutoSegmenterTaskSchema)
+
+    @classmethod
+    def optimize_for_edge(
+        cls,
+        detector_recipe: "OptimizationRecipe | None" = None,
+        detector_model: str = "yolov10m.pt",
+        segmenter: str = "mobile_sam.pt",
+        **kwargs,
+    ) -> "AutoSegmenter":
+        """Build an AutoSegmenter configured for edge deployment.
+
+        This is a configuration entry point, not an optimizer: it wires the
+        pipeline to a lighter segmenter checkpoint and records the detector
+        optimization recipe for deployment tooling.  No export or compilation
+        runs here — Ultralytics detectors compile through
+        :func:`mindtrace.models.optimization.export.export_ultralytics` (their
+        native exporter) at deployment time so they stay compatible with
+        Ultralytics postprocessing.
+
+        Args:
+            detector_recipe: Optional optimization recipe for the detector,
+                recorded on the instance as ``edge_detector_recipe`` for
+                deployment tooling to apply later.
+            detector_model: Ultralytics detector checkpoint name.
+            segmenter: Lightweight SAM checkpoint name for edge use.
+            **kwargs: Forwarded to the :class:`AutoSegmenter` constructor
+                (e.g. ``live_service=False``).
+
+        Returns:
+            An :class:`AutoSegmenter` wired to the edge model checkpoints.
+        """
+        instance = cls(yolo_model=detector_model, sam_model=segmenter, **kwargs)
+        instance.edge_detector_recipe = detector_recipe
+        return instance
 
     def on_load(self, payload: PipelineLoadInput) -> None:
         """Load YOLO and SAM models."""
