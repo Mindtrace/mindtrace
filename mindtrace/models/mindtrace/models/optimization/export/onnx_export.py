@@ -244,7 +244,7 @@ def _check_parity(
 
     for index, (ort_out, torch_out) in enumerate(zip(ort_outputs, torch_outputs)):
         max_abs_diff = float(np.max(np.abs(np.asarray(ort_out, dtype=np.float64) - torch_out.astype(np.float64))))
-        if not np.allclose(ort_out, torch_out, atol=atol):
+        if max_abs_diff > atol:
             raise ValueError(
                 f"ONNX parity check failed for {path} on output {index}: "
                 f"max abs diff {max_abs_diff:.6g} exceeds atol {atol:.6g}."

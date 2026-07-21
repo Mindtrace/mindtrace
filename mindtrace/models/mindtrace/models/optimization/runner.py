@@ -72,6 +72,12 @@ __all__ = [
 
 _LOSSY_OPS = frozenset({"prune", "finetune", "quantize"})
 
+_KNOWN_CONSTRAINTS = frozenset({"max_accuracy_drop", "p95_latency_ms", "max_size_mb"})
+
+# Runtimes the Benchmark harness can execute in-process; compiled artifacts
+# for anything else (e.g. TensorRT engines) skip the latency gate.
+_BENCHMARKABLE_RUNTIMES = frozenset({"torch", "onnxruntime", "openvino"})
+
 _PRIMARY_METRIC: dict[str, str] = {
     "classification": "accuracy",
     "segmentation": "mIoU",
@@ -239,6 +245,16 @@ class OptimizationRunner(Mindtrace):
         self.task = task
         self.num_classes = num_classes
         self.constraints = dict(constraints) if constraints else {}
+        unknown_constraints = set(self.constraints) - _KNOWN_CONSTRAINTS
+        if unknown_constraints:
+            raise ValueError(
+                f"Unknown constraint keys {sorted(unknown_constraints)}; supported: {sorted(_KNOWN_CONSTRAINTS)}."
+            )
+        if self.constraints.get("max_accuracy_drop") is not None and eval_loader is None:
+            raise ValueError(
+                "The 'max_accuracy_drop' constraint requires an eval_loader — without one the gate "
+                "cannot be measured and would be silently skipped."
+            )
         self.loss_fn = loss_fn
         self.optimizer_factory = optimizer_factory
         self.tracker = tracker
@@ -247,6 +263,7 @@ class OptimizationRunner(Mindtrace):
         self.on_violation = on_violation
 
         self._input_shape: tuple[int, ...] | None = None
+        self._compiled_runtime: str | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -374,7 +391,12 @@ class OptimizationRunner(Mindtrace):
             artifact = self.work_dir / "model_optimized.pt"
             torch.save(self.model, artifact)
 
-        report = self._final_gates(domain, artifact, violations)
+        try:
+            report = self._final_gates(domain, artifact, violations)
+        except Exception as exc:  # noqa: BLE001 — a benchmark failure must not discard the run
+            report = None
+            violations.append({"step": "final_gates", "error": str(exc)})
+            self.logger.warning("Final gate benchmarking failed; result returned without a report: %s", exc)
 
         return OptimizationResult(
             artifact_path=artifact,
@@ -445,7 +467,12 @@ class OptimizationRunner(Mindtrace):
         Returns:
             Path to the exported ``.onnx`` file.
         """
-        static_shape = tuple(step.static_shape) if step.static_shape is not None else self._infer_input_shape()
+        if step.static_shape is not None:
+            static_shape = tuple(step.static_shape)
+            if self._input_shape is None:
+                self._input_shape = static_shape
+        else:
+            static_shape = self._infer_input_shape()
         suffix = "export_implicit" if implicit else "export"
         path = self.work_dir / f"{index:02d}_{suffix}.onnx"
         self.model.to("cpu")
@@ -477,7 +504,19 @@ class OptimizationRunner(Mindtrace):
         if step.mode == "dynamic":
             from mindtrace.models.optimization.quantize import quantize_dynamic
 
-            return quantize_dynamic(artifact, output=self.work_dir / f"{index:02d}_quantize_dynamic.onnx")
+            static_only = {
+                "per_channel": (step.per_channel, True),
+                "calibration_method": (step.calibration_method, "minmax"),
+                "samples": (step.samples, 512),
+            }
+            ignored = [name for name, (value, default) in static_only.items() if value != default]
+            if ignored:
+                self.logger.warning("Quantize(mode='dynamic') ignores static-PTQ-only fields: %s.", ", ".join(ignored))
+            return quantize_dynamic(
+                artifact,
+                output=self.work_dir / f"{index:02d}_quantize_dynamic.onnx",
+                precision=step.precision,
+            )
 
         if self.calibration_loader is None:
             raise ValueError("A 'quantize' step with mode='static_ptq' requires a calibration_loader (or eval_loader).")
@@ -508,6 +547,7 @@ class OptimizationRunner(Mindtrace):
             Path to the compiled artifact.
         """
         compiled = compile_model(artifact, step.target, output_dir=self.work_dir / f"{index:02d}_{step.target}")
+        self._compiled_runtime = compiled.runtime
         return compiled.path
 
     # ------------------------------------------------------------------
@@ -573,10 +613,15 @@ class OptimizationRunner(Mindtrace):
                     self._input_shape = tuple(inputs.shape)
                     break
             else:
-                raise ValueError(
-                    "Could not infer the model input shape: provide an eval/calibration/train loader "
-                    "or an explicit Export(static_shape=...) step."
-                )
+                for step in self.recipe.steps:
+                    if step.op == "export" and step.static_shape is not None:
+                        self._input_shape = tuple(step.static_shape)
+                        break
+                else:
+                    raise ValueError(
+                        "Could not infer the model input shape: provide an eval/calibration/train loader "
+                        "or an explicit Export(static_shape=...) step."
+                    )
         return self._input_shape
 
     @staticmethod
@@ -623,6 +668,9 @@ class OptimizationRunner(Mindtrace):
         if domain == "torch":
             runtime: str = "torch"
             bench_artifact: Any = self.model
+        elif self._compiled_runtime is not None:
+            runtime = {"ort": "onnxruntime"}.get(self._compiled_runtime, self._compiled_runtime)
+            bench_artifact = artifact
         elif artifact.suffix == ".xml":
             runtime = "openvino"
             bench_artifact = artifact
@@ -630,23 +678,32 @@ class OptimizationRunner(Mindtrace):
             runtime = "onnxruntime"
             bench_artifact = artifact
 
-        input_shape = (1, *self._infer_input_shape()[1:])
-        report = Benchmark(
-            runtime=runtime,
-            artifact=bench_artifact,
-            input_shape=input_shape,
-            warmup=2,
-            iterations=10,
-        ).run()
+        report: BenchmarkReport | None = None
+        if runtime in _BENCHMARKABLE_RUNTIMES:
+            input_shape = (1, *self._infer_input_shape()[1:])
+            report = Benchmark(
+                runtime=runtime,
+                artifact=bench_artifact,
+                input_shape=input_shape,
+                warmup=2,
+                iterations=10,
+            ).run()
+            if p95_limit is not None and report.p95_ms > p95_limit:
+                violations.append(
+                    {"step": "final", "constraint": "p95_latency_ms", "value": report.p95_ms, "limit": p95_limit}
+                )
+        elif p95_limit is not None:
+            self.logger.warning(
+                "Final artifact runtime '%s' cannot be benchmarked in-process; the p95_latency_ms gate "
+                "was skipped. Benchmark it on the target device (see CompileAgentService).",
+                runtime,
+            )
 
-        if p95_limit is not None and report.p95_ms > p95_limit:
-            violations.append(
-                {"step": "final", "constraint": "p95_latency_ms", "value": report.p95_ms, "limit": p95_limit}
-            )
-        if size_limit is not None and report.size_mb is not None and report.size_mb > size_limit:
-            violations.append(
-                {"step": "final", "constraint": "max_size_mb", "value": report.size_mb, "limit": size_limit}
-            )
+        size_mb: float | None = report.size_mb if report is not None else None
+        if size_mb is None and isinstance(bench_artifact, Path) and bench_artifact.exists():
+            size_mb = bench_artifact.stat().st_size / 1e6
+        if size_limit is not None and size_mb is not None and size_mb > size_limit:
+            violations.append({"step": "final", "constraint": "max_size_mb", "value": size_mb, "limit": size_limit})
         return report
 
     def _log_step(self, index: int, op: str, entry: dict) -> None:
