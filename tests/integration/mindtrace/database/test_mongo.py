@@ -356,9 +356,7 @@ async def test_new_doc_semantics_strips_caller_supplied_id(mongo_backend):
     generates a fresh ObjectId.
     """
     caller_id = ObjectId()
-    inserted = await mongo_backend.insert(
-        {"id": caller_id, "name": "Alice", "age": 30, "email": "alice@newdoc.test"}
-    )
+    inserted = await mongo_backend.insert({"id": caller_id, "name": "Alice", "age": 30, "email": "alice@newdoc.test"})
 
     # A fresh random id was minted; the caller-supplied id did not survive.
     assert inserted.id is not None
