@@ -45,6 +45,7 @@ from mindtrace.models.serving.results import (
 )
 from mindtrace.models.serving.schemas import ModelInfo, PredictRequest, PredictResponse
 from mindtrace.models.serving.service import ModelService, resolve_device
+from mindtrace.models.serving.tensorrt_service import TensorRTModelService
 from mindtrace.models.serving.thermal import ThermalGovernor, read_temperature_c
 from mindtrace.models.serving.tiling import TileDetection, TiledInference
 
@@ -80,4 +81,6 @@ __all__ = [
     # In-process (zero-copy) and native OpenVINO inference
     "InProcessPredictor",
     "OpenVINOModelService",
+    # Native TensorRT inference
+    "TensorRTModelService",
 ]
