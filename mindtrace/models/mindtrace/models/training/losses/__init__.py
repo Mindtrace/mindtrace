@@ -22,6 +22,11 @@ Segmentation
 Composite
 ---------
 - ``ComboLoss``: Weighted sum of heterogeneous sub-losses.
+
+Distillation
+------------
+- ``DistillationLoss``: Knowledge distillation combining a base loss with a
+  temperature-scaled KL term against teacher logits.
 """
 
 from __future__ import annotations
@@ -33,6 +38,7 @@ from mindtrace.models.training.losses.classification import (
 )
 from mindtrace.models.training.losses.composite import ComboLoss
 from mindtrace.models.training.losses.detection import CIoULoss, GIoULoss
+from mindtrace.models.training.losses.distillation import DistillationLoss
 from mindtrace.models.training.losses.segmentation import DiceLoss, IoULoss, TverskyLoss
 
 __all__ = [
@@ -49,4 +55,6 @@ __all__ = [
     "IoULoss",
     # composite
     "ComboLoss",
+    # distillation
+    "DistillationLoss",
 ]
