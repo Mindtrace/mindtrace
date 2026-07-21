@@ -205,6 +205,15 @@ class QATCallback(Callback):
         """
         qconfig_mapping = get_default_qat_qconfig_mapping(self.backend)
 
+        # Record which param group each named parameter belongs to BEFORE the
+        # swap so differential-LR setups survive optimizer rebuilding.
+        group_of_param = {id(p): i for i, g in enumerate(trainer.optimizer.param_groups) for p in g["params"]}
+        name_to_group = {
+            name: group_of_param[id(param)]
+            for name, param in trainer.model.named_parameters()
+            if id(param) in group_of_param
+        }
+
         model_copy = copy.deepcopy(trainer.model)
         model_copy.train()
         prepared = prepare_qat_fx(model_copy, qconfig_mapping, example_inputs)
@@ -213,28 +222,49 @@ class QATCallback(Callback):
 
         self.prepared_model = prepared
         trainer.model = prepared
-        self._rebuild_optimizer(trainer)
+        self._rebuild_optimizer(trainer, name_to_group)
         self.logger.info(
             "QATCallback: QAT activated at epoch %d (backend=%s).",
             max(self._current_epoch, 0),
             self.backend,
         )
 
-    def _rebuild_optimizer(self, trainer: Trainer) -> None:
+    def _rebuild_optimizer(self, trainer: Trainer, name_to_group: dict[str, int] | None = None) -> None:
         """Point the optimizer at the prepared model's parameters.
 
-        The hyperparameters of the first existing param group (lr, momentum,
-        weight decay, ...) are reused for the single new group; stale
-        per-parameter optimizer state is discarded.
+        The existing param-group structure is preserved: each prepared-model
+        parameter is routed to the group its FP32 counterpart belonged to
+        (matched by parameter name — FX preparation keeps most names).
+        Parameters with no match (e.g. from fused modules or fake-quant
+        observers) fall into group 0.  Stale per-parameter optimizer state is
+        discarded.
 
         Args:
             trainer: The active ``Trainer`` instance.
+            name_to_group: Mapping of FP32 parameter name to its original
+                param-group index, captured before the model swap.  When
+                ``None`` (or when the optimizer had a single group), all
+                parameters land in one group with group 0's hyperparameters.
         """
         optimizer = trainer.optimizer
-        hyperparams = {k: v for k, v in optimizer.param_groups[0].items() if k != "params"}
+        group_hyperparams = [{k: v for k, v in group.items() if k != "params"} for group in optimizer.param_groups]
         optimizer.param_groups.clear()
         optimizer.state.clear()
-        optimizer.add_param_group({"params": [p for p in trainer.model.parameters() if p.requires_grad], **hyperparams})
+
+        if not name_to_group or len(group_hyperparams) == 1:
+            optimizer.add_param_group(
+                {"params": [p for p in trainer.model.parameters() if p.requires_grad], **group_hyperparams[0]}
+            )
+            return
+
+        grouped_params: list[list[nn.Parameter]] = [[] for _ in group_hyperparams]
+        for name, param in trainer.model.named_parameters():
+            if not param.requires_grad:
+                continue
+            grouped_params[name_to_group.get(name, 0)].append(param)
+        for params, hyperparams in zip(grouped_params, group_hyperparams):
+            if params:
+                optimizer.add_param_group({"params": params, **hyperparams})
 
     def _remove_hook(self) -> None:
         """Remove the example-input capture hook if it is installed."""

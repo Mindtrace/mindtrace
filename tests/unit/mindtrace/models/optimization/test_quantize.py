@@ -306,3 +306,91 @@ class TestMixedPrecisionSearch:
     def test_missing_constraint_raises(self):
         with pytest.raises(ValueError, match="max_accuracy_drop"):
             MixedPrecisionSearch({}, [])
+
+
+class TestCalibrationLayouts:
+    """Regression tests for calibration batch handling across input layouts."""
+
+    def test_bare_tensor_batches_split_for_batch1_model(self, cnn_onnx, tmp_path):
+        """Unlabeled DataLoader batches (bare tensors) must calibrate a batch-1 model."""
+        loader = DataLoader(TensorDataset(torch.randn(8, 3, 32, 32)), batch_size=4)
+        bare_loader = (batch[0] for batch in loader)  # yields bare (4, 3, 32, 32) tensors
+        out = StaticQuantizer().run(cnn_onnx, bare_loader, samples=8, output=tmp_path / "bare.onnx")
+        assert out.exists()
+        _run_ort(out)
+
+    def test_samples_budget_counts_samples_not_batches(self, cnn_onnx):
+        """samples=N must cap the number of individual samples for bare-tensor input."""
+        from mindtrace.models.optimization.quantize.ptq import _resolve_input_info, collect_feeds
+
+        name, rank, batch = _resolve_input_info(cnn_onnx)
+        batches = [torch.randn(4, 3, 32, 32) for _ in range(4)]  # 16 samples total
+        feeds = collect_feeds(batches, name, 6, sample_rank=rank - 1, batch_size=batch)
+        assert len(feeds) == 6
+        assert all(feed[name].shape[0] == 1 for feed in feeds)
+
+    def test_single_sample_3d_gains_batch_dim(self, cnn_onnx):
+        """A dataset yielding (3, 32, 32) samples must not be split along channels."""
+        from mindtrace.models.optimization.quantize.ptq import _resolve_input_info, collect_feeds
+
+        name, rank, _ = _resolve_input_info(cnn_onnx)
+        samples_3d = [(torch.randn(3, 32, 32), 0) for _ in range(3)]
+        feeds = collect_feeds(samples_3d, name, 10, sample_rank=rank - 1)
+        assert len(feeds) == 3
+        assert all(feed[name].shape == (1, 3, 32, 32) for feed in feeds)
+
+    def test_fixed_batch4_model_gets_grouped_feeds(self, tmp_path):
+        """Models exported with a fixed batch of 4 calibrate with feeds of exactly 4."""
+        model_path = _export(_build_two_conv(), tmp_path / "b4.onnx", input_shape=(4, 3, 16, 16))
+        loader = DataLoader(TensorDataset(torch.randn(10, 3, 16, 16), torch.zeros(10)), batch_size=3)
+        out = StaticQuantizer().run(model_path, loader, samples=10, output=tmp_path / "b4-int8.onnx")
+        assert out.exists()
+        _run_ort(out, input_shape=(4, 3, 16, 16))
+
+    def test_dict_feed_preserves_dtype(self):
+        """Dict calibration batches must keep the caller's dtypes (e.g. int64 ids)."""
+        from mindtrace.models.optimization.quantize.ptq import _batch_to_arrays
+
+        feed = _batch_to_arrays({"ids": np.arange(4, dtype=np.int64), "x": torch.randn(1, 3)}, "input")[0]
+        assert feed["ids"].dtype == np.int64
+        assert feed["x"].dtype == np.float32
+
+
+class TestQuantizeDynamicPrecision:
+    """Regression tests for the precision parameter on dynamic quantization."""
+
+    def test_uint8_precision(self, cnn_onnx, tmp_path):
+        out = quantize_dynamic(cnn_onnx, tmp_path / "u8.onnx", precision="uint8")
+        assert out.exists()
+        _run_ort(out)
+
+    def test_invalid_precision_raises(self, cnn_onnx):
+        with pytest.raises(ValueError, match="precision"):
+            quantize_dynamic(cnn_onnx, precision="int4")
+
+
+class TestQATOptimizerGroups:
+    """Regression test: QAT preparation must preserve param-group structure."""
+
+    def test_differential_lr_groups_survive_preparation(self):
+        model = nn.Sequential(nn.Linear(8, 16), nn.ReLU(), nn.Linear(16, 2))
+        backbone_params = list(model[0].parameters())
+        head_params = list(model[2].parameters())
+        optimizer = torch.optim.AdamW(
+            [{"params": backbone_params, "lr": 1e-5}, {"params": head_params, "lr": 1e-3}]
+        )
+
+        from mindtrace.models.training.trainer import Trainer
+
+        trainer = Trainer(model=model, loss_fn=nn.CrossEntropyLoss(), optimizer=optimizer, device="cpu")
+        callback = QATCallback(example_inputs=(torch.randn(2, 8),))
+        callback.on_train_begin(trainer)
+        callback._current_epoch = 0
+        callback.on_epoch_begin(trainer, epoch=0)
+
+        groups = trainer.optimizer.param_groups
+        assert len(groups) == 2
+        assert groups[0]["lr"] == pytest.approx(1e-5)
+        assert groups[1]["lr"] == pytest.approx(1e-3)
+        prepared_names = dict(trainer.model.named_parameters())
+        assert sum(len(g["params"]) for g in groups) == sum(1 for p in prepared_names.values() if p.requires_grad)

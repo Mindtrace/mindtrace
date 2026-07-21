@@ -18,7 +18,7 @@ from mindtrace.models.optimization.quantize.ptq import (
     StaticQuantizer,
     _default_output,
     _require_ort_quant,
-    _resolve_input_name,
+    _resolve_input_info,
     collect_feeds,
     preprocess_for_quantization,
 )
@@ -228,8 +228,15 @@ def sensitivity_scan(
 
     max_candidates = top if top is not None else _DEFAULT_MAX_CANDIDATES
     quantizer = StaticQuantizer()
-    resolved_input = input_name or _resolve_input_name(onnx_path)
-    feeds = collect_feeds(calibration_data, resolved_input, samples)
+    graph_input, rank, batch_size = _resolve_input_info(onnx_path)
+    resolved_input = input_name or graph_input
+    feeds = collect_feeds(
+        calibration_data,
+        resolved_input,
+        samples,
+        sample_rank=rank - 1 if rank else None,
+        batch_size=batch_size,
+    )
 
     baseline = float(eval_fn(onnx_path))
 
@@ -327,8 +334,15 @@ class MixedPrecisionSearch:
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         quantizer = StaticQuantizer()
-        resolved_input = input_name or _resolve_input_name(onnx_path)
-        feeds = collect_feeds(self.calibration_data, resolved_input, samples)
+        graph_input, rank, batch_size = _resolve_input_info(onnx_path)
+        resolved_input = input_name or graph_input
+        feeds = collect_feeds(
+            self.calibration_data,
+            resolved_input,
+            samples,
+            sample_rank=rank - 1 if rank else None,
+            batch_size=batch_size,
+        )
         baseline = float(eval_fn(onnx_path))
 
         with tempfile.TemporaryDirectory(prefix="mindtrace-mixed-") as tmp:
