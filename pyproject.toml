@@ -53,6 +53,9 @@ models-peft = ["mindtrace-models[peft]>=0.14.0.dev0"]
 models-mlflow = ["mindtrace-models[mlflow]>=0.14.0.dev0"]
 models-wandb = ["mindtrace-models[wandb]>=0.14.0.dev0"]
 models-onnx = ["mindtrace-models[onnx]>=0.14.0.dev0"]
+models-edge = ["mindtrace-models[edge]>=0.14.0.dev0"]
+models-pruning = ["mindtrace-models[pruning]>=0.14.0.dev0"]
+models-openvino = ["mindtrace-models[openvino]>=0.14.0.dev0"]
 models-all = ["mindtrace-models[all]>=0.14.0.dev0"]
 
 
