@@ -162,9 +162,9 @@ class TestCallableRuntime:
         assert report.iterations * report.mean_ms == pytest.approx(100.0, rel=0.8)
 
     def test_peak_rss_is_per_run_not_lifetime(self) -> None:
-        import numpy as np_module
-
         import resource as resource_module
+
+        import numpy as np_module
 
         # Inflate the process lifetime RSS peak by 512 MB, then free it
         # (large allocations are mmap-backed and returned to the OS on del).
