@@ -211,6 +211,8 @@ __all__ = [
     "PipelineUnloadOutput",
     "PipelineUnloadTaskSchema",
     "SegmentationMaskPrediction",
+    # pipeline pool
+    "PipelinePool",
 ]
 
 # -- Pipeline (core inference orchestration) --------------------------------
@@ -235,3 +237,4 @@ from mindtrace.models.pipeline import (
     PipelineUnloadOutput,
     PipelineUnloadTaskSchema,
 )
+from mindtrace.models.pipeline_pool import PipelinePool
