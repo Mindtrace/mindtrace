@@ -1,7 +1,7 @@
 """ML model archivers.
 
 Serialization/deserialization of ML model formats (HuggingFace, timm,
-Ultralytics, ONNX). Each archiver self-registers with the
+Ultralytics, ONNX, OpenVINO, TensorRT). Each archiver self-registers with the
 Registry at import time via Registry.register_default_materializer().
 """
 
@@ -18,6 +18,18 @@ def register_ml_archivers() -> None:
     # ONNX (guards internally via try/except)
     try:
         import mindtrace.models.archivers.onnx.onnx_model_archiver  # noqa: F401
+    except ImportError:
+        pass
+
+    # OpenVINO (guards internally via try/except)
+    try:
+        import mindtrace.models.archivers.openvino.openvino_archiver  # noqa: F401
+    except ImportError:
+        pass
+
+    # TensorRT (engine bytes are opaque; probes guard tensorrt internally)
+    try:
+        import mindtrace.models.archivers.tensorrt.tensorrt_archiver  # noqa: F401
     except ImportError:
         pass
 
