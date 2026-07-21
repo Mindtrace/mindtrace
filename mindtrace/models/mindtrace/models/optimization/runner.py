@@ -47,6 +47,7 @@ from mindtrace.models.optimization.bench import Benchmark, BenchmarkReport
 from mindtrace.models.optimization.compile import compile_model
 from mindtrace.models.optimization.export import export_onnx
 from mindtrace.models.optimization.recipes import Compile, Export, Finetune, OptimizationRecipe, Prune, Quantize
+from mindtrace.models.optimization.targets import get_target
 
 # ---------------------------------------------------------------------------
 # Optional ONNX Runtime import (needed only for onnx-domain evaluation)
@@ -538,6 +539,11 @@ class OptimizationRunner(Mindtrace):
     def _compile_step(self, step: Compile, index: int, artifact: Path | None) -> Path:
         """Compile the current ONNX artifact for a deployment target.
 
+        ExecuTorch targets compile from the live torch module rather than
+        from ONNX, so for them the runner forwards ``module`` and a random
+        ``example_input`` (drawn from the inferred input shape) to the
+        backend; the ONNX artifact is still passed for naming/provenance.
+
         Args:
             step: The ``compile`` recipe step.
             index: Recipe step index, used to name the output directory.
@@ -546,7 +552,11 @@ class OptimizationRunner(Mindtrace):
         Returns:
             Path to the compiled artifact.
         """
-        compiled = compile_model(artifact, step.target, output_dir=self.work_dir / f"{index:02d}_{step.target}")
+        spec = get_target(step.target)
+        opts: dict[str, Any] = {}
+        if spec.runtime == "executorch":
+            opts = {"module": self.model, "example_input": torch.randn(*self._infer_input_shape())}
+        compiled = compile_model(artifact, spec, output_dir=self.work_dir / f"{index:02d}_{step.target}", **opts)
         self._compiled_runtime = compiled.runtime
         return compiled.path
 
