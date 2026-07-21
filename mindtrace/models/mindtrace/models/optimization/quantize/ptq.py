@@ -67,6 +67,37 @@ def _default_output(onnx_path: Path, suffix: str) -> Path:
     return onnx_path.with_name(f"{onnx_path.stem}{suffix}{onnx_path.suffix}")
 
 
+def _resolve_input_info(onnx_path: Path) -> tuple[str, int | None, int | None]:
+    """Resolve the primary graph input's name, rank and fixed batch size.
+
+    Args:
+        onnx_path: Path to the ONNX model.
+
+    Returns:
+        Tuple ``(name, rank, batch_size)`` where ``rank`` is the input tensor
+        rank (``None`` if the model does not declare a shape) and
+        ``batch_size`` is the fixed leading-dimension size, or ``None`` when
+        the batch dimension is dynamic/symbolic.
+
+    Raises:
+        ValueError: If the model has no non-initializer graph inputs.
+    """
+    model = onnx.load(str(onnx_path))
+    initializer_names = {init.name for init in model.graph.initializer}
+    for graph_input in model.graph.input:
+        if graph_input.name in initializer_names:
+            continue
+        dims = graph_input.type.tensor_type.shape.dim
+        rank = len(dims) or None
+        batch_size: int | None = None
+        if rank:
+            leading = dims[0]
+            if leading.HasField("dim_value") and leading.dim_value > 0:
+                batch_size = leading.dim_value
+        return graph_input.name, rank, batch_size
+    raise ValueError(f"Could not find a graph input in '{onnx_path}'.")
+
+
 def _resolve_input_name(onnx_path: Path) -> str:
     """Return the name of the first graph input that is not an initializer.
 
@@ -79,57 +110,75 @@ def _resolve_input_name(onnx_path: Path) -> str:
     Raises:
         ValueError: If the model has no non-initializer graph inputs.
     """
-    model = onnx.load(str(onnx_path))
-    initializer_names = {init.name for init in model.graph.initializer}
-    for graph_input in model.graph.input:
-        if graph_input.name not in initializer_names:
-            return graph_input.name
-    raise ValueError(f"Could not find a graph input in '{onnx_path}'.")
+    return _resolve_input_info(onnx_path)[0]
 
 
-def _batch_to_arrays(batch: Any, input_name: str) -> list[dict[str, "np.ndarray"]]:
+def _batch_to_arrays(batch: Any, input_name: str, sample_rank: int | None = None) -> list[dict[str, "np.ndarray"]]:
     """Convert one calibration batch into a list of single-sample ORT feeds.
 
     Supported batch layouts:
 
-    * ``dict`` mapping input name(s) to array/tensor — used as one feed,
-      exactly as given.
+    * ``dict`` mapping input name(s) to array/tensor — used as one feed with
+      the caller's dtypes preserved (only torch→numpy conversion applied), so
+      models with integer inputs calibrate correctly.
     * ``tuple``/``list`` — the first element is taken as the images (labels
-      and any extra elements are ignored), matching ``DataLoader`` batches;
-      the batch is split along dim 0 into single-sample feeds so models
-      exported with a fixed batch size of 1 calibrate correctly.
-    * A bare tensor / ndarray — used directly as one feed.
+      and any extra elements are ignored), matching ``DataLoader`` batches.
+    * A bare tensor / ndarray — treated like the images of a tuple batch.
 
-    Torch tensors are converted to numpy.
+    Non-dict arrays are split along dim 0 into single-sample feeds (each
+    keeping a leading batch dim of 1) whenever their rank shows they carry a
+    batch dimension: rank ``sample_rank + 1`` splits, rank ``sample_rank``
+    is a single sample and gains a batch dim.  When *sample_rank* is unknown
+    the common image case (4-D arrays) is split and anything else passes
+    through unchanged.
 
     Args:
         batch: One item from the calibration iterable.
         input_name: ORT input name used for non-dict batches.
+        sample_rank: Rank of a single sample (model input rank minus the
+            batch dimension), when known from the ONNX graph.
 
     Returns:
-        List of feed dicts mapping input name to ``float32`` numpy arrays.
+        List of feed dicts, one per sample.
     """
 
-    def _to_numpy(value: Any) -> "np.ndarray":
+    def _to_numpy(value: Any, *, cast_float: bool) -> "np.ndarray":
         if hasattr(value, "detach"):  # torch.Tensor without importing torch
             value = value.detach().cpu().numpy()
-        return np.asarray(value, dtype=np.float32)
+        array = np.asarray(value)
+        if cast_float and array.dtype not in (np.float32, np.float16):
+            array = array.astype(np.float32)
+        return array
 
     if isinstance(batch, dict):
-        return [{name: _to_numpy(value) for name, value in batch.items()}]
+        return [{name: _to_numpy(value, cast_float=False) for name, value in batch.items()}]
+
     if isinstance(batch, (tuple, list)):
         if not batch:
             return []
-        images = _to_numpy(batch[0])
-        # Split the DataLoader batch into single samples (keep a batch dim of 1).
+        images = _to_numpy(batch[0], cast_float=True)
+    else:
+        images = _to_numpy(batch, cast_float=True)
+
+    if sample_rank is not None:
+        if images.ndim == sample_rank + 1:
+            return [{input_name: sample[np.newaxis, ...]} for sample in images]
+        if images.ndim == sample_rank:
+            return [{input_name: images[np.newaxis, ...]}]
+        return [{input_name: images}]
+    # Rank unknown: split the common batched-image layout, pass others through.
+    if images.ndim == 4:
         return [{input_name: sample[np.newaxis, ...]} for sample in images]
-    return [{input_name: _to_numpy(batch)}]
+    return [{input_name: images}]
 
 
 def collect_feeds(
     calibration_data: Any,
     input_name: str,
     samples: int,
+    *,
+    sample_rank: int | None = None,
+    batch_size: int | None = None,
 ) -> list[dict[str, "np.ndarray"]]:
     """Materialise calibration data into a bounded list of ORT input feeds.
 
@@ -138,24 +187,46 @@ def collect_feeds(
     iterable of dicts mapping input names to arrays.  The result can be
     replayed cheaply across multiple quantization passes.
 
+    ``samples`` counts individual samples (not source batches) for every
+    non-dict layout.  When the model declares a fixed batch size larger than
+    one, the collected single-sample feeds are regrouped into feeds of
+    exactly that size (a trailing remainder is dropped).
+
     Args:
         calibration_data: The calibration source (see above).
         input_name: Input tensor name used when feeds must be constructed
             from bare arrays.
-        samples: Maximum number of feeds to collect.
+        samples: Maximum number of calibration samples to collect.
+        sample_rank: Rank of a single sample, when known (see
+            :func:`_batch_to_arrays`).
+        batch_size: The model's fixed batch size, or ``None`` when dynamic
+            or 1.
 
     Returns:
-        List of feed dicts, at most *samples* long.
+        List of feed dicts.
 
     Raises:
-        ValueError: If no calibration feeds could be collected.
+        ValueError: If no calibration feeds could be collected (including a
+            fixed batch size larger than the number of collected samples).
     """
     feeds: list[dict[str, "np.ndarray"]] = []
     for batch in calibration_data:
-        feeds.extend(_batch_to_arrays(batch, input_name))
+        feeds.extend(_batch_to_arrays(batch, input_name, sample_rank))
         if len(feeds) >= samples:
             break
     feeds = feeds[:samples]
+
+    if batch_size is not None and batch_size > 1:
+        grouped: list[dict[str, "np.ndarray"]] = []
+        for start in range(0, len(feeds) - batch_size + 1, batch_size):
+            chunk = feeds[start : start + batch_size]
+            if any(len(feed) != 1 or input_name not in feed for feed in chunk):
+                # Dict feeds are the caller's responsibility to shape correctly.
+                grouped = feeds
+                break
+            grouped.append({input_name: np.concatenate([feed[input_name] for feed in chunk], axis=0)})
+        feeds = grouped
+
     if not feeds:
         raise ValueError("No calibration samples could be collected from 'calibration_data'.")
     return feeds
@@ -211,17 +282,24 @@ def preprocess_for_quantization(onnx_path: Path, workdir: Path) -> Path:
         return onnx_path
 
 
-def quantize_dynamic(onnx_path: str | Path, output: str | Path | None = None) -> Path:
-    """Apply ONNX Runtime dynamic INT8 quantization (weights only).
+def quantize_dynamic(
+    onnx_path: str | Path,
+    output: str | Path | None = None,
+    *,
+    precision: str = "int8",
+) -> Path:
+    """Apply ONNX Runtime dynamic quantization (weights only).
 
-    Weights are stored as INT8 while activations remain float and are
-    quantized on the fly at inference time.  No calibration data is required.
+    Weights are stored at the requested precision while activations remain
+    float and are quantized on the fly at inference time.  No calibration
+    data is required.
 
     Args:
         onnx_path: Path to the FP32 ONNX model.
         output: Destination path for the quantized model.  Defaults to the
-            source path with an ``-int8-dynamic`` suffix
+            source path with a ``-{precision}-dynamic`` suffix
             (``model.onnx`` → ``model-int8-dynamic.onnx``).
+        precision: Weight precision — ``"int8"`` or ``"uint8"``.
 
     Returns:
         Path to the quantized ONNX model.
@@ -229,17 +307,22 @@ def quantize_dynamic(onnx_path: str | Path, output: str | Path | None = None) ->
     Raises:
         ImportError: If ``onnx`` / ``onnxruntime`` is not installed.
         FileNotFoundError: If *onnx_path* does not exist.
+        ValueError: If *precision* is unsupported.
     """
     _require_ort_quant()
+
+    if precision not in _PRECISIONS:
+        raise ValueError(f"precision must be one of {_PRECISIONS}, got '{precision}'")
 
     onnx_path = Path(onnx_path)
     if not onnx_path.exists():
         raise FileNotFoundError(f"ONNX model not found: {onnx_path}")
 
-    output_path = Path(output) if output is not None else _default_output(onnx_path, "-int8-dynamic")
+    output_path = Path(output) if output is not None else _default_output(onnx_path, f"-{precision}-dynamic")
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    _ort_quantize_dynamic(str(onnx_path), str(output_path), weight_type=QuantType.QInt8)
+    weight_type = QuantType.QInt8 if precision == "int8" else QuantType.QUInt8
+    _ort_quantize_dynamic(str(onnx_path), str(output_path), weight_type=weight_type)
     return output_path
 
 
@@ -327,8 +410,16 @@ class StaticQuantizer:
         output_path = Path(output) if output is not None else _default_output(onnx_path, f"-{self.precision}-static")
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        resolved_input = input_name or _resolve_input_name(onnx_path)
-        feeds = collect_feeds(calibration_data, resolved_input, samples)
+        graph_input, rank, batch_size = _resolve_input_info(onnx_path)
+        resolved_input = input_name or graph_input
+        sample_rank = rank - 1 if rank else None
+        feeds = collect_feeds(
+            calibration_data,
+            resolved_input,
+            samples,
+            sample_rank=sample_rank,
+            batch_size=batch_size,
+        )
 
         quant_type = QuantType.QInt8 if self.precision == "int8" else QuantType.QUInt8
         calibrate_method = getattr(CalibrationMethod, _CALIBRATION_METHODS[self.calibration_method])
