@@ -19,6 +19,7 @@ import math
 import os
 import resource
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -91,6 +92,60 @@ def _peak_rss_mb() -> float:
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     divisor = 1024.0 * 1024.0 if sys.platform == "darwin" else 1024.0
     return peak / divisor
+
+
+def _current_rss_mb() -> float | None:
+    """Current resident set size in MB via ``/proc/self/statm``, or ``None``.
+
+    Returns:
+        Current RSS in MB on Linux, ``None`` where ``/proc`` is unavailable.
+    """
+    try:
+        with open("/proc/self/statm") as statm:
+            pages = int(statm.read().split()[1])
+        return pages * os.sysconf("SC_PAGE_SIZE") / (1024.0 * 1024.0)
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+class _RssSampler:
+    """Background thread sampling current RSS during a benchmark run.
+
+    ``ru_maxrss`` is a process-LIFETIME high-water mark, so in a
+    multi-variant comparison every report after the first would inherit the
+    largest earlier model's peak.  Sampling ``/proc/self/statm`` during the
+    run measures this run's memory instead; where ``/proc`` is unavailable
+    the lifetime peak is used as a fallback (recorded in
+    ``meta["rss_method"]``).
+    """
+
+    def __init__(self, interval_s: float = 0.005) -> None:
+        self._interval_s = interval_s
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self.max_rss_mb: float = 0.0
+        self.method: str = "statm" if _current_rss_mb() is not None else "ru_maxrss"
+
+    def __enter__(self) -> "_RssSampler":
+        if self.method == "statm":
+            self._thread = threading.Thread(target=self._sample_loop, daemon=True)
+            self._thread.start()
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        if self._thread is not None:
+            self._stop.set()
+            self._thread.join(timeout=1.0)
+        if self.method != "statm" or self.max_rss_mb <= 0.0:
+            self.method = "ru_maxrss"
+            self.max_rss_mb = _peak_rss_mb()
+
+    def _sample_loop(self) -> None:
+        while not self._stop.is_set():
+            rss = _current_rss_mb()
+            if rss is not None and rss > self.max_rss_mb:
+                self.max_rss_mb = rss
+            self._stop.wait(self._interval_s)
 
 
 def _file_size_mb(path: str | os.PathLike) -> float:
@@ -231,30 +286,31 @@ class Benchmark(Mindtrace):
                 not installed.
             ValueError: If the artifact type does not match the runtime.
         """
-        cold_t0 = time.perf_counter()
-        run_once = self._build_runner()
-        run_once()  # First inference completes the cold start.
-        cold_start_ms = (time.perf_counter() - cold_t0) * 1000.0
+        with _RssSampler() as rss_sampler:
+            cold_t0 = time.perf_counter()
+            run_once = self._build_runner()
+            run_once()  # First inference completes the cold start.
+            cold_start_ms = (time.perf_counter() - cold_t0) * 1000.0
 
-        for _ in range(self.warmup):
-            run_once()
+            for _ in range(self.warmup):
+                run_once()
 
-        latencies_ms: list[float] = []
-        sustained = self.sustained_seconds is not None
-        if sustained:
-            deadline = time.perf_counter() + float(self.sustained_seconds)  # type: ignore[arg-type]
-            while True:
-                t0 = time.perf_counter()
-                run_once()
-                t1 = time.perf_counter()
-                latencies_ms.append((t1 - t0) * 1000.0)
-                if t1 >= deadline:
-                    break
-        else:
-            for _ in range(self.iterations):
-                t0 = time.perf_counter()
-                run_once()
-                latencies_ms.append((time.perf_counter() - t0) * 1000.0)
+            latencies_ms: list[float] = []
+            sustained = self.sustained_seconds is not None
+            if sustained:
+                deadline = time.perf_counter() + float(self.sustained_seconds)  # type: ignore[arg-type]
+                while True:
+                    t0 = time.perf_counter()
+                    run_once()
+                    t1 = time.perf_counter()
+                    latencies_ms.append((t1 - t0) * 1000.0)
+                    if t1 >= deadline:
+                        break
+            else:
+                for _ in range(self.iterations):
+                    t0 = time.perf_counter()
+                    run_once()
+                    latencies_ms.append((time.perf_counter() - t0) * 1000.0)
 
         latencies_ms.sort()
         mean_ms = sum(latencies_ms) / len(latencies_ms)
@@ -269,7 +325,7 @@ class Benchmark(Mindtrace):
             mean_ms=mean_ms,
             fps=fps,
             size_mb=self._size_mb(),
-            peak_rss_mb=_peak_rss_mb(),
+            peak_rss_mb=rss_sampler.max_rss_mb,
             cold_start_ms=cold_start_ms,
             iterations=len(latencies_ms),
             sustained=sustained,
@@ -280,6 +336,7 @@ class Benchmark(Mindtrace):
                 "providers": self.providers,
                 "requested_iterations": self.iterations,
                 "sustained_seconds": self.sustained_seconds,
+                "rss_method": rss_sampler.method,
             },
         )
         self.logger.info(

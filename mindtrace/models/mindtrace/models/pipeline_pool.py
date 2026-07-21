@@ -43,6 +43,9 @@ class _PoolEntry:
     memory_mb: float = 0.0
     obj: Any = None
     is_loaded: bool = field(default=False)
+    loading: bool = field(default=False)
+    refcount: int = field(default=0)
+    cond: threading.Condition | None = field(default=None, repr=False)
 
 
 class PipelinePool(Mindtrace):
@@ -82,6 +85,7 @@ class PipelinePool(Mindtrace):
         self._entries: dict[str, _PoolEntry] = {}
         self._lru: list[str] = []  # loaded entry names, least-recent first
         self._evictions = 0
+        self._loading_mb = 0.0  # declared cost of in-flight loads
 
     def register(
         self,
@@ -113,7 +117,13 @@ class PipelinePool(Mindtrace):
         with self._lock:
             if name in self._entries:
                 raise ValueError(f"Pipeline {name!r} is already registered.")
-            self._entries[name] = _PoolEntry(name=name, loader=loader, unloader=unloader, memory_mb=memory_mb)
+            self._entries[name] = _PoolEntry(
+                name=name,
+                loader=loader,
+                unloader=unloader,
+                memory_mb=memory_mb,
+                cond=threading.Condition(self._lock),
+            )
 
     def get(self, name: str) -> Any:
         """Return the loaded pipeline object, loading (and evicting) as needed.
@@ -135,10 +145,32 @@ class PipelinePool(Mindtrace):
             RuntimeError: If the entry's declared ``memory_mb`` alone
                 exceeds the whole budget.
         """
+        return self._get(name, pin=False)
+
+    def _get(self, name: str, *, pin: bool) -> Any:
+        """Core of :meth:`get`: load on demand, optionally pinning the entry.
+
+        The loader runs OUTSIDE the pool lock so loading one pipeline never
+        blocks access to others; concurrent requesters of the same entry
+        wait on its condition instead of loading twice.
+
+        Args:
+            name: Registered pipeline name.
+            pin: When ``True``, increment the entry's refcount before
+                releasing the lock (caller must decrement via
+                :meth:`_unpin`).
+
+        Returns:
+            The loaded pipeline object.
+        """
         with self._lock:
             entry = self._require(name)
+            while entry.loading:
+                entry.cond.wait()
             if entry.is_loaded:
                 self._touch(name)
+                if pin:
+                    entry.refcount += 1
                 return entry.obj
 
             if self.memory_budget_mb is not None:
@@ -149,14 +181,48 @@ class PipelinePool(Mindtrace):
                     )
                 self._evict_until_fits(entry)
 
-            self.logger.debug(f"Loading pipeline {name!r} ({entry.memory_mb} MB declared).")
-            entry.obj = entry.loader()
+            entry.loading = True
+            self._loading_mb += entry.memory_mb
+
+        self.logger.debug(f"Loading pipeline {name!r} ({entry.memory_mb} MB declared).")
+        try:
+            obj = entry.loader()
+        except BaseException:
+            with self._lock:
+                entry.loading = False
+                self._loading_mb -= entry.memory_mb
+                entry.cond.notify_all()
+            raise
+
+        with self._lock:
+            entry.obj = obj
             entry.is_loaded = True
+            entry.loading = False
+            self._loading_mb -= entry.memory_mb
             self._lru.append(name)
+            if pin:
+                entry.refcount += 1
+            if self.memory_budget_mb is not None:
+                # Concurrent loads may have transiently overshot the budget;
+                # converge back by evicting LRU entries (never this one).
+                self._rebalance(protect=name)
+            entry.cond.notify_all()
             return entry.obj
 
+    def _unpin(self, name: str) -> None:
+        """Decrement an entry's refcount (crash-safe against unregistration)."""
+        with self._lock:
+            entry = self._entries.get(name)
+            if entry is not None and entry.refcount > 0:
+                entry.refcount -= 1
+
     def predict(self, name: str, *args: Any, **kwargs: Any) -> Any:
-        """Load (if needed) and invoke the pipeline as a callable.
+        """Load (if needed), pin, and invoke the pipeline as a callable.
+
+        The entry is pinned (refcount) for the duration of the call so a
+        concurrent load of another pipeline can never evict it mid-inference.
+        :meth:`get` hands out unpinned references — ``predict`` is the safe
+        path for concurrent use.
 
         Args:
             name: Registered pipeline name.
@@ -166,7 +232,11 @@ class PipelinePool(Mindtrace):
         Returns:
             Whatever the pipeline callable returns.
         """
-        return self.get(name)(*args, **kwargs)
+        pipeline = self._get(name, pin=True)
+        try:
+            return pipeline(*args, **kwargs)
+        finally:
+            self._unpin(name)
 
     def unload(self, name: str) -> None:
         """Unload a single pipeline if it is currently loaded.
@@ -180,12 +250,18 @@ class PipelinePool(Mindtrace):
         with self._lock:
             entry = self._require(name)
             if entry.is_loaded:
+                if entry.refcount > 0:
+                    self.logger.warning(f"Pipeline {name!r} is in use (refcount {entry.refcount}); not unloading.")
+                    return
                 self._release(entry)
 
     def unload_all(self) -> None:
         """Unload every currently loaded pipeline."""
         with self._lock:
             for name in list(self._lru):
+                if self._entries[name].refcount > 0:
+                    self.logger.warning(f"Pipeline {name!r} is in use; not unloading.")
+                    continue
                 self._release(self._entries[name])
 
     def loaded(self) -> list[str]:
@@ -229,13 +305,46 @@ class PipelinePool(Mindtrace):
         return sum(self._entries[n].memory_mb for n in self._lru)
 
     def _evict_until_fits(self, incoming: _PoolEntry) -> None:
-        """Evict LRU entries (never ``incoming``) until the budget fits it."""
+        """Evict LRU entries until the budget fits ``incoming``.
+
+        Never evicts ``incoming`` itself, pinned entries (refcount > 0, i.e.
+        mid-``predict``), or entries still loading.  When nothing evictable
+        remains the load proceeds with a logged transient overshoot rather
+        than blocking or failing — declared budgets are a target, and pinned
+        work must never be torn down underneath a caller.
+        """
         assert self.memory_budget_mb is not None
-        while self._used_mb() + incoming.memory_mb > self.memory_budget_mb:
-            victim_name = next((n for n in self._lru if n != incoming.name), None)
-            if victim_name is None:  # pragma: no cover - guarded by the over-budget check
+        while self._used_mb() + self._loading_mb + incoming.memory_mb > self.memory_budget_mb:
+            victim_name = next(
+                (n for n in self._lru if n != incoming.name and self._entries[n].refcount == 0),
+                None,
+            )
+            if victim_name is None:
+                self.logger.warning(
+                    f"Pool over budget loading {incoming.name!r} but every loaded pipeline is pinned; "
+                    f"proceeding with a transient overshoot."
+                )
                 break
             self.logger.debug(f"Evicting pipeline {victim_name!r} to fit {incoming.name!r}.")
+            self._release(self._entries[victim_name])
+            self._evictions += 1
+
+    def _rebalance(self, protect: str) -> None:
+        """Evict unpinned LRU entries until the pool is back within budget.
+
+        Args:
+            protect: Entry name that must not be evicted (the most recent
+                load that triggered the rebalance).
+        """
+        assert self.memory_budget_mb is not None
+        while self._used_mb() + self._loading_mb > self.memory_budget_mb:
+            victim_name = next(
+                (n for n in self._lru if n != protect and self._entries[n].refcount == 0),
+                None,
+            )
+            if victim_name is None:
+                break
+            self.logger.debug(f"Rebalance: evicting pipeline {victim_name!r}.")
             self._release(self._entries[victim_name])
             self._evictions += 1
 
