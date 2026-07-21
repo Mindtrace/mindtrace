@@ -28,6 +28,7 @@ from __future__ import annotations
 from mindtrace.models.lifecycle.card import (
     EvalResult,
     ModelCard,
+    ModelVariant,
     PromotionError,
     PromotionResult,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "VALID_DEMOTIONS",
     "EvalResult",
     "ModelCard",
+    "ModelVariant",
     "PromotionError",
     "PromotionResult",
 ]
