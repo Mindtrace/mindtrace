@@ -1,0 +1,670 @@
+"""Accuracy-aware execution of declarative optimization recipes.
+
+The :class:`OptimizationRunner` walks an
+:class:`~mindtrace.models.optimization.recipes.OptimizationRecipe` step by
+step through two domains:
+
+* **torch domain** — ``prune`` and ``finetune`` steps operate on the live
+  ``nn.Module``.
+* **onnx domain** — ``export``, ``quantize`` and ``compile`` steps operate on
+  ONNX (or compiled) artifact files.
+
+An explicit ``export`` step switches domains.  When a ``quantize`` or
+``compile`` step arrives while the pipeline is still in the torch domain, an
+implicit export runs first (the input shape is inferred from one evaluation /
+calibration batch).  All runner-driven exports use a dynamic batch axis so
+the same artifact serves evaluation, calibration and benchmarking.
+
+Accuracy gating: when ``constraints`` contains ``max_accuracy_drop`` and an
+``eval_loader`` is provided, the baseline metric is measured ONCE up front on
+the original torch model and **kept fixed for the whole run** — a finetune
+step that improves on the baseline does not raise the bar for later steps.
+After every lossy step (prune, finetune, quantize) the metric is re-measured
+(through :class:`OnnxModelAdapter` in the onnx domain, so the same
+``EvaluationRunner`` path is used) and compared against the fixed baseline.
+
+Latency / size gating: when ``constraints`` contains ``p95_latency_ms`` or
+``max_size_mb``, a :class:`~mindtrace.models.optimization.bench.Benchmark`
+runs after the last step; final-gate violations are recorded in
+``result.violations`` but never rolled back.
+"""
+
+from __future__ import annotations
+
+import copy
+import tempfile
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable
+
+import numpy as np
+import torch
+import torch.nn as nn
+
+from mindtrace.core import Mindtrace
+from mindtrace.models.optimization.bench import Benchmark, BenchmarkReport
+from mindtrace.models.optimization.compile import compile_model
+from mindtrace.models.optimization.export import export_onnx
+from mindtrace.models.optimization.recipes import Compile, Export, Finetune, OptimizationRecipe, Prune, Quantize
+
+# ---------------------------------------------------------------------------
+# Optional ONNX Runtime import (needed only for onnx-domain evaluation)
+# ---------------------------------------------------------------------------
+try:
+    import onnxruntime
+
+    _ORT_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    onnxruntime = None  # type: ignore[assignment]
+    _ORT_AVAILABLE = False
+
+_ORT_INSTALL_MSG = (
+    "Evaluating ONNX artifacts requires the 'onnxruntime' package. Install it with: pip install mindtrace-models[edge]"
+)
+
+__all__ = [
+    "OnnxModelAdapter",
+    "OptimizationConstraintError",
+    "OptimizationResult",
+    "OptimizationRunner",
+]
+
+_LOSSY_OPS = frozenset({"prune", "finetune", "quantize"})
+
+_PRIMARY_METRIC: dict[str, str] = {
+    "classification": "accuracy",
+    "segmentation": "mIoU",
+    "detection": "mAP@50:95",
+    "regression": "r2",
+}
+
+
+class OptimizationConstraintError(RuntimeError):
+    """Raised when a constraint is violated and ``on_violation="raise"``."""
+
+
+@dataclass
+class OptimizationResult:
+    """Outcome of an :meth:`OptimizationRunner.run` call.
+
+    Attributes:
+        artifact_path: Path to the final artifact — an ``.onnx`` (or
+            compiled) file when the recipe ends in the onnx domain, otherwise
+            a ``torch.save``-serialized module.
+        report: Final :class:`BenchmarkReport`, present when a latency/size
+            gate was configured; ``None`` otherwise.
+        recipe_json: JSON serialization of the executed recipe.
+        history: One dict per executed recipe step with keys ``step``,
+            ``op``, ``domain``, ``artifact``, ``metric``, ``metric_drop``,
+            ``duration_s`` and ``rolled_back``.
+        violations: Violation records — accuracy-gate rollbacks (``step``,
+            ``op``, ``metric_drop``, ``limit``) and final latency/size gates
+            (``step="final"``, ``constraint``, ``value``, ``limit``).
+    """
+
+    artifact_path: Path
+    report: BenchmarkReport | None
+    recipe_json: str
+    history: list[dict] = field(default_factory=list)
+    violations: list[dict] = field(default_factory=list)
+
+
+class OnnxModelAdapter:
+    """Present an ONNX artifact through the model interface evaluation needs.
+
+    Wraps an ``onnxruntime.InferenceSession`` behind the small ``nn.Module``
+    surface used by
+    :class:`~mindtrace.models.evaluation.runner.EvaluationRunner` (``to``,
+    ``eval`` and ``__call__`` returning torch logits), so torch models and
+    ONNX artifacts share one evaluation path.
+
+    Args:
+        path: Path to the ``.onnx`` file.
+        providers: ONNX Runtime execution providers.  Defaults to
+            ``["CPUExecutionProvider"]``.
+
+    Raises:
+        ImportError: If ``onnxruntime`` is not installed.
+    """
+
+    def __init__(self, path: str | Path, providers: list | None = None) -> None:
+        if not _ORT_AVAILABLE:
+            raise ImportError(_ORT_INSTALL_MSG)
+        self.path = Path(path)
+        self._session = onnxruntime.InferenceSession(str(self.path), providers=providers or ["CPUExecutionProvider"])
+        self._input_name = self._session.get_inputs()[0].name
+
+    def to(self, device: Any) -> "OnnxModelAdapter":
+        """No-op device move (the session always runs on its providers)."""
+        return self
+
+    def eval(self) -> "OnnxModelAdapter":
+        """No-op eval-mode switch (inference sessions have no train mode)."""
+        return self
+
+    def __call__(self, batch: Any) -> torch.Tensor:
+        """Run one batch through the session and return torch logits.
+
+        Args:
+            batch: Input batch as a torch tensor or numpy array.
+
+        Returns:
+            The first session output as a ``torch.Tensor``.
+        """
+        if isinstance(batch, torch.Tensor):
+            array = batch.detach().cpu().numpy()
+        else:
+            array = np.asarray(batch)
+        outputs = self._session.run(None, {self._input_name: array.astype(np.float32)})
+        return torch.from_numpy(np.asarray(outputs[0]))
+
+
+class OptimizationRunner(Mindtrace):
+    """Execute an :class:`OptimizationRecipe` with accuracy-aware gating.
+
+    Args:
+        model: The torch model to optimize.  Torch-domain steps mutate it in
+            place (a rollback restores a pre-step deep copy).
+        recipe: The recipe to execute.
+        train_loader: Training loader, required by ``finetune`` steps.
+        eval_loader: Evaluation loader used for accuracy gating and shape
+            inference.
+        calibration_loader: Calibration loader for static PTQ.  Defaults to
+            *eval_loader*.
+        task: Evaluation task (``"classification"``, ``"segmentation"``,
+            ``"detection"`` or ``"regression"``).  Selects the gated metric
+            (accuracy for classification).
+        num_classes: Number of classes for evaluation.  Inferred from the
+            model output on one eval batch when ``None``.
+        constraints: Optional gate dict.  Recognized keys:
+            ``max_accuracy_drop`` (per-lossy-step accuracy gate),
+            ``p95_latency_ms`` and ``max_size_mb`` (final gates).
+        loss_fn: Loss for ``finetune`` steps.  Defaults to
+            ``nn.CrossEntropyLoss()``.
+        optimizer_factory: Callable ``(model, lr) -> Optimizer`` for
+            ``finetune`` steps.  Defaults to AdamW at the step's ``lr``.
+        tracker: Optional experiment tracker with a ``log(metrics, step=...)``
+            method; per-step metrics are logged as ``opt/<op>/<metric>``.
+        work_dir: Directory for intermediate and final artifacts.  A fresh
+            temporary directory is created when ``None``.
+        on_violation: Accuracy-gate policy — ``"rollback"`` discards the
+            violating step's artifact and continues, ``"raise"`` raises
+            :class:`OptimizationConstraintError`.
+
+    Raises:
+        ValueError: If *on_violation* or *task* is invalid.
+
+    Example::
+
+        runner = OptimizationRunner(
+            model,
+            OptimizationRecipe(steps=[Prune(sparsity=0.5), Finetune(epochs=2), Export(), Quantize()]),
+            train_loader=train_loader,
+            eval_loader=val_loader,
+            constraints={"max_accuracy_drop": 0.01, "p95_latency_ms": 20.0},
+        )
+        result = runner.run()
+        print(result.artifact_path, result.violations)
+    """
+
+    def __init__(
+        self,
+        model: nn.Module,
+        recipe: OptimizationRecipe,
+        *,
+        train_loader: Any = None,
+        eval_loader: Any = None,
+        calibration_loader: Any = None,
+        task: str = "classification",
+        num_classes: int | None = None,
+        constraints: dict | None = None,
+        loss_fn: Any = None,
+        optimizer_factory: Callable[[nn.Module, float], torch.optim.Optimizer] | None = None,
+        tracker: Any = None,
+        work_dir: str | Path | None = None,
+        on_violation: str = "rollback",
+    ) -> None:
+        super().__init__()
+        if on_violation not in ("rollback", "raise"):
+            raise ValueError(f"on_violation must be 'rollback' or 'raise', got '{on_violation}'")
+        if task not in _PRIMARY_METRIC:
+            raise ValueError(f"task must be one of {sorted(_PRIMARY_METRIC)}, got '{task}'")
+
+        self.model = model
+        self.recipe = recipe
+        self.train_loader = train_loader
+        self.eval_loader = eval_loader
+        self.calibration_loader = calibration_loader if calibration_loader is not None else eval_loader
+        self.task = task
+        self.num_classes = num_classes
+        self.constraints = dict(constraints) if constraints else {}
+        self.loss_fn = loss_fn
+        self.optimizer_factory = optimizer_factory
+        self.tracker = tracker
+        self.work_dir = Path(work_dir) if work_dir is not None else Path(tempfile.mkdtemp(prefix="mindtrace-opt-"))
+        self.work_dir.mkdir(parents=True, exist_ok=True)
+        self.on_violation = on_violation
+
+        self._input_shape: tuple[int, ...] | None = None
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def run(self) -> OptimizationResult:
+        """Execute the recipe and return the final artifact and diagnostics.
+
+        Returns:
+            An :class:`OptimizationResult` with the final artifact path,
+            per-step history, violation records, and (when a latency/size
+            gate is configured) the final :class:`BenchmarkReport`.
+
+        Raises:
+            OptimizationConstraintError: If an accuracy gate is violated and
+                ``on_violation="raise"``.
+            ValueError: On invalid recipes (e.g. a ``prune`` step after the
+                pipeline entered the onnx domain, or a ``finetune`` step with
+                no ``train_loader``).
+        """
+        history: list[dict] = []
+        violations: list[dict] = []
+        domain = "torch"
+        artifact: Path | None = None
+
+        max_drop = self.constraints.get("max_accuracy_drop")
+        gating = max_drop is not None and self.eval_loader is not None
+        baseline: float | None = None
+        if gating:
+            baseline = self._measure_metric(self.model)
+            self.logger.info("Baseline %s (%s): %.4f", _PRIMARY_METRIC[self.task], self.task, baseline)
+
+        for index, step in enumerate(self.recipe.steps):
+            start = time.perf_counter()
+
+            # Implicit domain switch: quantize/compile need an ONNX artifact.
+            implicit_export = False
+            if domain == "torch" and step.op in ("quantize", "compile"):
+                artifact = self._export_step(Export(), index, implicit=True)
+                domain = "onnx"
+                implicit_export = True
+
+            if domain == "onnx" and step.op in ("prune", "finetune"):
+                raise ValueError(
+                    f"Step {index} ('{step.op}') requires the torch domain, but the pipeline already "
+                    "exported to ONNX. Reorder the recipe so prune/finetune steps precede export."
+                )
+
+            # Snapshot state for a potential rollback of a lossy step.
+            snapshot: nn.Module | None = None
+            previous_artifact = artifact
+            if gating and self.on_violation == "rollback" and domain == "torch" and step.op in _LOSSY_OPS:
+                snapshot = copy.deepcopy(self.model)
+
+            # ----------------------------------------------------------
+            # Execute the step.
+            # ----------------------------------------------------------
+            if step.op == "prune":
+                self._prune_step(step)
+            elif step.op == "finetune":
+                self._finetune_step(step)
+            elif step.op == "export":
+                artifact = self._export_step(step, index)
+                domain = "onnx"
+            elif step.op == "quantize":
+                artifact = self._quantize_step(step, index, artifact)
+            elif step.op == "compile":
+                artifact = self._compile_step(step, index, artifact)
+            else:  # pragma: no cover - recipes validate ops
+                raise ValueError(f"Unknown recipe step op '{step.op}'.")
+
+            # ----------------------------------------------------------
+            # Accuracy gate for lossy steps (baseline stays fixed).
+            # ----------------------------------------------------------
+            metric: float | None = None
+            metric_drop: float | None = None
+            rolled_back = False
+            if gating and step.op in _LOSSY_OPS:
+                candidate = self.model if domain == "torch" else OnnxModelAdapter(artifact)
+                metric = self._measure_metric(candidate)
+                metric_drop = baseline - metric  # type: ignore[operator]
+                if metric_drop > max_drop:
+                    if self.on_violation == "raise":
+                        raise OptimizationConstraintError(
+                            f"Step {index} ('{step.op}') dropped {_PRIMARY_METRIC[self.task]} by "
+                            f"{metric_drop:.4f} (baseline {baseline:.4f} -> {metric:.4f}), "
+                            f"exceeding max_accuracy_drop={max_drop}."
+                        )
+                    rolled_back = True
+                    violations.append({"step": index, "op": step.op, "metric_drop": metric_drop, "limit": max_drop})
+                    if domain == "torch":
+                        self.model = snapshot  # type: ignore[assignment]
+                    else:
+                        if artifact is not None and artifact != previous_artifact:
+                            artifact.unlink(missing_ok=True)
+                        artifact = previous_artifact
+                    self.logger.warning(
+                        "Step %d ('%s') violated the accuracy gate (drop %.4f > %.4f); rolled back.",
+                        index,
+                        step.op,
+                        metric_drop,
+                        max_drop,
+                    )
+
+            duration = time.perf_counter() - start
+            entry = {
+                "step": index,
+                "op": step.op,
+                "domain": domain,
+                "artifact": str(artifact) if artifact is not None else type(self.model).__name__,
+                "metric": metric,
+                "metric_drop": metric_drop,
+                "duration_s": duration,
+                "rolled_back": rolled_back,
+            }
+            if implicit_export:
+                entry["implicit_export"] = True
+            history.append(entry)
+            self._log_step(index, step.op, entry)
+
+        # --------------------------------------------------------------
+        # Materialise the final artifact and apply final gates.
+        # --------------------------------------------------------------
+        if artifact is None:
+            artifact = self.work_dir / "model_optimized.pt"
+            torch.save(self.model, artifact)
+
+        report = self._final_gates(domain, artifact, violations)
+
+        return OptimizationResult(
+            artifact_path=artifact,
+            report=report,
+            recipe_json=self.recipe.to_json(),
+            history=history,
+            violations=violations,
+        )
+
+    # ------------------------------------------------------------------
+    # Step execution
+    # ------------------------------------------------------------------
+
+    def _prune_step(self, step: Prune) -> None:
+        """Apply a pruning step to the live torch model.
+
+        Args:
+            step: The ``prune`` recipe step.
+        """
+        if step.method == "structured_channel":
+            from mindtrace.models.optimization.prune import ChannelPruner
+
+            example_input = torch.randn(*self._infer_input_shape())
+            pruner = ChannelPruner(sparsity=step.sparsity, ignore=step.ignore, example_input=example_input)
+            self.model = pruner.run(self.model)
+        else:
+            from mindtrace.models.optimization.prune import magnitude_prune
+
+            self.model = magnitude_prune(self.model, step.sparsity, ignore=step.ignore)
+
+    def _finetune_step(self, step: Finetune) -> None:
+        """Finetune the live torch model with the existing Trainer.
+
+        Args:
+            step: The ``finetune`` recipe step.
+
+        Raises:
+            ValueError: If no ``train_loader`` was provided.
+        """
+        if self.train_loader is None:
+            raise ValueError("A 'finetune' step requires a train_loader; pass one to OptimizationRunner.")
+
+        from mindtrace.models.training import Trainer
+
+        loss_fn = self.loss_fn if self.loss_fn is not None else nn.CrossEntropyLoss()
+        if self.optimizer_factory is not None:
+            optimizer = self.optimizer_factory(self.model, step.lr)
+        else:
+            optimizer = torch.optim.AdamW(self.model.parameters(), lr=step.lr)
+
+        trainer = Trainer(self.model, loss_fn, optimizer, tracker=self.tracker)
+        trainer.fit(self.train_loader, self.eval_loader, epochs=step.epochs)
+
+    def _export_step(self, step: Export, index: int, *, implicit: bool = False) -> Path:
+        """Export the live torch model to ONNX.
+
+        Runner-driven exports always use a dynamic batch axis so the same
+        artifact serves evaluation (arbitrary batch sizes), calibration
+        (single-sample feeds) and benchmarking.
+
+        Args:
+            step: The ``export`` recipe step (an implicit export uses the
+                step defaults).
+            index: Recipe step index, used to name the artifact.
+            implicit: Whether this export was inserted before a quantize /
+                compile step.
+
+        Returns:
+            Path to the exported ``.onnx`` file.
+        """
+        static_shape = tuple(step.static_shape) if step.static_shape is not None else self._infer_input_shape()
+        suffix = "export_implicit" if implicit else "export"
+        path = self.work_dir / f"{index:02d}_{suffix}.onnx"
+        self.model.to("cpu")
+        return export_onnx(
+            self.model,
+            path,
+            static_shape=static_shape,
+            opset=step.opset,
+            dynamic_batch=True,
+            simplify=step.simplify,
+            check=step.check,
+        )
+
+    def _quantize_step(self, step: Quantize, index: int, artifact: Path | None) -> Path:
+        """Quantize the current ONNX artifact.
+
+        Args:
+            step: The ``quantize`` recipe step.
+            index: Recipe step index, used to name the artifact.
+            artifact: Path to the current ONNX artifact.
+
+        Returns:
+            Path to the quantized ``.onnx`` file.
+
+        Raises:
+            ValueError: If static PTQ is requested without a calibration or
+                evaluation loader.
+        """
+        if step.mode == "dynamic":
+            from mindtrace.models.optimization.quantize import quantize_dynamic
+
+            return quantize_dynamic(artifact, output=self.work_dir / f"{index:02d}_quantize_dynamic.onnx")
+
+        if self.calibration_loader is None:
+            raise ValueError("A 'quantize' step with mode='static_ptq' requires a calibration_loader (or eval_loader).")
+
+        from mindtrace.models.optimization.quantize import StaticQuantizer
+
+        quantizer = StaticQuantizer(
+            precision=step.precision,
+            per_channel=step.per_channel,
+            calibration_method=step.calibration_method,
+        )
+        return quantizer.run(
+            artifact,
+            self.calibration_loader,
+            samples=step.samples,
+            output=self.work_dir / f"{index:02d}_quantize_static.onnx",
+        )
+
+    def _compile_step(self, step: Compile, index: int, artifact: Path | None) -> Path:
+        """Compile the current ONNX artifact for a deployment target.
+
+        Args:
+            step: The ``compile`` recipe step.
+            index: Recipe step index, used to name the output directory.
+            artifact: Path to the current ONNX artifact.
+
+        Returns:
+            Path to the compiled artifact.
+        """
+        compiled = compile_model(artifact, step.target, output_dir=self.work_dir / f"{index:02d}_{step.target}")
+        return compiled.path
+
+    # ------------------------------------------------------------------
+    # Measurement helpers
+    # ------------------------------------------------------------------
+
+    def _measure_metric(self, model_like: Any) -> float:
+        """Measure the task's primary metric on the evaluation loader.
+
+        Args:
+            model_like: A torch module or :class:`OnnxModelAdapter`.
+
+        Returns:
+            The primary metric value (e.g. accuracy for classification).
+        """
+        from mindtrace.models.evaluation import EvaluationRunner
+
+        evaluator = EvaluationRunner(
+            model=model_like,
+            task=self.task,
+            num_classes=self._resolve_num_classes(),
+            device="cpu",
+        )
+        results = evaluator.run(self.eval_loader)
+        return float(results[_PRIMARY_METRIC[self.task]])
+
+    def _resolve_num_classes(self) -> int:
+        """Return ``num_classes``, inferring it from one eval batch if unset.
+
+        Returns:
+            Number of classes (channel dimension of the model logits).
+
+        Raises:
+            ValueError: If inference is required but no ``eval_loader`` is
+                available.
+        """
+        if self.num_classes is None:
+            if self.eval_loader is None:
+                raise ValueError("num_classes could not be inferred: provide num_classes or an eval_loader.")
+            inputs, _ = self._first_batch(self.eval_loader)
+            self.model.eval()
+            with torch.no_grad():
+                logits = self.model(inputs.to(next(self.model.parameters()).device))
+            self.num_classes = int(logits.shape[1])
+        return self.num_classes
+
+    def _infer_input_shape(self) -> tuple[int, ...]:
+        """Infer the full input shape (with batch dim) from one loader batch.
+
+        Checks ``eval_loader``, then ``calibration_loader``, then
+        ``train_loader``.  The result is cached.
+
+        Returns:
+            Input tensor shape including the batch dimension.
+
+        Raises:
+            ValueError: If no loader is available to infer the shape from.
+        """
+        if self._input_shape is None:
+            for loader in (self.eval_loader, self.calibration_loader, self.train_loader):
+                if loader is not None:
+                    inputs, _ = self._first_batch(loader)
+                    self._input_shape = tuple(inputs.shape)
+                    break
+            else:
+                raise ValueError(
+                    "Could not infer the model input shape: provide an eval/calibration/train loader "
+                    "or an explicit Export(static_shape=...) step."
+                )
+        return self._input_shape
+
+    @staticmethod
+    def _first_batch(loader: Any) -> tuple[torch.Tensor, Any]:
+        """Return ``(inputs, targets)`` from the first batch of *loader*.
+
+        Args:
+            loader: Iterable yielding ``(inputs, targets)`` batches (extra
+                elements are ignored) or bare input tensors.
+
+        Returns:
+            Tuple of the input tensor and the targets (``None`` for bare
+            tensors).
+        """
+        batch = next(iter(loader))
+        if isinstance(batch, (tuple, list)):
+            return batch[0], batch[1] if len(batch) > 1 else None
+        return batch, None
+
+    # ------------------------------------------------------------------
+    # Final gates and logging
+    # ------------------------------------------------------------------
+
+    def _final_gates(self, domain: str, artifact: Path, violations: list[dict]) -> BenchmarkReport | None:
+        """Benchmark the final artifact and record latency/size violations.
+
+        Final gates never roll anything back — violations are recorded in
+        the result for the caller to act on.
+
+        Args:
+            domain: The pipeline's final domain (``"torch"`` or ``"onnx"``).
+            artifact: Path of the final artifact.
+            violations: Violation list to append to.
+
+        Returns:
+            The final :class:`BenchmarkReport`, or ``None`` when no
+            latency/size gate is configured.
+        """
+        p95_limit = self.constraints.get("p95_latency_ms")
+        size_limit = self.constraints.get("max_size_mb")
+        if p95_limit is None and size_limit is None:
+            return None
+
+        if domain == "torch":
+            runtime: str = "torch"
+            bench_artifact: Any = self.model
+        elif artifact.suffix == ".xml":
+            runtime = "openvino"
+            bench_artifact = artifact
+        else:
+            runtime = "onnxruntime"
+            bench_artifact = artifact
+
+        input_shape = (1, *self._infer_input_shape()[1:])
+        report = Benchmark(
+            runtime=runtime,
+            artifact=bench_artifact,
+            input_shape=input_shape,
+            warmup=2,
+            iterations=10,
+        ).run()
+
+        if p95_limit is not None and report.p95_ms > p95_limit:
+            violations.append(
+                {"step": "final", "constraint": "p95_latency_ms", "value": report.p95_ms, "limit": p95_limit}
+            )
+        if size_limit is not None and report.size_mb is not None and report.size_mb > size_limit:
+            violations.append(
+                {"step": "final", "constraint": "max_size_mb", "value": report.size_mb, "limit": size_limit}
+            )
+        return report
+
+    def _log_step(self, index: int, op: str, entry: dict) -> None:
+        """Log per-step metrics to the tracker (best effort).
+
+        Args:
+            index: Recipe step index (used as the tracker step).
+            op: Step op name, used in the ``opt/<op>/<metric>`` key prefix.
+            entry: The step's history entry.
+        """
+        if self.tracker is None:
+            return
+        metrics = {f"opt/{op}/duration_s": entry["duration_s"], f"opt/{op}/rolled_back": float(entry["rolled_back"])}
+        if entry["metric"] is not None:
+            metrics[f"opt/{op}/metric"] = entry["metric"]
+        if entry["metric_drop"] is not None:
+            metrics[f"opt/{op}/metric_drop"] = entry["metric_drop"]
+        try:
+            self.tracker.log(metrics, step=index)
+        except Exception as exc:  # noqa: BLE001 — tracking must never abort a run
+            self.logger.warning("OptimizationRunner: tracker.log failed at step %d: %s", index, exc)
