@@ -125,3 +125,24 @@ class TestModelSizeMb:
     def test_missing_file_raises(self, tmp_path: Path):
         with pytest.raises(FileNotFoundError):
             model_size_mb(tmp_path / "does_not_exist.onnx")
+
+
+def test_parity_gate_uses_absolute_tolerance(tmp_path):
+    """Large-magnitude outputs must not slip past atol via relative tolerance."""
+    from mindtrace.models.optimization.export import onnx_export as ex
+
+    class Scaled(torch.nn.Module):
+        def forward(self, x):
+            return x * 1e6
+
+    model = Scaled().eval()
+    path = tmp_path / "scaled.onnx"
+    example = torch.randn(1, 4)
+    ex.export_onnx(model, path, example_input=example, simplify=False, check=True)
+
+    # A 0.5 absolute corruption on ~1e6-magnitude outputs: the old
+    # np.allclose(atol, rtol=1e-5 default) allowed ~10 of slack here; the
+    # fixed gate must fail on max_abs_diff > atol regardless of magnitude.
+    corrupted = model(example) + 0.5
+    with pytest.raises(ValueError, match="max abs diff"):
+        ex._check_parity(path, example, corrupted, atol=1e-2)

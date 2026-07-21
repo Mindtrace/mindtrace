@@ -236,3 +236,85 @@ class TestOptimizationRunner:
         assert len(size_violations) == 1
         assert size_violations[0]["step"] == "final"
         assert size_violations[0]["value"] > size_violations[0]["limit"]
+
+
+class TestRunnerRegressions:
+    """Regression tests for confirmed review findings."""
+
+    def test_unknown_constraint_key_rejected(self):
+        with pytest.raises(ValueError, match="Unknown constraint keys"):
+            OptimizationRunner(
+                _build_cnn(),
+                OptimizationRecipe(steps=[Export()]),
+                eval_loader=_build_loader(),
+                constraints={"p95_latencyms": 10},
+            )
+
+    def test_accuracy_gate_without_eval_loader_rejected(self):
+        with pytest.raises(ValueError, match="max_accuracy_drop"):
+            OptimizationRunner(
+                _build_cnn(),
+                OptimizationRecipe(steps=[Export()]),
+                constraints={"max_accuracy_drop": 0.02},
+            )
+
+    def test_loaderless_run_uses_export_static_shape(self, tmp_path):
+        """Export(static_shape=...) must satisfy final gates with no loader at all."""
+        recipe = OptimizationRecipe(steps=[Export(static_shape=(1, *INPUT_SHAPE))])
+        result = OptimizationRunner(
+            _build_cnn(),
+            recipe,
+            constraints={"max_size_mb": 500},
+            work_dir=tmp_path,
+        ).run()
+        assert result.artifact_path.exists()
+        assert result.report is not None
+        assert result.violations == []
+
+    def test_unbenchmarkable_runtime_skips_latency_gate(self, tmp_path, monkeypatch):
+        """A recipe ending in a TensorRT-style compile must complete and size-gate."""
+        from mindtrace.models.optimization.compile.base import _COMPILERS, CompiledArtifact
+
+        def _fake_trt(onnx_path, target, output_dir, **opts):
+            plan = output_dir / "model.plan"
+            plan.write_bytes(b"\x00" * 2048)
+            return CompiledArtifact(path=plan, target=target.name, runtime="tensorrt", meta={})
+
+        monkeypatch.setitem(_COMPILERS, "tensorrt", _fake_trt)
+
+        recipe = OptimizationRecipe(steps=[Export(static_shape=(1, *INPUT_SHAPE)), Compile(target="jetson-orin-nx")])
+        result = OptimizationRunner(
+            _build_cnn(),
+            recipe,
+            eval_loader=_build_loader(),
+            constraints={"p95_latency_ms": 20, "max_size_mb": 100},
+            work_dir=tmp_path,
+        ).run()
+        assert result.artifact_path.suffix == ".plan"
+        assert result.report is None  # latency benchmark skipped, run not lost
+        assert all(v.get("constraint") != "p95_latency_ms" for v in result.violations)
+        # size gate still enforced from the file itself (2KB < 100MB -> no violation)
+        assert all(v.get("constraint") != "max_size_mb" for v in result.violations)
+
+    def test_dynamic_quantize_honors_precision(self, tmp_path):
+        recipe = OptimizationRecipe(
+            steps=[Export(static_shape=(1, *INPUT_SHAPE)), Quantize(mode="dynamic", precision="uint8")]
+        )
+        result = OptimizationRunner(_build_cnn(), recipe, work_dir=tmp_path).run()
+        assert result.artifact_path.exists()
+        _ort_logits(result.artifact_path)
+
+    def test_unmocked_gate_measurement_matches_torch(self, tmp_path):
+        """OnnxModelAdapter + EvaluationRunner must reproduce the torch metric."""
+        model = _build_cnn().eval()
+        loader = _build_loader(n=32)
+        runner = OptimizationRunner(
+            model,
+            OptimizationRecipe(steps=[Export(static_shape=(1, *INPUT_SHAPE))]),
+            eval_loader=loader,
+            work_dir=tmp_path,
+        )
+        result = runner.run()
+        torch_metric = runner._measure_metric(model)
+        onnx_metric = runner._measure_metric(runner_module.OnnxModelAdapter(result.artifact_path))
+        assert onnx_metric == pytest.approx(torch_metric, abs=1e-6)
