@@ -5,7 +5,7 @@ Covers:
 - ORT backend: real offline graph optimization of a tiny exported ONNX model
 - OpenVINO backend: real ONNX -> IR conversion, readable via openvino.Core
 - TensorRT backend: RuntimeError when not installed; mocked build flow
-- Dispatch: ValueError for runtimes with no registered compiler (executorch)
+- Dispatch: ValueError for runtimes with no registered compiler (hailo/rknn)
 """
 
 from __future__ import annotations
@@ -219,10 +219,10 @@ def test_tensorrt_mocked_build_writes_plan(tiny_onnx: Path, tmp_path: Path, monk
 
 def test_unknown_runtime_raises_value_error(tiny_onnx: Path):
     with pytest.raises(ValueError, match="not yet supported") as excinfo:
-        compile_model(tiny_onnx, "executorch-generic")
+        compile_model(tiny_onnx, "rknn-3588")
     message = str(excinfo.value)
-    assert "executorch" in message
-    for runtime in ("ort", "openvino", "tensorrt"):
+    assert "rknn" in message
+    for runtime in ("ort", "openvino", "tensorrt", "executorch"):
         assert runtime in message  # registered runtimes are listed
 
 

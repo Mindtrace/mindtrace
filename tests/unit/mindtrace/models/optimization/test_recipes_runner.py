@@ -221,6 +221,24 @@ class TestOptimizationRunner:
         with pytest.raises(OptimizationConstraintError):
             runner.run()
 
+    def test_executorch_compile_recipe_produces_pte(self, tmp_path):
+        """A loaderless Export(static_shape) -> Compile(executorch) recipe yields a .pte."""
+        pytest.importorskip("executorch.exir", reason="executorch is not installed")
+
+        recipe = OptimizationRecipe(
+            steps=[Export(static_shape=(1, *INPUT_SHAPE)), Compile(target="executorch-generic")]
+        )
+        result = OptimizationRunner(_build_cnn(), recipe, work_dir=tmp_path).run()
+
+        assert result.artifact_path.suffix == ".pte"
+        assert result.artifact_path.is_file()
+        assert result.artifact_path.stat().st_size > 500
+        assert result.artifact_path.read_bytes()[4:8] == b"ET12"  # ExecuTorch flatbuffer magic
+        assert [h["op"] for h in result.history] == ["export", "compile"]
+        assert result.history[1]["domain"] == "onnx"
+        assert result.history[1]["artifact"] == str(result.artifact_path)
+        assert result.violations == []
+
     def test_final_size_gate_violation(self, tmp_path):
         result = OptimizationRunner(
             _build_cnn(),

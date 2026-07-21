@@ -139,7 +139,8 @@ def compile_model(
     Raises:
         KeyError: If ``target`` is a name that is not registered.
         ValueError: If no compiler is registered for the target's runtime
-            (e.g. ``executorch``, which is not yet supported).
+            (e.g. NPU runtimes like ``hailo`` or ``rknn``, which have no
+            registered compiler).
         FileNotFoundError: If ``artifact`` does not exist.
     """
     spec = get_target(target) if isinstance(target, str) else target

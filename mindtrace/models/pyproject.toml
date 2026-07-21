@@ -39,9 +39,10 @@ onnx = ["onnxruntime>=1.16", "onnx>=1.14"]
 peft = ["peft>=0.6"]
 
 # Edge optimization extras
-edge     = ["onnxruntime>=1.16", "onnx>=1.14", "onnxsim>=0.4.36"]
-pruning  = ["torch-pruning>=1.4"]
-openvino = ["openvino>=2024.4"]
+edge       = ["onnxruntime>=1.16", "onnx>=1.14", "onnxsim>=0.4.36"]
+pruning    = ["torch-pruning>=1.4"]
+openvino   = ["openvino>=2024.4"]
+executorch = ["executorch>=1.0"]
 
 # Install everything
 all = [
@@ -56,6 +57,7 @@ all = [
     "onnxsim>=0.4.36",
     "torch-pruning>=1.4",
     "openvino>=2024.4",
+    "executorch>=1.0",
     "peft>=0.6",
 ]
 
