@@ -376,9 +376,7 @@ class TestQATOptimizerGroups:
         model = nn.Sequential(nn.Linear(8, 16), nn.ReLU(), nn.Linear(16, 2))
         backbone_params = list(model[0].parameters())
         head_params = list(model[2].parameters())
-        optimizer = torch.optim.AdamW(
-            [{"params": backbone_params, "lr": 1e-5}, {"params": head_params, "lr": 1e-3}]
-        )
+        optimizer = torch.optim.AdamW([{"params": backbone_params, "lr": 1e-5}, {"params": head_params, "lr": 1e-3}])
 
         from mindtrace.models.training.trainer import Trainer
 
