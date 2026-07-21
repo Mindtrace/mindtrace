@@ -140,18 +140,53 @@ class TestCallableRuntime:
         assert report.fps > 0
 
     def test_callable_runtime_sustained(self) -> None:
+        import time as time_module
+
+        def slow_call(x):
+            time_module.sleep(0.005)
+            return x
+
         report = Benchmark(
             runtime="callable",
-            artifact=lambda x: x + 1.0,
+            artifact=slow_call,
             input_shape=(2, 2),
             warmup=0,
-            iterations=5,
-            sustained_seconds=0.05,
+            iterations=3,  # decoy: sustained mode must ignore the fixed count
+            sustained_seconds=0.1,
         ).run()
 
         assert report.sustained is True
-        assert report.iterations >= 1
-        assert report.mean_ms > 0
+        assert report.iterations != 3  # deadline loop ran, not the decoy count
+        assert report.iterations >= 10  # ~0.1s / 5ms per call
+        # The measured window roughly covers the sustained duration.
+        assert report.iterations * report.mean_ms == pytest.approx(100.0, rel=0.8)
+
+    def test_peak_rss_is_per_run_not_lifetime(self) -> None:
+        import numpy as np_module
+
+        import resource as resource_module
+
+        # Inflate the process lifetime RSS peak by 512 MB, then free it
+        # (large allocations are mmap-backed and returned to the OS on del).
+        ballast = np_module.ones((512, 1024, 1024), dtype=np_module.uint8)
+        assert ballast[0, 0, 0] == 1  # touch so pages are resident
+        del ballast
+        lifetime_peak_mb = resource_module.getrusage(resource_module.RUSAGE_SELF).ru_maxrss / 1024.0
+
+        report = Benchmark(
+            runtime="callable",
+            artifact=lambda x: x,
+            input_shape=(2, 2),
+            warmup=0,
+            iterations=5,
+        ).run()
+
+        if report.meta["rss_method"] == "statm":
+            # Per-run RSS must sit well below the ballast-inflated lifetime
+            # peak (the old ru_maxrss implementation reported exactly it).
+            assert report.peak_rss_mb < lifetime_peak_mb - 300
+        else:  # non-linux fallback keeps the old semantics
+            assert report.peak_rss_mb > 0
 
 
 class TestReportRendering:

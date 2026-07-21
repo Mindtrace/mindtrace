@@ -152,3 +152,67 @@ def test_thread_safety_smoke():
     with pool._lock:
         assert len(pool.loaded()) <= 1  # budget of 50 fits only one 40 MB entry
         assert pool.stats()["used_mb"] <= 50
+
+
+class TestPoolConcurrencyRegressions:
+    """Regression tests: loaders must not serialize; pins must block eviction."""
+
+    def test_concurrent_loads_of_different_entries_overlap(self):
+        import threading
+        import time
+
+        from mindtrace.models import PipelinePool
+
+        pool = PipelinePool()
+        barrier = threading.Barrier(2, timeout=5)
+
+        def slow_loader(tag):
+            def _load():
+                barrier.wait()  # both loaders must be inside their load simultaneously
+                time.sleep(0.05)
+                return tag
+
+            return _load
+
+        pool.register("a", slow_loader("A"))
+        pool.register("b", slow_loader("B"))
+
+        results = {}
+        threads = [threading.Thread(target=lambda n=n: results.__setitem__(n, pool.get(n))) for n in ("a", "b")]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+        # If loading held the pool-wide lock, the barrier would time out and
+        # both threads would die with BrokenBarrierError before storing results.
+        assert results == {"a": "A", "b": "B"}
+
+    def test_pinned_entry_survives_eviction_pressure(self):
+        import threading
+
+        from mindtrace.models import PipelinePool
+
+        pool = PipelinePool(memory_budget_mb=50)
+        in_predict = threading.Event()
+        release_predict = threading.Event()
+        unloaded: list[str] = []
+
+        def slow_pipeline(x):
+            in_predict.set()
+            assert release_predict.wait(timeout=10)
+            return x
+
+        pool.register("hot", lambda: slow_pipeline, unloader=lambda obj: unloaded.append("hot"), memory_mb=40)
+        pool.register("cold", lambda: lambda x: x, unloader=lambda obj: unloaded.append("cold"), memory_mb=40)
+
+        worker = threading.Thread(target=lambda: pool.predict("hot", "payload"))
+        worker.start()
+        assert in_predict.wait(timeout=10)
+
+        # While 'hot' is mid-predict (pinned), loading 'cold' must NOT evict it.
+        pool.get("cold")
+        assert "hot" not in unloaded
+
+        release_predict.set()
+        worker.join(timeout=10)
+        assert "hot" in pool.loaded() or "hot" in unloaded  # sane end state either way
