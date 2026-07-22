@@ -35,8 +35,7 @@ class HuggingFaceImageProcessor:
                 from transformers import AutoImageProcessor
             except ImportError as exc:  # pragma: no cover - environment dependent
                 raise ImportError(
-                    "transformers is required for HuggingFaceImageProcessor; "
-                    "install mindtrace-models[transformers]"
+                    "transformers is required for HuggingFaceImageProcessor; install mindtrace-models[transformers]"
                 ) from exc
             self._processor = AutoImageProcessor.from_pretrained(
                 self.model_id,

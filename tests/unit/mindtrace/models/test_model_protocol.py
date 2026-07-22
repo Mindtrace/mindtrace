@@ -27,9 +27,7 @@ class _ImageSizeProcessor:
             return inputs
 
         images = inputs if isinstance(inputs, list) else [inputs]
-        return torch.tensor(
-            [[float(image.width), float(image.height)] for image in images]
-        )
+        return torch.tensor([[float(image.width), float(image.height)] for image in images])
 
 
 class _RecordingNetwork(nn.Module):
@@ -97,9 +95,7 @@ def test_predict_accepts_a_preprocessed_tensor() -> None:
 def test_predict_accepts_multiple_images() -> None:
     model = _build_test_model()
 
-    result = model.predict(
-        [Image.new("RGB", (2, 3)), Image.new("RGB", (5, 8))]
-    )
+    result = model.predict([Image.new("RGB", (2, 3)), Image.new("RGB", (5, 8))])
 
     assert result["outputs"] == [[3.0, 2.0], [6.0, 7.0]]
 
@@ -131,9 +127,7 @@ def test_classification_postprocessor_returns_labels_and_confidence() -> None:
     assert results[0].cls == "dog"
     assert results[0].confidence == pytest.approx(0.880797)
     assert results[0].extra["class_id"] == 1
-    assert results[0].extra["probabilities"] == pytest.approx(
-        [0.119203, 0.880797]
-    )
+    assert results[0].extra["probabilities"] == pytest.approx([0.119203, 0.880797])
 
 
 def test_classification_postprocessor_rejects_non_batched_logits() -> None:

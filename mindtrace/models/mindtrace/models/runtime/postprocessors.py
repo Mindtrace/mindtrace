@@ -24,10 +24,7 @@ class ClassificationPostprocessor:
         **_: Any,
     ) -> list[ClassificationResult]:
         if logits.ndim != 2:
-            raise ValueError(
-                "classification logits must have shape (B, C), "
-                f"got {tuple(logits.shape)}"
-            )
+            raise ValueError(f"classification logits must have shape (B, C), got {tuple(logits.shape)}")
 
         probabilities = logits.softmax(dim=-1).detach().cpu()
         class_ids = probabilities.argmax(dim=-1)

@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, Protocol, TypeAlias
 import torch
 from torch import Tensor, nn
 
-
 if TYPE_CHECKING:
     from PIL.Image import Image as PILImage
 
@@ -65,9 +64,7 @@ class TorchImageModel(nn.Module):
         """Preprocess images, run inference, and postprocess the outputs."""
         batch = self.processor(inputs)
         if not isinstance(batch, Tensor):
-            raise TypeError(
-                f"processor must return torch.Tensor, got {type(batch).__name__}"
-            )
+            raise TypeError(f"processor must return torch.Tensor, got {type(batch).__name__}")
 
         batch = batch.to(self._network_device())
         self.eval()

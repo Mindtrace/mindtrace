@@ -2,7 +2,6 @@
 
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
-
 InputT = TypeVar("InputT", contravariant=True)
 OutputT = TypeVar("OutputT", covariant=True)
 
