@@ -13,9 +13,10 @@ extras installed; :func:`fuse_preprocessing` raises a clear
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Sequence
+
+from mindtrace.core import get_logger
 
 try:
     import onnx
@@ -34,7 +35,7 @@ _ONNX_INSTALL_MSG = (
 
 _VALID_INPUT_FORMATS = ("uint8_bgr_hwc", "uint8_rgb_hwc", "float_nchw")
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 __all__ = ["fuse_preprocessing"]
 

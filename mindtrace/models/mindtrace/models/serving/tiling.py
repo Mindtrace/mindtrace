@@ -28,6 +28,8 @@ from typing import Callable
 
 import numpy as np
 
+from mindtrace.core import Mindtrace
+
 __all__ = ["TileDetection", "TiledInference"]
 
 _MERGE_MODES = ("nms", "none")
@@ -50,7 +52,7 @@ class TileDetection:
     label: int | str
 
 
-class TiledInference:
+class TiledInference(Mindtrace):
     """Sliding-window inference wrapper for arbitrary per-tile detectors.
 
     Args:
@@ -85,6 +87,7 @@ class TiledInference:
         iou_threshold: float = 0.5,
         score_threshold: float = 0.0,
     ) -> None:
+        super().__init__()
         if not (0.0 <= overlap < 1.0):
             raise ValueError(f"overlap must be in [0, 1), got {overlap}")
         if merge not in _MERGE_MODES:
