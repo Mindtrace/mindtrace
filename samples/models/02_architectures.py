@@ -14,6 +14,8 @@ Run:
     python samples/models/02_architectures.py
 """
 
+import os
+
 import torch
 import torch.nn as nn
 
@@ -29,6 +31,11 @@ from mindtrace.models.architectures import (
     list_backbones,
     register_backbone,
 )
+
+# Share CPU cores fairly when several sample scripts run concurrently
+# (e.g. the CI integration harness runs four at once); GPU runs are unaffected.
+if not torch.cuda.is_available():
+    torch.set_num_threads(max(1, (os.cpu_count() or 8) // 4))
 
 B, C, H, W = 2, 3, 64, 64  # batch, channels, height, width
 x = torch.randn(B, C, H, W)

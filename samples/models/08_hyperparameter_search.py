@@ -11,6 +11,8 @@ Demonstrates:
   5. Manual duck-typed trial — shows OptunaCallback works without Optuna.
 """
 
+import os
+
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
@@ -19,6 +21,11 @@ from mindtrace.models.architectures.factory import build_model
 from mindtrace.models.training.callbacks import OptunaCallback
 from mindtrace.models.training.optimizers import build_optimizer
 from mindtrace.models.training.trainer import Trainer
+
+# Share CPU cores fairly when several sample scripts run concurrently
+# (e.g. the CI integration harness runs four at once); GPU runs are unaffected.
+if not torch.cuda.is_available():
+    torch.set_num_threads(max(1, (os.cpu_count() or 8) // 4))
 
 # ── Optuna guard ───────────────────────────────────────────────────────────
 try:

@@ -17,16 +17,23 @@ End-to-end edge deployment workflow on a real open-source dataset
   7. Record the INT8 build as a ModelCard variant and promote it to STAGING
      behind accuracy + latency gates; print the PromotionResult.
 
+Fast mode (MINDTRACE_SAMPLES_FAST set, or no CUDA GPU available) shrinks the
+subsets, calibration set and benchmark iterations so the sample finishes in
+well under a minute on a shared CPU; if the FashionMNIST download fails (no
+network), a synthetic dataset with the same shapes/classes is substituted.
+
 Run:
     python samples/models/09_edge_optimization.py
 """
 
+import fcntl
+import os
 import time
 from pathlib import Path
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Subset, TensorDataset
 
 # ── Optional dependency guards ─────────────────────────────────────────────
 try:
@@ -73,10 +80,24 @@ from mindtrace.models.optimization import (
 NUM_CLASSES = 10
 IMG_SIZE = 64
 BATCH_SIZE = 64
-TRAIN_SAMPLES = 4000
-TEST_SAMPLES = 1000
 DATA_ROOT = Path("/tmp/mindtrace_samples/data")
 WORK_DIR = Path("/tmp/mindtrace_samples/edge_opt_09")
+
+# Fast mode: opt in via env var, or automatic when no CUDA GPU is available
+# (e.g. CPU-only CI). Full mode on a GPU machine is unchanged.
+FAST_MODE = bool(os.environ.get("MINDTRACE_SAMPLES_FAST")) or not torch.cuda.is_available()
+if FAST_MODE:
+    TRAIN_SAMPLES = 800
+    TEST_SAMPLES = 200
+    CALIBRATION_SAMPLES = 64
+    BENCH_ITERATIONS = 20
+    # Leave room for sibling sample processes sharing the same cores.
+    torch.set_num_threads(max(1, (os.cpu_count() or 8) // 4))
+else:
+    TRAIN_SAMPLES = 4000
+    TEST_SAMPLES = 1000
+    CALIBRATION_SAMPLES = 256
+    BENCH_ITERATIONS = 50
 
 CLASS_NAMES = [
     "t-shirt/top",
@@ -92,11 +113,46 @@ CLASS_NAMES = [
 ]
 
 
+def load_fashionmnist(train: bool, transform, sample_shape: tuple[int, int, int], num_samples: int):
+    """Load FashionMNIST, serialising the download across concurrent samples.
+
+    An ``fcntl.flock`` on a lockfile in the data directory ensures only one
+    sample process downloads the archives when several run concurrently. If
+    loading fails (e.g. no network access on CI), a synthetic
+    ``TensorDataset`` with the same tensor shapes and label classes is
+    returned so the sample still runs end to end.
+
+    Args:
+        train: Whether to load the training split.
+        transform: Torchvision transform applied to real dataset images.
+        sample_shape: Shape of one transformed image tensor (C, H, W).
+        num_samples: Size of the synthetic fallback dataset.
+
+    Returns:
+        A dataset yielding ``(image, label)`` pairs.
+    """
+    DATA_ROOT.mkdir(parents=True, exist_ok=True)
+    with (DATA_ROOT / ".fashionmnist.lock").open("w") as lock_file:
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            return datasets.FashionMNIST(DATA_ROOT, train=train, download=True, transform=transform)
+        except Exception as exc:  # noqa: BLE001 — any download/IO failure falls back
+            print(f"  WARNING: FashionMNIST load failed ({type(exc).__name__}: {exc})")
+            print("  network unavailable — using synthetic data; results are illustrative only")
+            generator = torch.Generator().manual_seed(0 if train else 1)
+            images = torch.rand((num_samples, *sample_shape), generator=generator)
+            labels = torch.randint(0, NUM_CLASSES, (num_samples,), generator=generator)
+            return TensorDataset(images, labels)
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
+
+
 def build_loaders() -> tuple[DataLoader, DataLoader]:
     """Build FashionMNIST train/test loaders resized to 3x64x64.
 
     Returns:
-        Tuple of (train_loader, test_loader) over 4000/1000-image subsets.
+        Tuple of (train_loader, test_loader) over TRAIN_SAMPLES/TEST_SAMPLES
+        subsets.
     """
     transform = transforms.Compose(
         [
@@ -105,8 +161,9 @@ def build_loaders() -> tuple[DataLoader, DataLoader]:
             transforms.ToTensor(),
         ]
     )
-    train_ds = datasets.FashionMNIST(DATA_ROOT, train=True, download=True, transform=transform)
-    test_ds = datasets.FashionMNIST(DATA_ROOT, train=False, download=True, transform=transform)
+    shape = (3, IMG_SIZE, IMG_SIZE)
+    train_ds = load_fashionmnist(True, transform, shape, TRAIN_SAMPLES)
+    test_ds = load_fashionmnist(False, transform, shape, TEST_SAMPLES)
     train_subset = Subset(train_ds, range(TRAIN_SAMPLES))
     test_subset = Subset(test_ds, range(TEST_SAMPLES))
     train_loader = DataLoader(train_subset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
@@ -119,6 +176,13 @@ def main() -> None:
     torch.manual_seed(0)
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     t_start = time.perf_counter()
+
+    if FAST_MODE:
+        print(
+            "[fast mode] MINDTRACE_SAMPLES_FAST set or no CUDA GPU — "
+            f"{TRAIN_SAMPLES}/{TEST_SAMPLES} subset, {CALIBRATION_SAMPLES} calibration samples, "
+            f"{BENCH_ITERATIONS} benchmark iterations; run on a GPU for the full numbers"
+        )
 
     # ── Section: dataset ───────────────────────────────────────────────────
     print("\n── FashionMNIST dataset (3x64x64) ──")
@@ -158,7 +222,7 @@ def main() -> None:
         name="fashionmnist-int8-edge",
         steps=[
             Export(static_shape=(1, 3, IMG_SIZE, IMG_SIZE)),
-            Quantize(mode="static_ptq", samples=256),
+            Quantize(mode="static_ptq", samples=CALIBRATION_SAMPLES),
         ],
     )
     opt_runner = OptimizationRunner(
@@ -209,9 +273,15 @@ def main() -> None:
     # ── Section: benchmark torch vs fp32-onnx vs int8-onnx ────────────────
     print("\n── Benchmark: torch vs fp32-onnx vs int8-onnx (CPU) ──")
     shape = (1, 3, IMG_SIZE, IMG_SIZE)
-    torch_report = Benchmark(runtime="torch", artifact=model.cpu(), input_shape=shape, iterations=50).run()
-    fp32_report = Benchmark(runtime="onnxruntime", artifact=fp32_onnx, input_shape=shape, iterations=50).run()
-    int8_report = Benchmark(runtime="onnxruntime", artifact=int8_onnx, input_shape=shape, iterations=50).run()
+    torch_report = Benchmark(
+        runtime="torch", artifact=model.cpu(), input_shape=shape, iterations=BENCH_ITERATIONS
+    ).run()
+    fp32_report = Benchmark(
+        runtime="onnxruntime", artifact=fp32_onnx, input_shape=shape, iterations=BENCH_ITERATIONS
+    ).run()
+    int8_report = Benchmark(
+        runtime="onnxruntime", artifact=int8_onnx, input_shape=shape, iterations=BENCH_ITERATIONS
+    ).run()
     reports = [torch_report, fp32_report, int8_report]
 
     # ── Section: optional OpenVINO compile + benchmark ─────────────────────
@@ -221,7 +291,9 @@ def main() -> None:
         print("\n── OpenVINO: compile int8 for 'intel-cpu-openvino' ──")
         compiled = compile_model(int8_onnx, "intel-cpu-openvino", output_dir=WORK_DIR / "openvino")
         print(f"  compiled artifact: {compiled.path}  (runtime={compiled.runtime})")
-        ov_report = Benchmark(runtime="openvino", artifact=compiled.path, input_shape=shape, iterations=50).run()
+        ov_report = Benchmark(
+            runtime="openvino", artifact=compiled.path, input_shape=shape, iterations=BENCH_ITERATIONS
+        ).run()
         reports.append(ov_report)
     except ImportError:
         print("\n  (openvino not installed — skipping OpenVINO compilation)")

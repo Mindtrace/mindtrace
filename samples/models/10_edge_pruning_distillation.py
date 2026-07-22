@@ -20,18 +20,26 @@ torchvision, auto-downloaded, 6000 train / 1000 test subset):
   5. Export + dynamic INT8 quantization of the pruned model, printing the
      fp32 → pruned → int8 artifact size chain via model_size_mb().
 
+Fast mode (MINDTRACE_SAMPLES_FAST set, or no CUDA GPU available) shrinks the
+subsets and epoch counts and trains a single logit-KD student instead of the
+three-way study so the sample finishes in well under a minute on a shared
+CPU; if the FashionMNIST download fails (no network), a synthetic dataset
+with the same shapes/classes is substituted.
+
 Run:
     python samples/models/10_edge_pruning_distillation.py
 """
 
 import copy
+import fcntl
+import os
 import time
 from pathlib import Path
 from typing import Iterable
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Subset, TensorDataset
 
 # ── Optional dependency guards ─────────────────────────────────────────────
 try:
@@ -82,21 +90,71 @@ from mindtrace.models.training.losses import DistillationLoss, FeatureDistillati
 NUM_CLASSES = 10
 IMG_SIZE = 64
 BATCH_SIZE = 64
-TRAIN_SAMPLES = 6000
-TEST_SAMPLES = 1000
-TEACHER_EPOCHS = 6  # at lr=1e-3, followed by TEACHER_ANNEAL_EPOCHS at lr=1e-4
-TEACHER_ANNEAL_EPOCHS = 3
-STUDENT_EPOCHS = 2
 STUDENT_SEED = 1  # every student starts from the same seeded init
 DATA_ROOT = Path("/tmp/mindtrace_samples/data")
 WORK_DIR = Path("/tmp/mindtrace_samples/edge_opt_10")
+
+# Fast mode: opt in via env var, or automatic when no CUDA GPU is available
+# (e.g. CPU-only CI). Full mode on a GPU machine is unchanged.
+FAST_MODE = bool(os.environ.get("MINDTRACE_SAMPLES_FAST")) or not torch.cuda.is_available()
+if FAST_MODE:
+    TRAIN_SAMPLES = 800
+    TEST_SAMPLES = 200
+    TEACHER_EPOCHS = 2  # at lr=1e-3
+    TEACHER_ANNEAL_EPOCHS = 0  # anneal pass skipped in fast mode
+    STUDENT_EPOCHS = 1
+    SCHEDULE_EPOCHS = 2
+    # Leave room for sibling sample processes sharing the same cores.
+    torch.set_num_threads(max(1, (os.cpu_count() or 8) // 4))
+else:
+    TRAIN_SAMPLES = 6000
+    TEST_SAMPLES = 1000
+    TEACHER_EPOCHS = 6  # at lr=1e-3, followed by TEACHER_ANNEAL_EPOCHS at lr=1e-4
+    TEACHER_ANNEAL_EPOCHS = 3
+    STUDENT_EPOCHS = 2
+    SCHEDULE_EPOCHS = 3
+
+
+def load_fashionmnist(train: bool, transform, sample_shape: tuple[int, int, int], num_samples: int):
+    """Load FashionMNIST, serialising the download across concurrent samples.
+
+    An ``fcntl.flock`` on a lockfile in the data directory ensures only one
+    sample process downloads the archives when several run concurrently. If
+    loading fails (e.g. no network access on CI), a synthetic
+    ``TensorDataset`` with the same tensor shapes and label classes is
+    returned so the sample still runs end to end.
+
+    Args:
+        train: Whether to load the training split.
+        transform: Torchvision transform applied to real dataset images.
+        sample_shape: Shape of one transformed image tensor (C, H, W).
+        num_samples: Size of the synthetic fallback dataset.
+
+    Returns:
+        A dataset yielding ``(image, label)`` pairs.
+    """
+    DATA_ROOT.mkdir(parents=True, exist_ok=True)
+    with (DATA_ROOT / ".fashionmnist.lock").open("w") as lock_file:
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            return datasets.FashionMNIST(DATA_ROOT, train=train, download=True, transform=transform)
+        except Exception as exc:  # noqa: BLE001 — any download/IO failure falls back
+            print(f"  WARNING: FashionMNIST load failed ({type(exc).__name__}: {exc})")
+            print("  network unavailable — using synthetic data; results are illustrative only")
+            generator = torch.Generator().manual_seed(0 if train else 1)
+            images = torch.rand((num_samples, *sample_shape), generator=generator)
+            labels = torch.randint(0, NUM_CLASSES, (num_samples,), generator=generator)
+            return TensorDataset(images, labels)
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def build_loaders() -> tuple[DataLoader, DataLoader]:
     """Build FashionMNIST train/test loaders resized to 3x64x64.
 
     Returns:
-        Tuple of (train_loader, test_loader) over 6000/1000-image subsets.
+        Tuple of (train_loader, test_loader) over TRAIN_SAMPLES/TEST_SAMPLES
+        subsets.
     """
     transform = transforms.Compose(
         [
@@ -105,8 +163,9 @@ def build_loaders() -> tuple[DataLoader, DataLoader]:
             transforms.ToTensor(),
         ]
     )
-    train_ds = datasets.FashionMNIST(DATA_ROOT, train=True, download=True, transform=transform)
-    test_ds = datasets.FashionMNIST(DATA_ROOT, train=False, download=True, transform=transform)
+    shape = (3, IMG_SIZE, IMG_SIZE)
+    train_ds = load_fashionmnist(True, transform, shape, TRAIN_SAMPLES)
+    test_ds = load_fashionmnist(False, transform, shape, TEST_SAMPLES)
     train_loader = DataLoader(
         Subset(train_ds, range(TRAIN_SAMPLES)), batch_size=BATCH_SIZE, shuffle=True, num_workers=2
     )
@@ -190,6 +249,13 @@ def main() -> None:
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     t_start = time.perf_counter()
 
+    if FAST_MODE:
+        print(
+            "[fast mode] MINDTRACE_SAMPLES_FAST set or no CUDA GPU — "
+            f"{TRAIN_SAMPLES}/{TEST_SAMPLES} subset, teacher {TEACHER_EPOCHS} epochs, "
+            "single logit-KD student; run on a GPU for the full numbers"
+        )
+
     # Deterministic cuDNN so the plain/KD comparison is reproducible run-to-run
     # (kernel autotuning and nondeterministic conv backward otherwise add ~1
     # accuracy point of noise to these short trainings).
@@ -203,26 +269,38 @@ def main() -> None:
 
     # ── Section: teacher ───────────────────────────────────────────────────
     total_teacher_epochs = TEACHER_EPOCHS + TEACHER_ANNEAL_EPOCHS
-    print(
-        f"\n── Teacher: ResNet-18, {total_teacher_epochs} epochs ({TEACHER_EPOCHS} @ 1e-3, then {TEACHER_ANNEAL_EPOCHS} @ 1e-4) ──"
-    )
+    if TEACHER_ANNEAL_EPOCHS:
+        print(
+            f"\n── Teacher: ResNet-18, {total_teacher_epochs} epochs ({TEACHER_EPOCHS} @ 1e-3, then {TEACHER_ANNEAL_EPOCHS} @ 1e-4) ──"
+        )
+    else:
+        print(f"\n── Teacher: ResNet-18, {TEACHER_EPOCHS} epochs @ 1e-3 (anneal pass skipped in fast mode) ──")
     torch.manual_seed(0)
     teacher = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
     train_one(teacher, train_loader, test_loader, epochs=TEACHER_EPOCHS)
-    train_one(teacher, train_loader, test_loader, epochs=TEACHER_ANNEAL_EPOCHS, lr=1e-4)
+    if TEACHER_ANNEAL_EPOCHS:
+        train_one(teacher, train_loader, test_loader, epochs=TEACHER_ANNEAL_EPOCHS, lr=1e-4)
     teacher_acc = evaluate(teacher, test_loader)
     teacher_params = sum(p.numel() for p in teacher.parameters())
     print(f"  teacher accuracy: {teacher_acc:.4f}   params: {teacher_params:,}")
 
     # ── Section: distillation study — three students, same init ───────────
-    print(f"\n── Distillation study: 3 students from the same init, {STUDENT_EPOCHS} epochs each ──")
+    if FAST_MODE:
+        print(f"\n── Distillation (fast mode): one logit-KD student, {STUDENT_EPOCHS} epoch(s) ──")
+        print("  fast mode trains only the logit-KD student — the full three-way")
+        print("  comparison (plain CE vs logit KD vs logit + feature KD) requires a")
+        print("  GPU/full run.")
+    else:
+        print(f"\n── Distillation study: 3 students from the same init, {STUDENT_EPOCHS} epochs each ──")
 
-    # (a) plain cross-entropy baseline
-    print("\n  (a) plain CE baseline...")
-    torch.manual_seed(STUDENT_SEED)
-    plain = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
-    train_one(plain, train_loader, test_loader, epochs=STUDENT_EPOCHS)
-    plain_acc = evaluate(plain, test_loader)
+    plain_acc = feature_acc = None
+    if not FAST_MODE:
+        # (a) plain cross-entropy baseline
+        print("\n  (a) plain CE baseline...")
+        torch.manual_seed(STUDENT_SEED)
+        plain = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
+        train_one(plain, train_loader, test_loader, epochs=STUDENT_EPOCHS)
+        plain_acc = evaluate(plain, test_loader)
 
     # (b) logit KD: soft targets from the teacher
     print("\n  (b) logit KD — DistillationLoss(alpha=0.7, T=4.0)...")
@@ -238,43 +316,47 @@ def main() -> None:
     )
     logit_acc = evaluate(logit_student, test_loader)
 
-    # (c) logit + feature KD: additionally match backbone.layer3 activations
-    print("\n  (c) logit + feature KD — FeatureDistillation on backbone.layer3, feature_weight=0.3...")
-    torch.manual_seed(STUDENT_SEED)
-    feature_student = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
-    feature_distiller = FeatureDistillation(
-        feature_student,
-        teacher,
-        pairs=[("backbone.layer3", "backbone.layer3")],
-    )
-    # Same-width layers here, so no projection layers get created — but the
-    # optimizer includes feature_distiller.parameters() anyway, which is
-    # required whenever the paired layers can differ in width.
-    train_one(
-        feature_student,
-        train_loader,
-        test_loader,
-        epochs=STUDENT_EPOCHS,
-        loss_fn=DistillationLoss(
-            nn.CrossEntropyLoss(), alpha=0.7, temperature=4.0, features=feature_distiller, feature_weight=0.3
-        ),
-        teacher=teacher,
-        extra_params=feature_distiller.parameters(),
-    )
-    feature_distiller.remove()  # detach hooks before evaluation
-    feature_acc = evaluate(feature_student, test_loader)
+    if not FAST_MODE:
+        # (c) logit + feature KD: additionally match backbone.layer3 activations
+        print("\n  (c) logit + feature KD — FeatureDistillation on backbone.layer3, feature_weight=0.3...")
+        torch.manual_seed(STUDENT_SEED)
+        feature_student = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
+        feature_distiller = FeatureDistillation(
+            feature_student,
+            teacher,
+            pairs=[("backbone.layer3", "backbone.layer3")],
+        )
+        # Same-width layers here, so no projection layers get created — but the
+        # optimizer includes feature_distiller.parameters() anyway, which is
+        # required whenever the paired layers can differ in width.
+        train_one(
+            feature_student,
+            train_loader,
+            test_loader,
+            epochs=STUDENT_EPOCHS,
+            loss_fn=DistillationLoss(
+                nn.CrossEntropyLoss(), alpha=0.7, temperature=4.0, features=feature_distiller, feature_weight=0.3
+            ),
+            teacher=teacher,
+            extra_params=feature_distiller.parameters(),
+        )
+        feature_distiller.remove()  # detach hooks before evaluation
+        feature_acc = evaluate(feature_student, test_loader)
 
-    print(f"\n  student comparison ({STUDENT_EPOCHS} epochs each, identical init/data order):")
-    print("  model                       accuracy    Δ vs plain")
-    print("  " + "-" * 50)
-    print(f"  plain CE                    {plain_acc:8.4f}      —")
-    print(f"  logit KD                    {logit_acc:8.4f}    {logit_acc - plain_acc:+8.4f}")
-    print(f"  logit + feature KD          {feature_acc:8.4f}    {feature_acc - plain_acc:+8.4f}")
-    print(f"  (teacher, {TEACHER_EPOCHS + TEACHER_ANNEAL_EPOCHS} epochs)         {teacher_acc:8.4f}")
-    print("  note: deterministic cuDNN makes this table reproducible on the same")
-    print("  hardware/software stack, but 2-epoch from-scratch runs are volatile")
-    print("  across seeds and GPUs — the size of the KD gap varies a lot between")
-    print("  configurations, so treat point-level differences as noise.")
+    if FAST_MODE:
+        print(f"\n  logit-KD student accuracy: {logit_acc:.4f}  (teacher: {teacher_acc:.4f})")
+    else:
+        print(f"\n  student comparison ({STUDENT_EPOCHS} epochs each, identical init/data order):")
+        print("  model                       accuracy    Δ vs plain")
+        print("  " + "-" * 50)
+        print(f"  plain CE                    {plain_acc:8.4f}      —")
+        print(f"  logit KD                    {logit_acc:8.4f}    {logit_acc - plain_acc:+8.4f}")
+        print(f"  logit + feature KD          {feature_acc:8.4f}    {feature_acc - plain_acc:+8.4f}")
+        print(f"  (teacher, {TEACHER_EPOCHS + TEACHER_ANNEAL_EPOCHS} epochs)         {teacher_acc:8.4f}")
+        print("  note: deterministic cuDNN makes this table reproducible on the same")
+        print("  hardware/software stack, but 2-epoch from-scratch runs are volatile")
+        print("  across seeds and GPUs — the size of the KD gap varies a lot between")
+        print("  configurations, so treat point-level differences as noise.")
 
     # ── Section: structured channel pruning ────────────────────────────────
     print("\n── Structured pruning: ChannelPruner(sparsity=0.4, ignore=['head']) on a teacher copy ──")
@@ -298,15 +380,15 @@ def main() -> None:
     print(f"  accuracy after finetune: {pruned_acc_after:.4f}  (teacher: {teacher_acc:.4f})")
 
     # ── Section: PruningSchedule — gradual unstructured sparsity ───────────
-    print("\n── PruningSchedule: 3 epochs ramping to 50% unstructured sparsity ──")
+    print(f"\n── PruningSchedule: {SCHEDULE_EPOCHS} epochs ramping to 50% unstructured sparsity ──")
     torch.manual_seed(2)
     scheduled = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
-    schedule = PruningSchedule(final_sparsity=0.5, start_epoch=0, end_epoch=2)
+    schedule = PruningSchedule(final_sparsity=0.5, start_epoch=0, end_epoch=SCHEDULE_EPOCHS - 1)
     train_one(
         scheduled,
         train_loader,
         test_loader,
-        epochs=3,
+        epochs=SCHEDULE_EPOCHS,
         callbacks=[ProgressLogger(), schedule, SparsityReporter()],
     )
     print(f"  final global sparsity: {sparsity(scheduled):.1%}  (masks removed, zeros baked in)")
@@ -334,7 +416,10 @@ def main() -> None:
     elapsed = time.perf_counter() - t_start
     print("\n── Summary ──")
     print(f"  teacher accuracy ({TEACHER_EPOCHS + TEACHER_ANNEAL_EPOCHS} epochs)     : {teacher_acc:.4f}")
-    print(f"  plain / logit-KD / feature-KD  : {plain_acc:.4f} / {logit_acc:.4f} / {feature_acc:.4f}")
+    if FAST_MODE:
+        print(f"  logit-KD student accuracy      : {logit_acc:.4f}  (three-way study skipped in fast mode)")
+    else:
+        print(f"  plain / logit-KD / feature-KD  : {plain_acc:.4f} / {logit_acc:.4f} / {feature_acc:.4f}")
     print(f"  channel pruning param reduction: {param_reduction:.1%}")
     print(f"  pruned accuracy before/after ft: {pruned_acc_before:.4f} / {pruned_acc_after:.4f}")
     print(f"  size chain fp32→pruned→int8    : {fp32_mb:.2f} → {pruned_mb:.2f} → {int8_mb:.2f} MB")

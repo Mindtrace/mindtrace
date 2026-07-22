@@ -10,6 +10,8 @@ Demonstrates:
   6. Custom batch_fn to handle non-standard batch layouts.
 """
 
+import os
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -23,6 +25,11 @@ from mindtrace.models.evaluation.metrics.classification import (
 from mindtrace.models.evaluation.metrics.detection import mean_average_precision
 from mindtrace.models.evaluation.metrics.regression import mae, mse, r2_score, rmse
 from mindtrace.models.evaluation.metrics.segmentation import dice_score, mean_iou
+
+# Share CPU cores fairly when several sample scripts run concurrently
+# (e.g. the CI integration harness runs four at once); GPU runs are unaffected.
+if not torch.cuda.is_available():
+    torch.set_num_threads(max(1, (os.cpu_count() or 8) // 4))
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
