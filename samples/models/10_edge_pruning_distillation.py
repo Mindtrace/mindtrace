@@ -1,16 +1,20 @@
 """10_edge_pruning_distillation.py — edge compression: prune + distill.
 
 Model compression workflow on a real open-source dataset (FashionMNIST via
-torchvision, auto-downloaded, 2000 train / 500 test subset):
+torchvision, auto-downloaded, 6000 train / 1000 test subset):
 
-  1. Train a ResNet-18 teacher for one epoch.
-  2. Student A — structured channel pruning: ChannelPruner(sparsity=0.4)
-     on a copy of the teacher, then a one-epoch finetune; report parameter
-     counts (pruner.summary()) and accuracy before/after finetuning.
-  3. Student B — knowledge distillation: a fresh ResNet-18 trained with
-     DistillationLoss + Trainer(teacher=...), compared against a plain
-     one-epoch baseline.  With a single epoch the differences are modest —
-     this demonstrates the mechanics, not final numbers.
+  1. Train a ResNet-18 teacher for six epochs (device="auto"; fast on CUDA).
+  2. Distillation study — THREE students from the SAME seeded initial
+     weights, trained for two epochs each:
+       (a) plain cross-entropy baseline;
+       (b) logit KD: DistillationLoss(alpha=0.7, T=4) + Trainer(teacher=...);
+       (c) logit + feature KD: adds FeatureDistillation matching
+           backbone.layer3 activations (FitNets-style), feature_weight=0.3,
+           with the optimizer including feature_distiller.parameters().
+     A comparison table reports accuracy deltas vs the plain baseline.
+  3. Structured channel pruning: ChannelPruner(sparsity=0.4) on a copy of
+     the teacher, then a one-epoch finetune; reports parameter counts
+     (pruner.summary()) and accuracy before/after finetuning.
   4. PruningSchedule — 3 training epochs ramping to 50% unstructured
      sparsity, printing the sparsity() progression per epoch.
   5. Export + dynamic INT8 quantization of the pruned model, printing the
@@ -23,6 +27,7 @@ Run:
 import copy
 import time
 from pathlib import Path
+from typing import Iterable
 
 import torch
 import torch.nn as nn
@@ -72,13 +77,17 @@ from mindtrace.models.optimization import (
     quantize_dynamic,
     sparsity,
 )
-from mindtrace.models.training.losses import DistillationLoss
+from mindtrace.models.training.losses import DistillationLoss, FeatureDistillation
 
 NUM_CLASSES = 10
 IMG_SIZE = 64
 BATCH_SIZE = 64
-TRAIN_SAMPLES = 2000
-TEST_SAMPLES = 500
+TRAIN_SAMPLES = 6000
+TEST_SAMPLES = 1000
+TEACHER_EPOCHS = 6  # at lr=1e-3, followed by TEACHER_ANNEAL_EPOCHS at lr=1e-4
+TEACHER_ANNEAL_EPOCHS = 3
+STUDENT_EPOCHS = 2
+STUDENT_SEED = 1  # every student starts from the same seeded init
 DATA_ROOT = Path("/tmp/mindtrace_samples/data")
 WORK_DIR = Path("/tmp/mindtrace_samples/edge_opt_10")
 
@@ -87,7 +96,7 @@ def build_loaders() -> tuple[DataLoader, DataLoader]:
     """Build FashionMNIST train/test loaders resized to 3x64x64.
 
     Returns:
-        Tuple of (train_loader, test_loader) over 2000/500-image subsets.
+        Tuple of (train_loader, test_loader) over 6000/1000-image subsets.
     """
     transform = transforms.Compose(
         [
@@ -126,6 +135,7 @@ def train_one(
     *,
     lr: float = 1e-3,
     epochs: int = 1,
+    extra_params: Iterable[nn.Parameter] | None = None,
     **trainer_kwargs,
 ) -> nn.Module:
     """Train *model* for a few epochs with AdamW + CrossEntropy.
@@ -136,6 +146,9 @@ def train_one(
         test_loader: Validation data loader.
         lr: AdamW learning rate.
         epochs: Number of epochs.
+        extra_params: Additional parameters to optimize alongside the model,
+            e.g. ``feature_distiller.parameters()`` so that any lazy
+            projection layers are trained too.
         **trainer_kwargs: Extra keyword arguments forwarded to ``Trainer``
             (e.g. ``loss_fn``, ``teacher``, ``callbacks``).
 
@@ -144,9 +157,13 @@ def train_one(
     """
     trainer_kwargs.setdefault("loss_fn", nn.CrossEntropyLoss())
     trainer_kwargs.setdefault("callbacks", [ProgressLogger()])
+    if extra_params is not None:
+        optimizer = build_optimizer("adamw", [{"params": [*model.parameters(), *extra_params]}], lr=lr)
+    else:
+        optimizer = build_optimizer("adamw", model, lr=lr)
     trainer = Trainer(
         model=model,
-        optimizer=build_optimizer("adamw", model, lr=lr),
+        optimizer=optimizer,
         device="auto",
         **trainer_kwargs,
     )
@@ -173,69 +190,112 @@ def main() -> None:
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     t_start = time.perf_counter()
 
+    # Deterministic cuDNN so the plain/KD comparison is reproducible run-to-run
+    # (kernel autotuning and nondeterministic conv backward otherwise add ~1
+    # accuracy point of noise to these short trainings).
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+
     # ── Section: dataset ───────────────────────────────────────────────────
     print("\n── FashionMNIST dataset (3x64x64) ──")
     train_loader, test_loader = build_loaders()
     print(f"  train subset: {TRAIN_SAMPLES} images   test subset: {TEST_SAMPLES} images")
 
     # ── Section: teacher ───────────────────────────────────────────────────
-    print("\n── Teacher: ResNet-18, 1 epoch ──")
+    total_teacher_epochs = TEACHER_EPOCHS + TEACHER_ANNEAL_EPOCHS
+    print(
+        f"\n── Teacher: ResNet-18, {total_teacher_epochs} epochs ({TEACHER_EPOCHS} @ 1e-3, then {TEACHER_ANNEAL_EPOCHS} @ 1e-4) ──"
+    )
     torch.manual_seed(0)
     teacher = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
-    train_one(teacher, train_loader, test_loader)
+    train_one(teacher, train_loader, test_loader, epochs=TEACHER_EPOCHS)
+    train_one(teacher, train_loader, test_loader, epochs=TEACHER_ANNEAL_EPOCHS, lr=1e-4)
     teacher_acc = evaluate(teacher, test_loader)
     teacher_params = sum(p.numel() for p in teacher.parameters())
     print(f"  teacher accuracy: {teacher_acc:.4f}   params: {teacher_params:,}")
 
-    # ── Section: student A — structured channel pruning ────────────────────
-    print("\n── Student A: ChannelPruner(sparsity=0.4, ignore=['head']) ──")
-    student_a = copy.deepcopy(teacher).cpu()
+    # ── Section: distillation study — three students, same init ───────────
+    print(f"\n── Distillation study: 3 students from the same init, {STUDENT_EPOCHS} epochs each ──")
+
+    # (a) plain cross-entropy baseline
+    print("\n  (a) plain CE baseline...")
+    torch.manual_seed(STUDENT_SEED)
+    plain = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
+    train_one(plain, train_loader, test_loader, epochs=STUDENT_EPOCHS)
+    plain_acc = evaluate(plain, test_loader)
+
+    # (b) logit KD: soft targets from the teacher
+    print("\n  (b) logit KD — DistillationLoss(alpha=0.7, T=4.0)...")
+    torch.manual_seed(STUDENT_SEED)
+    logit_student = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
+    train_one(
+        logit_student,
+        train_loader,
+        test_loader,
+        epochs=STUDENT_EPOCHS,
+        loss_fn=DistillationLoss(nn.CrossEntropyLoss(), alpha=0.7, temperature=4.0),
+        teacher=teacher,
+    )
+    logit_acc = evaluate(logit_student, test_loader)
+
+    # (c) logit + feature KD: additionally match backbone.layer3 activations
+    print("\n  (c) logit + feature KD — FeatureDistillation on backbone.layer3, feature_weight=0.3...")
+    torch.manual_seed(STUDENT_SEED)
+    feature_student = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
+    feature_distiller = FeatureDistillation(
+        feature_student,
+        teacher,
+        pairs=[("backbone.layer3", "backbone.layer3")],
+    )
+    # Same-width layers here, so no projection layers get created — but the
+    # optimizer includes feature_distiller.parameters() anyway, which is
+    # required whenever the paired layers can differ in width.
+    train_one(
+        feature_student,
+        train_loader,
+        test_loader,
+        epochs=STUDENT_EPOCHS,
+        loss_fn=DistillationLoss(
+            nn.CrossEntropyLoss(), alpha=0.7, temperature=4.0, features=feature_distiller, feature_weight=0.3
+        ),
+        teacher=teacher,
+        extra_params=feature_distiller.parameters(),
+    )
+    feature_distiller.remove()  # detach hooks before evaluation
+    feature_acc = evaluate(feature_student, test_loader)
+
+    print(f"\n  student comparison ({STUDENT_EPOCHS} epochs each, identical init/data order):")
+    print("  model                       accuracy    Δ vs plain")
+    print("  " + "-" * 50)
+    print(f"  plain CE                    {plain_acc:8.4f}      —")
+    print(f"  logit KD                    {logit_acc:8.4f}    {logit_acc - plain_acc:+8.4f}")
+    print(f"  logit + feature KD          {feature_acc:8.4f}    {feature_acc - plain_acc:+8.4f}")
+    print(f"  (teacher, {TEACHER_EPOCHS + TEACHER_ANNEAL_EPOCHS} epochs)         {teacher_acc:8.4f}")
+    print("  note: deterministic cuDNN makes this table reproducible on the same")
+    print("  hardware/software stack, but 2-epoch from-scratch runs are volatile")
+    print("  across seeds and GPUs — the size of the KD gap varies a lot between")
+    print("  configurations, so treat point-level differences as noise.")
+
+    # ── Section: structured channel pruning ────────────────────────────────
+    print("\n── Structured pruning: ChannelPruner(sparsity=0.4, ignore=['head']) on a teacher copy ──")
+    pruned_model = copy.deepcopy(teacher).cpu()
     pruner = ChannelPruner(
         sparsity=0.4,
         ignore=["head"],
         example_input=torch.randn(1, 3, IMG_SIZE, IMG_SIZE),
     )
-    student_a = pruner.run(student_a)
+    pruned_model = pruner.run(pruned_model)
     stats = pruner.summary()
     param_reduction = 1.0 - stats["params_after"] / stats["params_before"]
     print(f"  params: {stats['params_before']:,} → {stats['params_after']:,}  ({param_reduction:.1%} removed)")
     print(f"  FLOPs : {stats['flops_before']:,} → {stats['flops_after']:,}")
 
-    pruned_acc_before = evaluate(student_a, test_loader)
+    pruned_acc_before = evaluate(pruned_model, test_loader)
     print(f"  accuracy right after pruning (no finetune): {pruned_acc_before:.4f}")
     print("  finetuning for 1 epoch to recover accuracy...")
-    train_one(student_a, train_loader, test_loader, lr=1e-4)
-    pruned_acc_after = evaluate(student_a, test_loader)
+    train_one(pruned_model, train_loader, test_loader, lr=1e-4)
+    pruned_acc_after = evaluate(pruned_model, test_loader)
     print(f"  accuracy after finetune: {pruned_acc_after:.4f}  (teacher: {teacher_acc:.4f})")
-
-    # ── Section: student B — knowledge distillation ────────────────────────
-    print("\n── Student B: DistillationLoss(alpha=0.7, T=4.0) vs plain baseline ──")
-    torch.manual_seed(1)
-    plain = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
-    print("  training plain 1-epoch baseline...")
-    train_one(plain, train_loader, test_loader)
-    plain_acc = evaluate(plain, test_loader)
-
-    torch.manual_seed(1)
-    distilled = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
-    print("  training distilled student (Trainer(teacher=teacher))...")
-    train_one(
-        distilled,
-        train_loader,
-        test_loader,
-        loss_fn=DistillationLoss(nn.CrossEntropyLoss(), alpha=0.7, temperature=4.0),
-        teacher=teacher,
-    )
-    distilled_acc = evaluate(distilled, test_loader)
-
-    print("\n  model                    accuracy")
-    print("  " + "-" * 34)
-    print(f"  teacher (1 epoch)        {teacher_acc:8.4f}")
-    print(f"  plain student (1 epoch)  {plain_acc:8.4f}")
-    print(f"  distilled student        {distilled_acc:8.4f}")
-    print(f"  pruned+finetuned (A)     {pruned_acc_after:8.4f}")
-    print("  (single-epoch runs — differences are modest and vary between runs;")
-    print("   the point here is the mechanics of teacher-guided training)")
 
     # ── Section: PruningSchedule — gradual unstructured sparsity ───────────
     print("\n── PruningSchedule: 3 epochs ramping to 50% unstructured sparsity ──")
@@ -257,7 +317,9 @@ def main() -> None:
     print("\n── Size chain: fp32 → pruned → int8 (ONNX artifacts) ──")
     shape = (1, 3, IMG_SIZE, IMG_SIZE)
     fp32_onnx = export_onnx(teacher.cpu(), WORK_DIR / "teacher_fp32.onnx", static_shape=shape, dynamic_batch=True)
-    pruned_onnx = export_onnx(student_a.cpu(), WORK_DIR / "student_pruned.onnx", static_shape=shape, dynamic_batch=True)
+    pruned_onnx = export_onnx(
+        pruned_model.cpu(), WORK_DIR / "student_pruned.onnx", static_shape=shape, dynamic_batch=True
+    )
     pruned_int8_onnx = quantize_dynamic(pruned_onnx, output=WORK_DIR / "student_pruned_int8.onnx")
 
     fp32_mb = model_size_mb(fp32_onnx)
@@ -271,10 +333,10 @@ def main() -> None:
     # ── Section: summary ───────────────────────────────────────────────────
     elapsed = time.perf_counter() - t_start
     print("\n── Summary ──")
-    print(f"  teacher accuracy               : {teacher_acc:.4f}")
+    print(f"  teacher accuracy ({TEACHER_EPOCHS + TEACHER_ANNEAL_EPOCHS} epochs)     : {teacher_acc:.4f}")
+    print(f"  plain / logit-KD / feature-KD  : {plain_acc:.4f} / {logit_acc:.4f} / {feature_acc:.4f}")
     print(f"  channel pruning param reduction: {param_reduction:.1%}")
     print(f"  pruned accuracy before/after ft: {pruned_acc_before:.4f} / {pruned_acc_after:.4f}")
-    print(f"  plain vs distilled student     : {plain_acc:.4f} vs {distilled_acc:.4f}")
     print(f"  size chain fp32→pruned→int8    : {fp32_mb:.2f} → {pruned_mb:.2f} → {int8_mb:.2f} MB")
     print(f"  total wall time                : {elapsed:.1f}s")
     print("\nEdge compression sample complete.")
