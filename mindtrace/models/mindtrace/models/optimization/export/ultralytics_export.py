@@ -14,9 +14,10 @@ the package installed; :func:`export_ultralytics` raises a clear
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Any
+
+from mindtrace.core import get_logger
 
 try:
     import ultralytics  # noqa: F401 — availability probe only
@@ -29,7 +30,7 @@ _ULTRALYTICS_INSTALL_MSG = (
     "export_ultralytics requires the 'ultralytics' package. Install it with: pip install ultralytics"
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 __all__ = ["export_ultralytics"]
 

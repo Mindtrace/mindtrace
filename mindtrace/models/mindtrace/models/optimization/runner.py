@@ -117,7 +117,7 @@ class OptimizationResult:
     violations: list[dict] = field(default_factory=list)
 
 
-class OnnxModelAdapter:
+class OnnxModelAdapter(Mindtrace):
     """Present an ONNX artifact through the model interface evaluation needs.
 
     Wraps an ``onnxruntime.InferenceSession`` behind the small ``nn.Module``
@@ -136,6 +136,7 @@ class OnnxModelAdapter:
     """
 
     def __init__(self, path: str | Path, providers: list | None = None) -> None:
+        super().__init__()
         if not _ORT_AVAILABLE:
             raise ImportError(_ORT_INSTALL_MSG)
         self.path = Path(path)

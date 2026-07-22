@@ -13,6 +13,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Iterator
 
+from mindtrace.core import Mindtrace
+
 # ---------------------------------------------------------------------------
 # Optional ONNX Runtime quantization imports
 # ---------------------------------------------------------------------------
@@ -326,7 +328,7 @@ def quantize_dynamic(
     return output_path
 
 
-class StaticQuantizer:
+class StaticQuantizer(Mindtrace):
     """Static post-training quantization with activation calibration.
 
     Runs representative data through the model to determine activation
@@ -355,6 +357,7 @@ class StaticQuantizer:
         per_channel: bool = True,
         calibration_method: str = "minmax",
     ) -> None:
+        super().__init__()
         if precision not in _PRECISIONS:
             raise ValueError(f"precision must be one of {_PRECISIONS}, got '{precision}'")
         if calibration_method not in _CALIBRATION_METHODS:

@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from mindtrace.core import Mindtrace
 from mindtrace.models.optimization.quantize.ptq import (
     FeedCalibrationReader,
     StaticQuantizer,
@@ -261,7 +262,7 @@ def sensitivity_scan(
     return SensitivityReport(baseline_metric=baseline, full_quant_drop=full_drop, node_drops=node_drops)
 
 
-class MixedPrecisionSearch:
+class MixedPrecisionSearch(Mindtrace):
     """Greedy search for a partial-quantization plan meeting an accuracy budget.
 
     Fully quantizes the model first; if the accuracy drop exceeds
@@ -288,6 +289,7 @@ class MixedPrecisionSearch:
     """
 
     def __init__(self, constraints: dict, calibration_data: Any) -> None:
+        super().__init__()
         if "max_accuracy_drop" not in constraints:
             raise ValueError("constraints must contain a 'max_accuracy_drop' entry.")
         self.constraints = constraints

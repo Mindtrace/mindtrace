@@ -27,13 +27,13 @@ Example:
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Callable
 
+from mindtrace.core import Mindtrace
+
 __all__ = ["ThermalGovernor", "read_temperature_c"]
 
-logger = logging.getLogger(__name__)
 
 _THERMAL_BASE = Path("/sys/class/thermal")
 
@@ -68,7 +68,7 @@ def read_temperature_c(zone: str | None = None) -> float | None:
     return max(temps) if temps else None
 
 
-class ThermalGovernor:
+class ThermalGovernor(Mindtrace):
     """Hysteresis state machine deciding when to shed inference load.
 
     The governor flips to *shedding* once a reading reaches ``max_temp_c``
@@ -100,6 +100,7 @@ class ThermalGovernor:
         on_shed: Callable[[float], None] | None = None,
         on_resume: Callable[[float], None] | None = None,
     ) -> None:
+        super().__init__()
         if resume_temp_c >= max_temp_c:
             raise ValueError(
                 f"resume_temp_c ({resume_temp_c}) must be lower than max_temp_c ({max_temp_c}) for hysteresis."
@@ -128,12 +129,12 @@ class ThermalGovernor:
             return self._shedding
         if not self._shedding and temp >= self._max_temp_c:
             self._shedding = True
-            logger.warning("Thermal governor shedding load at %.1f C (max %.1f C)", temp, self._max_temp_c)
+            self.logger.warning("Thermal governor shedding load at %.1f C (max %.1f C)", temp, self._max_temp_c)
             if self._on_shed is not None:
                 self._on_shed(temp)
         elif self._shedding and temp < self._resume_temp_c:
             self._shedding = False
-            logger.info("Thermal governor resuming at %.1f C (resume %.1f C)", temp, self._resume_temp_c)
+            self.logger.info("Thermal governor resuming at %.1f C (resume %.1f C)", temp, self._resume_temp_c)
             if self._on_resume is not None:
                 self._on_resume(temp)
         return self._shedding

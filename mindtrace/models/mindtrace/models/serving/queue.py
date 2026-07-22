@@ -29,7 +29,6 @@ Example:
 
 from __future__ import annotations
 
-import logging
 import threading
 import time
 from collections import deque
@@ -38,14 +37,15 @@ from typing import Any, Callable
 
 import numpy as np
 
+from mindtrace.core import Mindtrace
+
 __all__ = ["InferenceQueue"]
 
-logger = logging.getLogger(__name__)
 
 _MODES = ("latency", "throughput")
 
 
-class InferenceQueue:
+class InferenceQueue(Mindtrace):
     """Bounded producer/consumer queue running inference on a worker thread.
 
     Args:
@@ -79,6 +79,7 @@ class InferenceQueue:
         batch_timeout_ms: float = 5.0,
         on_drop: Callable[[Any], None] | None = None,
     ) -> None:
+        super().__init__()
         if mode not in _MODES:
             raise ValueError(f"Unknown mode '{mode}'. Expected one of: {', '.join(_MODES)}")
         if maxsize < 1:
@@ -149,7 +150,7 @@ class InferenceQueue:
                 try:
                     self._on_drop(old_item)
                 except Exception:
-                    logger.exception("InferenceQueue on_drop callback raised")
+                    self.logger.exception("InferenceQueue on_drop callback raised")
         return future
 
     def stats(self) -> dict[str, int]:

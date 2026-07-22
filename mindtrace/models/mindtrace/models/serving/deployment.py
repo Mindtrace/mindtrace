@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, Sequence
 
 import numpy as np
 
+from mindtrace.core import Mindtrace
 from mindtrace.models.lifecycle.stages import ModelStage
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -113,7 +114,7 @@ class ShadowDecision:
     samples: int = 0
 
 
-class ShadowEvaluation:
+class ShadowEvaluation(Mindtrace):
     """Accumulates shadow-mode observations and decides promotion readiness.
 
     The candidate model runs alongside production on live inputs; each paired
@@ -134,6 +135,7 @@ class ShadowEvaluation:
         min_agreement: float = 0.98,
         max_latency_ratio: float | None = None,
     ) -> None:
+        super().__init__()
         self.min_samples = min_samples
         self.min_agreement = min_agreement
         self.max_latency_ratio = max_latency_ratio
@@ -238,7 +240,7 @@ class ShadowEvaluation:
 # ---------------------------------------------------------------------------
 
 
-class ConfidenceMonitor:
+class ConfidenceMonitor(Mindtrace):
     """Detects drift in a model's confidence distribution.
 
     Keeps a sliding window of recent confidences and compares it to a
@@ -266,6 +268,7 @@ class ConfidenceMonitor:
         reference: Sequence[float] | None = None,
         threshold: float = 0.15,
     ) -> None:
+        super().__init__()
         self.window = window
         self.threshold = threshold
         self._reference: list[float] | None = [float(v) for v in reference] if reference is not None else None
@@ -308,7 +311,7 @@ class ConfidenceMonitor:
 # ---------------------------------------------------------------------------
 
 
-class Deployment:
+class Deployment(Mindtrace):
     """Drives a shadow-mode variant through promote-or-rollback decisions.
 
     Binds a :class:`ShadowEvaluation` to a specific variant on a
@@ -337,6 +340,7 @@ class Deployment:
         on_pass: Callable[[ShadowDecision], Any] | None = None,
         on_fail: Callable[[ShadowDecision], Any] | None = None,
     ) -> None:
+        super().__init__()
         self.card = card
         self.variant = variant
         self.evaluation = evaluation

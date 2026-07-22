@@ -14,11 +14,12 @@ time (or degrades gracefully where the behavior contract allows it).
 from __future__ import annotations
 
 import inspect
-import logging
 from pathlib import Path
 from typing import Any, Sequence
 
 import torch
+
+from mindtrace.core import get_logger
 
 # ---------------------------------------------------------------------------
 # Optional ONNX-stack imports
@@ -49,7 +50,7 @@ except ImportError:  # pragma: no cover
 
 _ONNX_INSTALL_MSG = "ONNX export requires the 'onnx' package. Install it with: pip install mindtrace-models[edge]"
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 __all__ = ["export_onnx", "model_size_mb"]
 
