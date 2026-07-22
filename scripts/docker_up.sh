@@ -31,6 +31,18 @@ until nc -z localhost 6380; do
     sleep 1
 done
 
+echo "Waiting for RabbitMQ to be ready..."
+RABBITMQ_WAIT_SECONDS=0
+until $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml exec -T rabbitmq rabbitmq-diagnostics -q ping > /dev/null 2>&1; do
+    sleep 1
+    RABBITMQ_WAIT_SECONDS=$((RABBITMQ_WAIT_SECONDS + 1))
+    if [ "$RABBITMQ_WAIT_SECONDS" -ge 90 ]; then
+        echo "RabbitMQ failed to become ready within 90s; recent container logs:" >&2
+        $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml logs --tail 20 rabbitmq >&2
+        return 1 2>/dev/null || exit 1
+    fi
+done
+
 echo "Flushing Redis test database..."
 $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml exec -T redis redis-cli -p 6380 FLUSHALL > /dev/null
 
