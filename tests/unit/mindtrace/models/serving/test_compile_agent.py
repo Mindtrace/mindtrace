@@ -127,7 +127,7 @@ def test_missing_model_source_raises(agent):
 
 
 def test_targets_listing_marks_buildable_runtimes(agent):
-    """/targets marks ort + openvino targets buildable and tensorrt not."""
+    """/targets marks ort/openvino/executorch buildable here and tensorrt not."""
     listing = agent.targets().targets
     by_name = {t.name: t for t in listing}
 
@@ -137,7 +137,8 @@ def test_targets_listing_marks_buildable_runtimes(agent):
     assert by_name["intel-cpu-openvino"].buildable is True  # openvino installed in this env
     assert by_name["jetson-orin-nx"].runtime == "tensorrt"
     assert by_name["jetson-orin-nx"].buildable is False  # no tensorrt here
-    assert by_name["executorch-generic"].buildable is False
+    assert by_name["executorch-generic"].buildable is True  # executorch installed in this env
+    assert by_name["hailo-8"].buildable is False  # profile only, no compiler backend
 
 
 def _register_fake_trt_compiler(monkeypatch):
