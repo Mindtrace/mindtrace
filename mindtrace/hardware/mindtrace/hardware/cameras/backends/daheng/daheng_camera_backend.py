@@ -104,6 +104,11 @@ class DahengCameraBackend(CameraBackend):
                 - pixel_format: Default pixel format (uses config default if None)
                 - buffer_count: Number of frame buffers (uses config default if None)
                 - timeout_ms: Capture timeout in milliseconds (uses config default if None)
+                - color_defaults: Apply the sRGB-gamma / black-level-0 color
+                  defaults on connect (default True). Set False for
+                  deployments that tune color at runtime and must not have
+                  values reset on reconnect; imported config files are
+                  applied after the defaults either way.
 
         Raises:
             SDKNotAvailableError: If gxipy SDK is not available
@@ -126,6 +131,7 @@ class DahengCameraBackend(CameraBackend):
         pixel_format = backend_kwargs.get("pixel_format")
         buffer_count = backend_kwargs.get("buffer_count")
         timeout_ms = backend_kwargs.get("timeout_ms")
+        self.color_defaults: bool = bool(backend_kwargs.get("color_defaults", True))
 
         if pixel_format is None:
             pixel_format = getattr(self.camera_config, "pixel_format", "BGR8")
@@ -357,19 +363,23 @@ class DahengCameraBackend(CameraBackend):
                     cam.AcquisitionMode.set(gx.GxAcquisitionModeEntry.CONTINUOUS)
 
                 # Color-correction defaults: sRGB gamma on, black level 0, for
-                # rendering matched with the Basler backend (nodes are model-dependent)
-                try:
-                    if cam.GammaMode.is_implemented():
-                        cam.GammaMode.set(0)  # 0 = sRGB
-                    if cam.GammaEnable.is_implemented():
-                        cam.GammaEnable.set(True)
-                except Exception as e:
-                    self.logger.debug(f"Gamma defaults not applied for camera '{self.camera_name}': {e}")
-                try:
-                    if cam.BlackLevel.is_implemented():
-                        cam.BlackLevel.set(0.0)
-                except Exception as e:
-                    self.logger.debug(f"Black level default not applied for camera '{self.camera_name}': {e}")
+                # rendering matched with the Basler backend (nodes are
+                # model-dependent). Gated by the color_defaults kwarg so tuned
+                # deployments are not clobbered on reconnect; an imported
+                # config file (applied after this) also restores tuned values.
+                if self.color_defaults:
+                    try:
+                        if cam.GammaMode.is_implemented():
+                            cam.GammaMode.set(0)  # 0 = sRGB
+                        if cam.GammaEnable.is_implemented():
+                            cam.GammaEnable.set(True)
+                    except Exception as e:
+                        self.logger.debug(f"Gamma defaults not applied for camera '{self.camera_name}': {e}")
+                    try:
+                        if cam.BlackLevel.is_implemented():
+                            cam.BlackLevel.set(0.0)
+                    except Exception as e:
+                        self.logger.debug(f"Black level default not applied for camera '{self.camera_name}': {e}")
 
                 # Start streaming
                 cam.stream_on()
@@ -908,168 +918,268 @@ class DahengCameraBackend(CameraBackend):
         """
         return ["off", "once", "continuous"]
 
-    # ── Color Transformation ──
+    # ── Color Correction ──
+    #
+    # Contract (mirrors the Basler backend):
+    # * Getters return ``None`` when the camera does not implement the feature
+    #   (never a fabricated default) and raise ``HardwareOperationError`` on
+    #   real read failures.
+    # * Setters raise ``HardwareOperationError`` when the feature is
+    #   unsupported or the write fails, and ``CameraConfigurationError`` for
+    #   invalid values.
 
-    async def get_color_transformation(self) -> bool:
-        """Get current color transformation enable state."""
+    def _color_feature(self, name: str):
+        """Return an implemented gxipy feature by name, or ``None``.
+
+        Must be called from the camera executor thread (inside a
+        ``_run_blocking`` closure).
+
+        Args:
+            name: gxipy feature attribute name (e.g. ``"GammaEnable"``).
+
+        Returns:
+            The feature object when present and implemented, else ``None``.
+        """
+        feature = getattr(self.camera, name, None)
+        if feature is None:
+            return None
+        try:
+            if not feature.is_implemented():
+                return None
+        except Exception:
+            return None
+        return feature
+
+    async def get_color_transformation(self) -> Optional[bool]:
+        """Get the color transformation enable state.
+
+        Returns:
+            True/False, or ``None`` when the camera has no color
+            transformation node.
+
+        Raises:
+            CameraConnectionError: If the camera is not initialized.
+            HardwareOperationError: If reading the feature fails.
+        """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        def _get():
+            feature = self._color_feature("ColorTransformationEnable")
+            if feature is None:
+                return None
+            return bool(feature.get())
+
         try:
-
-            def _get():
-                cam = self.camera
-                if cam.ColorTransformationEnable.is_implemented():
-                    return cam.ColorTransformationEnable.get()
-                return False
-
             return await self._run_blocking(_get)
         except Exception as e:
-            self.logger.warning(f"Color transformation not available for camera '{self.camera_name}': {e}")
-            return False
+            raise HardwareOperationError(
+                f"Failed to read color transformation for camera '{self.camera_name}': {e}"
+            ) from e
 
     async def set_color_transformation(self, enabled: bool):
         """Enable or disable color transformation.
 
         Args:
-            enabled: True to enable, False to disable
+            enabled: True to enable, False to disable.
+
+        Raises:
+            CameraConnectionError: If the camera is not initialized.
+            HardwareOperationError: If the feature is unsupported or the
+                write fails.
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        def _set():
+            feature = self._color_feature("ColorTransformationEnable")
+            if feature is None:
+                raise HardwareOperationError(f"Color transformation is not supported by camera '{self.camera_name}'")
+            feature.set(enabled)
+
         try:
-
-            def _set():
-                cam = self.camera
-                if cam.ColorTransformationEnable.is_implemented():
-                    cam.ColorTransformationEnable.set(enabled)
-                    pass
-
             await self._run_blocking(_set)
-            self.logger.info(f"Color transformation set to {enabled} for camera '{self.camera_name}'")
+            self.logger.debug(f"Color transformation set to {enabled} for camera '{self.camera_name}'")
+        except (CameraConnectionError, HardwareOperationError):
+            raise
         except Exception as e:
-            self.logger.warning(f"Failed to set color transformation for camera '{self.camera_name}': {e}")
+            raise HardwareOperationError(
+                f"Failed to set color transformation for camera '{self.camera_name}': {e}"
+            ) from e
 
     # ── Light Source Preset ──
 
-    async def get_light_source_preset(self) -> str:
-        """Get current light source preset."""
-        if not self.initialized or self.camera is None:
-            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
-        try:
+    _LIGHT_SOURCE_PRESETS: Dict[str, int] = {
+        "OFF": 0,
+        "CUSTOM": 1,
+        "DAYLIGHT_6500K": 2,
+        "DAYLIGHT_5000K": 3,
+        "COOL_WHITE_FLUORESCENCE": 4,
+        "INCA": 5,
+    }
 
-            def _get():
-                cam = self.camera
-                if cam.LightSourcePreset.is_implemented():
-                    _val, desc = cam.LightSourcePreset.get()
-                    return desc
-                return "OFF"
+    async def get_light_source_preset(self) -> Optional[str]:
+        """Get the current light source preset.
 
-            return await self._run_blocking(_get)
-        except Exception as e:
-            self.logger.warning(f"Light source preset not available for camera '{self.camera_name}': {e}")
-            return "OFF"
+        Returns:
+            Preset description string, or ``None`` when the camera has no
+            light source preset node.
 
-    async def set_light_source_preset(self, preset: str):
-        """Set light source preset.
-
-        Args:
-            preset: One of 'OFF', 'CUSTOM', 'DAYLIGHT_6500K', 'DAYLIGHT_5000K',
-                    'COOL_WHITE_FLUORESCENCE', 'INCA'
+        Raises:
+            CameraConnectionError: If the camera is not initialized.
+            HardwareOperationError: If reading the feature fails.
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
-        preset_map = {
-            "OFF": 0,
-            "CUSTOM": 1,
-            "DAYLIGHT_6500K": 2,
-            "DAYLIGHT_5000K": 3,
-            "COOL_WHITE_FLUORESCENCE": 4,
-            "INCA": 5,
-        }
-        value = preset_map.get(preset.upper(), 0)
+
+        def _get():
+            feature = self._color_feature("LightSourcePreset")
+            if feature is None:
+                return None
+            _val, desc = feature.get()
+            return desc
+
         try:
+            return await self._run_blocking(_get)
+        except Exception as e:
+            raise HardwareOperationError(
+                f"Failed to read light source preset for camera '{self.camera_name}': {e}"
+            ) from e
 
-            def _set():
-                cam = self.camera
-                if cam.LightSourcePreset.is_implemented():
-                    cam.LightSourcePreset.set(value)
+    async def set_light_source_preset(self, preset: str):
+        """Set the light source preset.
 
+        Args:
+            preset: One of 'OFF', 'CUSTOM', 'DAYLIGHT_6500K',
+                'DAYLIGHT_5000K', 'COOL_WHITE_FLUORESCENCE', 'INCA'
+                (case-insensitive).
+
+        Raises:
+            CameraConnectionError: If the camera is not initialized.
+            CameraConfigurationError: If *preset* is not a known preset.
+            HardwareOperationError: If the feature is unsupported or the
+                write fails.
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        key = preset.upper()
+        if key not in self._LIGHT_SOURCE_PRESETS:
+            raise CameraConfigurationError(
+                f"Invalid light source preset '{preset}' for camera '{self.camera_name}'. "
+                f"Available presets: {sorted(self._LIGHT_SOURCE_PRESETS)}"
+            )
+        value = self._LIGHT_SOURCE_PRESETS[key]
+
+        def _set():
+            feature = self._color_feature("LightSourcePreset")
+            if feature is None:
+                raise HardwareOperationError(f"Light source preset is not supported by camera '{self.camera_name}'")
+            feature.set(value)
+
+        try:
             await self._run_blocking(_set)
             self.logger.debug(f"Light source preset set to '{preset}' for camera '{self.camera_name}'")
+        except (CameraConnectionError, HardwareOperationError):
+            raise
         except Exception as e:
-            self.logger.warning(f"Failed to set light source preset for camera '{self.camera_name}': {e}")
+            raise HardwareOperationError(
+                f"Failed to set light source preset for camera '{self.camera_name}': {e}"
+            ) from e
 
     # ── Balance Ratio (R/G/B) ──
 
-    async def get_balance_ratios(self) -> Dict[str, float]:
-        """Get current R/G/B balance ratios.
+    async def get_balance_ratios(self) -> Optional[Dict[str, float]]:
+        """Get the current R/G/B balance ratios.
 
         Returns:
-            Dict with 'red', 'green', 'blue' ratio values
+            Dict with 'red', 'green', 'blue' ratio values, or ``None`` when
+            the camera has no balance ratio nodes.
+
+        Raises:
+            CameraConnectionError: If the camera is not initialized.
+            HardwareOperationError: If reading the ratios fails.
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        def _get():
+            selector = self._color_feature("BalanceRatioSelector")
+            ratio = self._color_feature("BalanceRatio")
+            if selector is None or ratio is None:
+                return None
+            ratios = {}
+            for channel, index in (("red", 0), ("green", 1), ("blue", 2)):
+                selector.set(index)
+                ratios[channel] = float(ratio.get())
+            return ratios
+
         try:
-
-            def _get():
-                cam = self.camera
-                ratios = {}
-                for channel, selector in [("red", 0), ("green", 1), ("blue", 2)]:
-                    cam.BalanceRatioSelector.set(selector)
-                    ratios[channel] = cam.BalanceRatio.get()
-                return ratios
-
             return await self._run_blocking(_get)
         except Exception as e:
-            self.logger.warning(f"Balance ratios not available for camera '{self.camera_name}': {e}")
-            return {"red": 1.0, "green": 1.0, "blue": 1.0}
+            raise HardwareOperationError(f"Failed to read balance ratios for camera '{self.camera_name}': {e}") from e
 
     async def set_balance_ratios(self, red: float = None, green: float = None, blue: float = None):
         """Set R/G/B balance ratios.
 
+        Only channels passed as non-None are written.
+
         Args:
-            red: Red channel ratio
-            green: Green channel ratio
-            blue: Blue channel ratio
+            red: Red channel ratio.
+            green: Green channel ratio.
+            blue: Blue channel ratio.
+
+        Raises:
+            CameraConnectionError: If the camera is not initialized.
+            HardwareOperationError: If the feature is unsupported or the
+                write fails.
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        def _set():
+            selector = self._color_feature("BalanceRatioSelector")
+            ratio = self._color_feature("BalanceRatio")
+            if selector is None or ratio is None:
+                raise HardwareOperationError(f"Balance ratios are not supported by camera '{self.camera_name}'")
+            for channel_value, index in ((red, 0), (green, 1), (blue, 2)):
+                if channel_value is not None:
+                    selector.set(index)
+                    ratio.set(channel_value)
+
         try:
-
-            def _set():
-                cam = self.camera
-                if red is not None:
-                    cam.BalanceRatioSelector.set(0)
-                    cam.BalanceRatio.set(red)
-                if green is not None:
-                    cam.BalanceRatioSelector.set(1)
-                    cam.BalanceRatio.set(green)
-                if blue is not None:
-                    cam.BalanceRatioSelector.set(2)
-                    cam.BalanceRatio.set(blue)
-
             await self._run_blocking(_set)
             self.logger.debug(f"Balance ratios set (R={red}, G={green}, B={blue}) for camera '{self.camera_name}'")
+        except (CameraConnectionError, HardwareOperationError):
+            raise
         except Exception as e:
-            self.logger.warning(f"Failed to set balance ratios for camera '{self.camera_name}': {e}")
+            raise HardwareOperationError(f"Failed to set balance ratios for camera '{self.camera_name}': {e}") from e
 
     # ── Gamma ──
 
-    async def get_gamma_enable(self) -> bool:
-        """Get current gamma enable state."""
+    async def get_gamma_enable(self) -> Optional[bool]:
+        """Get the gamma enable state.
+
+        Returns:
+            True/False, or ``None`` when the camera has no gamma node.
+
+        Raises:
+            CameraConnectionError: If the camera is not initialized.
+            HardwareOperationError: If reading the feature fails.
+        """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        def _get():
+            feature = self._color_feature("GammaEnable")
+            if feature is None:
+                return None
+            return bool(feature.get())
+
         try:
-
-            def _get():
-                cam = self.camera
-                if cam.GammaEnable.is_implemented():
-                    return bool(cam.GammaEnable.get())
-                return False
-
             return await self._run_blocking(_get)
         except Exception as e:
-            self.logger.warning(f"Gamma not available for camera '{self.camera_name}': {e}")
-            return False
+            raise HardwareOperationError(f"Failed to read gamma enable for camera '{self.camera_name}': {e}") from e
 
     async def set_gamma_enable(self, enabled: bool):
         """Enable or disable in-camera gamma.
@@ -1078,183 +1188,255 @@ class DahengCameraBackend(CameraBackend):
         backends render with matched tone curves.
 
         Args:
-            enabled: True to enable sRGB gamma, False for linear output
+            enabled: True to enable sRGB gamma, False for linear output.
+
+        Raises:
+            CameraConnectionError: If the camera is not initialized.
+            HardwareOperationError: If the feature is unsupported or the
+                write fails.
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        def _set():
+            feature = self._color_feature("GammaEnable")
+            if feature is None:
+                raise HardwareOperationError(f"Gamma is not supported by camera '{self.camera_name}'")
+            if enabled:
+                mode = self._color_feature("GammaMode")
+                if mode is not None:
+                    mode.set(0)  # 0 = sRGB
+            feature.set(enabled)
+
         try:
-
-            def _set():
-                cam = self.camera
-                if enabled and cam.GammaMode.is_implemented():
-                    cam.GammaMode.set(0)  # 0 = sRGB
-                if cam.GammaEnable.is_implemented():
-                    cam.GammaEnable.set(enabled)
-
             await self._run_blocking(_set)
             self.logger.debug(f"Gamma enable set to {enabled} for camera '{self.camera_name}'")
+        except (CameraConnectionError, HardwareOperationError):
+            raise
         except Exception as e:
-            self.logger.warning(f"Failed to set gamma enable for camera '{self.camera_name}': {e}")
+            raise HardwareOperationError(f"Failed to set gamma enable for camera '{self.camera_name}': {e}") from e
 
     # ── Black Level ──
 
-    async def get_black_level(self) -> float:
-        """Get current black level."""
-        if not self.initialized or self.camera is None:
-            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
-        try:
+    async def get_black_level(self) -> Optional[float]:
+        """Get the current black level.
 
-            def _get():
-                cam = self.camera
-                if cam.BlackLevel.is_implemented():
-                    return float(cam.BlackLevel.get())
-                return 0.0
+        Returns:
+            Black level in camera units, or ``None`` when unsupported.
 
-            return await self._run_blocking(_get)
-        except Exception as e:
-            self.logger.warning(f"Black level not available for camera '{self.camera_name}': {e}")
-            return 0.0
-
-    async def set_black_level(self, level: float):
-        """Set black level (shadow floor).
-
-        Args:
-            level: Black level value in camera units
+        Raises:
+            CameraConnectionError: If the camera is not initialized.
+            HardwareOperationError: If reading the feature fails.
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        def _get():
+            feature = self._color_feature("BlackLevel")
+            if feature is None:
+                return None
+            return float(feature.get())
+
         try:
+            return await self._run_blocking(_get)
+        except Exception as e:
+            raise HardwareOperationError(f"Failed to read black level for camera '{self.camera_name}': {e}") from e
 
-            def _set():
-                cam = self.camera
-                if cam.BlackLevel.is_implemented():
-                    cam.BlackLevel.set(level)
+    async def set_black_level(self, level: float):
+        """Set the black level (shadow floor).
 
+        Args:
+            level: Black level value in camera units.
+
+        Raises:
+            CameraConnectionError: If the camera is not initialized.
+            HardwareOperationError: If the feature is unsupported or the
+                write fails.
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        def _set():
+            feature = self._color_feature("BlackLevel")
+            if feature is None:
+                raise HardwareOperationError(f"Black level is not supported by camera '{self.camera_name}'")
+            feature.set(level)
+
+        try:
             await self._run_blocking(_set)
             self.logger.debug(f"Black level set to {level} for camera '{self.camera_name}'")
+        except (CameraConnectionError, HardwareOperationError):
+            raise
         except Exception as e:
-            self.logger.warning(f"Failed to set black level for camera '{self.camera_name}': {e}")
+            raise HardwareOperationError(f"Failed to set black level for camera '{self.camera_name}': {e}") from e
 
     # ── Contrast ──
 
-    async def get_contrast(self) -> int:
-        """Get current contrast parameter."""
-        if not self.initialized or self.camera is None:
-            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
-        try:
+    async def get_contrast(self) -> Optional[int]:
+        """Get the current contrast parameter.
 
-            def _get():
-                cam = self.camera
-                if cam.ContrastParam.is_implemented():
-                    return int(cam.ContrastParam.get())
-                return 0
+        Returns:
+            Contrast value, or ``None`` when unsupported.
 
-            return await self._run_blocking(_get)
-        except Exception as e:
-            self.logger.warning(f"Contrast not available for camera '{self.camera_name}': {e}")
-            return 0
-
-    async def set_contrast(self, value: int):
-        """Set contrast parameter.
-
-        Args:
-            value: Contrast value in camera units
+        Raises:
+            CameraConnectionError: If the camera is not initialized.
+            HardwareOperationError: If reading the feature fails.
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        def _get():
+            feature = self._color_feature("ContrastParam")
+            if feature is None:
+                return None
+            return int(feature.get())
+
         try:
+            return await self._run_blocking(_get)
+        except Exception as e:
+            raise HardwareOperationError(f"Failed to read contrast for camera '{self.camera_name}': {e}") from e
 
-            def _set():
-                cam = self.camera
-                if cam.ContrastParam.is_implemented():
-                    cam.ContrastParam.set(int(value))
+    async def set_contrast(self, value: int):
+        """Set the contrast parameter.
 
+        Args:
+            value: Contrast value in camera units.
+
+        Raises:
+            CameraConnectionError: If the camera is not initialized.
+            HardwareOperationError: If the feature is unsupported or the
+                write fails.
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        def _set():
+            feature = self._color_feature("ContrastParam")
+            if feature is None:
+                raise HardwareOperationError(f"Contrast is not supported by camera '{self.camera_name}'")
+            feature.set(int(value))
+
+        try:
             await self._run_blocking(_set)
             self.logger.debug(f"Contrast set to {value} for camera '{self.camera_name}'")
+        except (CameraConnectionError, HardwareOperationError):
+            raise
         except Exception as e:
-            self.logger.warning(f"Failed to set contrast for camera '{self.camera_name}': {e}")
+            raise HardwareOperationError(f"Failed to set contrast for camera '{self.camera_name}': {e}") from e
 
     # ── Sharpness ──
 
-    async def get_sharpness(self) -> float:
-        """Get current sharpness value."""
-        if not self.initialized or self.camera is None:
-            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
-        try:
+    async def get_sharpness(self) -> Optional[float]:
+        """Get the current sharpness value.
 
-            def _get():
-                cam = self.camera
-                if cam.Sharpness.is_implemented():
-                    return float(cam.Sharpness.get())
-                return 0.0
+        Returns:
+            Sharpness value, or ``None`` when unsupported.
 
-            return await self._run_blocking(_get)
-        except Exception as e:
-            self.logger.warning(f"Sharpness not available for camera '{self.camera_name}': {e}")
-            return 0.0
-
-    async def set_sharpness(self, value: float):
-        """Set sharpness (edge enhancement) value.
-
-        Args:
-            value: Sharpness value in camera units
+        Raises:
+            CameraConnectionError: If the camera is not initialized.
+            HardwareOperationError: If reading the feature fails.
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        def _get():
+            feature = self._color_feature("Sharpness")
+            if feature is None:
+                return None
+            return float(feature.get())
+
         try:
+            return await self._run_blocking(_get)
+        except Exception as e:
+            raise HardwareOperationError(f"Failed to read sharpness for camera '{self.camera_name}': {e}") from e
 
-            def _set():
-                cam = self.camera
-                if cam.SharpnessMode.is_implemented():
-                    cam.SharpnessMode.set(1)  # 1 = ON
-                if cam.Sharpness.is_implemented():
-                    cam.Sharpness.set(value)
+    async def set_sharpness(self, value: float):
+        """Set the sharpness (edge enhancement) value.
 
+        Args:
+            value: Sharpness value in camera units.
+
+        Raises:
+            CameraConnectionError: If the camera is not initialized.
+            HardwareOperationError: If the feature is unsupported or the
+                write fails.
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        def _set():
+            feature = self._color_feature("Sharpness")
+            if feature is None:
+                raise HardwareOperationError(f"Sharpness is not supported by camera '{self.camera_name}'")
+            mode = self._color_feature("SharpnessMode")
+            if mode is not None:
+                mode.set(1)  # 1 = ON
+            feature.set(value)
+
+        try:
             await self._run_blocking(_set)
             self.logger.debug(f"Sharpness set to {value} for camera '{self.camera_name}'")
+        except (CameraConnectionError, HardwareOperationError):
+            raise
         except Exception as e:
-            self.logger.warning(f"Failed to set sharpness for camera '{self.camera_name}': {e}")
+            raise HardwareOperationError(f"Failed to set sharpness for camera '{self.camera_name}': {e}") from e
 
     # ── Saturation ──
 
-    async def get_saturation(self) -> int:
-        """Get current saturation value."""
-        if not self.initialized or self.camera is None:
-            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
-        try:
+    async def get_saturation(self) -> Optional[int]:
+        """Get the current saturation value.
 
-            def _get():
-                cam = self.camera
-                if cam.Saturation.is_implemented():
-                    return int(cam.Saturation.get())
-                return 0
+        Returns:
+            Saturation value, or ``None`` when unsupported.
 
-            return await self._run_blocking(_get)
-        except Exception as e:
-            self.logger.warning(f"Saturation not available for camera '{self.camera_name}': {e}")
-            return 0
-
-    async def set_saturation(self, value: int):
-        """Set color saturation value.
-
-        Args:
-            value: Saturation value in camera units
+        Raises:
+            CameraConnectionError: If the camera is not initialized.
+            HardwareOperationError: If reading the feature fails.
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        def _get():
+            feature = self._color_feature("Saturation")
+            if feature is None:
+                return None
+            return int(feature.get())
+
         try:
+            return await self._run_blocking(_get)
+        except Exception as e:
+            raise HardwareOperationError(f"Failed to read saturation for camera '{self.camera_name}': {e}") from e
 
-            def _set():
-                cam = self.camera
-                if cam.SaturationMode.is_implemented():
-                    cam.SaturationMode.set(1)  # 1 = ON
-                if cam.Saturation.is_implemented():
-                    cam.Saturation.set(int(value))
+    async def set_saturation(self, value: int):
+        """Set the color saturation value.
 
+        Args:
+            value: Saturation value in camera units.
+
+        Raises:
+            CameraConnectionError: If the camera is not initialized.
+            HardwareOperationError: If the feature is unsupported or the
+                write fails.
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        def _set():
+            feature = self._color_feature("Saturation")
+            if feature is None:
+                raise HardwareOperationError(f"Saturation is not supported by camera '{self.camera_name}'")
+            mode = self._color_feature("SaturationMode")
+            if mode is not None:
+                mode.set(1)  # 1 = ON
+            feature.set(int(value))
+
+        try:
             await self._run_blocking(_set)
             self.logger.debug(f"Saturation set to {value} for camera '{self.camera_name}'")
+        except (CameraConnectionError, HardwareOperationError):
+            raise
         except Exception as e:
-            self.logger.warning(f"Failed to set saturation for camera '{self.camera_name}': {e}")
+            raise HardwareOperationError(f"Failed to set saturation for camera '{self.camera_name}': {e}") from e
 
     # ── User Set (Save/Load/Default) ──
 
@@ -1481,6 +1663,34 @@ class DahengCameraBackend(CameraBackend):
             if "white_balance" in config_data:
                 await self.set_auto_wb_once(config_data["white_balance"])
 
+            # Color-correction settings: applied individually and tolerantly
+            # so a config exported from a better-equipped camera still loads.
+            color_setters = {
+                "gamma_enable": self.set_gamma_enable,
+                "black_level": self.set_black_level,
+                "color_transformation": self.set_color_transformation,
+                "light_source_preset": self.set_light_source_preset,
+                "contrast": self.set_contrast,
+                "sharpness": self.set_sharpness,
+                "saturation": self.set_saturation,
+            }
+            for key, setter in color_setters.items():
+                if key in config_data:
+                    try:
+                        await setter(config_data[key])
+                    except HardwareOperationError as e:
+                        self.logger.warning(f"Could not apply '{key}' from config for camera '{self.camera_name}': {e}")
+            if "balance_ratios" in config_data:
+                ratios = config_data["balance_ratios"] or {}
+                try:
+                    await self.set_balance_ratios(
+                        red=ratios.get("red"), green=ratios.get("green"), blue=ratios.get("blue")
+                    )
+                except HardwareOperationError as e:
+                    self.logger.warning(
+                        f"Could not apply 'balance_ratios' from config for camera '{self.camera_name}': {e}"
+                    )
+
             self.logger.debug(f"Configuration imported from '{config_path}' for camera '{self.camera_name}'")
         except CameraConfigurationError:
             raise
@@ -1509,6 +1719,27 @@ class DahengCameraBackend(CameraBackend):
                 "retrieve_retry_count": self.retrieve_retry_count,
                 "timeout_ms": self.timeout_ms,
             }
+
+            # Color-correction settings: exported only when the camera
+            # supports them (getters return None for unsupported features).
+            color_getters = {
+                "gamma_enable": self.get_gamma_enable,
+                "black_level": self.get_black_level,
+                "color_transformation": self.get_color_transformation,
+                "light_source_preset": self.get_light_source_preset,
+                "balance_ratios": self.get_balance_ratios,
+                "contrast": self.get_contrast,
+                "sharpness": self.get_sharpness,
+                "saturation": self.get_saturation,
+            }
+            for key, getter in color_getters.items():
+                try:
+                    value = await getter()
+                except Exception as e:
+                    self.logger.warning(f"Skipping '{key}' in config export for camera '{self.camera_name}': {e}")
+                    continue
+                if value is not None:
+                    config_data[key] = value
 
             os.makedirs(os.path.dirname(config_path), exist_ok=True)
 
