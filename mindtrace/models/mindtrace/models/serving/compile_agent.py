@@ -163,6 +163,8 @@ def _buildable_runtimes() -> set[str]:
         runtimes.add("openvino")
     if importlib.util.find_spec("tensorrt") is not None:
         runtimes.add("tensorrt")
+    if importlib.util.find_spec("executorch") is not None:
+        runtimes.add("executorch")
     return runtimes
 
 
