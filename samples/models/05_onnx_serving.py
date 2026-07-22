@@ -40,6 +40,11 @@ if not (_ORT_AVAILABLE and _TV_AVAILABLE):
 from mindtrace.models.serving.onnx.service import OnnxModelService
 from mindtrace.models.serving.schemas import PredictRequest, PredictResponse
 
+# Share CPU cores fairly when several sample scripts run concurrently
+# (e.g. the CI integration harness runs four at once); GPU runs are unaffected.
+if not torch.cuda.is_available():
+    torch.set_num_threads(max(1, (os.cpu_count() or 8) // 4))
+
 # ── Section: export ResNet-50 to ONNX ──────────────────────────────────────
 print("\n── Export ResNet-50 → ONNX ──")
 

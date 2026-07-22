@@ -17,18 +17,26 @@ using a small FX-traceable CNN so every step runs in seconds:
   6. Artifact integrity — compile for ort-cpu, checksum/verify the artifact,
      write a sidecar manifest, and show that tampering fails verification.
 
+Fast mode (MINDTRACE_SAMPLES_FAST set, or no CUDA GPU available) shrinks the
+subsets and calibration sets and caps the sensitivity-scan candidates so the
+sample finishes in well under a minute on a shared CPU; if the FashionMNIST
+download fails (no network), a synthetic dataset with the same
+shapes/classes is substituted.
+
 Run:
     python samples/models/11_edge_advanced_quantization.py
 """
 
 import copy
+import fcntl
+import os
 import shutil
 import time
 from pathlib import Path
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Subset, TensorDataset
 
 # ── Optional dependency guards ─────────────────────────────────────────────
 try:
@@ -70,22 +78,71 @@ from mindtrace.models.optimization.compile.base import verify_manifest, write_ma
 
 NUM_CLASSES = 10
 BATCH_SIZE = 32
-TRAIN_SAMPLES = 2000
-TEST_SAMPLES = 500
 INPUT_SHAPE = (1, 1, 28, 28)
 DATA_ROOT = Path("/tmp/mindtrace_samples/data")
 WORK_DIR = Path("/tmp/mindtrace_samples/edge_opt_11")
+
+# Fast mode: opt in via env var, or automatic when no CUDA GPU is available
+# (e.g. CPU-only CI). Full mode on a GPU machine is unchanged.
+FAST_MODE = bool(os.environ.get("MINDTRACE_SAMPLES_FAST")) or not torch.cuda.is_available()
+if FAST_MODE:
+    TRAIN_SAMPLES = 800
+    TEST_SAMPLES = 200
+    SCAN_SAMPLES = 32  # calibration samples per quantization pass
+    SCAN_TOP = 3  # cap on sensitivity-scan candidate nodes
+    # Leave room for sibling sample processes sharing the same cores.
+    torch.set_num_threads(max(1, (os.cpu_count() or 8) // 4))
+else:
+    TRAIN_SAMPLES = 2000
+    TEST_SAMPLES = 500
+    SCAN_SAMPLES = 128
+    SCAN_TOP = None  # library default (~12 candidates)
+
+
+def load_fashionmnist(train: bool, transform, sample_shape: tuple[int, int, int], num_samples: int):
+    """Load FashionMNIST, serialising the download across concurrent samples.
+
+    An ``fcntl.flock`` on a lockfile in the data directory ensures only one
+    sample process downloads the archives when several run concurrently. If
+    loading fails (e.g. no network access on CI), a synthetic
+    ``TensorDataset`` with the same tensor shapes and label classes is
+    returned so the sample still runs end to end.
+
+    Args:
+        train: Whether to load the training split.
+        transform: Torchvision transform applied to real dataset images.
+        sample_shape: Shape of one transformed image tensor (C, H, W).
+        num_samples: Size of the synthetic fallback dataset.
+
+    Returns:
+        A dataset yielding ``(image, label)`` pairs.
+    """
+    DATA_ROOT.mkdir(parents=True, exist_ok=True)
+    with (DATA_ROOT / ".fashionmnist.lock").open("w") as lock_file:
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            return datasets.FashionMNIST(DATA_ROOT, train=train, download=True, transform=transform)
+        except Exception as exc:  # noqa: BLE001 — any download/IO failure falls back
+            print(f"  WARNING: FashionMNIST load failed ({type(exc).__name__}: {exc})")
+            print("  network unavailable — using synthetic data; results are illustrative only")
+            generator = torch.Generator().manual_seed(0 if train else 1)
+            images = torch.rand((num_samples, *sample_shape), generator=generator)
+            labels = torch.randint(0, NUM_CLASSES, (num_samples,), generator=generator)
+            return TensorDataset(images, labels)
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def build_loaders() -> tuple[DataLoader, DataLoader]:
     """Build FashionMNIST train/test loaders at the native 1x28x28 size.
 
     Returns:
-        Tuple of (train_loader, test_loader) over 2000/500-image subsets.
+        Tuple of (train_loader, test_loader) over TRAIN_SAMPLES/TEST_SAMPLES
+        subsets.
     """
     transform = transforms.ToTensor()
-    train_ds = datasets.FashionMNIST(DATA_ROOT, train=True, download=True, transform=transform)
-    test_ds = datasets.FashionMNIST(DATA_ROOT, train=False, download=True, transform=transform)
+    train_ds = load_fashionmnist(True, transform, (1, 28, 28), TRAIN_SAMPLES)
+    test_ds = load_fashionmnist(False, transform, (1, 28, 28), TEST_SAMPLES)
     train_loader = DataLoader(
         Subset(train_ds, range(TRAIN_SAMPLES)), batch_size=BATCH_SIZE, shuffle=True, num_workers=2
     )
@@ -139,6 +196,13 @@ def main() -> None:
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     t_start = time.perf_counter()
 
+    if FAST_MODE:
+        print(
+            "[fast mode] MINDTRACE_SAMPLES_FAST set or no CUDA GPU — "
+            f"{TRAIN_SAMPLES}/{TEST_SAMPLES} subset, {SCAN_SAMPLES} calibration samples, "
+            f"sensitivity scan capped at {SCAN_TOP} nodes; run on a GPU for the full numbers"
+        )
+
     # ── Section: dataset + FP32 baseline ───────────────────────────────────
     print("\n── FashionMNIST dataset (1x28x28) + FP32 baseline ──")
     train_loader, test_loader = build_loaders()
@@ -189,19 +253,24 @@ def main() -> None:
         """Accuracy of an ONNX artifact on the test subset (via ORT CPU)."""
         return evaluate(OnnxModelAdapter(path), test_loader)
 
-    report = sensitivity_scan(fp32_onnx, onnx_accuracy, test_loader, samples=128)
+    report = sensitivity_scan(fp32_onnx, onnx_accuracy, test_loader, samples=SCAN_SAMPLES, top=SCAN_TOP)
     print(f"  baseline metric      : {report.baseline_metric:.4f}")
     print(f"  full-INT8 drop       : {report.full_quant_drop:+.4f}")
-    print("  top-5 most sensitive nodes (drop when quantized in isolation):")
-    for node_name, drop in report.top(5):
-        print(f"    {node_name:<40} {drop:+.4f}")
-    print("  (tiny model + 500-image eval subset — per-node drops are noisy;")
+    if FAST_MODE:
+        print(f"  top-{SCAN_TOP} most sensitive nodes (candidate scan capped in fast mode):")
+        for node_name, drop in report.top(SCAN_TOP):
+            print(f"    {node_name:<40} {drop:+.4f}")
+    else:
+        print("  top-5 most sensitive nodes (drop when quantized in isolation):")
+        for node_name, drop in report.top(5):
+            print(f"    {node_name:<40} {drop:+.4f}")
+    print(f"  (tiny model + {TEST_SAMPLES}-image eval subset — per-node drops are noisy;")
     print("   the ranking, not the third decimal, is the signal)")
 
     # ── Section: mixed-precision search under an accuracy budget ───────────
     print("\n── MixedPrecisionSearch: max_accuracy_drop=0.01 ──")
     search = MixedPrecisionSearch({"max_accuracy_drop": 0.01}, test_loader)
-    plan = search.run(fp32_onnx, onnx_accuracy, samples=128, output=WORK_DIR / "cnn_int8_mixed.onnx")
+    plan = search.run(fp32_onnx, onnx_accuracy, samples=SCAN_SAMPLES, output=WORK_DIR / "cnn_int8_mixed.onnx")
     if plan.nodes_to_exclude:
         print(f"  nodes kept in FP32 ({len(plan.nodes_to_exclude)}):")
         for node_name in plan.nodes_to_exclude:
