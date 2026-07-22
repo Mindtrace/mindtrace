@@ -133,6 +133,7 @@ class BaslerCameraBackend(CameraBackend):
         # Get backend-specific configuration with fallbacks
         pixel_format = backend_kwargs.get("pixel_format")
         buffer_count = backend_kwargs.get("buffer_count")
+        self.color_defaults: bool = bool(backend_kwargs.get("color_defaults", True))
         timeout_ms = backend_kwargs.get("timeout_ms")
 
         if pixel_format is None:
@@ -582,6 +583,11 @@ class BaslerCameraBackend(CameraBackend):
         Node availability is model-dependent; missing attributes and
         insufficient access modes are treated as unavailable.
 
+        Must be called on the camera executor thread (inside a
+        ``_run_blocking`` closure): node attribute access and
+        ``GetAccessMode()`` can be GigE network operations and are subject to
+        the pypylon thread-affinity requirement documented on this class.
+
         Args:
             names: Candidate node names, tried in order
             writable: If True, only accept nodes with RW access
@@ -595,6 +601,29 @@ class BaslerCameraBackend(CameraBackend):
                 continue
             if mode == genicam.RW or (not writable and mode == genicam.RO):
                 return node
+        return None
+
+    @staticmethod
+    def _enum_symbol(node, wanted: str):
+        """Return the node's enum symbol matching *wanted* case-insensitively.
+
+        Different pylon device families spell enum entries differently (e.g.
+        ``sRGB`` vs ``sRgb``); matching against ``GetSymbolics()`` avoids
+        guessing. Must run on the camera executor thread.
+
+        Args:
+            node: A pylon enum node.
+            wanted: Desired symbol, compared case-insensitively.
+
+        Returns:
+            The exact symbol string, or ``None`` when not offered.
+        """
+        try:
+            for symbol in node.GetSymbolics():
+                if str(symbol).lower() == wanted.lower():
+                    return symbol
+        except Exception:
+            pass
         return None
 
     async def _ensure_grabbing(self):
@@ -691,15 +720,26 @@ class BaslerCameraBackend(CameraBackend):
             self.triggermode = "trigger"
 
             # Color-correction defaults: sRGB gamma on, black level 0, for
-            # rendering matched with the Daheng backend (nodes are model-dependent)
+            # rendering matched with the Daheng backend (nodes are
+            # model-dependent; ace2/boost families use BslColorSpace). Gated
+            # by the color_defaults kwarg so tuned deployments are not
+            # clobbered on reconnect; imported config files apply afterwards.
             def _set_color_defaults():
                 try:
-                    node = self._find_node("GammaEnable", writable=True)
-                    if node is not None:
-                        node.SetValue(True)
-                    node = self._find_node("GammaSelector", writable=True)
-                    if node is not None:
-                        node.SetValue("sRGB")
+                    enable_node = self._find_node("GammaEnable", writable=True)
+                    if enable_node is not None:
+                        enable_node.SetValue(True)
+                    selector_node = self._find_node("GammaSelector", writable=True)
+                    if selector_node is not None:
+                        symbol = self._enum_symbol(selector_node, "sRGB")
+                        if symbol is not None:
+                            selector_node.SetValue(symbol)
+                    if enable_node is None and selector_node is None:
+                        colorspace_node = self._find_node("BslColorSpace", writable=True)
+                        if colorspace_node is not None:
+                            symbol = self._enum_symbol(colorspace_node, "srgb")
+                            if symbol is not None:
+                                colorspace_node.SetValue(symbol)
                     node = self._find_node("BlackLevel", writable=True)
                     if node is not None:
                         node.SetValue(0.0)
@@ -710,7 +750,8 @@ class BaslerCameraBackend(CameraBackend):
                 except Exception as color_error:
                     self.logger.warning(f"Could not apply color-correction defaults: {color_error}")
 
-            await self._run_blocking(_set_color_defaults, timeout=self._op_timeout_s)
+            if self.color_defaults:
+                await self._run_blocking(_set_color_defaults, timeout=self._op_timeout_s)
 
             # Configure multicast streaming BEFORE starting grabbing if enabled
             # This is critical for proper multicast setup
@@ -2351,8 +2392,19 @@ class BaslerCameraBackend(CameraBackend):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
         assert genicam is not None, "camera is initialized but genicam is not available"
 
+    # ── Color Correction ──
+    #
+    # Thread affinity: every pypylon node operation below (including node
+    # resolution via _find_node) runs inside a _run_blocking closure on the
+    # camera's dedicated executor thread; the event loop thread never touches
+    # the SDK. The camera is opened via _ensure_open(), which already routes
+    # through _run_blocking.
+
     async def get_gamma_enable(self) -> Optional[bool]:
         """Get whether in-camera gamma is enabled.
+
+        Checks ``GammaEnable``, then ``GammaSelector`` (sRGB vs User), then
+        ``BslColorSpace`` (ace2/boost families express sRGB there).
 
         Returns:
             True/False, or None if the camera exposes no gamma node
@@ -2363,17 +2415,24 @@ class BaslerCameraBackend(CameraBackend):
         """
         self._require_initialized()
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
+            await self._ensure_open()
 
-            node = self._find_node("GammaEnable")
-            if node is not None:
-                return bool(await self._run_blocking(node.GetValue, timeout=self._op_timeout_s))
-            node = self._find_node("GammaSelector")
-            if node is not None:
-                return await self._run_blocking(node.GetValue, timeout=self._op_timeout_s) == "sRGB"
-            self.logger.warning(f"Gamma feature not available on camera '{self.camera_name}'")
-            return None
+            def _get():
+                node = self._find_node("GammaEnable")
+                if node is not None:
+                    return bool(node.GetValue())
+                node = self._find_node("GammaSelector")
+                if node is not None:
+                    return str(node.GetValue()).lower() == "srgb"
+                node = self._find_node("BslColorSpace")
+                if node is not None:
+                    return "srgb" in str(node.GetValue()).lower()
+                return None
+
+            value = await self._run_blocking(_get, timeout=self._op_timeout_s)
+            if value is None:
+                self.logger.warning(f"Gamma feature not available on camera '{self.camera_name}'")
+            return value
         except CameraConnectionError:
             raise
         except Exception as e:
@@ -2383,8 +2442,11 @@ class BaslerCameraBackend(CameraBackend):
     async def set_gamma_enable(self, enabled: bool):
         """Enable or disable in-camera gamma.
 
-        When enabling, the sRGB gamma curve is selected so both supported
-        backends render with matched tone curves.
+        When enabling, the sRGB curve is selected; when disabling, models
+        that only expose ``GammaSelector`` are set to ``User`` and models
+        that express gamma via ``BslColorSpace`` (ace2/boost) are set to the
+        linear/off color space — a disable request is never silently
+        dropped.
 
         Args:
             enabled: True to enable sRGB gamma, False for linear output
@@ -2395,25 +2457,44 @@ class BaslerCameraBackend(CameraBackend):
         """
         self._require_initialized()
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
+            await self._ensure_open()
 
-            enable_node = self._find_node("GammaEnable", writable=True)
-            selector_node = self._find_node("GammaSelector", writable=True)
-            if enable_node is None and selector_node is None:
-                raise HardwareOperationError(f"Gamma feature not writable on camera '{self.camera_name}'")
+            def _set():
+                enable_node = self._find_node("GammaEnable", writable=True)
+                selector_node = self._find_node("GammaSelector", writable=True)
+                colorspace_node = self._find_node("BslColorSpace", writable=True)
+                if enable_node is None and selector_node is None and colorspace_node is None:
+                    raise HardwareOperationError(f"Gamma feature not writable on camera '{self.camera_name}'")
 
-            if enable_node is not None:
-                await self._run_blocking(enable_node.SetValue, enabled, timeout=self._op_timeout_s)
-                actual = await self._run_blocking(enable_node.GetValue, timeout=self._op_timeout_s)
-                if bool(actual) != enabled:
-                    raise HardwareOperationError(
-                        f"Failed to set gamma enable for camera '{self.camera_name}'. "
-                        f"Target: {enabled}, Actual: {actual}"
-                    )
-            if enabled and selector_node is not None:
-                await self._run_blocking(selector_node.SetValue, "sRGB", timeout=self._op_timeout_s)
+                if enable_node is not None:
+                    enable_node.SetValue(enabled)
+                    actual = enable_node.GetValue()
+                    if bool(actual) != enabled:
+                        raise HardwareOperationError(
+                            f"Failed to set gamma enable for camera '{self.camera_name}'. "
+                            f"Target: {enabled}, Actual: {actual}"
+                        )
+                if selector_node is not None:
+                    wanted = "sRGB" if enabled else "User"
+                    symbol = self._enum_symbol(selector_node, wanted)
+                    if symbol is not None:
+                        selector_node.SetValue(symbol)
+                    elif enable_node is None:
+                        raise HardwareOperationError(
+                            f"GammaSelector on camera '{self.camera_name}' offers no '{wanted}' entry; "
+                            f"cannot express gamma {'on' if enabled else 'off'}."
+                        )
+                if enable_node is None and selector_node is None and colorspace_node is not None:
+                    wanted = "srgb" if enabled else "off"
+                    symbol = self._enum_symbol(colorspace_node, wanted)
+                    if symbol is None:
+                        raise HardwareOperationError(
+                            f"BslColorSpace on camera '{self.camera_name}' offers no '{wanted}' entry; "
+                            f"cannot express gamma {'on' if enabled else 'off'}."
+                        )
+                    colorspace_node.SetValue(symbol)
 
+            await self._run_blocking(_set, timeout=self._op_timeout_s)
             self.logger.debug(f"Gamma enable set to {enabled} for camera '{self.camera_name}'")
         except (CameraConnectionError, HardwareOperationError):
             raise
@@ -2433,14 +2514,18 @@ class BaslerCameraBackend(CameraBackend):
         """
         self._require_initialized()
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
+            await self._ensure_open()
 
-            node = self._find_node("BlackLevel", "BlackLevelRaw")
-            if node is None:
+            def _get():
+                node = self._find_node("BlackLevel", "BlackLevelRaw")
+                if node is None:
+                    return None
+                return float(node.GetValue())
+
+            value = await self._run_blocking(_get, timeout=self._op_timeout_s)
+            if value is None:
                 self.logger.warning(f"BlackLevel feature not available on camera '{self.camera_name}'")
-                return None
-            return float(await self._run_blocking(node.GetValue, timeout=self._op_timeout_s))
+            return value
         except CameraConnectionError:
             raise
         except Exception as e:
@@ -2459,19 +2544,20 @@ class BaslerCameraBackend(CameraBackend):
         """
         self._require_initialized()
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
+            await self._ensure_open()
 
-            node = self._find_node("BlackLevel", writable=True)
-            if node is not None:
-                await self._run_blocking(node.SetValue, float(level), timeout=self._op_timeout_s)
-            else:
+            def _set():
+                node = self._find_node("BlackLevel", writable=True)
+                if node is not None:
+                    node.SetValue(float(level))
+                    return
                 # Older acA GigE models expose the integer raw node instead
                 node = self._find_node("BlackLevelRaw", writable=True)
                 if node is None:
                     raise HardwareOperationError(f"BlackLevel feature not writable on camera '{self.camera_name}'")
-                await self._run_blocking(node.SetValue, int(round(level)), timeout=self._op_timeout_s)
+                node.SetValue(int(round(level)))
 
+            await self._run_blocking(_set, timeout=self._op_timeout_s)
             self.logger.debug(f"Black level set to {level} for camera '{self.camera_name}'")
         except (CameraConnectionError, HardwareOperationError):
             raise
@@ -2491,14 +2577,18 @@ class BaslerCameraBackend(CameraBackend):
         """
         self._require_initialized()
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
+            await self._ensure_open()
 
-            node = self._find_node("ColorTransformationEnable")
-            if node is None:
+            def _get():
+                node = self._find_node("ColorTransformationEnable")
+                if node is None:
+                    return None
+                return bool(node.GetValue())
+
+            value = await self._run_blocking(_get, timeout=self._op_timeout_s)
+            if value is None:
                 self.logger.warning(f"ColorTransformation feature not available on camera '{self.camera_name}'")
-                return None
-            return bool(await self._run_blocking(node.GetValue, timeout=self._op_timeout_s))
+            return value
         except CameraConnectionError:
             raise
         except Exception as e:
@@ -2517,13 +2607,17 @@ class BaslerCameraBackend(CameraBackend):
         """
         self._require_initialized()
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
+            await self._ensure_open()
 
-            node = self._find_node("ColorTransformationEnable", writable=True)
-            if node is None:
-                raise HardwareOperationError(f"ColorTransformation feature not writable on camera '{self.camera_name}'")
-            await self._run_blocking(node.SetValue, enabled, timeout=self._op_timeout_s)
+            def _set():
+                node = self._find_node("ColorTransformationEnable", writable=True)
+                if node is None:
+                    raise HardwareOperationError(
+                        f"ColorTransformation feature not writable on camera '{self.camera_name}'"
+                    )
+                node.SetValue(enabled)
+
+            await self._run_blocking(_set, timeout=self._op_timeout_s)
             self.logger.debug(f"Color transformation set to {enabled} for camera '{self.camera_name}'")
         except (CameraConnectionError, HardwareOperationError):
             raise
@@ -2543,14 +2637,18 @@ class BaslerCameraBackend(CameraBackend):
         """
         self._require_initialized()
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
+            await self._ensure_open()
 
-            node = self._find_node("LightSourcePreset")
-            if node is None:
+            def _get():
+                node = self._find_node("LightSourcePreset")
+                if node is None:
+                    return None
+                return str(node.GetValue())
+
+            value = await self._run_blocking(_get, timeout=self._op_timeout_s)
+            if value is None:
                 self.logger.warning(f"LightSourcePreset feature not available on camera '{self.camera_name}'")
-                return None
-            return str(await self._run_blocking(node.GetValue, timeout=self._op_timeout_s))
+            return value
         except CameraConnectionError:
             raise
         except Exception as e:
@@ -2570,24 +2668,33 @@ class BaslerCameraBackend(CameraBackend):
         """
         self._require_initialized()
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
+            await self._ensure_open()
 
-            node = self._find_node("LightSourcePreset", writable=True)
-            if node is None:
-                raise HardwareOperationError(f"LightSourcePreset feature not writable on camera '{self.camera_name}'")
+            def _set():
+                # Validation outcome is returned (not raised) because
+                # _run_blocking wraps closure exceptions in
+                # HardwareOperationError, which would mask the
+                # CameraConfigurationError contract for invalid presets.
+                node = self._find_node("LightSourcePreset", writable=True)
+                if node is None:
+                    raise HardwareOperationError(
+                        f"LightSourcePreset feature not writable on camera '{self.camera_name}'"
+                    )
+                try:
+                    valid_presets = list(node.GetSymbolics())
+                except Exception:
+                    valid_presets = None
+                if valid_presets is not None and preset not in valid_presets:
+                    return valid_presets
+                node.SetValue(preset)
+                return None
 
-            try:
-                valid_presets = list(node.GetSymbolics())
-            except Exception:
-                valid_presets = None
-            if valid_presets is not None and preset not in valid_presets:
+            invalid_presets = await self._run_blocking(_set, timeout=self._op_timeout_s)
+            if invalid_presets is not None:
                 raise CameraConfigurationError(
                     f"Invalid light source preset '{preset}' for camera '{self.camera_name}'. "
-                    f"Available presets: {valid_presets}"
+                    f"Available presets: {invalid_presets}"
                 )
-
-            await self._run_blocking(node.SetValue, preset, timeout=self._op_timeout_s)
             self.logger.debug(f"Light source preset set to '{preset}' for camera '{self.camera_name}'")
         except (CameraConnectionError, CameraConfigurationError, HardwareOperationError):
             raise
@@ -2607,23 +2714,23 @@ class BaslerCameraBackend(CameraBackend):
         """
         self._require_initialized()
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
-
-            selector = self._find_node("BalanceRatioSelector", writable=True)
-            ratio = self._find_node("BalanceRatio", "BalanceRatioAbs")
-            if selector is None or ratio is None:
-                self.logger.warning(f"BalanceRatio feature not available on camera '{self.camera_name}'")
-                return None
+            await self._ensure_open()
 
             def _get():
+                selector = self._find_node("BalanceRatioSelector", writable=True)
+                ratio = self._find_node("BalanceRatio", "BalanceRatioAbs")
+                if selector is None or ratio is None:
+                    return None
                 ratios = {}
                 for channel in ("Red", "Green", "Blue"):
                     selector.SetValue(channel)
                     ratios[channel.lower()] = float(ratio.GetValue())
                 return ratios
 
-            return await self._run_blocking(_get, timeout=self._op_timeout_s)
+            value = await self._run_blocking(_get, timeout=self._op_timeout_s)
+            if value is None:
+                self.logger.warning(f"BalanceRatio feature not available on camera '{self.camera_name}'")
+            return value
         except CameraConnectionError:
             raise
         except Exception as e:
@@ -2649,15 +2756,13 @@ class BaslerCameraBackend(CameraBackend):
         """
         self._require_initialized()
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
-
-            selector = self._find_node("BalanceRatioSelector", writable=True)
-            ratio = self._find_node("BalanceRatio", "BalanceRatioAbs", writable=True)
-            if selector is None or ratio is None:
-                raise HardwareOperationError(f"BalanceRatio feature not writable on camera '{self.camera_name}'")
+            await self._ensure_open()
 
             def _set():
+                selector = self._find_node("BalanceRatioSelector", writable=True)
+                ratio = self._find_node("BalanceRatio", "BalanceRatioAbs", writable=True)
+                if selector is None or ratio is None:
+                    raise HardwareOperationError(f"BalanceRatio feature not writable on camera '{self.camera_name}'")
                 for channel, value in (("Red", red), ("Green", green), ("Blue", blue)):
                     if value is not None:
                         selector.SetValue(channel)
@@ -2683,14 +2788,18 @@ class BaslerCameraBackend(CameraBackend):
         """
         self._require_initialized()
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
+            await self._ensure_open()
 
-            node = self._find_node("BslContrast", "Contrast")
-            if node is None:
+            def _get():
+                node = self._find_node("BslContrast", "Contrast")
+                if node is None:
+                    return None
+                return float(node.GetValue())
+
+            value = await self._run_blocking(_get, timeout=self._op_timeout_s)
+            if value is None:
                 self.logger.warning(f"Contrast feature not available on camera '{self.camera_name}'")
-                return None
-            return float(await self._run_blocking(node.GetValue, timeout=self._op_timeout_s))
+            return value
         except CameraConnectionError:
             raise
         except Exception as e:
@@ -2709,13 +2818,15 @@ class BaslerCameraBackend(CameraBackend):
         """
         self._require_initialized()
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
+            await self._ensure_open()
 
-            node = self._find_node("BslContrast", "Contrast", writable=True)
-            if node is None:
-                raise HardwareOperationError(f"Contrast feature not writable on camera '{self.camera_name}'")
-            await self._run_blocking(node.SetValue, float(value), timeout=self._op_timeout_s)
+            def _set():
+                node = self._find_node("BslContrast", "Contrast", writable=True)
+                if node is None:
+                    raise HardwareOperationError(f"Contrast feature not writable on camera '{self.camera_name}'")
+                node.SetValue(float(value))
+
+            await self._run_blocking(_set, timeout=self._op_timeout_s)
             self.logger.debug(f"Contrast set to {value} for camera '{self.camera_name}'")
         except (CameraConnectionError, HardwareOperationError):
             raise
@@ -2735,14 +2846,18 @@ class BaslerCameraBackend(CameraBackend):
         """
         self._require_initialized()
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
+            await self._ensure_open()
 
-            node = self._find_node("SharpnessEnhancement", "BslSharpnessEnhancement")
-            if node is None:
+            def _get():
+                node = self._find_node("SharpnessEnhancement", "BslSharpnessEnhancement")
+                if node is None:
+                    return None
+                return float(node.GetValue())
+
+            value = await self._run_blocking(_get, timeout=self._op_timeout_s)
+            if value is None:
                 self.logger.warning(f"Sharpness feature not available on camera '{self.camera_name}'")
-                return None
-            return float(await self._run_blocking(node.GetValue, timeout=self._op_timeout_s))
+            return value
         except CameraConnectionError:
             raise
         except Exception as e:
@@ -2761,13 +2876,15 @@ class BaslerCameraBackend(CameraBackend):
         """
         self._require_initialized()
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
+            await self._ensure_open()
 
-            node = self._find_node("SharpnessEnhancement", "BslSharpnessEnhancement", writable=True)
-            if node is None:
-                raise HardwareOperationError(f"Sharpness feature not writable on camera '{self.camera_name}'")
-            await self._run_blocking(node.SetValue, float(value), timeout=self._op_timeout_s)
+            def _set():
+                node = self._find_node("SharpnessEnhancement", "BslSharpnessEnhancement", writable=True)
+                if node is None:
+                    raise HardwareOperationError(f"Sharpness feature not writable on camera '{self.camera_name}'")
+                node.SetValue(float(value))
+
+            await self._run_blocking(_set, timeout=self._op_timeout_s)
             self.logger.debug(f"Sharpness set to {value} for camera '{self.camera_name}'")
         except (CameraConnectionError, HardwareOperationError):
             raise
@@ -2787,14 +2904,18 @@ class BaslerCameraBackend(CameraBackend):
         """
         self._require_initialized()
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
+            await self._ensure_open()
 
-            node = self._find_node("BslSaturation", "BslSaturationValue")
-            if node is None:
+            def _get():
+                node = self._find_node("BslSaturation", "BslSaturationValue")
+                if node is None:
+                    return None
+                return float(node.GetValue())
+
+            value = await self._run_blocking(_get, timeout=self._op_timeout_s)
+            if value is None:
                 self.logger.warning(f"Saturation feature not available on camera '{self.camera_name}'")
-                return None
-            return float(await self._run_blocking(node.GetValue, timeout=self._op_timeout_s))
+            return value
         except CameraConnectionError:
             raise
         except Exception as e:
@@ -2813,13 +2934,15 @@ class BaslerCameraBackend(CameraBackend):
         """
         self._require_initialized()
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
+            await self._ensure_open()
 
-            node = self._find_node("BslSaturation", "BslSaturationValue", writable=True)
-            if node is None:
-                raise HardwareOperationError(f"Saturation feature not writable on camera '{self.camera_name}'")
-            await self._run_blocking(node.SetValue, float(value), timeout=self._op_timeout_s)
+            def _set():
+                node = self._find_node("BslSaturation", "BslSaturationValue", writable=True)
+                if node is None:
+                    raise HardwareOperationError(f"Saturation feature not writable on camera '{self.camera_name}'")
+                node.SetValue(float(value))
+
+            await self._run_blocking(_set, timeout=self._op_timeout_s)
             self.logger.debug(f"Saturation set to {value} for camera '{self.camera_name}'")
         except (CameraConnectionError, HardwareOperationError):
             raise

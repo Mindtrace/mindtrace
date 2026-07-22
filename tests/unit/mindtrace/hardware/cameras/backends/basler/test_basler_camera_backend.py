@@ -143,6 +143,7 @@ class MockPylonCamera:
         )
         self._balance_ratio_selector_param = MockEnumParameter("Red", ["Red", "Green", "Blue"])
         self._balance_ratio_param = MockBalanceRatioParameter(self._balance_ratio_selector_param)
+        self._bsl_color_space_param = MockEnumParameter("Off", ["Off", "sRGB"])
         self._sharpness_enhancement_param = MockParameter(1.0, min_val=0.0, max_val=3.98)
         self._bsl_saturation_param = MockParameter(1.0, min_val=0.0, max_val=2.0)
 
@@ -279,6 +280,10 @@ class MockPylonCamera:
     @property
     def BalanceRatio(self):
         return self._balance_ratio_param
+
+    @property
+    def BslColorSpace(self):
+        return self._bsl_color_space_param
 
     @property
     def SharpnessEnhancement(self):
@@ -1137,6 +1142,48 @@ class TestBaslerColorCorrection:
         """Test color methods raise when the camera is not initialized."""
         with pytest.raises(CameraConnectionError, match="not initialized"):
             await basler_camera.set_gamma_enable(True)
+
+    @pytest.mark.asyncio
+    async def test_disable_gamma_on_selector_only_model(self, basler_camera, monkeypatch):
+        """Disabling gamma must write GammaSelector=User when no GammaEnable exists."""
+        await basler_camera.initialize()
+        monkeypatch.setattr(basler_camera.camera.GammaEnable, "GetAccessMode", lambda: "NA")
+
+        await basler_camera.set_gamma_enable(False)
+        assert basler_camera.camera.GammaSelector.GetValue() == "User"
+        assert await basler_camera.get_gamma_enable() is False
+
+        await basler_camera.set_gamma_enable(True)
+        assert basler_camera.camera.GammaSelector.GetValue() == "sRGB"
+        assert await basler_camera.get_gamma_enable() is True
+
+    @pytest.mark.asyncio
+    async def test_gamma_via_bsl_color_space(self, basler_camera, monkeypatch):
+        """ace2/boost-style models express sRGB through BslColorSpace."""
+        await basler_camera.initialize()
+        monkeypatch.setattr(basler_camera.camera.GammaEnable, "GetAccessMode", lambda: "NA")
+        monkeypatch.setattr(basler_camera.camera.GammaSelector, "GetAccessMode", lambda: "NA")
+
+        await basler_camera.set_gamma_enable(True)
+        assert basler_camera.camera.BslColorSpace.GetValue() == "sRGB"
+        assert await basler_camera.get_gamma_enable() is True
+
+        await basler_camera.set_gamma_enable(False)
+        assert basler_camera.camera.BslColorSpace.GetValue() == "Off"
+        assert await basler_camera.get_gamma_enable() is False
+
+    @pytest.mark.asyncio
+    async def test_color_defaults_can_be_disabled(self, mock_pypylon):
+        """color_defaults=False must leave camera color state untouched on connect."""
+        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+
+        camera = BaslerCameraBackend(camera_name="Camera_12345670", color_defaults=False)
+        await camera.initialize()
+        try:
+            assert camera.camera.GammaEnable.GetValue() is False  # factory state preserved
+            assert camera.camera.BlackLevel.GetValue() == 4.0
+        finally:
+            await camera.close()
 
     @pytest.mark.asyncio
     async def test_configure_camera_applies_color_defaults(self, basler_camera):
