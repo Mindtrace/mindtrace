@@ -20,7 +20,6 @@ import torch
 from torch import nn
 
 from mindtrace.models.optimization.compile import CompiledArtifact, compile_model
-from mindtrace.models.optimization.compile import executorch as executorch_backend
 
 pytest.importorskip("executorch.exir", reason="executorch is not installed")
 
@@ -129,7 +128,11 @@ def test_executorch_missing_opts_raise_explanatory_value_error(tiny_onnx: Path, 
 def test_executorch_missing_raises_import_error_with_hint(
     tiny_onnx: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    monkeypatch.setattr(executorch_backend, "_EXECUTORCH_AVAILABLE", False)
+    import sys
+
+    # Simulate an uninstalled executorch: a None sys.modules entry makes the
+    # backend's lazy "from executorch.exir import to_edge" raise ImportError.
+    monkeypatch.setitem(sys.modules, "executorch.exir", None)
     with pytest.raises(ImportError, match=r"pip install mindtrace-models\[executorch\]"):
         compile_model(
             tiny_onnx,

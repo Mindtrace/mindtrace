@@ -15,6 +15,7 @@ installed; compiling raises a clear :class:`ImportError` at call time instead.
 
 from __future__ import annotations
 
+import logging
 from importlib import metadata
 from pathlib import Path
 from typing import Any
@@ -24,21 +25,40 @@ import torch
 from mindtrace.models.optimization.compile.base import CompiledArtifact, register_compiler
 from mindtrace.models.optimization.targets import TargetSpec
 
-# ---------------------------------------------------------------------------
-# Optional ExecuTorch import
-# ---------------------------------------------------------------------------
-try:
-    from executorch.exir import to_edge
-
-    _EXECUTORCH_AVAILABLE = True
-except ImportError:  # pragma: no cover
-    to_edge = None  # type: ignore[assignment]
-    _EXECUTORCH_AVAILABLE = False
-
 _EXECUTORCH_INSTALL_MSG = (
     "ExecuTorch is required for the 'executorch' compile backend. "
     "Install it with: pip install mindtrace-models[executorch]"
 )
+
+
+def _load_to_edge():
+    """Import ``executorch.exir.to_edge`` lazily.
+
+    The ExecuTorch import pulls in torchao and a large dependency tree that
+    both slows imports and emits deprecation log noise, so it is deferred to
+    the first actual compile instead of module import time.  torchao's import
+    additionally logs an upstream ``register_constant`` deprecation notice
+    through the ``torch.utils._pytree`` logger; that logger is temporarily
+    raised to ERROR around the import since the notice is torchao's to fix,
+    not the caller's.
+
+    Returns:
+        The ``to_edge`` entry point.
+
+    Raises:
+        ImportError: If ExecuTorch is not installed.
+    """
+    pytree_logger = logging.getLogger("torch.utils._pytree")
+    previous_level = pytree_logger.level
+    pytree_logger.setLevel(logging.ERROR)
+    try:
+        from executorch.exir import to_edge
+    except ImportError as exc:
+        raise ImportError(_EXECUTORCH_INSTALL_MSG) from exc
+    finally:
+        pytree_logger.setLevel(previous_level)
+    return to_edge
+
 
 __all__ = ["compile_executorch"]
 
@@ -86,8 +106,7 @@ def compile_executorch(onnx_path: Path, target: TargetSpec, output_dir: Path, **
         ValueError: If ``module`` or ``example_input`` is missing from
             ``opts``.
     """
-    if not _EXECUTORCH_AVAILABLE:
-        raise ImportError(_EXECUTORCH_INSTALL_MSG)
+    to_edge = _load_to_edge()
 
     module = opts.get("module")
     example_input = opts.get("example_input")

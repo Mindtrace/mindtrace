@@ -8,12 +8,31 @@ to a true INT8 model (``convert_fx``) afterwards via :meth:`QATCallback.convert`
 from __future__ import annotations
 
 import copy
+import warnings
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 import torch
 import torch.nn as nn
 
 from mindtrace.models.training.callbacks import Callback
+
+
+@contextmanager
+def _suppress_torch_ao_deprecations():
+    """Silence upstream torch.ao deprecation chatter around prepare/convert.
+
+    torch.ao's own default qconfigs emit two UserWarnings on every QAT run
+    ("reduce_range will be deprecated" and "torch.quantize_per_tensor ... is
+    deprecated", see pytorch/pytorch#184982).  They are upstream notices about
+    torch.ao's planned replacement by torchao pt2e — nothing the caller can
+    act on — so they are filtered here, narrowly by message.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=".*reduce_range will be deprecated.*", category=UserWarning)
+        warnings.filterwarnings("ignore", message=".*quantize_per_tensor.*deprecated.*", category=UserWarning)
+        yield
+
 
 if TYPE_CHECKING:
     from mindtrace.models.training.trainer import Trainer
@@ -165,7 +184,8 @@ class QATCallback(Callback):
 
         self.prepared_model.eval()
         prepared_cpu = copy.deepcopy(self.prepared_model).cpu()
-        self.converted_model = convert_fx(prepared_cpu)
+        with _suppress_torch_ao_deprecations():
+            self.converted_model = convert_fx(prepared_cpu)
         self.logger.info("QATCallback: converted prepared model to INT8 (backend=%s).", self.backend)
         return self.converted_model
 
@@ -216,7 +236,8 @@ class QATCallback(Callback):
 
         model_copy = copy.deepcopy(trainer.model)
         model_copy.train()
-        prepared = prepare_qat_fx(model_copy, qconfig_mapping, example_inputs)
+        with _suppress_torch_ao_deprecations():
+            prepared = prepare_qat_fx(model_copy, qconfig_mapping, example_inputs)
         prepared.to(trainer.device)
         prepared.train()
 
