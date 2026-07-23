@@ -217,7 +217,6 @@ def import_flowers102(datalake: Datalake, config: Flowers102ImportConfig) -> Flo
                 asset_metadata=provenance,
                 size_bytes=len(image_bytes),
                 created_by=config.created_by,
-                on_conflict="overwrite",
             )
             image_asset_count += 1
 
