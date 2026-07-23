@@ -21,14 +21,24 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+import-flowers102 = [
+    "scipy>=1.11.0",
+    "torchvision>=0.20.0",
+]
 export-huggingface = [
     "datasets>=2.19.0",
+]
+dataloaders = [
+    "datasets>=2.19.0",
+    "torch>=2.5.0",
+    "torchvision>=0.20.0",
 ]
 export-all = [
     "datasets>=2.19.0",
 ]
 
 [project.scripts]
+mindtrace-datalake-import-flowers102 = "mindtrace.datalake.importers.flowers102:main"
 mindtrace-datalake-import-pascal-voc = "mindtrace.datalake.importers.pascal_voc:main"
 
 [project.entry-points."mindtrace.benchmark_suites"]

@@ -124,6 +124,8 @@ __all__ = [
     "ExportableItem",
     "export_dataset_to_format",
     "get_dataset_exporter",
+    "Flowers102ImportConfig",
+    "Flowers102ImportSummary",
     "SlowOperationDisabledError",
     "SlowOperationWarning",
     "SlowOpsPolicy",
@@ -178,6 +180,7 @@ __all__ = [
     "ResolvedDatum",
     "ReplicationRule",
     "ReplicationTask",
+    "import_flowers102",
     "import_pascal_voc",
     "ObjectPayloadDescriptor",
     "StorageRef",
@@ -187,6 +190,15 @@ __all__ = [
 
 
 def __getattr__(name: str):
+    if name in {"Flowers102ImportConfig", "Flowers102ImportSummary", "import_flowers102"}:
+        from .importers import Flowers102ImportConfig, Flowers102ImportSummary, import_flowers102
+
+        exports = {
+            "Flowers102ImportConfig": Flowers102ImportConfig,
+            "Flowers102ImportSummary": Flowers102ImportSummary,
+            "import_flowers102": import_flowers102,
+        }
+        return exports[name]
     if name in {"PascalVocImportConfig", "PascalVocImportSummary", "import_pascal_voc"}:
         from .importers import PascalVocImportConfig, PascalVocImportSummary, import_pascal_voc
 

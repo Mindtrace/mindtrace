@@ -1,12 +1,24 @@
 __all__ = [
+    "Flowers102ImportConfig",
+    "Flowers102ImportSummary",
     "PascalVocImportConfig",
     "PascalVocImportSummary",
+    "import_flowers102",
     "import_pascal_voc",
 ]
 
 
 def __getattr__(name: str):
-    if name in __all__:
+    if name in {"Flowers102ImportConfig", "Flowers102ImportSummary", "import_flowers102"}:
+        from .flowers102 import Flowers102ImportConfig, Flowers102ImportSummary, import_flowers102
+
+        exports = {
+            "Flowers102ImportConfig": Flowers102ImportConfig,
+            "Flowers102ImportSummary": Flowers102ImportSummary,
+            "import_flowers102": import_flowers102,
+        }
+        return exports[name]
+    if name in {"PascalVocImportConfig", "PascalVocImportSummary", "import_pascal_voc"}:
         from .pascal_voc import PascalVocImportConfig, PascalVocImportSummary, import_pascal_voc
 
         exports = {
