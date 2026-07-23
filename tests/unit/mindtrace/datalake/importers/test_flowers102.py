@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.importers import flowers102
 
 
@@ -11,13 +12,12 @@ class _FakeFlowersDataset:
     def __init__(self, image_files: list[Path], labels: list[int]) -> None:
         self._image_files = image_files
         self._labels = labels
-        self.classes = [f"flower-{index}" for index in range(flowers102.FLOWERS102_CLASS_COUNT)]
 
 
 def _mock_datalake() -> MagicMock:
     datalake = MagicMock()
-    datalake.get_dataset_version.side_effect = RuntimeError("missing")
-    datalake.get_annotation_schema_by_name_version.side_effect = RuntimeError("missing")
+    datalake.get_dataset_version.side_effect = DocumentNotFoundError("missing")
+    datalake.get_annotation_schema_by_name_version.side_effect = DocumentNotFoundError("missing")
     datalake.create_annotation_schema.return_value = SimpleNamespace(annotation_schema_id="schema_1")
     datalake.create_asset_from_object.side_effect = [
         SimpleNamespace(asset_id="asset_train"),
@@ -43,6 +43,29 @@ def test_validate_splits_rejects_empty_and_unknown_values():
         flowers102._validate_splits(())
     with pytest.raises(ValueError, match="Unsupported Flowers102 split"):
         flowers102._validate_splits(("train", "holdout"))
+
+
+def test_flowers102_class_names_follow_canonical_target_order():
+    class_names = flowers102._class_names()
+
+    assert len(class_names) == flowers102.FLOWERS102_CLASS_COUNT
+    assert class_names[0] == "pink primrose"
+    assert class_names[1] == "hard-leaved pocket orchid"
+    assert class_names[50] == "petunia"
+    assert class_names[-1] == "blackberry lily"
+
+
+def test_ensure_schema_rejects_incompatible_existing_labels():
+    datalake = MagicMock()
+    datalake.get_annotation_schema_by_name_version.return_value = SimpleNamespace(
+        name=flowers102.FLOWERS102_SCHEMA_NAME,
+        version=flowers102.FLOWERS102_SCHEMA_VERSION,
+        task_type="classification",
+        labels=[SimpleNamespace(id=0, name="flower_000")],
+    )
+
+    with pytest.raises(ValueError, match="incompatible"):
+        flowers102._ensure_schema(datalake, flowers102._class_names())
 
 
 def test_import_flowers102_combines_and_preserves_all_splits(tmp_path: Path, monkeypatch):
@@ -87,7 +110,11 @@ def test_import_flowers102_combines_and_preserves_all_splits(tmp_path: Path, mon
         for call in datalake.add_annotation_records.call_args_list
     ]
     assert [record["label_id"] for record in records] == [0, 1, 2]
-    assert [record["label"] for record in records] == ["flower-0", "flower-1", "flower-2"]
+    assert [record["label"] for record in records] == [
+        "pink primrose",
+        "hard-leaved pocket orchid",
+        "canterbury bells",
+    ]
     assert all(record["attributes"] == {} for record in records)
 
 

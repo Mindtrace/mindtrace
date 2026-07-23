@@ -151,7 +151,9 @@ V3 aims for first-class annotation types (classification, bbox, mask, keypoint, 
 ## Flowers102 classification import, export, and DataLoaders
 
 Flowers102 provides native `train`, `val`, and `test` splits. The importer stores all selected splits in one
-immutable `DatasetVersion`, with one image asset and one single-label classification record per datum.
+immutable `DatasetVersion`, with one image asset and one single-label classification record per datum. Labels use
+the canonical Oxford 102 category names in the source dataset's zero-based target order, and that ordered mapping is
+preserved in the Hugging Face `ClassLabel` feature.
 
 Install the optional source and training dependencies:
 

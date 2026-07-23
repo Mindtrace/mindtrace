@@ -11,6 +11,7 @@ from tqdm import tqdm
 from ..async_datalake import DuplicateAnnotationSchemaError
 from ..datalake import Datalake
 from ..types import AnnotationLabelDefinition, AnnotationSchema
+from mindtrace.database.core.exceptions import DocumentNotFoundError
 
 FLOWERS102_DATASET_NAME = "flowers-102"
 FLOWERS102_SCHEMA_NAME = "flowers-102-classification"
@@ -18,6 +19,113 @@ FLOWERS102_SCHEMA_VERSION = "1.0.0"
 FLOWERS102_IMPORTER_VERSION = "1.0.0"
 FLOWERS102_SPLITS = ("train", "val", "test")
 FLOWERS102_CLASS_COUNT = 102
+# Canonical label order used by the Oxford imagelabels.mat targets (converted
+# from one-based source IDs to torchvision's zero-based targets):
+# https://www.robots.ox.ac.uk/~vgg/data/flowers/102/categories.html
+FLOWERS102_CLASS_NAMES = (
+    "pink primrose",
+    "hard-leaved pocket orchid",
+    "canterbury bells",
+    "sweet pea",
+    "english marigold",
+    "tiger lily",
+    "moon orchid",
+    "bird of paradise",
+    "monkshood",
+    "globe thistle",
+    "snapdragon",
+    "colt's foot",
+    "king protea",
+    "spear thistle",
+    "yellow iris",
+    "globe-flower",
+    "purple coneflower",
+    "peruvian lily",
+    "balloon flower",
+    "giant white arum lily",
+    "fire lily",
+    "pincushion flower",
+    "fritillary",
+    "red ginger",
+    "grape hyacinth",
+    "corn poppy",
+    "prince of wales feathers",
+    "stemless gentian",
+    "artichoke",
+    "sweet william",
+    "carnation",
+    "garden phlox",
+    "love in the mist",
+    "mexican aster",
+    "alpine sea holly",
+    "ruby-lipped cattleya",
+    "cape flower",
+    "great masterwort",
+    "siam tulip",
+    "lenten rose",
+    "barbeton daisy",
+    "daffodil",
+    "sword lily",
+    "poinsettia",
+    "bolero deep blue",
+    "wallflower",
+    "marigold",
+    "buttercup",
+    "oxeye daisy",
+    "common dandelion",
+    "petunia",
+    "wild pansy",
+    "primula",
+    "sunflower",
+    "pelargonium",
+    "bishop of llandaff",
+    "gaura",
+    "geranium",
+    "orange dahlia",
+    "pink-yellow dahlia?",
+    "cautleya spicata",
+    "japanese anemone",
+    "black-eyed susan",
+    "silverbush",
+    "californian poppy",
+    "osteospermum",
+    "spring crocus",
+    "bearded iris",
+    "windflower",
+    "tree poppy",
+    "gazania",
+    "azalea",
+    "water lily",
+    "rose",
+    "thorn apple",
+    "morning glory",
+    "passion flower",
+    "lotus",
+    "toad lily",
+    "anthurium",
+    "frangipani",
+    "clematis",
+    "hibiscus",
+    "columbine",
+    "desert-rose",
+    "tree mallow",
+    "magnolia",
+    "cyclamen",
+    "watercress",
+    "canna lily",
+    "hippeastrum",
+    "bee balm",
+    "ball moss",
+    "foxglove",
+    "bougainvillea",
+    "camellia",
+    "mallow",
+    "mexican petunia",
+    "bromelia",
+    "blanket flower",
+    "trumpet creeper",
+    "blackberry lily",
+)
 
 
 @dataclass(slots=True)
@@ -90,11 +198,20 @@ def _dataset_targets(dataset: Any) -> list[int]:
     return [int(label) for label in labels]
 
 
-def _class_names(dataset: Any) -> list[str]:
-    classes = getattr(dataset, "classes", None)
-    if classes is not None and len(classes) == FLOWERS102_CLASS_COUNT:
-        return [str(name) for name in classes]
-    return [f"flower_{class_id:03d}" for class_id in range(FLOWERS102_CLASS_COUNT)]
+def _class_names() -> list[str]:
+    """Return the canonical names in torchvision's zero-based target order."""
+    return list(FLOWERS102_CLASS_NAMES)
+
+
+def _validate_schema(schema: AnnotationSchema, class_names: list[str]) -> AnnotationSchema:
+    expected_labels = [(class_id, class_name) for class_id, class_name in enumerate(class_names)]
+    actual_labels = [(label.id, label.name) for label in schema.labels]
+    if schema.task_type != "classification" or actual_labels != expected_labels:
+        raise ValueError(
+            f"Existing annotation schema {schema.name}@{schema.version} is incompatible with "
+            "the canonical Flowers102 classification labels."
+        )
+    return schema
 
 
 def _ensure_schema(datalake: Datalake, class_names: list[str]) -> AnnotationSchema:
@@ -103,10 +220,10 @@ def _ensure_schema(datalake: Datalake, class_names: list[str]) -> AnnotationSche
             FLOWERS102_SCHEMA_NAME,
             FLOWERS102_SCHEMA_VERSION,
         )
-    except Exception:
-        existing = None
-    if existing is not None:
-        return existing
+    except DocumentNotFoundError:
+        pass
+    else:
+        return _validate_schema(existing, class_names)
 
     try:
         return datalake.create_annotation_schema(
@@ -127,9 +244,12 @@ def _ensure_schema(datalake: Datalake, class_names: list[str]) -> AnnotationSche
             },
         )
     except DuplicateAnnotationSchemaError:
-        return datalake.get_annotation_schema_by_name_version(
-            FLOWERS102_SCHEMA_NAME,
-            FLOWERS102_SCHEMA_VERSION,
+        return _validate_schema(
+            datalake.get_annotation_schema_by_name_version(
+                FLOWERS102_SCHEMA_NAME,
+                FLOWERS102_SCHEMA_VERSION,
+            ),
+            class_names,
         )
 
 
@@ -150,7 +270,7 @@ def import_flowers102(datalake: Datalake, config: Flowers102ImportConfig) -> Flo
 
     try:
         datalake.get_dataset_version(config.dataset_name, config.dataset_version)
-    except Exception:
+    except DocumentNotFoundError:
         pass
     else:
         raise ValueError(f"Dataset version already exists: {config.dataset_name}@{config.dataset_version}")
@@ -158,8 +278,7 @@ def import_flowers102(datalake: Datalake, config: Flowers102ImportConfig) -> Flo
     source_datasets = {
         split: _load_flowers102_dataset(root_dir, split, download=config.download) for split in splits
     }
-    first_dataset = source_datasets[splits[0]]
-    class_names = _class_names(first_dataset)
+    class_names = _class_names()
     schema = _ensure_schema(datalake, class_names)
     object_prefix = config.object_name_prefix or (
         f"imports/flowers-102/{config.dataset_name}/{config.dataset_version}"
@@ -177,9 +296,6 @@ def import_flowers102(datalake: Datalake, config: Flowers102ImportConfig) -> Flo
             raise ValueError(
                 f"Flowers102 split {split!r} has {len(image_paths)} images but {len(targets)} targets."
             )
-        if _class_names(source_dataset) != class_names:
-            raise ValueError(f"Flowers102 class metadata differs between imported splits; mismatch found in {split!r}.")
-
         samples = zip(image_paths, targets, strict=True)
         if config.show_progress:
             samples = tqdm(

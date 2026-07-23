@@ -159,3 +159,36 @@ def test_huggingface_classification_export_requires_one_label_per_image(tmp_path
 
     with pytest.raises(ValueError, match="exactly one classification annotation"):
         export_dataset_as_huggingface(dataset, destination=tmp_path / "invalid-hf")
+
+
+def test_huggingface_classification_export_rejects_label_name_mismatch(tmp_path: Path, monkeypatch):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+    from mindtrace.datalake.types import AnnotationRecord
+
+    monkeypatch.setattr(
+        huggingface_exporter.importlib,
+        "import_module",
+        lambda name: _fake_datasets_module(),
+    )
+    dataset = ExportableDataset(
+        name="flowers-102",
+        metadata={"task_type": "classification", "class_names": ["pink primrose"]},
+        items=[
+            ExportableItem(
+                asset=sample_asset(),
+                payload_bytes=png_bytes(),
+                annotations=[
+                    AnnotationRecord(
+                        annotation_id="annotation_1",
+                        kind="classification",
+                        label="wrong flower",
+                        label_id=0,
+                        source={"type": "human", "name": "flowers-102"},
+                    )
+                ],
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="maps to 'pink primrose'"):
+        export_dataset_as_huggingface(dataset, destination=tmp_path / "invalid-label-hf")

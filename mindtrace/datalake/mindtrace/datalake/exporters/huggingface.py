@@ -83,6 +83,12 @@ def _export_classification_dataset(
                 f"Classification label id {annotation.label_id} is outside the exported class range "
                 f"0..{len(class_names) - 1}."
             )
+        expected_label = class_names[annotation.label_id]
+        if annotation.label != expected_label:
+            raise ValueError(
+                f"Classification label id {annotation.label_id} maps to {expected_label!r}, "
+                f"but annotation {annotation.annotation_id!r} uses {annotation.label!r}."
+            )
         split_name = item.split or "default"
         image = None
         if include_media:
