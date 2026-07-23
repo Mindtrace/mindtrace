@@ -64,7 +64,17 @@ def export_dataset_as_coco(
     options: dict[str, Any] | None = None,
 ) -> ExportResult:
     """Export a canonical dataset view to a COCO-style directory."""
-    del options
+    requested_task = (options or {}).get("task") or dataset.metadata.get("task_type")
+    annotation_kinds = {
+        annotation.kind for item in dataset.items for annotation in item.annotations
+    }
+    if requested_task == "classification" or (
+        "classification" in annotation_kinds and not annotation_kinds.intersection({"bbox", "polygon"})
+    ):
+        raise ValueError(
+            "COCO export does not support image classification datasets. "
+            "Export this dataset with format='huggingface' instead."
+        )
     destination_path = prepare_export_destination(destination, overwrite=overwrite)
     warnings = list(dataset.warnings)
     categories = _supported_category_records(dataset)
