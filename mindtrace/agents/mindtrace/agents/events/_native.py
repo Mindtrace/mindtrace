@@ -74,6 +74,7 @@ class ToolResultEvent:
     tool_call_id: str
     content: str
     message_id: str | None = None
+    tool_name: str | None = None
 
 
 @dataclass(frozen=True)

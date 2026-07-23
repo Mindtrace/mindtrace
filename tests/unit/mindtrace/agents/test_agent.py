@@ -399,6 +399,56 @@ class TestMindtraceAgentStream:
         assert len(tool_events) == 1
         assert tool_events[0].content == "9"
 
+    async def test_stream_tool_result_event_carries_tool_name(self):
+        """ToolResultEvent.tool_name lets a caller identify which tool a
+        result belongs to without a separate tool_call_id -> name lookup."""
+        from mindtrace.agents.events import ToolResultEvent
+
+        def my_tool(x: int) -> int:
+            """Return x squared."""
+            return x * x
+
+        tool = Tool(my_tool)
+        responses = [
+            tool_call_response("my_tool", arguments='{"x": 3}'),
+            text_response("done"),
+        ]
+        agent = MindtraceAgent(model=FakeModel(responses=responses), tools=[tool])
+
+        events = []
+        async for event in agent.run_stream_events("square 3"):
+            events.append(event)
+
+        tool_events = [e for e in events if isinstance(e, ToolResultEvent)]
+        assert len(tool_events) == 1
+        assert tool_events[0].tool_name == "my_tool"
+
+    async def test_stream_tool_result_content_is_valid_json_for_dict_results(self):
+        """A dict-returning tool's content is JSON, not Python repr syntax —
+        downstream consumers (e.g. an SSE layer) can parse it back out."""
+        import json
+
+        from mindtrace.agents.events import ToolResultEvent
+
+        def lookup(x: int) -> dict:
+            """Return a structured result."""
+            return {"value": x, "ok": True}
+
+        tool = Tool(lookup)
+        responses = [
+            tool_call_response("lookup", arguments='{"x": 3}'),
+            text_response("done"),
+        ]
+        agent = MindtraceAgent(model=FakeModel(responses=responses), tools=[tool])
+
+        events = []
+        async for event in agent.run_stream_events("look up 3"):
+            events.append(event)
+
+        tool_events = [e for e in events if isinstance(e, ToolResultEvent)]
+        assert len(tool_events) == 1
+        assert json.loads(tool_events[0].content) == {"value": 3, "ok": True}
+
 
 # ---------------------------------------------------------------------------
 # iter()
