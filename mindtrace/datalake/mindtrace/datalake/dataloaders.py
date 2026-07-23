@@ -47,13 +47,11 @@ class HuggingFaceClassificationDataset:
         split: str,
         transform: Callable[[Any], Any] | None = None,
     ) -> None:
-        datasets, torch, _, pil_to_tensor = _require_huggingface_dataloader_dependencies()
+        datasets, _, _, _ = _require_huggingface_dataloader_dependencies()
         payload = datasets.load_from_disk(str(export_path))
         self._dataset = _select_split(payload, split)
         self.split = split
         self.transform = transform
-        self._torch = torch
-        self._pil_to_tensor = pil_to_tensor
 
         required_columns = {"image", "label"}
         missing = sorted(required_columns - set(self._dataset.column_names))
@@ -68,6 +66,7 @@ class HuggingFaceClassificationDataset:
         return len(self._dataset)
 
     def __getitem__(self, index: int):
+        _, torch, _, pil_to_tensor = _require_huggingface_dataloader_dependencies()
         row = self._dataset[index]
         image = row["image"]
         if image is None:
@@ -80,8 +79,8 @@ class HuggingFaceClassificationDataset:
         if self.transform is not None:
             image = self.transform(image)
         else:
-            image = self._pil_to_tensor(image).float().div(255)
-        target = self._torch.tensor(int(row["label"]), dtype=self._torch.long)
+            image = pil_to_tensor(image).float().div(255)
+        target = torch.tensor(int(row["label"]), dtype=torch.long)
         return image, target
 
 

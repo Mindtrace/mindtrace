@@ -1,3 +1,4 @@
+import pickle
 from types import SimpleNamespace
 
 import pytest
@@ -93,6 +94,21 @@ def test_classification_dataset_returns_normalized_image_and_long_target(monkeyp
     assert target.value == 1
     assert target.dtype == "long"
     assert dataset.class_names == ("pink primrose", "orchid")
+
+
+def test_classification_dataset_is_picklable_for_spawned_workers(monkeypatch):
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset([{"image": _FakeImage(), "label": 1}]),
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    dataset = dataloaders.HuggingFaceClassificationDataset("/export", split="train")
+
+    pickle.dumps(dataset)
 
 
 def test_classification_dataset_rejects_export_without_media(monkeypatch):
