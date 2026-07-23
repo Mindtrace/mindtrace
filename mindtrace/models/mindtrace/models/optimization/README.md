@@ -15,6 +15,41 @@ The optimization sub-package provides:
 - **Compilation**: `compile_model` dispatching on `TargetSpec` registry entries (ONNX Runtime, OpenVINO, TensorRT)
 - **Benchmarking**: `Benchmark` producing a `BenchmarkReport` (p50/p95 latency, fps, size, cold start, peak RSS)
 
+## New to model optimization? Start with the concepts
+
+A trained model that runs well on a workstation GPU is usually too big and too slow for an edge device (an inspection box, a phone, an embedded board). "Optimization" is the set of techniques that shrink it and speed it up while keeping its accuracy. Each concept below has a short, plain-language guide with examples — **no prior background assumed**.
+
+| Concept | One-line idea | Deep-dive guide |
+|---------|---------------|-----------------|
+| **Quantization** | Store the model's numbers with less precision (INT8 instead of 32-bit float) — 4× smaller, often faster. | [quantize/README.md](quantize/README.md) |
+| **Pruning** | Remove the weights/channels that contribute little — a smaller network that predicts almost the same. | [prune/README.md](prune/README.md) |
+| **Distillation** | Train a small "student" model to imitate a big accurate "teacher" — small model, more of the big one's skill. | [Distillation](#distillation) (below) |
+| **Export** | Convert the PyTorch model to a portable file (ONNX) that runs without Python — the "PDF" of neural networks. | [export/README.md](export/README.md) |
+| **Compilation** | Turn that portable file into a hardware-specific executable tuned for one chip (OpenVINO / TensorRT / ExecuTorch). | [compile/README.md](compile/README.md) |
+| **Benchmarking** | Measure how fast and how big the result actually is — because "smaller" is not always "faster". | [bench/README.md](bench/README.md) |
+
+**How they fit together:** you usually *compress* the model (quantize / prune / distill), then *export* it to ONNX, then *compile* it for the target hardware, then *benchmark* to confirm the win. The `OptimizationRunner` (below) chains these into one accuracy-gated pipeline.
+
+### Distillation
+
+**The idea:** a large, accurate model (the *teacher*) knows more than its final yes/no answers — its full probability distribution encodes "this looks 70% cat, 25% fox, 5% dog", and those relative confidences carry real information ("dark knowledge"). **Knowledge distillation** trains a small, fast model (the *student*) to reproduce the teacher's *soft* outputs, not just the ground-truth labels. The student ends up more accurate than if it had trained on the labels alone.
+
+**Analogy:** an apprentice learning not just the right answer but *how the master thinks about it* — including which wrong answers were "close". That nuance is what lets a smaller apprentice punch above its size.
+
+Distillation lives in the **training** pillar (it's a loss function, used during training), not in this sub-package:
+
+```python
+from mindtrace.models.training import Trainer
+from mindtrace.models.training.losses import DistillationLoss
+import torch.nn as nn
+
+loss = DistillationLoss(nn.CrossEntropyLoss(), alpha=0.7, temperature=4.0)
+trainer = Trainer(model=student, teacher=teacher, loss_fn=loss, optimizer=opt)
+trainer.fit(train_loader, val_loader, epochs=20)
+```
+
+`alpha` balances the teacher's soft targets against the true labels; `temperature` softens the distributions so the "dark knowledge" is visible. `FeatureDistillation` additionally matches intermediate layers. See `mindtrace/models/training/losses/distillation.py` and `samples/models/10_edge_pruning_distillation.py` for a worked example where distillation lifts a student from 76.5% to 88.2%.
+
 ## Quick Example
 
 ```python
