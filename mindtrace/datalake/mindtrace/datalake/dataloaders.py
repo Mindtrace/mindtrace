@@ -21,7 +21,7 @@ def _require_huggingface_dataloader_dependencies():
 
 
 def _available_splits(payload: Any) -> tuple[str, ...]:
-    if hasattr(payload, "keys") and not hasattr(payload, "column_names"):
+    if isinstance(payload, Mapping):
         return tuple(str(split) for split in payload.keys())
     return ("default",)
 

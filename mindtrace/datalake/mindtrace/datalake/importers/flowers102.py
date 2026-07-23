@@ -182,7 +182,12 @@ def import_flowers102(datalake: Datalake, config: Flowers102ImportConfig) -> Flo
 
         samples = zip(image_paths, targets, strict=True)
         if config.show_progress:
-            samples = tqdm(samples, total=len(image_paths), desc=f"Importing {config.dataset_name}:{split}", unit="image")
+            samples = tqdm(
+                samples,
+                total=len(image_paths),
+                desc=f"Importing {config.dataset_name}:{split}",
+                unit="image",
+            )
 
         split_count = 0
         for source_index, (image_path, label_id) in enumerate(samples):

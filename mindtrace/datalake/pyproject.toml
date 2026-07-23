@@ -23,15 +23,15 @@ dependencies = [
 [project.optional-dependencies]
 import-flowers102 = [
     "scipy>=1.11.0",
-    "torchvision>=0.20.0",
+    "torchvision>=0.15.0",
 ]
 export-huggingface = [
     "datasets>=2.19.0",
 ]
 dataloaders = [
     "datasets>=2.19.0",
-    "torch>=2.5.0",
-    "torchvision>=0.20.0",
+    "torch>=2.0",
+    "torchvision>=0.15.0",
 ]
 export-all = [
     "datasets>=2.19.0",
