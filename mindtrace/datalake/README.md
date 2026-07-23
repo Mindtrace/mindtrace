@@ -208,10 +208,22 @@ Then construct split-aware PyTorch loaders from the export:
 
 ```python
 from mindtrace.datalake import build_dataloaders
+from torchvision import transforms
+
+# Select preprocessing that matches the model being trained. Flowers102
+# images have varying dimensions, so batched loading requires a transform
+# that produces a consistent tensor shape.
+image_transform = transforms.Compose(
+    [
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+    ]
+)
 
 loaders = build_dataloaders(
     "./exports/flowers102",
     task="classification",
+    transforms=image_transform,
     batch_size=32,
     num_workers=4,
     seed=42,
@@ -222,9 +234,11 @@ val_loader = loaders["val"]
 test_loader = loaders["test"]
 ```
 
-Pass either one transform or a split-to-transform mapping through `transforms=`. Training data is shuffled;
-validation and test data are not. COCO does not define a portable image-classification contract, so
-classification-only datasets raise a clear error when exported with `format="coco"`.
+Pass either one transform or a split-to-transform mapping through `transforms=`. The transform should implement the
+resize, rescaling, and normalization contract expected by the selected model; train-only augmentation can be supplied
+separately from deterministic validation and test transforms. Training data is shuffled; validation and test data are
+not. COCO does not define a portable image-classification contract, so classification-only datasets raise a clear
+error when exported with `format="coco"`.
 
 ---
 
