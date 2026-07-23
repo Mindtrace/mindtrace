@@ -1,4 +1,5 @@
 import builtins
+import hashlib
 from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -6,6 +7,7 @@ import pytest
 from beanie import Document as BeanieDocument
 from bson import ObjectId
 from pydantic import BaseModel, Field, field_validator
+from pydantic import model_validator as pydantic_model_validator
 
 from mindtrace.database import MindtraceDocument
 
@@ -1673,3 +1675,61 @@ def test_close_releases_lazy_sync_client(mock_mongo_connection):
     backend.close()
     sync_stub.close.assert_called_once()
     assert backend._sync_client is None
+
+
+class DerivedIdUnitDoc(BaseModel):
+    """Plain Pydantic doc (MotorDoc convention) whose id is minted by a model
+    validator, deterministically from a natural key. Exercises the motor-routing
+    fallback dump path (``model_dump(by_alias=True)`` emits ``_id``)."""
+
+    model_config = {"populate_by_name": True, "arbitrary_types_allowed": True}
+
+    key: str
+    id: Optional[ObjectId] = Field(default=None, alias="_id")
+
+    @pydantic_model_validator(mode="before")
+    @classmethod
+    def _derive_id(cls, values):
+        if isinstance(values, dict) and not (values.get("id") or values.get("_id")):
+            key = values.get("key")
+            if isinstance(key, str) and key:
+                values["id"] = ObjectId(hashlib.sha256(f"unit:{key}".encode()).digest()[:12])
+        return values
+
+    class Settings:
+        name = "derived_id_unit_docs"
+
+
+@pytest.mark.asyncio
+async def test_insert_motor_path_preserves_model_minted_id(mock_mongo_connection):
+    """``insert()`` must not strip a validator-minted ``_id`` (motor-routing path).
+
+    Regression guard for the ``doc.id = None`` removal: deterministic ids minted
+    by a ``model_validator`` have to reach ``insert_one`` intact, while models
+    without such a validator still get new-doc semantics (Mongo mints the id).
+    """
+    from mindtrace.database.backends.mongo_odm import MongoMindtraceODM
+
+    backend = MongoMindtraceODM(DerivedIdUnitDoc, "mongodb://localhost:27017", "test_db")
+    backend._is_initialized = True
+    backend._motor_routing = True
+
+    captured = {}
+
+    async def fake_insert_one(raw):
+        captured["raw"] = dict(raw)
+        return MagicMock(inserted_id=raw["_id"])
+
+    async def fake_find_one(query):
+        return dict(captured["raw"])
+
+    fake_collection = MagicMock()
+    fake_collection.insert_one = fake_insert_one
+    fake_collection.find_one = fake_find_one
+    backend._motor_collection = MagicMock(return_value=fake_collection)
+
+    derived = ObjectId(hashlib.sha256(b"unit:alpha").digest()[:12])
+    out = await backend.insert(DerivedIdUnitDoc(key="alpha"))
+
+    assert captured["raw"]["_id"] == derived
+    assert out.id == derived
