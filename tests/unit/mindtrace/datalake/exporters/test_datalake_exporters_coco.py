@@ -72,3 +72,28 @@ def test_coco_export_rejects_existing_destination_without_overwrite(tmp_path: Pa
 
     with pytest.raises(FileExistsError, match="Export destination already exists"):
         export_dataset_as_coco(ExportableDataset(name="dataset-a"), destination=destination)
+
+
+def test_coco_export_rejects_classification_dataset_with_hf_guidance(tmp_path: Path):
+    annotation = AnnotationRecord(
+        annotation_id="classification_1",
+        kind="classification",
+        label="pink primrose",
+        label_id=0,
+        source={"type": "human", "name": "flowers-102"},
+    )
+    dataset = ExportableDataset(
+        name="flowers-102",
+        metadata={"task_type": "classification"},
+        items=[
+            ExportableItem(
+                asset=sample_asset(),
+                annotations=[annotation],
+                payload_bytes=png_bytes(),
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="format='huggingface'"):
+        export_dataset_as_coco(dataset, destination=tmp_path / "flowers-coco")
+    assert not (tmp_path / "flowers-coco").exists()

@@ -13,17 +13,20 @@ from mindtrace.datalake.exporters.types import ExportableDataset, ExportableItem
 
 
 class _FakeDataset:
-    def __init__(self, rows):
+    def __init__(self, rows, features=None):
         self.rows = rows
+        self.features = features
 
     @classmethod
-    def from_list(cls, rows):
-        return cls(rows)
+    def from_list(cls, rows, features=None):
+        return cls(rows, features=features)
 
     def save_to_disk(self, path: str):
         target = Path(path)
         target.mkdir(parents=True, exist_ok=True)
-        (target / "dataset.json").write_text(json.dumps(self.rows, sort_keys=True))
+        (target / "dataset.json").write_text(
+            json.dumps(self.rows, sort_keys=True, default=lambda value: f"<{type(value).__name__}>")
+        )
 
 
 class _FakeDatasetDict(dict):
@@ -31,7 +34,30 @@ class _FakeDatasetDict(dict):
         target = Path(path)
         target.mkdir(parents=True, exist_ok=True)
         serialized = {name: dataset.rows for name, dataset in self.items()}
-        (target / "dataset_dict.json").write_text(json.dumps(serialized, sort_keys=True))
+        (target / "dataset_dict.json").write_text(
+            json.dumps(serialized, sort_keys=True, default=lambda value: f"<{type(value).__name__}>")
+        )
+
+
+class _FakeFeature:
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+
+
+class _FakeFeatures(dict):
+    pass
+
+
+def _fake_datasets_module():
+    return SimpleNamespace(
+        Dataset=_FakeDataset,
+        DatasetDict=_FakeDatasetDict,
+        Features=_FakeFeatures,
+        Image=_FakeFeature,
+        Value=_FakeFeature,
+        ClassLabel=_FakeFeature,
+    )
 
 
 def test_huggingface_export_raises_helpful_error_when_dependency_missing(monkeypatch, tmp_path: Path):
@@ -53,7 +79,7 @@ def test_huggingface_export_raises_helpful_error_when_dependency_missing(monkeyp
 def test_huggingface_export_writes_media_for_default_split(tmp_path: Path, monkeypatch):
     from mindtrace.datalake.exporters import huggingface as huggingface_exporter
 
-    fake_module = SimpleNamespace(Dataset=_FakeDataset, DatasetDict=_FakeDatasetDict)
+    fake_module = _fake_datasets_module()
     monkeypatch.setattr(huggingface_exporter.importlib, "import_module", lambda name: fake_module)
     dataset = ExportableDataset(
         name="dataset-a",
@@ -71,3 +97,65 @@ def test_huggingface_export_writes_media_for_default_split(tmp_path: Path, monke
 
     assert result.files_written[0] == "media/default/asset_img.png"
     assert payload[0]["image_path"] == "media/default/asset_img.png"
+
+
+def test_huggingface_classification_export_writes_typed_split_dataset(tmp_path: Path, monkeypatch):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+    from mindtrace.datalake.types import AnnotationRecord
+
+    monkeypatch.setattr(
+        huggingface_exporter.importlib,
+        "import_module",
+        lambda name: _fake_datasets_module(),
+    )
+    dataset = ExportableDataset(
+        name="flowers-102",
+        metadata={
+            "task_type": "classification",
+            "class_names": ["pink primrose", "hard-leaved pocket orchid"],
+        },
+        items=[
+            ExportableItem(
+                asset=sample_asset(),
+                split="train",
+                payload_bytes=png_bytes(),
+                source_filename="flower.png",
+                annotations=[
+                    AnnotationRecord(
+                        annotation_id="annotation_1",
+                        kind="classification",
+                        label="hard-leaved pocket orchid",
+                        label_id=1,
+                        source={"type": "human", "name": "flowers-102"},
+                    )
+                ],
+            )
+        ],
+    )
+
+    result = export_dataset_as_huggingface(dataset, destination=tmp_path / "flowers-hf")
+    payload = json.loads((tmp_path / "flowers-hf" / "dataset_dict.json").read_text())
+
+    assert result.files_written == ["."]
+    assert payload["train"][0]["asset_id"] == "asset_img"
+    assert payload["train"][0]["label"] == 1
+    assert payload["train"][0]["label_name"] == "hard-leaved pocket orchid"
+    assert payload["train"][0]["image"]["path"] == "flower.png"
+
+
+def test_huggingface_classification_export_requires_one_label_per_image(tmp_path: Path, monkeypatch):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+
+    monkeypatch.setattr(
+        huggingface_exporter.importlib,
+        "import_module",
+        lambda name: _fake_datasets_module(),
+    )
+    dataset = ExportableDataset(
+        name="flowers-102",
+        metadata={"task_type": "classification", "class_names": ["flower"]},
+        items=[ExportableItem(asset=sample_asset(), payload_bytes=png_bytes())],
+    )
+
+    with pytest.raises(ValueError, match="exactly one classification annotation"):
+        export_dataset_as_huggingface(dataset, destination=tmp_path / "invalid-hf")

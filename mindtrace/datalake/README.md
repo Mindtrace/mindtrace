@@ -148,6 +148,84 @@ V3 aims for first-class annotation types (classification, bbox, mask, keypoint, 
 
 ---
 
+## Flowers102 classification import, export, and DataLoaders
+
+Flowers102 provides native `train`, `val`, and `test` splits. The importer stores all selected splits in one
+immutable `DatasetVersion`, with one image asset and one single-label classification record per datum.
+
+Install the optional source and training dependencies:
+
+```bash
+pip install "mindtrace-datalake[import-flowers102,dataloaders]"
+```
+
+Import the dataset:
+
+```python
+from mindtrace.datalake import Datalake, Flowers102ImportConfig, import_flowers102
+
+with Datalake.create(
+    mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
+    mongo_db_name="mindtrace",
+) as datalake:
+    summary = import_flowers102(
+        datalake,
+        Flowers102ImportConfig(
+            root_dir="./data/flowers102",
+            download=True,
+        ),
+    )
+```
+
+The equivalent CLI is:
+
+```bash
+mindtrace-datalake-import-flowers102 \
+  --mongo-db-uri "mongodb://mindtrace:mindtrace@localhost:27017" \
+  --mongo-db-name "mindtrace" \
+  --root-dir "./data/flowers102" \
+  --download
+```
+
+Export the resulting classification dataset to a typed, relocatable Hugging Face `DatasetDict`:
+
+```python
+with Datalake.create(
+    mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
+    mongo_db_name="mindtrace",
+) as datalake:
+    datalake.export_dataset_version_to_format(
+        "flowers-102",
+        "1.0.0",
+        format="huggingface",
+        destination="./exports/flowers102",
+    )
+```
+
+Then construct split-aware PyTorch loaders from the export:
+
+```python
+from mindtrace.datalake import build_dataloaders
+
+loaders = build_dataloaders(
+    "./exports/flowers102",
+    task="classification",
+    batch_size=32,
+    num_workers=4,
+    seed=42,
+)
+
+train_loader = loaders["train"]
+val_loader = loaders["val"]
+test_loader = loaders["test"]
+```
+
+Pass either one transform or a split-to-transform mapping through `transforms=`. Training data is shuffled;
+validation and test data are not. COCO does not define a portable image-classification contract, so
+classification-only datasets raise a clear error when exported with `format="coco"`.
+
+---
+
 ## Built-in Pascal VOC importer
 
 The package includes an importer for **Pascal VOC 2012** (splits, one image per asset, segmentation via class masks, etc.). This is **one** way to load a benchmark into the canonical model; it is separate from service upload/sync/replication flows.
