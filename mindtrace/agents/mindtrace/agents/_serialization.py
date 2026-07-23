@@ -12,6 +12,7 @@ JSON-serializable.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from typing import Any
 
@@ -19,9 +20,13 @@ from typing import Any
 def stringify_tool_result(value: Any) -> str:
     if isinstance(value, str):
         return value
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        value = dataclasses.asdict(value)
+    elif hasattr(value, "model_dump"):
+        value = value.model_dump()
     try:
-        return json.dumps(value)
-    except (TypeError, ValueError):
+        return json.dumps(value, default=str)
+    except TypeError:
         return str(value)
 
 

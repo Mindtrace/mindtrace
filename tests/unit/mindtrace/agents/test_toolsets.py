@@ -574,9 +574,11 @@ class TestMCPToolsetCallTool:
         # that want to parse the result back out.
         assert result == '{"answer": 42}'
 
-    async def test_call_tool_falls_back_to_str_for_non_json_serializable_data(self):
+    async def test_call_tool_still_returns_valid_json_for_non_json_serializable_data(self):
+        import json
+
         ts = await self._setup_ts_with_tool("search")
-        call_result = self._mock_result(data={1, 2, 3})  # a set isn't JSON-serializable
+        call_result = self._mock_result(data={1, 2, 3})  # a set isn't natively JSON-serializable
 
         mock_client = AsyncMock()
         mock_client.call_tool = AsyncMock(return_value=call_result)
@@ -586,7 +588,7 @@ class TestMCPToolsetCallTool:
         with patch("fastmcp.Client", return_value=mock_client):
             result = await ts.call_tool("search", {}, _ctx(), _make_toolset_tool("search"))
 
-        assert result == str({1, 2, 3})
+        assert json.loads(result) == str({1, 2, 3})
 
     async def test_call_tool_joins_content_parts(self):
         ts = await self._setup_ts_with_tool("search")
