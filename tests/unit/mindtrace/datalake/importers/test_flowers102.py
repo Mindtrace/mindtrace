@@ -88,6 +88,7 @@ def test_import_flowers102_combines_and_preserves_all_splits(tmp_path: Path, mon
     ]
     assert [record["label_id"] for record in records] == [0, 1, 2]
     assert [record["label"] for record in records] == ["flower-0", "flower-1", "flower-2"]
+    assert all(record["attributes"] == {} for record in records)
 
 
 def test_import_flowers102_rejects_existing_dataset_version(tmp_path: Path):

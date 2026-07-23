@@ -248,7 +248,7 @@ def import_flowers102(datalake: Datalake, config: Flowers102ImportConfig) -> Flo
                             "version": "1.0",
                         },
                         "geometry": {},
-                        "attributes": {"split": split},
+                        "attributes": {},
                     }
                 ],
                 annotation_set_id=annotation_set.annotation_set_id,
