@@ -438,20 +438,16 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
         if "_id" in data:
             data.pop("_id")
 
-        # Keep a validator-minted instance ObjectId (read via __dict__ — plain doc.id can leak the
-        # class-level ExpressionField on generated Document classes); null anything else.
+        # Caller ids were already stripped above; a model validator may mint a
+        # deterministic id here and it must survive to the write.
         doc = self.model_cls(**data)
-        if not isinstance(doc.__dict__.get("id"), ObjectId):
-            doc.id = None
 
         try:
             if self._motor_routing:
                 raw = self._motor_model_dump(doc)
-                # Strip _id only when the model minted none.
-                if doc.id is None:
-                    raw.pop("_id", None)
-                if raw.get("id") is None:
-                    raw.pop("id", None)
+                for key in ("_id", "id"):
+                    if raw.get(key) is None:
+                        raw.pop(key, None)
                 result = await self._motor_collection().insert_one(raw)
                 inserted = await self._motor_collection().find_one({"_id": result.inserted_id})
                 if inserted is None:
@@ -486,15 +482,12 @@ class MongoMindtraceODM[T: MindtraceDocument](MindtraceODM):
                 data = obj.model_dump(mode="python", by_alias=True, serialize_as_any=True)
             data.pop("id", None)
             data.pop("_id", None)
-            # Same as insert(): keep a validator-minted instance id, null anything else.
+            # Same as insert(): caller ids stripped above; minted ids survive.
             doc = self.model_cls(**data)
-            if not isinstance(doc.__dict__.get("id"), ObjectId):
-                doc.id = None
             raw = self._motor_model_dump(doc)
-            if doc.id is None:
-                raw.pop("_id", None)
-            if raw.get("id") is None:
-                raw.pop("id", None)
+            for key in ("_id", "id"):
+                if raw.get(key) is None:
+                    raw.pop(key, None)
             raw_docs.append(raw)
 
         try:
