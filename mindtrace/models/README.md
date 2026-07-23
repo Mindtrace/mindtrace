@@ -344,6 +344,19 @@ See [Evaluation Documentation](mindtrace/models/evaluation/README.md) for detail
 
 The optimization sub-package turns a trained model into an edge-deployable artifact: compress it (quantize, prune, distill), compile it for target hardware, benchmark it, and gate every lossy step on accuracy so a degraded model never ships.
 
+### New to model optimization?
+
+Each technique has a short, beginner-friendly concept guide (plain language, with examples and analogies — no prior background assumed):
+
+| Concept | What it is | Guide |
+|---------|-----------|-------|
+| Quantization | Store the model's numbers with less precision (INT8) — smaller and often faster | [optimization/quantize](mindtrace/models/optimization/quantize/README.md) |
+| Pruning | Remove the parts that contribute little — a smaller, faster network | [optimization/prune](mindtrace/models/optimization/prune/README.md) |
+| Distillation | Train a small "student" to imitate a big accurate "teacher" | [optimization overview → Distillation](mindtrace/models/optimization/README.md#distillation) |
+| Export | Convert to a portable file (ONNX) that runs without Python | [optimization/export](mindtrace/models/optimization/export/README.md) |
+| Compilation | Turn the portable file into a hardware-specific executable | [optimization/compile](mindtrace/models/optimization/compile/README.md) |
+| Benchmarking | Measure the real speed/size — "smaller" isn't always "faster" | [optimization/bench](mindtrace/models/optimization/bench/README.md) |
+
 ### Capability Map
 
 | Family | Tools |
