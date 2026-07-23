@@ -22,8 +22,7 @@ def _classification_class_names(dataset: ExportableDataset) -> list[str]:
             previous = labels_by_id.setdefault(annotation.label_id, annotation.label)
             if previous != annotation.label:
                 raise ValueError(
-                    f"Classification label id {annotation.label_id} maps to both {previous!r} and "
-                    f"{annotation.label!r}."
+                    f"Classification label id {annotation.label_id} maps to both {previous!r} and {annotation.label!r}."
                 )
     if not labels_by_id:
         raise ValueError("Classification export requires annotation label IDs or dataset metadata class_names.")

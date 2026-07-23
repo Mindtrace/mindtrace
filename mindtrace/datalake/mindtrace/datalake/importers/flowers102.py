@@ -8,10 +8,11 @@ from typing import Any, Iterable
 
 from tqdm import tqdm
 
+from mindtrace.database.core.exceptions import DocumentNotFoundError
+
 from ..async_datalake import DuplicateAnnotationSchemaError
 from ..datalake import Datalake
 from ..types import AnnotationLabelDefinition, AnnotationSchema
-from mindtrace.database.core.exceptions import DocumentNotFoundError
 
 FLOWERS102_DATASET_NAME = "flowers-102"
 FLOWERS102_SCHEMA_NAME = "flowers-102-classification"
@@ -275,14 +276,10 @@ def import_flowers102(datalake: Datalake, config: Flowers102ImportConfig) -> Flo
     else:
         raise ValueError(f"Dataset version already exists: {config.dataset_name}@{config.dataset_version}")
 
-    source_datasets = {
-        split: _load_flowers102_dataset(root_dir, split, download=config.download) for split in splits
-    }
+    source_datasets = {split: _load_flowers102_dataset(root_dir, split, download=config.download) for split in splits}
     class_names = _class_names()
     schema = _ensure_schema(datalake, class_names)
-    object_prefix = config.object_name_prefix or (
-        f"imports/flowers-102/{config.dataset_name}/{config.dataset_version}"
-    )
+    object_prefix = config.object_name_prefix or (f"imports/flowers-102/{config.dataset_name}/{config.dataset_version}")
 
     manifest: list[str] = []
     split_counts: dict[str, int] = {}
@@ -293,9 +290,7 @@ def import_flowers102(datalake: Datalake, config: Flowers102ImportConfig) -> Flo
         image_paths = _dataset_image_paths(source_dataset)
         targets = _dataset_targets(source_dataset)
         if len(image_paths) != len(targets):
-            raise ValueError(
-                f"Flowers102 split {split!r} has {len(image_paths)} images but {len(targets)} targets."
-            )
+            raise ValueError(f"Flowers102 split {split!r} has {len(image_paths)} images but {len(targets)} targets.")
         samples = zip(image_paths, targets, strict=True)
         if config.show_progress:
             samples = tqdm(
