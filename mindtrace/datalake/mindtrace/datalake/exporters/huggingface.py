@@ -145,6 +145,29 @@ def _semantic_segmentation_features(datasets_module: Any):
     )
 
 
+def _instance_segmentation_features(datasets_module: Any, class_names: list[str]):
+    return datasets_module.Features(
+        {
+            "image": datasets_module.Image(),
+            "asset_id": datasets_module.Value("string"),
+            "split": datasets_module.Value("string"),
+            "objects": datasets_module.Sequence(
+                {
+                    "id": datasets_module.Value("string"),
+                    "mask": datasets_module.Image(),
+                    "bbox": datasets_module.Sequence(datasets_module.Value("float32"), length=4),
+                    "category": datasets_module.ClassLabel(names=class_names),
+                    "category_name": datasets_module.Value("string"),
+                    "area": datasets_module.Value("float32"),
+                    "iscrowd": datasets_module.Value("bool"),
+                }
+            ),
+            "metadata_json": datasets_module.Value("string"),
+            "asset_metadata_json": datasets_module.Value("string"),
+        }
+    )
+
+
 def _embedded_image(item, *, include_media: bool, task: str):
     if not include_media:
         return None
@@ -518,6 +541,146 @@ def _export_semantic_segmentation_dataset(
     )
 
 
+def _binary_instance_mask(item, annotation, *, include_media: bool) -> tuple[dict[str, Any] | None, list[float], float]:
+    mask_asset = item.related_assets.get("instance_mask")
+    mask_asset_id = annotation.geometry.get("mask_asset_id")
+    if mask_asset is None or mask_asset.asset_id != mask_asset_id:
+        raise ValueError(
+            f"Instance mask annotation {annotation.annotation_id!r} does not match related asset role "
+            "'instance_mask'."
+        )
+    instance_id = annotation.geometry.get("instance_id")
+    if instance_id is None:
+        raise ValueError(f"Instance mask annotation {annotation.annotation_id!r} does not define instance_id.")
+    payload = item.related_payload_bytes.get("instance_mask")
+    if payload is None:
+        raise ValueError(
+            f"Instance segmentation export requires mask payload bytes for asset {item.asset.asset_id!r}."
+        )
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise ImportError("Instance segmentation export requires Pillow.") from exc
+
+    with Image.open(io.BytesIO(payload)) as indexed_mask:
+        if indexed_mask.mode not in {"L", "P", "I"}:
+            raise ValueError(
+                f"Instance mask for asset {item.asset.asset_id!r} must be indexed and single-channel; "
+                f"received mode {indexed_mask.mode!r}."
+            )
+        width, _ = indexed_mask.size
+        binary_values: list[int] = []
+        xs: list[int] = []
+        ys: list[int] = []
+        expected_id = int(instance_id)
+        for offset, raw_value in enumerate(indexed_mask.getdata()):
+            selected = int(raw_value) == expected_id
+            binary_values.append(255 if selected else 0)
+            if selected:
+                xs.append(offset % width)
+                ys.append(offset // width)
+        if not xs:
+            raise ValueError(
+                f"Instance id {instance_id!r} for annotation {annotation.annotation_id!r} is absent from its mask."
+            )
+        bbox = [
+            float(min(xs)),
+            float(min(ys)),
+            float(max(xs) - min(xs) + 1),
+            float(max(ys) - min(ys) + 1),
+        ]
+        area = float(len(xs))
+        embedded_mask = None
+        if include_media:
+            binary_mask = Image.new("L", indexed_mask.size)
+            binary_mask.putdata(binary_values)
+            output = io.BytesIO()
+            binary_mask.save(output, format="PNG")
+            embedded_mask = {
+                "bytes": output.getvalue(),
+                "path": f"{item.asset.asset_id}-{annotation.annotation_id}.png",
+            }
+    return embedded_mask, bbox, area
+
+
+def _export_instance_segmentation_dataset(
+    datasets_module: Any,
+    dataset: ExportableDataset,
+    *,
+    destination: Path,
+    include_media: bool,
+) -> ExportResult:
+    class_names = _configured_class_names(dataset, "instance_segmentation")
+    if not class_names:
+        raise ValueError(
+            "Instance segmentation export requires dataset metadata instance_segmentation_class_names."
+        )
+    class_ids = {name: index for index, name in enumerate(class_names)}
+    features = _instance_segmentation_features(datasets_module, class_names)
+    rows_by_split: dict[str, list[dict[str, Any]]] = {}
+    annotation_count = 0
+
+    for item in dataset.items:
+        annotations = [annotation for annotation in item.annotations if annotation.kind == "instance_mask"]
+        if not annotations:
+            raise ValueError(
+                "Instance segmentation export requires at least one instance mask annotation per image; "
+                f"asset {item.asset.asset_id!r} has none."
+            )
+        objects: dict[str, list[Any]] = {
+            "id": [],
+            "mask": [],
+            "bbox": [],
+            "category": [],
+            "category_name": [],
+            "area": [],
+            "iscrowd": [],
+        }
+        for annotation in annotations:
+            if annotation.label not in class_ids:
+                raise ValueError(
+                    f"Instance mask annotation {annotation.annotation_id!r} uses unknown label {annotation.label!r}."
+                )
+            mask, bbox, area = _binary_instance_mask(item, annotation, include_media=include_media)
+            objects["id"].append(annotation.annotation_id)
+            objects["mask"].append(mask)
+            objects["bbox"].append(bbox)
+            objects["category"].append(class_ids[annotation.label])
+            objects["category_name"].append(annotation.label)
+            objects["area"].append(area)
+            objects["iscrowd"].append(bool((annotation.attributes or {}).get("iscrowd", False)))
+        split_name = item.split or "default"
+        rows_by_split.setdefault(split_name, []).append(
+            {
+                "image": _embedded_image(item, include_media=include_media, task="instance segmentation"),
+                "asset_id": item.asset.asset_id,
+                "split": item.split or "",
+                "objects": objects,
+                "metadata_json": json.dumps(item.metadata or {}, sort_keys=True, default=str),
+                "asset_metadata_json": json.dumps(item.asset.metadata or {}, sort_keys=True, default=str),
+            }
+        )
+        annotation_count += len(annotations)
+
+    dataset_payload = {
+        split: datasets_module.Dataset.from_list(rows, features=features) for split, rows in rows_by_split.items()
+    }
+    if len(dataset_payload) == 1 and "default" in dataset_payload:
+        hf_dataset = dataset_payload["default"]
+    else:
+        hf_dataset = datasets_module.DatasetDict(dataset_payload)
+    hf_dataset.save_to_disk(str(destination))
+    return ExportResult(
+        format="huggingface",
+        destination=destination,
+        dataset_name=dataset.name,
+        asset_count=dataset.asset_count,
+        annotation_count=annotation_count,
+        files_written=["."],
+        warnings=list(dataset.warnings),
+    )
+
+
 def export_dataset_as_huggingface(
     dataset: ExportableDataset,
     *,
@@ -581,8 +744,22 @@ def export_dataset_as_huggingface(
             destination=destination_path,
             include_media=include_media,
         )
+    if requested_task == "segmentation":
+        requested_task = dataset.metadata.get("task_type")
+        if requested_task not in {"semantic_segmentation", "instance_segmentation"}:
+            raise ValueError(
+                "Hugging Face task='segmentation' requires dataset metadata task_type='semantic_segmentation' "
+                "or task_type='instance_segmentation'."
+            )
     if requested_task in {"semantic_segmentation", "semantic-segmentation"}:
         return _export_semantic_segmentation_dataset(
+            datasets_module,
+            dataset,
+            destination=destination_path,
+            include_media=include_media,
+        )
+    if requested_task in {"instance_segmentation", "instance-segmentation"}:
+        return _export_instance_segmentation_dataset(
             datasets_module,
             dataset,
             destination=destination_path,

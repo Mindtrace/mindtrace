@@ -213,6 +213,78 @@ class HuggingFaceSemanticSegmentationDataset:
         return image_tensor, mask_tensor
 
 
+class HuggingFaceInstanceSegmentationDataset:
+    """Map-style PyTorch dataset over a typed Mindtrace HF instance segmentation export."""
+
+    def __init__(
+        self,
+        export_path: str | Path,
+        *,
+        split: str,
+        transform: Callable[[Any, dict[str, Any]], tuple[Any, dict[str, Any]]] | None = None,
+        _payload: Any | None = None,
+    ) -> None:
+        datasets, _, _, _ = _require_huggingface_dataloader_dependencies()
+        payload = _payload if _payload is not None else datasets.load_from_disk(str(export_path))
+        self._dataset = _select_split(payload, split)
+        self.split = split
+        self.transform = transform
+
+        required_columns = {"asset_id", "image", "objects"}
+        missing = sorted(required_columns - set(self._dataset.column_names))
+        if missing:
+            raise ValueError(f"Hugging Face instance segmentation export is missing required column(s): {missing}.")
+        objects_feature = self._dataset.features.get("objects")
+        category_feature = getattr(getattr(objects_feature, "feature", None), "get", lambda _: None)("category")
+        self.class_names = tuple(getattr(category_feature, "names", ()) or ())
+
+    def __len__(self) -> int:
+        return len(self._dataset)
+
+    def __getitem__(self, index: int):
+        _, torch, _, pil_to_tensor = _require_huggingface_dataloader_dependencies()
+        row = self._dataset[index]
+        image = row["image"]
+        if image is None:
+            raise ValueError(
+                "The Hugging Face export does not include image payloads. "
+                "Re-export with include_media=True before building datasets."
+            )
+        if hasattr(image, "convert"):
+            image = image.convert("RGB")
+        objects = _object_rows(row["objects"])
+        mask_tensors = []
+        for obj in objects:
+            mask = obj["mask"]
+            if mask is None:
+                raise ValueError(
+                    "The Hugging Face export does not include instance mask payloads. "
+                    "Re-export with include_media=True before building datasets."
+                )
+            mask_tensor = pil_to_tensor(mask)
+            if mask_tensor.ndim != 3 or mask_tensor.shape[0] != 1:
+                raise ValueError(
+                    "Instance masks must decode as one-channel binary images; "
+                    f"received shape {tuple(mask_tensor.shape)}."
+                )
+            mask_tensors.append(mask_tensor.squeeze(0).bool())
+        if mask_tensors:
+            masks = torch.stack(mask_tensors)
+        else:
+            masks = torch.zeros((0, image.height, image.width), dtype=torch.bool)
+        target = {
+            "boxes": torch.tensor([_xywh_to_xyxy(obj["bbox"]) for obj in objects], dtype=torch.float32).reshape(-1, 4),
+            "labels": torch.tensor([obj["category"] for obj in objects], dtype=torch.long),
+            "masks": masks,
+            "area": torch.tensor([obj["area"] for obj in objects], dtype=torch.float32),
+            "iscrowd": torch.tensor([int(obj["iscrowd"]) for obj in objects], dtype=torch.long),
+            "asset_id": row["asset_id"],
+        }
+        if self.transform is not None:
+            return self.transform(image, target)
+        return pil_to_tensor(image).float().div(255), target
+
+
 def _variable_size_collate_fn(batch: Sequence[tuple[Any, Any]]):
     images, targets = zip(*batch, strict=True)
     return list(images), list(targets)
@@ -330,8 +402,11 @@ def build_datasets(
                 _payload=payload,
             )
         else:
-            raise NotImplementedError(
-                "Instance-segmentation exports are recognized, but their PyTorch dataset adapter is not implemented."
+            dataset = HuggingFaceInstanceSegmentationDataset(
+                export_path,
+                split=split,
+                transform=transform,
+                _payload=payload,
             )
         built[split] = dataset
     return built
@@ -398,6 +473,7 @@ def build_dataloaders(
 __all__ = [
     "HuggingFaceClassificationDataset",
     "HuggingFaceDetectionDataset",
+    "HuggingFaceInstanceSegmentationDataset",
     "HuggingFaceSemanticSegmentationDataset",
     "build_datasets",
     "build_dataloaders",

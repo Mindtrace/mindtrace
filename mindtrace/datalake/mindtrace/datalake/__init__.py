@@ -35,6 +35,7 @@ from .datalake import Datalake
 from .dataloaders import (
     HuggingFaceClassificationDataset,
     HuggingFaceDetectionDataset,
+    HuggingFaceInstanceSegmentationDataset,
     HuggingFaceSemanticSegmentationDataset,
     build_dataloaders,
     build_datasets,
@@ -140,6 +141,7 @@ __all__ = [
     "DataVaultBackend",
     "HuggingFaceClassificationDataset",
     "HuggingFaceDetectionDataset",
+    "HuggingFaceInstanceSegmentationDataset",
     "HuggingFaceSemanticSegmentationDataset",
     "DatalakeServiceAsyncDataVaultBackend",
     "DatalakeServiceDataVaultBackend",
