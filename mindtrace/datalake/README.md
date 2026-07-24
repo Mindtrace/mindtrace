@@ -16,6 +16,8 @@ The Mindtrace Datalake is the canonical data layer for Mindtrace. It sits on **`
 | **`DatalakeService`** | HTTP/MCP-facing API over `AsyncDatalake` (typed tasks, FastAPI). |
 | **Objects & uploads** | Put bytes in storage (`objects.put` or upload-session flow), then reference them from canonical records. |
 | **Canonical model** | Assets, collections, datums, dataset versions, annotations — persisted in Mongo, payloads in configured mounts. |
+| **Training exports** | Typed, relocatable Hugging Face exports for classification, detection, and segmentation. |
+| **PyTorch adapters** | Build split-aware, indexable Datasets and ready-to-train DataLoaders from saved Hugging Face exports. |
 | **Dataset sync** | Export/import **dataset version** bundles between lakes (`dataset_versions.export`, `import_prepare`, `import_commit`, and **caller-staged** `import_session_*` for cross-store payloads). |
 | **Replication** | Metadata-first mirroring and payload lifecycle (`replication.*` tasks — upsert, hydrate, reconcile, status, reclaim). |
 
@@ -72,7 +74,7 @@ service = DatalakeService.launch(
     host="localhost",
     port=8080,
     mongo_db_uri="mongodb://localhost:27017",
-    mongo_db_name="mindtrace",
+    mongo_db_name="datalake",
 )
 # Use async handlers or the service’s app/routes per your deployment.
 ```
@@ -148,358 +150,367 @@ V3 aims for first-class annotation types (classification, bbox, mask, keypoint, 
 
 ---
 
-## Flowers102 classification import, export, and DataLoaders
+## Hugging Face training exports
 
-Flowers102 provides native `train`, `val`, and `test` splits. The importer stores all selected splits in one
-immutable `DatasetVersion`, with one image asset and one single-label classification record per datum. Labels use
-the canonical Oxford 102 category names in the source dataset's zero-based target order, and that ordered mapping is
-preserved in the Hugging Face `ClassLabel` feature.
+The Datalake can materialize immutable DatasetVersions as typed, relocatable Hugging Face `Dataset` or `DatasetDict`
+artifacts. Training consumes the saved artifact and does not require a live MongoDB, object store, or Datalake
+connection:
 
-Install the optional source and training dependencies:
-
-```bash
-pip install "mindtrace-datalake[import-flowers102,dataloaders]"
+```text
+Datalake DatasetVersion
+        ↓ typed Hugging Face export
+relocatable Dataset / DatasetDict
+        ↓ build_datasets(...)
+train / val / test PyTorch Datasets
+        ↓ build_dataloaders(...)
+train / val / test PyTorch DataLoaders
 ```
 
-Import the dataset:
+`build_datasets()` returns one indexable PyTorch-compatible Dataset per available or requested split.
+`build_dataloaders()` delegates to it, then adds batching, train-only shuffling, workers, seeding, and task-specific
+collation. Both accept one shared transform or a split-keyed transform mapping.
+
+The public task API is:
+
+- `task="classification"` — infer single-label or multi-label classification from the schema.
+- `task="detection"` — full-image object detection.
+- `task="segmentation"` — infer semantic or instance segmentation from the schema.
+
+Explicit `semantic_segmentation` and `instance_segmentation` aliases are also accepted when profile validation is
+preferred to inference.
+
+The five built-in runtime profiles are:
+
+1. **Single-label classification** — scalar `torch.long` target, normally used with `CrossEntropyLoss`.
+2. **Multi-label classification** — fixed-length multi-hot `torch.float32` target, normally used with
+   `BCEWithLogitsLoss`.
+3. **Object detection** — one full image with all boxes and labels.
+4. **Semantic segmentation** — one full image and categorical class-ID mask, including an ignore index.
+5. **Instance segmentation** — one full image with per-instance masks, boxes, labels, areas, and crowd flags.
+
+### Included example datasets
+
+The check marks show the tasks and splits supported by the bundled importers. VOC has no public labeled 2012 test
+split. Penn-Fudan has no official splits, so its importer creates a deterministic filename-hash train/validation
+split.
+
+<table>
+  <thead>
+    <tr>
+      <th rowspan="2">Dataset</th>
+      <th colspan="5">Tasks</th>
+      <th colspan="3">Splits</th>
+    </tr>
+    <tr>
+      <th>Single-label classification</th>
+      <th>Multi-label classification</th>
+      <th>Detection</th>
+      <th>Semantic segmentation</th>
+      <th>Instance segmentation</th>
+      <th>Train</th>
+      <th>Val</th>
+      <th>Test</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Oxford Flowers102</td>
+      <td>✅</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>✅</td>
+      <td>✅</td>
+      <td>✅</td>
+    </tr>
+    <tr>
+      <td>Pascal VOC 2012</td>
+      <td>✅</td>
+      <td>✅</td>
+      <td>✅</td>
+      <td>✅</td>
+      <td></td>
+      <td>✅</td>
+      <td>✅</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>Penn-Fudan Pedestrian</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>✅</td>
+      <td>✅</td>
+      <td>✅</td>
+      <td></td>
+    </tr>
+  </tbody>
+</table>
+
+- **Flowers102** imports its official train, validation, and test splits into one immutable DatasetVersion.
+- **Pascal VOC 2012** creates a canonical union and task-specific DatasetVersions in one pass. Detection and
+  whole-image multi-label classification use the Main split. Single-label classification uses lightweight region
+  Datums and crops each bounding box during export. Semantic segmentation uses the independent Segmentation split
+  and preserves background ID `0` and ignore ID `255`. For VOC train, the 5,717 Main images and 1,464 Segmentation
+  images overlap by 1,151, so the canonical union stores 6,030 unique JPEG Assets once.
+- **Penn-Fudan Pedestrian** contains 170 images and 345 pedestrian instances. Each image and indexed mask PNG is
+  stored once. The HF export materializes per-object binary masks, and the runtime adapter returns torchvision
+  Mask R-CNN targets.
+
+### End-to-end example
+
+Install all optional importer, Hugging Face, and PyTorch dependencies from the monorepo root:
+
+```bash
+uv sync --all-extras --dev
+```
+
+Start a local MongoDB container:
+
+```bash
+docker run --detach \
+  --name mindtrace-datalake-mongodb \
+  --publish 27017:27017 \
+  mongo:7
+```
+
+The examples use the `datalake` database. Remove the container afterward with:
+
+```bash
+docker rm --force mindtrace-datalake-mongodb
+```
+
+#### Import Flowers102, VOC, and Penn-Fudan
 
 ```python
-from mindtrace.datalake import Datalake, Flowers102ImportConfig, import_flowers102
+from pathlib import Path
+
+from mindtrace.core import Config
+from mindtrace.datalake import (
+    Datalake,
+    Flowers102ImportConfig,
+    PascalVocImportConfig,
+    PennFudanImportConfig,
+    import_flowers102,
+    import_pascal_voc,
+    import_penn_fudan,
+)
+
+mindtrace_temp = Path(Config().MINDTRACE_DIR_PATHS.TEMP_DIR).expanduser()
+data_root = mindtrace_temp / "datasets"
+export_root = mindtrace_temp / "exports"
+
+data_root.mkdir(parents=True, exist_ok=True)
+export_root.mkdir(parents=True, exist_ok=True)
 
 with Datalake.create(
-    mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
-    mongo_db_name="mindtrace",
+    mongo_db_uri="mongodb://localhost:27017",
+    mongo_db_name="datalake",
 ) as datalake:
-    summary = import_flowers102(
+    import_flowers102(
         datalake,
         Flowers102ImportConfig(
-            root_dir="./data/flowers102",
+            root_dir=data_root / "flowers102",
+            dataset_name="flowers-102",
+            splits=("train", "val", "test"),
             download=True,
         ),
     )
-```
 
-The equivalent CLI is:
-
-```bash
-mindtrace-datalake-import-flowers102 \
-  --mongo-db-uri "mongodb://mindtrace:mindtrace@localhost:27017" \
-  --mongo-db-name "mindtrace" \
-  --root-dir "./data/flowers102" \
-  --download
-```
-
-Export the resulting classification dataset to a typed, relocatable Hugging Face `DatasetDict`:
-
-```python
-with Datalake.create(
-    mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
-    mongo_db_name="mindtrace",
-) as datalake:
-    datalake.export_dataset_version_to_format(
-        "flowers-102",
-        "1.0.0",
-        format="huggingface",
-        destination="./exports/flowers102",
-        exporter_options={"task": "classification"},
-    )
-```
-
-Then construct split-aware PyTorch datasets or loaders from the export:
-
-```python
-from mindtrace.datalake import build_dataloaders, build_datasets
-from torchvision import transforms
-
-# Select preprocessing that matches the model being trained. Flowers102
-# images have varying dimensions, so batched loading requires a transform
-# that produces a consistent tensor shape.
-image_transform = transforms.Compose(
-    [
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-    ]
-)
-
-datasets = build_datasets(
-    "./exports/flowers102",
-    task="classification",
-    transforms=image_transform,
-)
-image, target = datasets["train"][0]
-
-loaders = build_dataloaders(
-    "./exports/flowers102",
-    task="classification",
-    transforms=image_transform,
-    batch_size=32,
-    num_workers=4,
-    seed=42,
-)
-
-train_loader = loaders["train"]
-val_loader = loaders["val"]
-test_loader = loaders["test"]
-```
-
-Both builders return dictionaries keyed by the available or requested split names. `build_datasets()` exposes the
-indexable PyTorch-compatible task adapters; `build_dataloaders()` delegates to it and adds batching, shuffling,
-workers, and task-specific collation. Pass either one transform or a split-to-transform mapping through
-`transforms=`. The transform should implement the resize, rescaling, and normalization contract expected by the
-selected model; train-only augmentation can be supplied separately from deterministic validation and test transforms.
-Training data is shuffled; validation and test data are not. Classification schemas automatically select single-label
-or multi-label targets. Segmentation schemas automatically select semantic or instance profiles when using
-`task="segmentation"`; the explicit `semantic_segmentation` and `instance_segmentation` names are accepted as
-validation aliases. COCO does not define a portable image-classification contract, so classification-only datasets
-raise a clear error when exported with `format="coco"`.
-
----
-
-## Built-in Pascal VOC importer
-
-The package includes a one-pass importer for **Pascal VOC 2012**. By default it imports classification, detection,
-and semantic segmentation together and creates task-specific immutable DatasetVersions. VOC defines its Main and
-Segmentation train splits independently: Main contains 5,717 images, Segmentation contains 1,464, and 1,151 occur in
-both. The combined train import therefore stores their union of 6,030 source JPEGs exactly once. Detection and
-multi-label classification views reference the 5,717 Main Datums; semantic segmentation references its 1,464 Datums;
-single-label classification uses lightweight region Datums that reference the same JPEG Assets.
-
-Semantic segmentation preserves each original categorical mask, including background ID `0` and ignore ID `255`.
-The optional `tasks=(...)` setting limits which annotations and views are created. Set
-`create_task_versions=False` (or pass `--no-task-versions` to the CLI) to create only the canonical version.
-
-### CLI
-
-```bash
-mindtrace-datalake-import-pascal-voc \
-  --mongo-db-uri "mongodb://mindtrace:mindtrace@localhost:27017" \
-  --mongo-db-name "mindtrace" \
-  --root-dir "./data/pascal-voc" \
-  --split train \
-  --dataset-name "pascal-voc-2012-train" \
-  --download
-```
-
-Or:
-
-```bash
-python -m mindtrace.datalake.importers.pascal_voc \
-  --mongo-db-uri "mongodb://mindtrace:mindtrace@localhost:27017" \
-  --mongo-db-name "mindtrace" \
-  --root-dir "./data/pascal-voc" \
-  --split train \
-  --dataset-name "pascal-voc-2012-train" \
-  --download
-```
-
-### Python
-
-```python
-from mindtrace.datalake import Datalake, PascalVocImportConfig, import_pascal_voc
-
-with Datalake.create(
-    mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
-    mongo_db_name="mindtrace",
-) as datalake:
-    summary = import_pascal_voc(
+    import_pascal_voc(
         datalake,
         PascalVocImportConfig(
-            root_dir="./data/pascal-voc",
-            split="train",
+            root_dir=data_root / "pascal-voc-2012",
             dataset_name="pascal-voc-2012-train",
+            split="train",
             download=True,
         ),
     )
-    print(summary.dataset_names)
-```
 
-Importer notes: reuses downloaded trees when present; supports immutable registries; fails if the target
-`DatasetVersion` already exists. All output version names are preflighted before any Assets are written.
-
-Export VOC detections to a typed Hugging Face dataset and build variable-target PyTorch loaders:
-
-```python
-datalake.export_dataset_version_to_format(
-    summary.dataset_names["detection"],
-    summary.dataset_version,
-    format="huggingface",
-    destination="./exports/voc-detection",
-    exporter_options={"task": "detection"},
-)
-
-loaders = build_dataloaders(
-    "./exports/voc-detection",
-    task="detection",
-    batch_size=8,
-)
-```
-
-Detection exports embed images and use an `objects` sequence with pixel-space `xywh` boxes, area, and a contiguous
-zero-based `ClassLabel`. Source label IDs such as VOC's one-based IDs are remapped by class name during export. A
-detection loader converts boxes to the `xyxy` tensors expected by torchvision models. Its transform receives
-`(image, target)` and must return the transformed pair so boxes stay aligned with image geometry. The detection
-collator returns image and target lists because object counts vary between samples.
-
-The native VOC whole-image task is multi-label. It exports one 20-element multi-hot float target per image:
-
-```python
-datalake.export_dataset_version_to_format(
-    summary.dataset_names["classification_multi_label"],
-    summary.dataset_version,
-    format="huggingface",
-    destination="./exports/voc-multi-label",
-    exporter_options={
-        "task": "classification",
-        "classification_type": "multi_label",
-    },
-)
-```
-
-The single-label view contains one lightweight region Datum per bounding box. Each region references its source JPEG;
-the HF exporter performs the crop while materializing the row. The row retains `source_image_asset_id`,
-`source_annotation_id`, and the source `xywh` bbox. Regions inherit the source image's split, preventing
-train/validation leakage:
-
-```python
-datalake.export_dataset_version_to_format(
-    summary.dataset_names["classification_single_label"],
-    summary.dataset_version,
-    format="huggingface",
-    destination="./exports/voc-object-crops",
-    exporter_options={"task": "classification"},
-)
-```
-
-Both exports use the classification DataLoader. Classification images vary in size, so provide a transform that
-produces a fixed tensor shape:
-
-```python
-from torchvision import transforms
-
-image_transform = transforms.Compose(
-    [
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-    ]
-)
-
-multi_label_loaders = build_dataloaders(
-    "./exports/voc-multi-label",
-    task="classification",
-    transforms=image_transform,
-    batch_size=32,
-)
-crop_loaders = build_dataloaders(
-    "./exports/voc-object-crops",
-    task="classification",
-    transforms=image_transform,
-    batch_size=32,
-)
-```
-
-Single-label targets are scalar `LongTensor`s suitable for cross entropy. Multi-label targets are 20-element
-`FloatTensor`s suitable for binary cross entropy with logits. VOC classification flags greater than zero are treated
-as positive; absent and difficult/ambiguous flags are currently represented as zero. VOC provides `train` and `val`
-labels but no public labeled test split.
-
-Export and load the semantic segmentation subset created by the same import:
-
-```python
-datalake.export_dataset_version_to_format(
-    summary.dataset_names["semantic_segmentation"],
-    summary.dataset_version,
-    format="huggingface",
-    destination="./exports/voc-semantic",
-    exporter_options={"task": "semantic_segmentation"},
-)
-
-semantic_loaders = build_dataloaders(
-    "./exports/voc-semantic",
-    task="segmentation",
-    batch_size=8,
-)
-```
-
-Semantic samples are `(image, mask)` pairs where the image is a float tensor and the mask is a long tensor containing
-class IDs `0..20` and ignore ID `255`. The default collator keeps variable-resolution images and masks as lists. A
-paired transform may resize/crop both before collation; masks must use nearest-neighbour interpolation.
-
----
-
-## Penn-Fudan instance segmentation
-
-Penn-Fudan contains 170 pedestrian images and indexed PNG masks representing 345 instances. It has no official
-splits, so the importer creates a deterministic filename-hash train/validation split (80/20 by default) and records
-the split seed and fraction in DatasetVersion metadata. Each source image and indexed mask is stored once. One
-`instance_mask` annotation per pedestrian references the shared indexed mask and retains its instance ID, bbox, area,
-and crowd flag.
-
-Import it from Python:
-
-```python
-from mindtrace.datalake import Datalake, PennFudanImportConfig, import_penn_fudan
-
-with Datalake.create(
-    mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
-    mongo_db_name="mindtrace",
-) as datalake:
-    summary = import_penn_fudan(
+    import_penn_fudan(
         datalake,
         PennFudanImportConfig(
-            root_dir="./data/penn-fudan",
+            root_dir=data_root / "penn-fudan",
             download=True,
             val_fraction=0.2,
             split_seed=42,
         ),
     )
-
-    datalake.export_dataset_version_to_format(
-        summary.dataset_name,
-        summary.dataset_version,
-        format="huggingface",
-        destination="./exports/penn-fudan",
-        exporter_options={"task": "segmentation"},
-    )
 ```
 
-The equivalent importer CLI is:
+Importers create immutable DatasetVersions and fail if the target name/version already exists. The downloaded source
+trees are reusable, but rerunning the import requires new target versions or a clean Datalake.
 
-```bash
-mindtrace-datalake-import-penn-fudan \
-  --mongo-db-uri "mongodb://mindtrace:mindtrace@localhost:27017" \
-  --mongo-db-name "mindtrace" \
-  --root-dir "./data/penn-fudan" \
-  --val-fraction 0.2 \
-  --split-seed 42 \
-  --download
-```
+#### Export every supported task
 
-Build indexable datasets or DataLoaders through the same public task:
+This cell uses persisted names and versions, so it remains usable after a Python or notebook restart:
 
 ```python
-from mindtrace.datalake import build_dataloaders, build_datasets
+from pathlib import Path
 
-datasets = build_datasets(
-    "./exports/penn-fudan",
-    task="segmentation",
-)
-image, target = datasets["train"][0]
+from mindtrace.core import Config
+from mindtrace.datalake import Datalake
 
-loaders = build_dataloaders(
-    "./exports/penn-fudan",
-    task="segmentation",
-    batch_size=4,
-    num_workers=4,
-    seed=42,
-)
-train_loader = loaders["train"]
-val_loader = loaders["val"]
+mindtrace_temp = Path(Config().MINDTRACE_DIR_PATHS.TEMP_DIR).expanduser()
+export_root = mindtrace_temp / "exports"
+export_root.mkdir(parents=True, exist_ok=True)
+
+exports = {
+    "flowers102-single-label": (
+        "flowers-102",
+        "1.0.0",
+        {"task": "classification"},
+    ),
+    "voc-single-label": (
+        "pascal-voc-2012-train-classification-single-label",
+        "1.2.1",
+        {"task": "classification"},
+    ),
+    "voc-multi-label": (
+        "pascal-voc-2012-train-classification-multi-label",
+        "1.2.1",
+        {"task": "classification"},
+    ),
+    "voc-detection": (
+        "pascal-voc-2012-train-detection",
+        "1.2.1",
+        {"task": "detection"},
+    ),
+    "voc-semantic-segmentation": (
+        "pascal-voc-2012-train-semantic-segmentation",
+        "1.2.1",
+        {"task": "segmentation"},
+    ),
+    "penn-fudan-instance-segmentation": (
+        "penn-fudan-ped",
+        "1.0.0",
+        {"task": "segmentation"},
+    ),
+}
+
+with Datalake.create(
+    mongo_db_uri="mongodb://localhost:27017",
+    mongo_db_name="datalake",
+) as datalake:
+    for destination_name, (dataset_name, dataset_version, options) in exports.items():
+        datalake.export_dataset_version_to_format(
+            dataset_name,
+            dataset_version,
+            format="huggingface",
+            destination=export_root / destination_name,
+            include_media=True,
+            overwrite=True,
+            exporter_options=options,
+        )
 ```
 
-The instance schema is inferred from its `objects` column. Each target follows torchvision's Mask R-CNN contract:
-`boxes` is `[N, 4]` in `xyxy` format, `labels` is `[N]`, `masks` is boolean `[N, H, W]`, and `area` and `iscrowd`
-are `[N]`. Images and targets remain lists at collation because image dimensions and instance counts vary. A paired
-transform receives `(image, target)` and must update masks and boxes together.
+The exports embed media for relocation, preserve ordered class mappings and source lineage, and normalize task
+records into stable HF schemas.
+
+#### Build all associated Datasets and DataLoaders
+
+```python
+from pathlib import Path
+
+from mindtrace.core import Config
+from mindtrace.datalake import build_dataloaders, build_datasets
+from torchvision import transforms
+
+mindtrace_temp = Path(Config().MINDTRACE_DIR_PATHS.TEMP_DIR).expanduser()
+export_root = mindtrace_temp / "exports"
+
+classification_transform = transforms.Compose(
+    [
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+    ]
+)
+
+dataset_specs = {
+    "flowers102": (
+        export_root / "flowers102-single-label",
+        "classification",
+        classification_transform,
+    ),
+    "voc_single_label": (
+        export_root / "voc-single-label",
+        "classification",
+        classification_transform,
+    ),
+    "voc_multi_label": (
+        export_root / "voc-multi-label",
+        "classification",
+        classification_transform,
+    ),
+    "voc_detection": (export_root / "voc-detection", "detection", None),
+    "voc_semantic": (export_root / "voc-semantic-segmentation", "segmentation", None),
+    "penn_fudan_instance": (
+        export_root / "penn-fudan-instance-segmentation",
+        "segmentation",
+        None,
+    ),
+}
+
+datasets = {
+    name: build_datasets(path, task=task, transforms=transform)
+    for name, (path, task, transform) in dataset_specs.items()
+}
+
+# Direct random access to a Mask R-CNN-shaped instance-segmentation sample.
+image, target = datasets["penn_fudan_instance"]["train"][0]
+# target["boxes"]:   FloatTensor[N, 4] in xyxy
+# target["labels"]:  LongTensor[N]
+# target["masks"]:   BoolTensor[N, H, W]
+# target["area"]:    FloatTensor[N]
+# target["iscrowd"]: LongTensor[N]
+
+loaders = {
+    name: build_dataloaders(
+        path,
+        task=task,
+        transforms=transform,
+        batch_size=32 if task == "classification" else 4,
+        num_workers=0,
+        seed=42,
+    )
+    for name, (path, task, transform) in dataset_specs.items()
+}
+
+flowers_train_loader = loaders["flowers102"]["train"]
+flowers_val_loader = loaders["flowers102"]["val"]
+flowers_test_loader = loaders["flowers102"]["test"]
+voc_detection_train_loader = loaders["voc_detection"]["train"]
+voc_semantic_train_loader = loaders["voc_semantic"]["train"]
+penn_fudan_train_loader = loaders["penn_fudan_instance"]["train"]
+penn_fudan_val_loader = loaders["penn_fudan_instance"]["val"]
+```
+
+Both builders return dictionaries keyed by available or requested split names. Pass `splits=(...)` to select a
+subset. One transform may be shared across splits, or `transforms={"train": ..., "val": ..., "test": ...}` may
+provide split-specific preprocessing.
+
+Classification images must have a consistent shape before default collation can stack them. Detection, semantic
+segmentation, and instance segmentation use list-based collation because image sizes and target counts vary.
+Geometric detection and segmentation transforms receive the image and target together so boxes and masks remain
+aligned. Semantic mask resizing must use nearest-neighbour interpolation.
+
+### Runtime target contracts
+
+- Single-label classification: `(image, scalar LongTensor)`.
+- Multi-label classification: `(image, FloatTensor[num_classes])`.
+- Detection: `(image, target)` where `target` contains `boxes`, `labels`, `area`, and `iscrowd`.
+- Semantic segmentation: `(image, LongTensor[H, W])`.
+- Instance segmentation: `(image, target)` where `target` contains `boxes`, `labels`, `masks`, `area`, and
+  `iscrowd`.
+
+Detection and instance targets follow torchvision conventions. The detection adapter is source-dataset-generic but
+expects the canonical Mindtrace HF detection schema: embedded image media, absolute pixel-space `xywh` boxes, and
+contiguous category IDs. The instance adapter similarly consumes the canonical Mindtrace HF objects-with-masks
+schema.
+
+COCO support is outside the current scope.
 
 ---
 
