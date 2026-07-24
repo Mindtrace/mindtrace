@@ -33,7 +33,7 @@ The models module consists of eight sub-packages:
 - **Evaluation**: Framework-agnostic metric computation (pure NumPy) with EvaluationRunner for orchestrated inference
 - **Optimization**: Edge deployment toolkit — quantization (PTQ/QAT), pruning, ONNX export, compilation (ONNX Runtime, OpenVINO, TensorRT, ExecuTorch), benchmarking, and accuracy-gated optimization recipes
 - **Lifecycle**: Model stage management (DEV/STAGING/PRODUCTION/ARCHIVED) with metric-gated promotion and per-target compiled variants
-- **Serving**: Model inference services via ONNX Runtime, OpenVINO, TensorRT and TorchServe, plus edge operations (tiled inference, pipeline pooling, inference queues, shadow deployment)
+- **Serving**: Model inference services via ONNX Runtime, OpenVINO, TensorRT and TorchServe, plus edge operations (tiled inference, pipeline pooling, inference queues)
 - **Archivers**: ML model serialization that self-registers with the Mindtrace Registry at import time
 
 Each sub-package provides:
@@ -414,7 +414,7 @@ result.violations      # any gates that fired (lossy steps roll back automatical
 
 Compiled variants attach to a `ModelCard` (`add_variant` / `promote_variant`) so promotion gates cover latency and size as well as accuracy, and the serving layer picks them up per target (see [Serving](#serving)).
 
-See [Optimization Documentation](mindtrace/models/optimization/README.md) for the full guide: per-family walkthroughs, target profiles, the on-device compile agent, and deployment operations (tiled inference, pipeline pooling, inference queues, thermal load shedding, shadow deployment).
+See [Optimization Documentation](mindtrace/models/optimization/README.md) for the full guide: per-family walkthroughs, target profiles, the on-device compile agent, and deployment operations (tiled inference, pipeline pooling, inference queues).
 
 ## Lifecycle
 
@@ -464,7 +464,7 @@ See [Lifecycle Documentation](mindtrace/models/lifecycle/README.md) for details.
 | Warmup on load | Yes | Yes | Yes | -- |
 | Python dependency | `onnxruntime` | `openvino` | `tensorrt` (on-device) | TorchServe server |
 
-`EdgeModelService` probes the box at startup and builds an execution-provider fallback chain (TensorRT → CUDA → OpenVINO → CPU) so one deployment manifest runs anywhere. For on-box camera loops, `InProcessPredictor` skips HTTP/base64 entirely; `TiledInference`, `PipelinePool`, `InferenceQueue`, `ThermalGovernor` and shadow `Deployment` cover the remaining edge operations (see the [Optimization guide](mindtrace/models/optimization/README.md)).
+`EdgeModelService` probes the box at startup and builds an execution-provider fallback chain (TensorRT → CUDA → OpenVINO → CPU) so one deployment manifest runs anywhere. For on-box camera loops, `InProcessPredictor` skips HTTP/base64 entirely; `TiledInference`, `PipelinePool` and `InferenceQueue` cover the remaining edge operations (see the [Optimization guide](mindtrace/models/optimization/README.md)).
 
 ### ONNX Serving
 
@@ -692,8 +692,7 @@ from mindtrace.models.optimization import (
 # Edge serving and operations
 from mindtrace.models.serving import (
     EdgeModelService, OpenVINOModelService, TensorRTModelService,
-    InProcessPredictor, TiledInference, InferenceQueue, ThermalGovernor,
-    ShadowEvaluation, Deployment, ConfidenceMonitor, CompileAgentService,
+    InProcessPredictor, TiledInference, InferenceQueue, CompileAgentService,
 )
 ```
 

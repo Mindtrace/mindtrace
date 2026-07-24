@@ -14,14 +14,9 @@ exported inline (no training, no dataset, no network access by default):
      budget-driven eviction (stats() progression).
   5. InferenceQueue — latency mode (drop-oldest under a burst) and throughput
      mode (micro-batching, printing the batch sizes the model saw).
-  6. ThermalGovernor — hysteresis load shedding driven by a scripted
-     temperature ramp (70 -> 90 -> 70 C).
-  7. Shadow deployment — ShadowEvaluation + Deployment promote a STAGING
-     variant that agrees with production and demote one that does not;
-     ConfidenceMonitor flags a drifted confidence distribution.
-  8. CompileAgentService — on-device compile job for target="self" plus the
+  6. CompileAgentService — on-device compile job for target="self" plus the
      /targets buildability listing.
-  9. Ultralytics — guarded preview of export_ultralytics and
+  7. Ultralytics — guarded preview of export_ultralytics and
      AutoSegmenter.optimize_for_edge (set MINDTRACE_SAMPLES_ALLOW_DOWNLOAD=1
      to actually download YOLO weights and run it).
 
@@ -52,17 +47,12 @@ if not _ORT_AVAILABLE:
     raise SystemExit(0)
 
 from mindtrace.models import PipelinePool
-from mindtrace.models.lifecycle import ModelCard, ModelStage
 from mindtrace.models.optimization.export import export_onnx, fuse_preprocessing
 from mindtrace.models.serving import (
     CompileAgentService,
     CompileJobInput,
-    ConfidenceMonitor,
-    Deployment,
     InferenceQueue,
     InProcessPredictor,
-    ShadowEvaluation,
-    ThermalGovernor,
     TiledInference,
 )
 
@@ -313,113 +303,6 @@ def section_inference_queue() -> None:
     print("   queued when it wakes; exact splits vary run to run)")
 
 
-def section_thermal_governor() -> None:
-    """Drive a submit loop through a scripted 70 -> 90 -> 70 C ramp."""
-    print("\n── ThermalGovernor: scripted ramp 70→90→70 C (shed ≥85, resume <75) ──")
-    temps = [70.0, 74.0, 78.0, 82.0, 86.0, 90.0, 88.0, 84.0, 80.0, 76.0, 72.0, 70.0]
-    readings = iter(temps)
-    transitions: list[str] = []
-    governor = ThermalGovernor(
-        max_temp_c=85.0,
-        resume_temp_c=75.0,
-        reader=lambda: next(readings),
-        on_shed=lambda t: transitions.append(f"SHED at {t:.0f} C"),
-        on_resume=lambda t: transitions.append(f"RESUME at {t:.0f} C"),
-    )
-
-    submitted, shed = 0, 0
-    with InferenceQueue(lambda item: item, mode="latency", maxsize=4) as queue:
-        for frame_id, temp in enumerate(temps):
-            if governor.check():
-                shed += 1
-                print(f"    frame {frame_id:2d}  temp {temp:4.0f} C  -> shed (skip frame)")
-            else:
-                queue.submit(frame_id)
-                submitted += 1
-                print(f"    frame {frame_id:2d}  temp {temp:4.0f} C  -> submitted")
-    print(f"  transitions: {transitions}")
-    print(f"  submitted {submitted} frames, shed {shed} — hysteresis (85 vs 75 C) prevents flapping")
-
-
-def section_shadow_deployment(onnx_path: Path, rng: np.random.Generator) -> None:
-    """Shadow-evaluate two candidates and monitor confidence drift.
-
-    Args:
-        onnx_path: The tiny conv model serving as production.
-        rng: Seeded random generator for synthetic frames.
-    """
-    print("\n── Shadow deployment: earn PRODUCTION by live agreement ──")
-    session = onnxruntime.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
-    input_name = session.get_inputs()[0].name
-
-    def production_predict(batch: np.ndarray) -> np.ndarray:
-        """Production inference: the FP32 session already serving traffic."""
-        return session.run(None, {input_name: batch})[0][0]
-
-    card = ModelCard(
-        name="tiny-conv",
-        version="v1",
-        task="classification",
-        architecture="3-layer conv (inline demo model)",
-        description="Shadow-deployment demo card.",
-    )
-    card.add_variant("candidate-good", artifact=str(onnx_path))
-    card.promote_variant("candidate-good", to_stage=ModelStage.STAGING)
-    print(f"  variant 'candidate-good' staged: {card.get_variant('candidate-good').stage.value}")
-
-    evaluation = ShadowEvaluation(min_samples=40, min_agreement=0.98, max_latency_ratio=2.0)
-    deployment = Deployment(
-        card=card,
-        variant="candidate-good",
-        evaluation=evaluation,
-        on_pass=lambda d: print(f"    [on_pass] agreement={d.agreement:.3f} over {d.samples} samples"),
-        on_fail=lambda d: print(f"    [on_fail] {d.reasons}"),
-    )
-
-    def feed(shadow: ShadowEvaluation, candidate_fn, samples: int) -> None:
-        """Record paired production/candidate outputs on random frames."""
-        for _ in range(samples):
-            batch = rng.standard_normal((1, 3, IMG_SIZE, IMG_SIZE)).astype(np.float32)
-            t0 = time.perf_counter()
-            production_out = production_predict(batch)
-            prod_ms = (time.perf_counter() - t0) * 1000.0
-            t0 = time.perf_counter()
-            candidate_out = candidate_fn(batch)
-            cand_ms = (time.perf_counter() - t0) * 1000.0
-            shadow.record(production_out, candidate_out, production_latency_ms=prod_ms, candidate_latency_ms=cand_ms)
-
-    feed(evaluation, production_predict, samples=10)  # candidate = same model
-    early = deployment.step()
-    print(f"  after 10 samples: status={early.status!r}  ({early.reasons[0]})")
-    feed(evaluation, production_predict, samples=30)
-    decision = deployment.step()
-    print(f"  after {decision.samples} samples: status={decision.status!r}  agreement={decision.agreement:.3f}")
-    print(f"  variant 'candidate-good' is now: {card.get_variant('candidate-good').stage.value}")
-
-    print("\n  — and a candidate that disagrees with production —")
-    card.add_variant("candidate-bad", artifact=str(onnx_path))
-    card.promote_variant("candidate-bad", to_stage=ModelStage.STAGING)
-    bad_eval = ShadowEvaluation(min_samples=40, min_agreement=0.98)
-    bad_deployment = Deployment(card=card, variant="candidate-bad", evaluation=bad_eval)
-    # The "bad" candidate rotates the logits, so its argmax (almost) never matches.
-    feed(bad_eval, lambda batch: np.roll(production_predict(batch), 1), samples=40)
-    bad_decision = bad_deployment.step()
-    print(f"  status={bad_decision.status!r}  agreement={bad_decision.agreement:.3f}")
-    print(f"  reasons: {bad_decision.reasons}")
-    print(f"  variant 'candidate-bad' demoted to: {card.get_variant('candidate-bad').stage.value}")
-    print(f"  recorded reason: {card.extra['demotion_reason/candidate-bad']}")
-
-    print("\n  — ConfidenceMonitor: drifted confidence distribution —")
-    monitor = ConfidenceMonitor(window=300, threshold=0.15)
-    monitor.record(rng.beta(8.0, 2.0, size=300))  # healthy: confidences ~0.8
-    monitor.set_reference_from_window()
-    print(f"  reference frozen from a healthy window; drift now: {monitor.drift():.3f}")
-    monitor.record(rng.beta(2.0, 3.0, size=300))  # drifted: confidences ~0.4
-    print(
-        f"  after a shifted stream (mean ~0.8 → ~0.4): drift={monitor.drift():.3f}  is_drifting={monitor.is_drifting}"
-    )
-
-
 def section_compile_agent(onnx_path: Path) -> None:
     """Run an on-device compile job and list target buildability.
 
@@ -491,8 +374,6 @@ def main() -> None:
     section_tiled_inference(rng)
     section_pipeline_pool()
     section_inference_queue()
-    section_thermal_governor()
-    section_shadow_deployment(onnx_path, rng)
     section_compile_agent(onnx_path)
     section_ultralytics_preview()
 
