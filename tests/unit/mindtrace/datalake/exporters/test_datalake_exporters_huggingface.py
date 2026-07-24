@@ -1,12 +1,14 @@
 """Tests for :mod:`mindtrace.datalake.exporters.huggingface`."""
 
 import json
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 from export_test_utils import png_bytes, sample_asset
+from PIL import Image
 
 from mindtrace.datalake.exporters.huggingface import export_dataset_as_huggingface
 from mindtrace.datalake.exporters.types import ExportableDataset, ExportableItem
@@ -59,6 +61,14 @@ def _fake_datasets_module():
         ClassLabel=_FakeFeature,
         Sequence=_FakeFeature,
     )
+
+
+def _indexed_instance_mask_bytes() -> bytes:
+    mask = Image.new("L", (3, 2))
+    mask.putdata([0, 1, 1, 0, 2, 2])
+    payload = BytesIO()
+    mask.save(payload, format="PNG")
+    return payload.getvalue()
 
 
 def test_huggingface_export_raises_helpful_error_when_dependency_missing(monkeypatch, tmp_path: Path):
@@ -455,3 +465,71 @@ def test_huggingface_semantic_segmentation_export_writes_typed_image_and_mask(tm
     assert payload["train"][0]["class_names"] == ["background", "person"]
     assert payload["train"][0]["background_id"] == 0
     assert payload["train"][0]["ignore_index"] == 255
+
+
+@pytest.mark.parametrize("task", ["segmentation", "instance_segmentation"])
+def test_huggingface_instance_segmentation_export_writes_typed_objects(tmp_path: Path, monkeypatch, task):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+    from mindtrace.datalake.types import AnnotationRecord
+
+    monkeypatch.setattr(
+        huggingface_exporter.importlib,
+        "import_module",
+        lambda name: _fake_datasets_module(),
+    )
+    mask_asset = sample_asset()
+    mask_asset.asset_id = "instance_mask_asset"
+    mask_asset.kind = "mask"
+    mask_asset.media_type = "image/png"
+    dataset = ExportableDataset(
+        name="penn-fudan",
+        metadata={
+            "task_type": "instance_segmentation",
+            "instance_segmentation_class_names": ["background", "person"],
+        },
+        items=[
+            ExportableItem(
+                asset=sample_asset(),
+                split="train",
+                payload_bytes=png_bytes(),
+                source_filename="pedestrian.png",
+                related_assets={"instance_mask": mask_asset},
+                related_payload_bytes={"instance_mask": _indexed_instance_mask_bytes()},
+                annotations=[
+                    AnnotationRecord(
+                        annotation_id=f"instance_{instance_id}",
+                        kind="instance_mask",
+                        label="person",
+                        label_id=1,
+                        geometry={
+                            "mask_asset_id": "instance_mask_asset",
+                            "instance_id": instance_id,
+                            "encoding": {"type": "indexed_png"},
+                        },
+                        attributes={"iscrowd": False},
+                        source={"type": "human", "name": "penn-fudan"},
+                    )
+                    for instance_id in (1, 2)
+                ],
+            )
+        ],
+    )
+
+    result = export_dataset_as_huggingface(
+        dataset,
+        destination=tmp_path / f"penn-fudan-{task}",
+        options={"task": task},
+    )
+    payload = json.loads((tmp_path / f"penn-fudan-{task}" / "dataset_dict.json").read_text())
+    objects = payload["train"][0]["objects"]
+
+    assert result.annotation_count == 2
+    assert objects["category"] == [1, 1]
+    assert objects["category_name"] == ["person", "person"]
+    assert objects["bbox"] == [[1.0, 0.0, 2.0, 1.0], [1.0, 1.0, 2.0, 1.0]]
+    assert objects["area"] == [2.0, 2.0]
+    assert objects["iscrowd"] == [False, False]
+    assert [mask["path"] for mask in objects["mask"]] == [
+        "asset_img-instance_1.png",
+        "asset_img-instance_2.png",
+    ]

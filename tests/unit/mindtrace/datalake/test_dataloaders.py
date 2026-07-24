@@ -57,6 +57,10 @@ class _FakeTensor:
         self.dtype = "long"
         return self
 
+    def bool(self):
+        self.dtype = "bool"
+        return self
+
 
 class _FakeGenerator:
     def manual_seed(self, seed):
@@ -65,6 +69,7 @@ class _FakeGenerator:
 
 
 class _FakeTorch:
+    bool = "bool"
     float32 = "float32"
     long = "long"
     Generator = _FakeGenerator
@@ -76,6 +81,10 @@ class _FakeTorch:
     @staticmethod
     def zeros(length, dtype=None):
         return _FakeTensor([0] * length, dtype=dtype)
+
+    @staticmethod
+    def stack(tensors):
+        return _FakeTensor([tensor.value for tensor in tensors], dtype=tensors[0].dtype)
 
     @staticmethod
     def initial_seed():
@@ -366,10 +375,12 @@ def test_build_datasets_supports_inferred_and_explicit_semantic_profiles(monkeyp
     assert isinstance(datasets["train"], dataloaders.HuggingFaceSemanticSegmentationDataset)
 
 
-def test_build_datasets_recognizes_unimplemented_instance_segmentation_schema(monkeypatch):
-    row = {"asset_id": "instance-1", "image": _FakeImage(), "objects": {"masks": []}}
+@pytest.mark.parametrize("task", ["segmentation", "instance_segmentation", "instance-segmentation"])
+def test_build_datasets_supports_inferred_and_explicit_instance_profiles(monkeypatch, task):
+    objects_feature = SimpleNamespace(feature={"category": SimpleNamespace(names=["background", "person"])})
+    row = {"asset_id": "instance-1", "image": _FakeImage(), "objects": {"mask": []}}
     payload = _FakeDatasetDict(
-        train=_FakeSplitDataset([row], column_names=list(row), features={}),
+        train=_FakeSplitDataset([row], column_names=list(row), features={"objects": objects_feature}),
     )
     monkeypatch.setattr(
         dataloaders,
@@ -377,11 +388,47 @@ def test_build_datasets_recognizes_unimplemented_instance_segmentation_schema(mo
         lambda: _dependency_bundle(payload),
     )
 
-    with pytest.raises(NotImplementedError, match="recognized"):
-        dataloaders.build_datasets("/export", task="segmentation")
+    datasets = dataloaders.build_datasets("/export", task=task)
 
-    with pytest.raises(NotImplementedError, match="recognized"):
-        dataloaders.build_datasets("/export", task="instance_segmentation")
+    assert isinstance(datasets["train"], dataloaders.HuggingFaceInstanceSegmentationDataset)
+    assert datasets["train"].class_names == ("background", "person")
+
+
+def test_instance_segmentation_dataset_returns_mask_rcnn_target(monkeypatch):
+    image = _FakeImage()
+    mask = _FakeImage()
+    objects_feature = SimpleNamespace(feature={"category": SimpleNamespace(names=["background", "person"])})
+    row = {
+        "asset_id": "penn-fudan-1",
+        "image": image,
+        "objects": {
+            "mask": [mask],
+            "bbox": [[10.0, 20.0, 30.0, 40.0]],
+            "category": [1],
+            "area": [321.0],
+            "iscrowd": [False],
+        },
+    }
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset([row], column_names=list(row), features={"objects": objects_feature}),
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    dataset = dataloaders.HuggingFaceInstanceSegmentationDataset("/export", split="train")
+    sample, target = dataset[0]
+
+    assert sample == ("normalized", image, 255)
+    assert target["boxes"].value == [[10.0, 20.0, 40.0, 60.0]]
+    assert target["labels"].value == [1]
+    assert target["masks"].value == [mask]
+    assert target["masks"].dtype == "bool"
+    assert target["area"].value == [321.0]
+    assert target["iscrowd"].value == [0]
+    assert target["asset_id"] == "penn-fudan-1"
 
 
 def test_build_datasets_rejects_ambiguous_segmentation_schema(monkeypatch):

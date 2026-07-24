@@ -12,11 +12,19 @@ import pytest
         ("PascalVocImportConfig", "PascalVocImportConfig"),
         ("PascalVocImportSummary", "PascalVocImportSummary"),
         ("import_pascal_voc", "import_pascal_voc"),
+        ("PennFudanImportConfig", "PennFudanImportConfig"),
+        ("PennFudanImportSummary", "PennFudanImportSummary"),
+        ("import_penn_fudan", "import_penn_fudan"),
     ],
 )
 def test_importers_package_lazy_exports_resolve_importer_symbols(export_name, expected_name):
     importers_module = importlib.import_module("mindtrace.datalake.importers")
-    module_name = "flowers102" if "Flowers102" in export_name or export_name == "import_flowers102" else "pascal_voc"
+    if "Flowers102" in export_name or export_name == "import_flowers102":
+        module_name = "flowers102"
+    elif "PennFudan" in export_name or export_name == "import_penn_fudan":
+        module_name = "penn_fudan"
+    else:
+        module_name = "pascal_voc"
     importer_module = importlib.import_module(f"mindtrace.datalake.importers.{module_name}")
 
     assert getattr(importers_module, export_name) is getattr(importer_module, expected_name)
