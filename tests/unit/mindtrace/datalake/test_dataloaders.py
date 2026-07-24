@@ -396,6 +396,27 @@ def test_build_datasets_supports_inferred_and_explicit_instance_profiles(monkeyp
     assert datasets["train"].class_names == ("background", "person")
 
 
+def test_build_datasets_infers_instance_profile_from_reloaded_hf_sequence_schema(monkeypatch):
+    objects_feature = {
+        "category": SimpleNamespace(feature=SimpleNamespace(names=["background", "person"])),
+        "mask": SimpleNamespace(feature=SimpleNamespace()),
+    }
+    row = {"asset_id": "instance-1", "image": _FakeImage(), "objects": {"mask": []}}
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset([row], column_names=list(row), features={"objects": objects_feature}),
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    datasets = dataloaders.build_datasets("/export", task="segmentation")
+
+    assert isinstance(datasets["train"], dataloaders.HuggingFaceInstanceSegmentationDataset)
+    assert datasets["train"].class_names == ("background", "person")
+
+
 def test_instance_segmentation_dataset_returns_mask_rcnn_target(monkeypatch):
     image = _FakeImage()
     mask = _FakeImage()

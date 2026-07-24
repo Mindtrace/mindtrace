@@ -102,6 +102,23 @@ def _object_rows(objects: Any) -> list[dict[str, Any]]:
     return list(objects or [])
 
 
+def _object_feature_fields(dataset: Any) -> Mapping[str, Any]:
+    """Return object fields from either Hugging Face Sequence representation."""
+    objects_feature = dataset.features.get("objects")
+    sequence_fields = getattr(objects_feature, "feature", None)
+    if isinstance(sequence_fields, Mapping):
+        return sequence_fields
+    if isinstance(objects_feature, Mapping):
+        return objects_feature
+    return {}
+
+
+def _class_names_from_feature(feature: Any) -> tuple[str, ...]:
+    """Read ClassLabel names through an optional list/sequence wrapper."""
+    element_feature = getattr(feature, "feature", feature)
+    return tuple(getattr(element_feature, "names", ()) or ())
+
+
 def _xywh_to_xyxy(bbox: Sequence[float]) -> list[float]:
     x, y, width, height = bbox
     return [x, y, x + width, y + height]
@@ -128,9 +145,8 @@ class HuggingFaceDetectionDataset:
         missing = sorted(required_columns - set(self._dataset.column_names))
         if missing:
             raise ValueError(f"Hugging Face detection export is missing required column(s): {missing}.")
-        objects_feature = self._dataset.features.get("objects")
-        category_feature = getattr(getattr(objects_feature, "feature", None), "get", lambda _: None)("category")
-        self.class_names = tuple(getattr(category_feature, "names", ()) or ())
+        category_feature = _object_feature_fields(self._dataset).get("category")
+        self.class_names = _class_names_from_feature(category_feature)
 
     def __len__(self) -> int:
         return len(self._dataset)
@@ -234,9 +250,8 @@ class HuggingFaceInstanceSegmentationDataset:
         missing = sorted(required_columns - set(self._dataset.column_names))
         if missing:
             raise ValueError(f"Hugging Face instance segmentation export is missing required column(s): {missing}.")
-        objects_feature = self._dataset.features.get("objects")
-        category_feature = getattr(getattr(objects_feature, "feature", None), "get", lambda _: None)("category")
-        self.class_names = tuple(getattr(category_feature, "names", ()) or ())
+        category_feature = _object_feature_fields(self._dataset).get("category")
+        self.class_names = _class_names_from_feature(category_feature)
 
     def __len__(self) -> int:
         return len(self._dataset)
@@ -335,9 +350,8 @@ def _normalize_task(task: str) -> str:
 def _infer_segmentation_profile(dataset: Any) -> str:
     columns = set(dataset.column_names)
     has_semantic_mask = "mask" in columns
-    objects_feature = dataset.features.get("objects")
-    object_fields = getattr(objects_feature, "feature", None)
-    has_instances = isinstance(object_fields, Mapping) and bool({"mask", "masks"} & set(object_fields))
+    object_fields = _object_feature_fields(dataset)
+    has_instances = bool({"mask", "masks"} & set(object_fields))
     if has_semantic_mask and has_instances:
         raise ValueError(
             "Segmentation export is ambiguous: it contains both a semantic 'mask' column and an instance "
