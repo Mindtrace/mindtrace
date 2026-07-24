@@ -245,9 +245,15 @@ error when exported with `format="coco"`.
 
 ## Built-in Pascal VOC importer
 
-The package includes a task-selective importer for **Pascal VOC 2012**. Detection and classification use the
-`ImageSets/Main` split; semantic segmentation uses the smaller `ImageSets/Segmentation` split and preserves each
-original categorical mask, including background ID `0` and ignore ID `255`.
+The package includes a one-pass importer for **Pascal VOC 2012**. By default it imports classification, detection,
+and semantic segmentation together and creates task-specific immutable DatasetVersions. The train import stores
+each of the 5,717 source JPEGs exactly once. Detection and multi-label classification views reference all 5,717
+canonical Datums; semantic segmentation references its 1,464-Datum subset; single-label classification uses
+lightweight region Datums that reference the same JPEG Assets.
+
+Semantic segmentation preserves each original categorical mask, including background ID `0` and ignore ID `255`.
+The optional `tasks=(...)` setting limits which annotations and views are created. Set
+`create_task_versions=False` (or pass `--no-task-versions` to the CLI) to create only the canonical version.
 
 ### CLI
 
@@ -288,21 +294,20 @@ with Datalake.create(
             root_dir="./data/pascal-voc",
             split="train",
             dataset_name="pascal-voc-2012-train",
-            tasks=("detection",),
             download=True,
         ),
     )
-    print(summary)
+    print(summary.dataset_names)
 ```
 
 Importer notes: reuses downloaded trees when present; supports immutable registries; fails if the target
-`DatasetVersion` already exists.
+`DatasetVersion` already exists. All output version names are preflighted before any Assets are written.
 
 Export VOC detections to a typed Hugging Face dataset and build variable-target PyTorch loaders:
 
 ```python
 datalake.export_dataset_version_to_format(
-    summary.dataset_name,
+    summary.dataset_names["detection"],
     summary.dataset_version,
     format="huggingface",
     destination="./exports/voc-detection",
@@ -322,27 +327,12 @@ detection loader converts boxes to the `xyxy` tensors expected by torchvision mo
 `(image, target)` and must return the transformed pair so boxes stay aligned with image geometry. The detection
 collator returns image and target lists because object counts vary between samples.
 
-VOC also supports two classification exports. Import classification and detection annotations together if both
-outputs are required:
-
-```python
-classification_summary = import_pascal_voc(
-    datalake,
-    PascalVocImportConfig(
-        root_dir="./data/pascal-voc",
-        split="train",
-        dataset_name="pascal-voc-2012-classification-train",
-        tasks=("classification", "detection"),
-    ),
-)
-```
-
 The native VOC whole-image task is multi-label. It exports one 20-element multi-hot float target per image:
 
 ```python
 datalake.export_dataset_version_to_format(
-    classification_summary.dataset_name,
-    classification_summary.dataset_version,
+    summary.dataset_names["classification_multi_label"],
+    summary.dataset_version,
     format="huggingface",
     destination="./exports/voc-multi-label",
     exporter_options={
@@ -352,21 +342,18 @@ datalake.export_dataset_version_to_format(
 )
 ```
 
-The same source version can be materialized as single-label object crops derived from its bounding boxes. Each HF row
-retains `source_image_asset_id`, `source_annotation_id`, and the source `xywh` bbox. Crops inherit the source image's
-split, preventing train/validation leakage:
+The single-label view contains one lightweight region Datum per bounding box. Each region references its source JPEG;
+the HF exporter performs the crop while materializing the row. The row retains `source_image_asset_id`,
+`source_annotation_id`, and the source `xywh` bbox. Regions inherit the source image's split, preventing
+train/validation leakage:
 
 ```python
 datalake.export_dataset_version_to_format(
-    classification_summary.dataset_name,
-    classification_summary.dataset_version,
+    summary.dataset_names["classification_single_label"],
+    summary.dataset_version,
     format="huggingface",
     destination="./exports/voc-object-crops",
-    exporter_options={
-        "task": "classification",
-        "classification_type": "single_label",
-        "classification_source": "bbox_crops",
-    },
+    exporter_options={"task": "classification"},
 )
 ```
 
@@ -402,22 +389,12 @@ Single-label targets are scalar `LongTensor`s suitable for cross entropy. Multi-
 as positive; absent and difficult/ambiguous flags are currently represented as zero. VOC provides `train` and `val`
 labels but no public labeled test split.
 
-Import, export, and load the semantic segmentation subset:
+Export and load the semantic segmentation subset created by the same import:
 
 ```python
-semantic_summary = import_pascal_voc(
-    datalake,
-    PascalVocImportConfig(
-        root_dir="./data/pascal-voc",
-        split="train",
-        dataset_name="pascal-voc-2012-semantic-train",
-        tasks=("semantic_segmentation",),
-    ),
-)
-
 datalake.export_dataset_version_to_format(
-    semantic_summary.dataset_name,
-    semantic_summary.dataset_version,
+    summary.dataset_names["semantic_segmentation"],
+    summary.dataset_version,
     format="huggingface",
     destination="./exports/voc-semantic",
     exporter_options={"task": "semantic_segmentation"},
