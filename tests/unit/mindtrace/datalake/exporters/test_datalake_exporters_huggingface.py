@@ -394,7 +394,7 @@ def test_huggingface_detection_export_rejects_degenerate_boxes(tmp_path: Path, m
                         label="object",
                         label_id=1,
                         geometry={"type": "bbox", "x": 0, "y": 0, "width": 0, "height": 10},
-                        source={"type": "human"},
+                        source={"type": "human", "name": "pytest"},
                     )
                 ],
             )
