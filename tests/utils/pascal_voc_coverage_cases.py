@@ -38,6 +38,18 @@ def test_default_dataset_name_and_voc_root_resolution(tmp_path: Path):
     assert pascal_voc._voc_root_from_base(missing_base) == missing_base / "VOCdevkit" / "VOC2012"
 
 
+def test_dataset_view_names_include_both_classification_profiles():
+    names = pascal_voc._dataset_view_names("pascal-voc-2012-train", pascal_voc.VOC_TASKS)
+
+    assert names == {
+        "canonical": "pascal-voc-2012-train",
+        "classification_multi_label": "pascal-voc-2012-train-classification-multi-label",
+        "classification_single_label": "pascal-voc-2012-train-classification-single-label",
+        "detection": "pascal-voc-2012-train-detection",
+        "semantic_segmentation": "pascal-voc-2012-train-semantic-segmentation",
+    }
+
+
 def test_download_archive_uses_expected_download_strategy(tmp_path: Path):
     archive_path = tmp_path / pascal_voc.PASCAL_VOC_2012_ARCHIVE_NAME
 
@@ -383,6 +395,8 @@ def test_import_pascal_voc_rejects_existing_dataset_version(tmp_path: Path):
                 show_progress=False,
             ),
         )
+    assert datalake.get_dataset_version.call_count == 5
+    datalake.create_asset_from_object.assert_not_called()
 
 
 @pytest.mark.parametrize("missing_name", ["image", "annotation"])
@@ -420,13 +434,19 @@ def test_import_pascal_voc_creates_classification_detection_and_segmentation_rec
         SimpleNamespace(asset_id="image_asset"),
         SimpleNamespace(asset_id="mask_asset"),
     ]
-    datalake.create_datum.return_value = SimpleNamespace(datum_id="datum_1")
+    datalake.create_datum.side_effect = [
+        SimpleNamespace(datum_id="datum_1"),
+        SimpleNamespace(datum_id="region_datum_1"),
+    ]
     datalake.create_annotation_set.side_effect = [
         SimpleNamespace(annotation_set_id="set_cls"),
         SimpleNamespace(annotation_set_id="set_det"),
+        SimpleNamespace(annotation_set_id="set_region"),
         SimpleNamespace(annotation_set_id="set_seg"),
     ]
-    datalake.create_dataset_version.return_value = SimpleNamespace(dataset_version_id="dataset_version_1")
+    datalake.create_dataset_version.side_effect = [
+        SimpleNamespace(dataset_version_id=f"dataset_version_{index}") for index in range(1, 6)
+    ]
 
     schemas = {
         "classification": make_schema_ref("schema_cls"),
@@ -452,26 +472,33 @@ def test_import_pascal_voc_creates_classification_detection_and_segmentation_rec
     assert summary.classification_record_count == 1
     assert summary.detection_record_count == 1
     assert summary.segmentation_record_count == 1
+    assert summary.derived_datum_count == 1
     assert datalake.create_asset_from_object.call_count == 2
     assert datalake.create_asset_from_object.call_args_list[1].kwargs["kind"] == "mask"
     assert all("on_conflict" not in call.kwargs for call in datalake.create_asset_from_object.call_args_list)
 
     classification_records = datalake.add_annotation_records.call_args_list[0].args[0]
     detection_records = datalake.add_annotation_records.call_args_list[1].args[0]
-    segmentation_records = datalake.add_annotation_records.call_args_list[2].args[0]
+    region_records = datalake.add_annotation_records.call_args_list[2].args[0]
+    segmentation_records = datalake.add_annotation_records.call_args_list[3].args[0]
 
     assert classification_records[0]["kind"] == "classification"
     assert detection_records[0]["kind"] == "bbox"
+    assert region_records[0]["kind"] == "bbox"
+    assert region_records[0]["attributes"] == detection_records[0]["attributes"]
     assert segmentation_records[0]["kind"] == "mask"
     assert segmentation_records[0]["label"] == "semantic_mask"
     assert segmentation_records[0]["geometry"]["mask_asset_id"] == "mask_asset"
     assert segmentation_records[0]["attributes"]["encoding"] == "class_id"
     assert segmentation_records[0]["attributes"]["ignore_index"] == 255
-    assert datalake.create_datum.call_args.kwargs["asset_refs"] == {
+    assert datalake.create_datum.call_args_list[0].kwargs["asset_refs"] == {
         "image": "image_asset",
         "semantic_mask": "mask_asset",
     }
-    dataset_metadata = datalake.create_dataset_version.call_args.kwargs["metadata"]
+    assert datalake.create_datum.call_args_list[1].kwargs["asset_refs"] == {"image": "image_asset"}
+    assert datalake.create_datum.call_args_list[1].kwargs["metadata"]["derivation"] == "bbox_crop"
+    assert datalake.create_datum.call_args_list[1].kwargs["metadata"]["source_datum_id"] == "datum_1"
+    dataset_metadata = datalake.create_dataset_version.call_args_list[0].kwargs["metadata"]
     assert dataset_metadata["task_types"] == ["classification", "detection", "semantic_segmentation"]
     assert dataset_metadata["classification_type"] == "multi_label"
     assert dataset_metadata["classification_class_names"] == pascal_voc.VOC_CLASSES
@@ -479,6 +506,49 @@ def test_import_pascal_voc_creates_classification_detection_and_segmentation_rec
     assert dataset_metadata["detection_bbox_format"] == "xywh"
     assert dataset_metadata["semantic_segmentation_class_names"] == ["background", *pascal_voc.VOC_CLASSES]
     assert dataset_metadata["semantic_segmentation_ignore_index"] == 255
+    version_calls = {
+        call.kwargs["dataset_name"]: call.kwargs for call in datalake.create_dataset_version.call_args_list
+    }
+    assert set(version_calls) == {
+        "pascal-voc-2012-train",
+        "pascal-voc-2012-train-classification-multi-label",
+        "pascal-voc-2012-train-classification-single-label",
+        "pascal-voc-2012-train-detection",
+        "pascal-voc-2012-train-semantic-segmentation",
+    }
+    assert version_calls["pascal-voc-2012-train"]["manifest"] == ["datum_1"]
+    assert version_calls["pascal-voc-2012-train-detection"]["manifest"] == ["datum_1"]
+    assert version_calls["pascal-voc-2012-train-classification-multi-label"]["manifest"] == ["datum_1"]
+    assert version_calls["pascal-voc-2012-train-classification-single-label"]["manifest"] == [
+        "region_datum_1"
+    ]
+    assert version_calls["pascal-voc-2012-train-semantic-segmentation"]["manifest"] == ["datum_1"]
+    assert summary.dataset_names["classification_single_label"].endswith("classification-single-label")
+    assert summary.dataset_version_ids["canonical"] == "dataset_version_1"
+
+
+def test_import_pascal_voc_can_create_only_the_canonical_version(tmp_path: Path):
+    build_tiny_voc_fixture(tmp_path, include_segmentation=False)
+    datalake = make_import_datalake_mock()
+
+    summary = pascal_voc.import_pascal_voc(
+        datalake,
+        pascal_voc.PascalVocImportConfig(
+            root_dir=tmp_path,
+            split="train",
+            dataset_name="pascal-voc-2012-train",
+            tasks=("classification", "detection"),
+            create_task_versions=False,
+            show_progress=False,
+        ),
+    )
+
+    assert summary.derived_datum_count == 0
+    assert summary.dataset_names == {"canonical": "pascal-voc-2012-train"}
+    assert set(summary.dataset_version_ids) == {"canonical"}
+    datalake.create_datum.assert_called_once()
+    datalake.create_dataset_version.assert_called_once()
+    assert datalake.create_dataset_version.call_args.kwargs["manifest"] == ["datum_1"]
 
 
 def test_import_pascal_voc_semantic_task_preserves_original_mask(tmp_path: Path):
@@ -536,6 +606,7 @@ def test_build_cli_parses_expected_arguments():
             "--source-url",
             "https://example.com/voc.tar",
             "--no-progress",
+            "--no-task-versions",
         ]
     )
 
@@ -552,6 +623,7 @@ def test_build_cli_parses_expected_arguments():
     assert args.download is True
     assert args.source_url == "https://example.com/voc.tar"
     assert args.no_progress is True
+    assert args.no_task_versions is True
 
 
 def test_main_calls_importer_prints_summary_and_closes_datalake(capsys: pytest.CaptureFixture[str]):
@@ -567,6 +639,9 @@ def test_main_calls_importer_prints_summary_and_closes_datalake(capsys: pytest.C
         detection_record_count=1,
         segmentation_record_count=1,
         dataset_version_id="dataset_version_1",
+        derived_datum_count=1,
+        dataset_names={"canonical": "tiny-pascal-voc-train"},
+        dataset_version_ids={"canonical": "dataset_version_1"},
     )
 
     with (

@@ -18,7 +18,7 @@ PASCAL_VOC_2012_URL = "http://host.robots.ox.ac.uk/pascal/VOC/voc2012/VOCtrainva
 PASCAL_VOC_2012_ARCHIVE_NAME = "VOCtrainval_11-May-2012.tar"
 PASCAL_VOC_2012_DIRNAME = "VOC2012"
 PASCAL_VOC_SCHEMA_VERSION = "2012.2.0"
-PASCAL_VOC_IMPORTER_VERSION = "1.1.0"
+PASCAL_VOC_IMPORTER_VERSION = "1.2.0"
 VOC_TASKS = ("classification", "detection", "semantic_segmentation")
 VOC_CLASSES = [
     "aeroplane",
@@ -60,6 +60,7 @@ class PascalVocImportConfig:
     source_url: str = PASCAL_VOC_2012_URL
     show_progress: bool = True
     tasks: tuple[str, ...] = VOC_TASKS
+    create_task_versions: bool = True
 
 
 @dataclass(slots=True)
@@ -76,10 +77,41 @@ class PascalVocImportSummary:
     detection_record_count: int
     segmentation_record_count: int
     dataset_version_id: str
+    derived_datum_count: int
+    dataset_names: dict[str, str]
+    dataset_version_ids: dict[str, str]
 
 
 def _default_dataset_name(split: str) -> str:
     return f"pascal-voc-2012-{split}"
+
+
+def _dataset_view_names(dataset_name: str, tasks: tuple[str, ...]) -> dict[str, str]:
+    names = {"canonical": dataset_name}
+    if "classification" in tasks:
+        names["classification_multi_label"] = f"{dataset_name}-classification-multi-label"
+    if "detection" in tasks:
+        names["detection"] = f"{dataset_name}-detection"
+        names["classification_single_label"] = f"{dataset_name}-classification-single-label"
+    if "semantic_segmentation" in tasks:
+        names["semantic_segmentation"] = f"{dataset_name}-semantic-segmentation"
+    return names
+
+
+def _ensure_dataset_versions_absent(
+    datalake: Datalake,
+    dataset_names: dict[str, str],
+    dataset_version: str,
+) -> None:
+    existing: list[str] = []
+    for dataset_name in dataset_names.values():
+        try:
+            datalake.get_dataset_version(dataset_name, dataset_version)
+        except Exception:
+            continue
+        existing.append(f"{dataset_name}@{dataset_version}")
+    if existing:
+        raise ValueError(f"Dataset version already exists for one or more views: {', '.join(existing)}")
 
 
 def _normalize_root(root_dir: str | Path) -> Path:
@@ -350,9 +382,11 @@ def _create_annotation_set_if_needed(datalake: Datalake, *, datum_id: str, name:
 def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> PascalVocImportSummary:
     """Download, parse, and import Pascal VOC 2012 into the Mindtrace Datalake.
 
-    The importer creates one image Asset and one Datum per sample, then attaches the requested
-    ground-truth task annotations. Semantic segmentation preserves the original categorical
-    VOC mask, including background ``0`` and void/ignore ``255`` pixels.
+    The importer creates each source image Asset once, attaches all requested annotations to
+    one canonical Datum, and optionally creates task-specific DatasetVersion views over those
+    shared Datums. Single-label classification uses lightweight region Datums that reference
+    the source image Asset rather than storing cropped copies. Semantic segmentation preserves
+    the original categorical VOC mask, including background ``0`` and void/ignore ``255`` pixels.
     """
 
     if config.split not in {"train", "val", "trainval"}:
@@ -374,12 +408,12 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
     )
     _ensure_required_layout(voc_root, tasks)
 
-    try:
-        datalake.get_dataset_version(dataset_name, config.dataset_version)
-    except Exception:
-        pass
-    else:
-        raise ValueError(f"Dataset version already exists: {dataset_name}@{config.dataset_version}")
+    dataset_names = (
+        _dataset_view_names(dataset_name, tasks)
+        if config.create_task_versions
+        else {"canonical": dataset_name}
+    )
+    _ensure_dataset_versions_absent(datalake, dataset_names, config.dataset_version)
 
     schemas = _ensure_voc_schemas(datalake, tasks)
     split_task = "semantic_segmentation" if tasks == ("semantic_segmentation",) else "detection"
@@ -391,6 +425,8 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
     object_prefix = config.object_name_prefix or f"imports/pascal-voc-2012/{dataset_name}/{config.dataset_version}"
 
     manifest: list[str] = []
+    semantic_manifest: list[str] = []
+    single_label_manifest: list[str] = []
     image_asset_count = 0
     mask_asset_count = 0
     classification_record_count = 0
@@ -530,6 +566,48 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
             datalake.add_annotation_records(records, annotation_set_id=annotation_set.annotation_set_id)
             detection_record_count += len(records)
 
+            if config.create_task_versions:
+                for object_index, detection in enumerate(detections):
+                    region_datum = datalake.create_datum(
+                        asset_refs={"image": image_asset.asset_id},
+                        split=config.split,
+                        metadata={
+                            "source_dataset": "pascal_voc",
+                            "year": "2012",
+                            "source_image_id": image_id,
+                            "source_datum_id": datum.datum_id,
+                            "source_object_index": object_index,
+                            "source_bbox": [
+                                detection["geometry"][key] for key in ("x", "y", "width", "height")
+                            ],
+                            "derivation": "bbox_crop",
+                        },
+                    )
+                    single_label_manifest.append(region_datum.datum_id)
+                    region_annotation_set = _create_annotation_set_if_needed(
+                        datalake,
+                        datum_id=region_datum.datum_id,
+                        name="pascal-voc-single-label-classification-source",
+                        annotation_schema_id=schemas["detection"].annotation_schema_id,
+                    )
+                    datalake.add_annotation_records(
+                        [
+                            {
+                                "kind": "bbox",
+                                "label": detection["label"],
+                                "label_id": detection["label_id"],
+                                "source": {
+                                    "type": "derived",
+                                    "name": "pascal-voc-bbox-crop",
+                                    "version": "2012",
+                                },
+                                "geometry": detection["geometry"],
+                                "attributes": detection["attributes"],
+                            }
+                        ],
+                        annotation_set_id=region_annotation_set.annotation_set_id,
+                    )
+
         if semantic_mask_asset is not None:
             annotation_set = _create_annotation_set_if_needed(
                 datalake,
@@ -552,6 +630,7 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
             ]
             datalake.add_annotation_records(records, annotation_set_id=annotation_set.annotation_set_id)
             segmentation_record_count += 1
+            semantic_manifest.append(datum.datum_id)
 
     dataset_metadata = {
         "source_dataset": "pascal_voc",
@@ -585,13 +664,59 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
             }
         )
 
-    dataset_version = datalake.create_dataset_version(
-        dataset_name=dataset_name,
-        version=config.dataset_version,
-        manifest=manifest,
-        metadata=dataset_metadata,
-        created_by=config.created_by,
-    )
+    version_specs: dict[str, tuple[list[str], dict]] = {
+        "canonical": (manifest, dataset_metadata),
+    }
+    if config.create_task_versions and "classification" in tasks:
+        version_specs["classification_multi_label"] = (
+            manifest,
+            {
+                **dataset_metadata,
+                "task_type": "classification",
+                "task_types": ["classification"],
+                "classification_type": "multi_label",
+            },
+        )
+    if config.create_task_versions and "detection" in tasks:
+        version_specs["detection"] = (
+            manifest,
+            {
+                **dataset_metadata,
+                "task_type": "detection",
+                "task_types": ["detection"],
+            },
+        )
+        version_specs["classification_single_label"] = (
+            single_label_manifest,
+            {
+                **dataset_metadata,
+                "task_type": "classification",
+                "task_types": ["classification"],
+                "classification_type": "single_label",
+                "classification_source": "bbox_crops",
+                "source_dataset_name": dataset_name,
+            },
+        )
+    if config.create_task_versions and "semantic_segmentation" in tasks:
+        version_specs["semantic_segmentation"] = (
+            semantic_manifest,
+            {
+                **dataset_metadata,
+                "task_type": "semantic_segmentation",
+                "task_types": ["semantic_segmentation"],
+            },
+        )
+
+    dataset_version_ids: dict[str, str] = {}
+    for view_name, (view_manifest, view_metadata) in version_specs.items():
+        dataset_version = datalake.create_dataset_version(
+            dataset_name=dataset_names[view_name],
+            version=config.dataset_version,
+            manifest=view_manifest,
+            metadata=view_metadata,
+            created_by=config.created_by,
+        )
+        dataset_version_ids[view_name] = dataset_version.dataset_version_id
     return PascalVocImportSummary(
         dataset_name=dataset_name,
         dataset_version=config.dataset_version,
@@ -602,7 +727,10 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
         classification_record_count=classification_record_count,
         detection_record_count=detection_record_count,
         segmentation_record_count=segmentation_record_count,
-        dataset_version_id=dataset_version.dataset_version_id,
+        dataset_version_id=dataset_version_ids["canonical"],
+        derived_datum_count=len(single_label_manifest),
+        dataset_names=dataset_names,
+        dataset_version_ids=dataset_version_ids,
     )
 
 
@@ -623,6 +751,11 @@ def _build_cli() -> argparse.ArgumentParser:
     parser.add_argument("--mount", help="Optional registry mount for imported image and mask assets")
     parser.add_argument("--created-by", help="Optional created_by field for imported rows")
     parser.add_argument("--object-name-prefix", help="Optional object-name prefix for imported assets")
+    parser.add_argument(
+        "--no-task-versions",
+        action="store_true",
+        help="Create only the canonical all-task DatasetVersion.",
+    )
     parser.add_argument("--download", action="store_true", help="Download Pascal VOC 2012 if it is missing locally")
     parser.add_argument("--source-url", default=PASCAL_VOC_2012_URL)
     parser.add_argument(
@@ -653,6 +786,7 @@ def main(argv: list[str] | None = None) -> int:
                 source_url=args.source_url,
                 show_progress=not args.no_progress,
                 tasks=tuple(args.task or VOC_TASKS),
+                create_task_versions=not args.no_task_versions,
             ),
         )
     finally:
@@ -665,7 +799,9 @@ def main(argv: list[str] | None = None) -> int:
         f"{summary.image_asset_count} image assets, {summary.mask_asset_count} mask assets, "
         f"{summary.classification_record_count} classification records, "
         f"{summary.detection_record_count} detection records, "
-        f"and {summary.segmentation_record_count} segmentation records."
+        f"{summary.segmentation_record_count} segmentation records, and "
+        f"{summary.derived_datum_count} derived region datums across "
+        f"{len(summary.dataset_version_ids)} dataset versions."
     )
     return 0
 

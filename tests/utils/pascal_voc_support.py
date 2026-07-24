@@ -86,10 +86,12 @@ def make_import_datalake_mock() -> MagicMock:
     asset_ids = iter(("image_asset", "mask_asset"))
     datalake.create_asset_from_object.side_effect = lambda **_: SimpleNamespace(asset_id=next(asset_ids))
 
-    datalake.create_datum.return_value = SimpleNamespace(datum_id="datum_1")
+    datum_ids = iter(("datum_1", "region_datum_1"))
+    datalake.create_datum.side_effect = lambda **_: SimpleNamespace(datum_id=next(datum_ids))
 
-    annotation_set_ids = iter(("set_cls", "set_det", "set_seg"))
+    annotation_set_ids = iter(("set_cls", "set_det", "set_region", "set_seg"))
     datalake.create_annotation_set.side_effect = lambda **_: SimpleNamespace(annotation_set_id=next(annotation_set_ids))
 
-    datalake.create_dataset_version.return_value = SimpleNamespace(dataset_version_id="dataset_version_1")
+    version_ids = iter(f"dataset_version_{index}" for index in range(1, 6))
+    datalake.create_dataset_version.side_effect = lambda **_: SimpleNamespace(dataset_version_id=next(version_ids))
     return datalake
