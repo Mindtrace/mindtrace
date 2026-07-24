@@ -65,9 +65,7 @@ def export_dataset_as_coco(
 ) -> ExportResult:
     """Export a canonical dataset view to a COCO-style directory."""
     requested_task = (options or {}).get("task") or dataset.metadata.get("task_type")
-    annotation_kinds = {
-        annotation.kind for item in dataset.items for annotation in item.annotations
-    }
+    annotation_kinds = {annotation.kind for item in dataset.items for annotation in item.annotations}
     if requested_task == "classification" or (
         "classification" in annotation_kinds and not annotation_kinds.intersection({"bbox", "polygon"})
     ):
