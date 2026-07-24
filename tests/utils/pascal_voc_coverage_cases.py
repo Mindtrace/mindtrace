@@ -8,7 +8,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-from PIL import Image
 
 from mindtrace.datalake.importers import pascal_voc
 from mindtrace.datalake.types import AnnotationLabelDefinition, AnnotationSchema
@@ -180,6 +179,12 @@ def test_read_split_ids_handles_missing_empty_and_populated_files(tmp_path: Path
     assert pascal_voc._read_split_ids(voc_root, "train") == ["2008_000008"]
 
 
+def test_read_split_ids_uses_segmentation_split_for_semantic_task(tmp_path: Path):
+    voc_root, image_id = build_tiny_voc_fixture(tmp_path)
+
+    assert pascal_voc._read_split_ids(voc_root, "train", task="semantic_segmentation") == [image_id]
+
+
 def test_read_classification_labels_skips_invalid_and_negative_flags(tmp_path: Path):
     voc_root = tmp_path / "VOCdevkit" / "VOC2012"
     main_dir = voc_root / "ImageSets" / "Main"
@@ -229,22 +234,6 @@ def test_parse_detection_annotations_skips_unknown_classes_and_missing_boxes(tmp
     )
 
     assert pascal_voc._parse_detection_annotations(annotation_path) == []
-
-
-def test_extract_present_segmentation_classes_builds_binary_masks(tmp_path: Path):
-    mask_path = tmp_path / "mask.png"
-    mask = Image.new("P", (2, 2))
-    mask.putpalette([0] * (256 * 3))
-    mask.putdata([0, pascal_voc.VOC_CLASS_TO_ID["person"], pascal_voc.VOC_CLASS_TO_ID["dog"], 255])
-    mask.save(mask_path)
-
-    extracted = pascal_voc._extract_present_segmentation_classes(mask_path)
-
-    labels = [label for label, _ in extracted]
-    assert labels == ["dog", "person"]
-
-    person_mask = dict(extracted)["person"]
-    assert list(person_mask.get_flattened_data()) == [0, 255, 0, 0]
 
 
 def test_schema_labels_and_annotation_set_creation_helpers():
@@ -363,16 +352,9 @@ def test_ensure_voc_schemas_builds_three_named_schema_variants():
     assert resolved == {
         "classification": schemas[0],
         "detection": schemas[1],
-        "segmentation": schemas[2],
+        "semantic_segmentation": schemas[2],
     }
     assert ensure_schema.call_count == 3
-
-
-def test_iter_segmentation_masks_returns_empty_when_mask_is_missing(tmp_path: Path):
-    mask_dir = tmp_path / "SegmentationClass"
-    mask_dir.mkdir()
-
-    assert list(pascal_voc._iter_segmentation_masks(mask_dir, "missing")) == []
 
 
 def test_import_pascal_voc_validates_split_name(tmp_path: Path):
@@ -424,6 +406,7 @@ def test_import_pascal_voc_raises_for_missing_payloads(tmp_path: Path, missing_n
                     root_dir=tmp_path,
                     split="train",
                     dataset_name="tiny-pascal-voc-train",
+                    tasks=("detection",),
                     show_progress=False,
                 ),
             )
@@ -448,7 +431,7 @@ def test_import_pascal_voc_creates_classification_detection_and_segmentation_rec
     schemas = {
         "classification": make_schema_ref("schema_cls"),
         "detection": make_schema_ref("schema_det"),
-        "segmentation": make_schema_ref("schema_seg"),
+        "semantic_segmentation": make_schema_ref("schema_seg"),
     }
 
     with patch.object(pascal_voc, "_ensure_voc_schemas", return_value=schemas):
@@ -480,11 +463,48 @@ def test_import_pascal_voc_creates_classification_detection_and_segmentation_rec
     assert classification_records[0]["kind"] == "classification"
     assert detection_records[0]["kind"] == "bbox"
     assert segmentation_records[0]["kind"] == "mask"
+    assert segmentation_records[0]["label"] == "semantic_mask"
     assert segmentation_records[0]["geometry"]["mask_asset_id"] == "mask_asset"
+    assert segmentation_records[0]["attributes"]["encoding"] == "class_id"
+    assert segmentation_records[0]["attributes"]["ignore_index"] == 255
+    assert datalake.create_datum.call_args.kwargs["asset_refs"] == {
+        "image": "image_asset",
+        "semantic_mask": "mask_asset",
+    }
     dataset_metadata = datalake.create_dataset_version.call_args.kwargs["metadata"]
-    assert dataset_metadata["task_types"] == ["classification", "detection", "segmentation"]
+    assert dataset_metadata["task_types"] == ["classification", "detection", "semantic_segmentation"]
+    assert dataset_metadata["classification_type"] == "multi_label"
+    assert dataset_metadata["classification_class_names"] == pascal_voc.VOC_CLASSES
     assert dataset_metadata["detection_class_names"] == pascal_voc.VOC_CLASSES
     assert dataset_metadata["detection_bbox_format"] == "xywh"
+    assert dataset_metadata["semantic_segmentation_class_names"] == ["background", *pascal_voc.VOC_CLASSES]
+    assert dataset_metadata["semantic_segmentation_ignore_index"] == 255
+
+
+def test_import_pascal_voc_semantic_task_preserves_original_mask(tmp_path: Path):
+    voc_root, image_id = build_tiny_voc_fixture(tmp_path)
+    datalake = make_import_datalake_mock()
+
+    summary = pascal_voc.import_pascal_voc(
+        datalake,
+        pascal_voc.PascalVocImportConfig(
+            root_dir=tmp_path,
+            split="train",
+            dataset_name="pascal-voc-2012-semantic-train",
+            tasks=("semantic_segmentation",),
+            show_progress=False,
+        ),
+    )
+
+    assert summary.datum_count == 1
+    assert summary.classification_record_count == 0
+    assert summary.detection_record_count == 0
+    assert summary.segmentation_record_count == 1
+    assert datalake.create_annotation_schema.call_count == 1
+    assert datalake.create_annotation_schema.call_args.kwargs["task_type"] == "segmentation"
+    mask_call = datalake.create_asset_from_object.call_args_list[1]
+    assert mask_call.kwargs["obj"] == (voc_root / "SegmentationClass" / f"{image_id}.png").read_bytes()
+    assert mask_call.kwargs["asset_metadata"]["ignore_index"] == 255
 
 
 def test_build_cli_parses_expected_arguments():
@@ -504,6 +524,8 @@ def test_build_cli_parses_expected_arguments():
             "voc-val",
             "--dataset-version",
             "2.0.0",
+            "--task",
+            "semantic_segmentation",
             "--mount",
             "local",
             "--created-by",
@@ -523,6 +545,7 @@ def test_build_cli_parses_expected_arguments():
     assert args.split == "val"
     assert args.dataset_name == "voc-val"
     assert args.dataset_version == "2.0.0"
+    assert args.task == ["semantic_segmentation"]
     assert args.mount == "local"
     assert args.created_by == "tester"
     assert args.object_name_prefix == "imports/demo"

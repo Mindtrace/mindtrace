@@ -244,7 +244,9 @@ error when exported with `format="coco"`.
 
 ## Built-in Pascal VOC importer
 
-The package includes an importer for **Pascal VOC 2012** (splits, one image per asset, segmentation via class masks, etc.). This is **one** way to load a benchmark into the canonical model; it is separate from service upload/sync/replication flows.
+The package includes a task-selective importer for **Pascal VOC 2012**. Detection and classification use the
+`ImageSets/Main` split; semantic segmentation uses the smaller `ImageSets/Segmentation` split and preserves each
+original categorical mask, including background ID `0` and ignore ID `255`.
 
 ### CLI
 
@@ -285,6 +287,7 @@ with Datalake.create(
             root_dir="./data/pascal-voc",
             split="train",
             dataset_name="pascal-voc-2012-train",
+            tasks=("detection",),
             download=True,
         ),
     )
@@ -298,8 +301,8 @@ Export VOC detections to a typed Hugging Face dataset and build variable-target 
 
 ```python
 datalake.export_dataset_version_to_format(
-    "pascal-voc-2012-train",
-    "1.0.0",
+    summary.dataset_name,
+    summary.dataset_version,
     format="huggingface",
     destination="./exports/voc-detection",
     exporter_options={"task": "detection"},
@@ -317,6 +320,38 @@ zero-based `ClassLabel`. Source label IDs such as VOC's one-based IDs are remapp
 detection loader converts boxes to the `xyxy` tensors expected by torchvision models. Its transform receives
 `(image, target)` and must return the transformed pair so boxes stay aligned with image geometry. The detection
 collator returns image and target lists because object counts vary between samples.
+
+Import, export, and load the semantic segmentation subset:
+
+```python
+semantic_summary = import_pascal_voc(
+    datalake,
+    PascalVocImportConfig(
+        root_dir="./data/pascal-voc",
+        split="train",
+        dataset_name="pascal-voc-2012-semantic-train",
+        tasks=("semantic_segmentation",),
+    ),
+)
+
+datalake.export_dataset_version_to_format(
+    semantic_summary.dataset_name,
+    semantic_summary.dataset_version,
+    format="huggingface",
+    destination="./exports/voc-semantic",
+    exporter_options={"task": "semantic_segmentation"},
+)
+
+semantic_loaders = build_dataloaders(
+    "./exports/voc-semantic",
+    task="semantic_segmentation",
+    batch_size=8,
+)
+```
+
+Semantic samples are `(image, mask)` pairs where the image is a float tensor and the mask is a long tensor containing
+class IDs `0..20` and ignore ID `255`. The default collator keeps variable-resolution images and masks as lists. A
+paired transform may resize/crop both before collation; masks must use nearest-neighbour interpolation.
 
 ---
 

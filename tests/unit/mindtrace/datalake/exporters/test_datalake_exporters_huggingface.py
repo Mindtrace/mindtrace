@@ -207,7 +207,7 @@ def test_huggingface_detection_export_writes_typed_objects_and_remaps_labels(tmp
     dataset = ExportableDataset(
         name="pascal-voc",
         metadata={
-            "task_types": ["classification", "detection", "segmentation"],
+            "task_types": ["classification", "detection", "semantic_segmentation"],
             "detection_class_names": ["aeroplane", "bicycle"],
         },
         items=[
@@ -289,3 +289,61 @@ def test_huggingface_detection_export_rejects_degenerate_boxes(tmp_path: Path, m
             destination=tmp_path / "invalid-hf",
             options={"task": "detection"},
         )
+
+
+def test_huggingface_semantic_segmentation_export_writes_typed_image_and_mask(tmp_path: Path, monkeypatch):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+    from mindtrace.datalake.types import AnnotationRecord
+
+    monkeypatch.setattr(
+        huggingface_exporter.importlib,
+        "import_module",
+        lambda name: _fake_datasets_module(),
+    )
+    mask_asset = sample_asset()
+    mask_asset.asset_id = "asset_mask"
+    mask_asset.kind = "mask"
+    mask_asset.media_type = "image/png"
+    dataset = ExportableDataset(
+        name="pascal-voc-semantic",
+        metadata={
+            "task_types": ["semantic_segmentation"],
+            "semantic_segmentation_class_names": ["background", "person"],
+            "semantic_segmentation_background_id": 0,
+            "semantic_segmentation_ignore_index": 255,
+        },
+        items=[
+            ExportableItem(
+                asset=sample_asset(),
+                split="train",
+                payload_bytes=png_bytes(),
+                source_filename="voc.jpg",
+                related_assets={"semantic_mask": mask_asset},
+                related_payload_bytes={"semantic_mask": png_bytes()},
+                annotations=[
+                    AnnotationRecord(
+                        annotation_id="mask_1",
+                        kind="mask",
+                        label="semantic_mask",
+                        geometry={"type": "mask", "mask_asset_id": "asset_mask"},
+                        attributes={"encoding": "class_id", "ignore_index": 255},
+                        source={"type": "human", "name": "pascal-voc"},
+                    )
+                ],
+            )
+        ],
+    )
+
+    result = export_dataset_as_huggingface(
+        dataset,
+        destination=tmp_path / "voc-semantic-hf",
+        options={"task": "semantic_segmentation"},
+    )
+    payload = json.loads((tmp_path / "voc-semantic-hf" / "dataset_dict.json").read_text())
+
+    assert result.annotation_count == 1
+    assert payload["train"][0]["image"]["path"] == "voc.jpg"
+    assert payload["train"][0]["mask"]["path"] == "asset_mask.png"
+    assert payload["train"][0]["class_names"] == ["background", "person"]
+    assert payload["train"][0]["background_id"] == 0
+    assert payload["train"][0]["ignore_index"] == 255

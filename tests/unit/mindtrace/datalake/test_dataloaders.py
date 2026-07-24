@@ -36,6 +36,8 @@ class _FakeTensor:
     def __init__(self, value, dtype=None):
         self.value = value
         self.dtype = dtype
+        self.ndim = 3
+        self.shape = (1, 1, 1)
 
     def float(self):
         return self
@@ -45,6 +47,14 @@ class _FakeTensor:
 
     def reshape(self, *shape):
         self.shape = shape
+        return self
+
+    def squeeze(self, dimension):
+        self.squeezed_dimension = dimension
+        return self
+
+    def long(self):
+        self.dtype = "long"
         return self
 
 
@@ -200,6 +210,71 @@ def test_detection_dataloader_uses_variable_target_collator(monkeypatch):
     )
 
 
+def test_semantic_segmentation_dataset_returns_image_and_long_mask(monkeypatch):
+    image = _FakeImage()
+    mask = _FakeImage()
+    row = {
+        "asset_id": "voc-1",
+        "image": image,
+        "mask": mask,
+        "class_names": ["background", "person"],
+        "background_id": 0,
+        "ignore_index": 255,
+    }
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset(
+            [row],
+            column_names=list(row),
+            features={},
+        ),
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    dataset = dataloaders.HuggingFaceSemanticSegmentationDataset("/export", split="train")
+    sample, target = dataset[0]
+
+    assert sample == ("normalized", image, 255)
+    assert image.mode == "RGB"
+    assert target.value is mask
+    assert target.squeezed_dimension == 0
+    assert target.dtype == "long"
+    assert dataset.class_names == ("background", "person")
+    assert dataset.background_id == 0
+    assert dataset.ignore_index == 255
+
+
+def test_semantic_segmentation_dataloader_uses_variable_size_collator(monkeypatch):
+    row = {
+        "asset_id": "voc-1",
+        "image": _FakeImage(),
+        "mask": _FakeImage(),
+        "class_names": ["background", "person"],
+        "background_id": 0,
+        "ignore_index": 255,
+    }
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset([row], column_names=list(row), features={}),
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    loaders = dataloaders.build_dataloaders("/export", task="semantic_segmentation")
+    collate_fn = loaders["train"].kwargs["collate_fn"]
+
+    assert isinstance(loaders["train"].dataset, dataloaders.HuggingFaceSemanticSegmentationDataset)
+    assert collate_fn([("image-a", "mask-a"), ("image-b", "mask-b")]) == (
+        ["image-a", "image-b"],
+        ["mask-a", "mask-b"],
+    )
+
+
 def test_build_dataloaders_discovers_splits_and_only_shuffles_train(monkeypatch):
     row = {"image": _FakeImage(), "label": 0}
     payload = _FakeDatasetDict(
@@ -238,7 +313,7 @@ def test_build_dataloaders_discovers_splits_and_only_shuffles_train(monkeypatch)
     ("kwargs", "message"),
     [
         ({"format": "coco"}, "format='huggingface'"),
-        ({"task": "segmentation"}, "task='classification' or task='detection'"),
+        ({"task": "instance_segmentation"}, "task='semantic_segmentation'"),
         ({"batch_size": 0}, "batch_size"),
         ({"num_workers": -1}, "num_workers"),
         ({"persistent_workers": True}, "requires num_workers"),

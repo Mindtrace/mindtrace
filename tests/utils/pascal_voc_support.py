@@ -49,6 +49,8 @@ def build_tiny_voc_fixture(
 
     if include_segmentation:
         (voc_root / "SegmentationClass").mkdir(parents=True, exist_ok=True)
+        (voc_root / "ImageSets" / "Segmentation").mkdir(parents=True, exist_ok=True)
+        (voc_root / "ImageSets" / "Segmentation" / f"{split}.txt").write_text(f"{image_id}\n")
         seg = Image.new("P", (2, 2))
         seg.putpalette([0] * (256 * 3))
         seg.putdata([0, pascal_voc.VOC_CLASS_TO_ID["person"], 0, 255])
