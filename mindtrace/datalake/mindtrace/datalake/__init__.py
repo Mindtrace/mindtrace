@@ -31,8 +31,8 @@ from .data_vault_backends import (
     LocalAsyncDataVaultBackend,
     LocalDataVaultBackend,
 )
-from .dataloaders import HuggingFaceClassificationDataset, HuggingFaceDetectionDataset, build_dataloaders
 from .datalake import Datalake
+from .dataloaders import HuggingFaceClassificationDataset, HuggingFaceDetectionDataset, build_dataloaders
 from .exporters import ExportableDataset, ExportableItem, ExportResult, export_dataset_to_format, get_dataset_exporter
 from .pagination_types import (
     CursorEnvelope,

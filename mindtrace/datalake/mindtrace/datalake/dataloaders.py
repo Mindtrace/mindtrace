@@ -56,9 +56,7 @@ class HuggingFaceClassificationDataset:
         required_columns = {"image", "label"}
         missing = sorted(required_columns - set(self._dataset.column_names))
         if missing:
-            raise ValueError(
-                f"Hugging Face classification export is missing required column(s): {missing}."
-            )
+            raise ValueError(f"Hugging Face classification export is missing required column(s): {missing}.")
         label_feature = self._dataset.features.get("label")
         self.class_names = tuple(getattr(label_feature, "names", ()) or ())
 
@@ -189,9 +187,7 @@ def build_dataloaders(
 
     normalized_format = format.strip().lower()
     if normalized_format != "huggingface":
-        raise ValueError(
-            "Generic classification DataLoaders currently support format='huggingface' only."
-        )
+        raise ValueError("Generic classification DataLoaders currently support format='huggingface' only.")
     normalized_task = task.strip().lower()
     if normalized_task not in {"classification", "detection", "object_detection"}:
         raise ValueError(

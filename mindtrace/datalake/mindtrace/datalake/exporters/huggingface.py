@@ -45,10 +45,7 @@ def _classification_class_names(dataset: ExportableDataset) -> list[str]:
 def _detection_class_names(dataset: ExportableDataset) -> list[str]:
     configured = _configured_class_names(dataset, "detection")
     labels = {
-        annotation.label
-        for item in dataset.items
-        for annotation in item.annotations
-        if annotation.kind == "bbox"
+        annotation.label for item in dataset.items for annotation in item.annotations if annotation.kind == "bbox"
     }
     if configured:
         unknown = sorted(labels - set(configured))
@@ -200,9 +197,7 @@ def _export_detection_dataset(
                 continue
             geometry = annotation.geometry
             if geometry.get("type") != "bbox":
-                raise ValueError(
-                    f"Detection annotation {annotation.annotation_id!r} must use geometry type 'bbox'."
-                )
+                raise ValueError(f"Detection annotation {annotation.annotation_id!r} must use geometry type 'bbox'.")
             bbox = [float(geometry.get(key, 0)) for key in ("x", "y", "width", "height")]
             if bbox[2] <= 0 or bbox[3] <= 0:
                 raise ValueError(
@@ -247,9 +242,7 @@ def _export_detection_dataset(
         destination=destination,
         dataset_name=dataset.name,
         asset_count=dataset.asset_count,
-        annotation_count=sum(
-            annotation.kind == "bbox" for item in dataset.items for annotation in item.annotations
-        ),
+        annotation_count=sum(annotation.kind == "bbox" for item in dataset.items for annotation in item.annotations),
         files_written=["."],
         warnings=list(dataset.warnings),
     )
