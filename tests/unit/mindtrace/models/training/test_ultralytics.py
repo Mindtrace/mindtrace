@@ -8,6 +8,7 @@ tracking, registry wiring and distillation math/wiring.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -70,6 +71,15 @@ class TestUltralyticsTrainer:
         yolo.val.assert_called_once_with(imgsz=640)
         assert trainer.export(format="onnx", int8=True) == "model.onnx"
         yolo.export.assert_called_once_with(format="onnx", int8=True)
+
+    def test_evaluate_returns_normalized_map_keys(self):
+        # evaluate() normalizes YOLO's metrics object to the same keys
+        # DetectionTrainer emits, so both satisfy DetectionTrainerProtocol.
+        yolo = _FakeYolo()
+        yolo.val = MagicMock(return_value=SimpleNamespace(box=SimpleNamespace(map50=0.8, map=0.5)))
+        metrics = UltralyticsTrainer(yolo).evaluate("weld.yaml", imgsz=640)
+        assert metrics == {"mAP50": 0.8, "mAP5095": 0.5}
+        yolo.val.assert_called_once_with(data="weld.yaml", imgsz=640)
 
     def test_save_uses_registry(self):
         yolo = _FakeYolo()

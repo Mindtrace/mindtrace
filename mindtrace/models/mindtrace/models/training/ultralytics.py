@@ -114,8 +114,26 @@ class UltralyticsTrainer(Mindtrace):
         return results
 
     def val(self, **kwargs: Any) -> Any:
-        """Evaluate the model via ``YOLO.val`` (returns mAP and friends)."""
+        """Evaluate the model via ``YOLO.val`` (returns the raw Ultralytics object)."""
         return self.model.val(**kwargs)
+
+    def evaluate(self, data: str, **kwargs: Any) -> dict[str, float]:
+        """Evaluate and return normalized detection metrics.
+
+        Mirrors :meth:`~mindtrace.models.training.detection.DetectionTrainer.evaluate`
+        so both detection trainers expose the same
+        :class:`~mindtrace.models.training.protocol.DetectionTrainerProtocol`
+        surface: the same ``{"mAP50", "mAP5095"}`` keys regardless of provider.
+
+        Args:
+            data: Ultralytics dataset spec (a ``data.yaml`` path or dataset name).
+            **kwargs: Forwarded to ``YOLO.val`` (``imgsz``, ``batch``, ``device``, ...).
+
+        Returns:
+            ``{"mAP50": <mAP@50>, "mAP5095": <mAP@50:95>}``.
+        """
+        metrics = self.model.val(data=data, **kwargs)
+        return {"mAP50": float(metrics.box.map50), "mAP5095": float(metrics.box.map)}
 
     def export(self, **kwargs: Any) -> Any:
         """Export via Ultralytics' native exporter (``YOLO.export``).
