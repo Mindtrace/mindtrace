@@ -104,6 +104,7 @@ def _build_exportable_item(
     resolved_datum: ResolvedDatum,
     *,
     payload_bytes: bytes,
+    payload_bytes_by_role: dict[str, bytes] | None = None,
     split_map: dict[str, str] | None = None,
 ) -> tuple[ExportableItem | None, list[str]]:
     warnings: list[str] = []
@@ -126,9 +127,25 @@ def _build_exportable_item(
             annotation_sets=annotation_sets,
             payload_bytes=payload_bytes,
             source_filename=default_export_filename(asset),
+            related_assets={related_role: related_asset for related_role, related_asset in resolved_datum.assets.items()},
+            related_payload_bytes=dict(payload_bytes_by_role or {}),
         ),
         warnings,
     )
+
+
+def _load_asset_payload_sync(object_loader: Any, asset: Asset) -> bytes:
+    payload_loader = getattr(object_loader, "get_asset_payload", None)
+    payload_ref = asset.payload_storage_ref or asset.storage_ref
+    return payload_loader(asset.asset_id) if callable(payload_loader) else object_loader.get_object(payload_ref)
+
+
+async def _load_asset_payload_async(object_loader: Any, asset: Asset) -> bytes:
+    payload_loader = getattr(object_loader, "get_asset_payload", None)
+    payload_ref = asset.payload_storage_ref or asset.storage_ref
+    if callable(payload_loader):
+        return await payload_loader(asset.asset_id)
+    return await object_loader.get_object(payload_ref)
 
 
 def build_exportable_dataset_from_resolved_version_sync(
@@ -145,15 +162,15 @@ def build_exportable_dataset_from_resolved_version_sync(
         if primary_entry is None:
             warnings.append(f"Skipped datum {resolved_datum.datum.datum_id} because it does not reference any assets.")
             continue
-        _, asset = primary_entry
-        payload_loader = getattr(object_loader, "get_asset_payload", None)
-        payload_ref = asset.payload_storage_ref or asset.storage_ref
-        payload_bytes = (
-            payload_loader(asset.asset_id) if callable(payload_loader) else object_loader.get_object(payload_ref)
-        )
+        primary_role, _ = primary_entry
+        payload_bytes_by_role = {
+            role: _load_asset_payload_sync(object_loader, related_asset)
+            for role, related_asset in resolved_datum.assets.items()
+        }
         export_item, item_warnings = _build_exportable_item(
             resolved_datum,
-            payload_bytes=payload_bytes,
+            payload_bytes=payload_bytes_by_role[primary_role],
+            payload_bytes_by_role=payload_bytes_by_role,
             split_map=split_map,
         )
         warnings.extend(item_warnings)
@@ -183,17 +200,15 @@ async def build_exportable_dataset_from_resolved_version_async(
         if primary_entry is None:
             warnings.append(f"Skipped datum {resolved_datum.datum.datum_id} because it does not reference any assets.")
             continue
-        _, asset = primary_entry
-        payload_loader = getattr(object_loader, "get_asset_payload", None)
-        payload_ref = asset.payload_storage_ref or asset.storage_ref
-        payload_bytes = (
-            await payload_loader(asset.asset_id)
-            if callable(payload_loader)
-            else await object_loader.get_object(payload_ref)
-        )
+        primary_role, _ = primary_entry
+        payload_bytes_by_role = {
+            role: await _load_asset_payload_async(object_loader, related_asset)
+            for role, related_asset in resolved_datum.assets.items()
+        }
         export_item, item_warnings = _build_exportable_item(
             resolved_datum,
-            payload_bytes=payload_bytes,
+            payload_bytes=payload_bytes_by_role[primary_role],
+            payload_bytes_by_role=payload_bytes_by_role,
             split_map=split_map,
         )
         warnings.extend(item_warnings)

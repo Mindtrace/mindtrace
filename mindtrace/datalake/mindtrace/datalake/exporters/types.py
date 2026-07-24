@@ -18,6 +18,8 @@ class ExportableItem(BaseModel):
     annotation_sets: list[AnnotationSet] = Field(default_factory=list)
     payload_bytes: bytes | None = None
     source_filename: str | None = None
+    related_assets: dict[str, Asset] = Field(default_factory=dict)
+    related_payload_bytes: dict[str, bytes] = Field(default_factory=dict)
 
 
 class ExportableDataset(BaseModel):
