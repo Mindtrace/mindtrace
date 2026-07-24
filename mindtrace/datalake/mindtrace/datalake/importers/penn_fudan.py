@@ -190,7 +190,7 @@ def _instances_from_mask(mask_path: Path) -> list[_Instance]:
 def _validate_schema(schema: AnnotationSchema) -> AnnotationSchema:
     labels = [(label.id, label.name) for label in schema.labels]
     if (
-        schema.task_type != "instance_segmentation"
+        schema.task_type != "segmentation"
         or "instance_mask" not in schema.allowed_annotation_kinds
         or labels != [(1, "person")]
     ):
@@ -212,7 +212,7 @@ def _ensure_schema(datalake: Datalake) -> AnnotationSchema:
         return datalake.create_annotation_schema(
             name=PENN_FUDAN_SCHEMA_NAME,
             version=PENN_FUDAN_SCHEMA_VERSION,
-            task_type="instance_segmentation",
+            task_type="segmentation",
             allowed_annotation_kinds=["instance_mask"],
             labels=[AnnotationLabelDefinition(name="person", id=1)],
             allow_scores=False,

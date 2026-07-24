@@ -98,6 +98,7 @@ def test_import_penn_fudan_preserves_indexed_mask_and_instance_records(tmp_path:
     ]
     assert all(record["kind"] == "instance_mask" for record in records)
     assert all(record["label_id"] == 1 for record in records)
+    assert datalake.create_annotation_schema.call_args.kwargs["task_type"] == "segmentation"
     metadata = datalake.create_dataset_version.call_args.kwargs["metadata"]
     assert metadata["task_type"] == "instance_segmentation"
     assert metadata["instance_segmentation_class_names"] == ["background", "person"]
