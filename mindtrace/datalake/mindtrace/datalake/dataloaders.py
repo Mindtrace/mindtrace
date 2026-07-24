@@ -335,7 +335,9 @@ def _normalize_task(task: str) -> str:
 def _infer_segmentation_profile(dataset: Any) -> str:
     columns = set(dataset.column_names)
     has_semantic_mask = "mask" in columns
-    has_instances = "objects" in columns
+    objects_feature = dataset.features.get("objects")
+    object_fields = getattr(objects_feature, "feature", None)
+    has_instances = isinstance(object_fields, Mapping) and bool({"mask", "masks"} & set(object_fields))
     if has_semantic_mask and has_instances:
         raise ValueError(
             "Segmentation export is ambiguous: it contains both a semantic 'mask' column and an instance "
@@ -347,7 +349,7 @@ def _infer_segmentation_profile(dataset: Any) -> str:
         return "instance_segmentation"
     raise ValueError(
         "Unable to infer segmentation profile from the Hugging Face schema. Expected a semantic 'mask' column "
-        "or an instance 'objects' column."
+        "or an instance 'objects' column containing per-object masks."
     )
 
 

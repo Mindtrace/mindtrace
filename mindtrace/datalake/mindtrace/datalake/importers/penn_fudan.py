@@ -194,9 +194,7 @@ def _validate_schema(schema: AnnotationSchema) -> AnnotationSchema:
         or "instance_mask" not in schema.allowed_annotation_kinds
         or labels != [(1, "person")]
     ):
-        raise ValueError(
-            f"Existing annotation schema {schema.name}@{schema.version} is incompatible with Penn-Fudan."
-        )
+        raise ValueError(f"Existing annotation schema {schema.name}@{schema.version} is incompatible with Penn-Fudan.")
     return schema
 
 

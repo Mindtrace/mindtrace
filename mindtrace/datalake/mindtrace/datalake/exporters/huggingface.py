@@ -546,17 +546,14 @@ def _binary_instance_mask(item, annotation, *, include_media: bool) -> tuple[dic
     mask_asset_id = annotation.geometry.get("mask_asset_id")
     if mask_asset is None or mask_asset.asset_id != mask_asset_id:
         raise ValueError(
-            f"Instance mask annotation {annotation.annotation_id!r} does not match related asset role "
-            "'instance_mask'."
+            f"Instance mask annotation {annotation.annotation_id!r} does not match related asset role 'instance_mask'."
         )
     instance_id = annotation.geometry.get("instance_id")
     if instance_id is None:
         raise ValueError(f"Instance mask annotation {annotation.annotation_id!r} does not define instance_id.")
     payload = item.related_payload_bytes.get("instance_mask")
     if payload is None:
-        raise ValueError(
-            f"Instance segmentation export requires mask payload bytes for asset {item.asset.asset_id!r}."
-        )
+        raise ValueError(f"Instance segmentation export requires mask payload bytes for asset {item.asset.asset_id!r}.")
     try:
         from PIL import Image
     except ImportError as exc:
@@ -612,9 +609,7 @@ def _export_instance_segmentation_dataset(
 ) -> ExportResult:
     class_names = _configured_class_names(dataset, "instance_segmentation")
     if not class_names:
-        raise ValueError(
-            "Instance segmentation export requires dataset metadata instance_segmentation_class_names."
-        )
+        raise ValueError("Instance segmentation export requires dataset metadata instance_segmentation_class_names.")
     class_ids = {name: index for index, name in enumerate(class_names)}
     features = _instance_segmentation_features(datasets_module, class_names)
     rows_by_split: dict[str, list[dict[str, Any]]] = {}

@@ -377,7 +377,9 @@ def test_build_datasets_supports_inferred_and_explicit_semantic_profiles(monkeyp
 
 @pytest.mark.parametrize("task", ["segmentation", "instance_segmentation", "instance-segmentation"])
 def test_build_datasets_supports_inferred_and_explicit_instance_profiles(monkeypatch, task):
-    objects_feature = SimpleNamespace(feature={"category": SimpleNamespace(names=["background", "person"])})
+    objects_feature = SimpleNamespace(
+        feature={"category": SimpleNamespace(names=["background", "person"]), "mask": SimpleNamespace()}
+    )
     row = {"asset_id": "instance-1", "image": _FakeImage(), "objects": {"mask": []}}
     payload = _FakeDatasetDict(
         train=_FakeSplitDataset([row], column_names=list(row), features={"objects": objects_feature}),
@@ -397,7 +399,9 @@ def test_build_datasets_supports_inferred_and_explicit_instance_profiles(monkeyp
 def test_instance_segmentation_dataset_returns_mask_rcnn_target(monkeypatch):
     image = _FakeImage()
     mask = _FakeImage()
-    objects_feature = SimpleNamespace(feature={"category": SimpleNamespace(names=["background", "person"])})
+    objects_feature = SimpleNamespace(
+        feature={"category": SimpleNamespace(names=["background", "person"]), "mask": SimpleNamespace()}
+    )
     row = {
         "asset_id": "penn-fudan-1",
         "image": image,
@@ -438,8 +442,9 @@ def test_build_datasets_rejects_ambiguous_segmentation_schema(monkeypatch):
         "mask": _FakeImage(),
         "objects": {"masks": []},
     }
+    objects_feature = SimpleNamespace(feature={"mask": SimpleNamespace()})
     payload = _FakeDatasetDict(
-        train=_FakeSplitDataset([row], column_names=list(row), features={}),
+        train=_FakeSplitDataset([row], column_names=list(row), features={"objects": objects_feature}),
     )
     monkeypatch.setattr(
         dataloaders,
@@ -448,6 +453,22 @@ def test_build_datasets_rejects_ambiguous_segmentation_schema(monkeypatch):
     )
 
     with pytest.raises(ValueError, match="ambiguous"):
+        dataloaders.build_datasets("/export", task="segmentation")
+
+
+def test_build_datasets_does_not_treat_detection_objects_as_instance_masks(monkeypatch):
+    row = {"asset_id": "detection-1", "image": _FakeImage(), "objects": {"bbox": []}}
+    objects_feature = SimpleNamespace(feature={"bbox": SimpleNamespace(), "category": SimpleNamespace()})
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset([row], column_names=list(row), features={"objects": objects_feature}),
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    with pytest.raises(ValueError, match="Unable to infer"):
         dataloaders.build_datasets("/export", task="segmentation")
 
 
