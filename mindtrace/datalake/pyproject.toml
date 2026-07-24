@@ -40,6 +40,7 @@ export-all = [
 [project.scripts]
 mindtrace-datalake-import-flowers102 = "mindtrace.datalake.importers.flowers102:main"
 mindtrace-datalake-import-pascal-voc = "mindtrace.datalake.importers.pascal_voc:main"
+mindtrace-datalake-import-penn-fudan = "mindtrace.datalake.importers.penn_fudan:main"
 
 [project.entry-points."mindtrace.benchmark_suites"]
 datalake = "mindtrace.datalake.testing:register_benchmark_suites"
