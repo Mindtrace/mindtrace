@@ -33,10 +33,13 @@ The training sub-package provides:
 ```
 training/
 ├── __init__.py              # Public API exports
-├── trainer.py               # Trainer class (AMP, DDP, grad accum)
+├── trainer.py               # Trainer — the generic engine (AMP, DDP, grad accum)
+├── detection.py             # DetectionTrainer + build_detection_model (torchvision)
+├── ultralytics.py           # UltralyticsTrainer + UltralyticsDistiller (YOLO adapter)
+├── protocol.py              # DetectionTrainerProtocol — the shared trainer surface
 ├── callbacks.py             # Callback base + 6 built-in callbacks
 ├── optimizers.py            # build_optimizer, build_scheduler, WarmupCosineScheduler
-├── datalake.py              # DatalakeDataset, build_datalake_loader
+├── datalake_bridge.py       # DatalakeDataset, build_datalake_loader (data source adapter)
 └── losses/
     ├── __init__.py          # All loss exports
     ├── classification.py    # FocalLoss, LabelSmoothingCrossEntropy, SupConLoss
@@ -44,6 +47,36 @@ training/
     ├── segmentation.py      # DiceLoss, TverskyLoss, IoULoss
     └── composite.py         # ComboLoss
 ```
+
+### How this package is organized (the rule)
+
+Two design rules keep the package from sprawling into per-task, per-format classes:
+
+1. **Split by what actually varies.** *Losses* vary by task, so `losses/` has a
+   module per task (classification / detection / segmentation). The *training
+   loop* does **not** vary by task — it varies by **who owns the loop** — so there
+   is one generic `Trainer`, plus a trainer per loop-owner only where the generic
+   engine genuinely can't do the job:
+
+   | Trainer | Loop owner | Why it exists |
+   |---------|-----------|----------------|
+   | `Trainer` | mindtrace | The default. Trains anything expressible as `(inputs, targets) -> loss` — classification, segmentation — over a `DataLoader`. |
+   | `DetectionTrainer` | mindtrace | The generic loop can't do detection (list-collate, label assignment, NMS, mAP). Wraps torchvision detectors; the model owns the loss. |
+   | `UltralyticsTrainer` | Ultralytics | The provider owns the entire loop; this is a thin adapter. |
+
+   A new trainer earns its place only by doing something the engine can't. There is
+   deliberately **no** `ClassificationTrainer` / `SegmentationTrainer` — the generic
+   `Trainer` already covers them, so a wrapper would add a class and zero capability.
+
+2. **Unify the interface, not the implementation.** The two detection trainers share
+   `DetectionTrainerProtocol` (`fit` / `evaluate` / `save` + `tracker` / `registry`) —
+   a structural type, not a base class — so a benchmark sweep can drive them
+   polymorphically while each keeps its native loop. **Data stays a `DataLoader`**
+   (task shape comes from the batch, not a per-task `Dataset` class); data *sources*
+   are adapted per-source (`datalake_bridge`), and the one provider that needs a
+   different data form (Ultralytics' `data.yaml`) takes it at its own boundary.
+
+See [Detection Training](#detection-training) below.
 
 ## Trainer
 
@@ -138,6 +171,56 @@ The internal `_optimizer_step()` method executes:
 3. Step the optimizer (via AMP scaler or directly)
 4. Zero gradients
 5. Step the LR scheduler (`ReduceLROnPlateau` is stepped after validation against `val/loss`)
+
+## Detection Training
+
+Object detection needs a loop the generic `Trainer` does not own. Two provider-backed
+trainers fill that gap behind one shared surface (`DetectionTrainerProtocol`).
+
+### Torchvision detectors — `DetectionTrainer`
+
+mindtrace owns the loop; the torchvision model owns the loss. Consumes a torch
+`DataLoader` of `(image, target)` pairs (use `detection_collate`).
+
+```python
+from mindtrace.models.training import (
+    DetectionTrainer, build_detection_model, detection_collate,
+)
+from torch.utils.data import DataLoader
+
+model = build_detection_model("fasterrcnn_resnet50_fpn", num_classes=1)  # +1 bg internally
+train_loader = DataLoader(dataset, batch_size=2, collate_fn=detection_collate)
+
+trainer = DetectionTrainer(model, num_classes=1, tracker=tracker, registry=registry)
+trainer.fit(train_loader, val_loader, epochs=20)
+metrics = trainer.evaluate(val_loader)   # {"mAP50": ..., "mAP5095": ...}
+```
+
+### YOLO / RT-DETR — `UltralyticsTrainer`
+
+Ultralytics owns the whole loop; this is a thin adapter that takes a `data.yaml`.
+
+```python
+from mindtrace.models.training import UltralyticsTrainer
+
+trainer = UltralyticsTrainer("yolov8n.pt", tracker=tracker, registry=registry)
+trainer.fit(data="weld.yaml", epochs=100, imgsz=640)
+metrics = trainer.evaluate("weld.yaml")   # {"mAP50": ..., "mAP5095": ...} — same keys
+```
+
+### One surface, two providers
+
+Both satisfy `DetectionTrainerProtocol`, so a sweep drives the uniform part
+polymorphically even though `fit`'s data form differs per provider:
+
+```python
+from mindtrace.models.training import DetectionTrainerProtocol
+
+trainers: list[DetectionTrainerProtocol] = [det_trainer, yolo_trainer]
+for t in trainers:
+    print(t.evaluate(val_data))   # both -> {"mAP50": ..., "mAP5095": ...}
+    t.save(f"weld-{key}")
+```
 
 ## Callbacks
 
@@ -358,7 +441,15 @@ trainer = Trainer(..., gradient_checkpointing=True)
 ```python
 from mindtrace.models.training import (
     # Core
-    Trainer,                    # extends Mindtrace; supervised training loop
+    Trainer,                    # extends Mindtrace; generic supervised training loop
+
+    # Detection (provider-backed; share DetectionTrainerProtocol)
+    DetectionTrainer,           # torchvision detectors (mindtrace owns loop)
+    build_detection_model,      # torchvision detector factory (Faster R-CNN / RetinaNet / FCOS)
+    detection_collate,          # DataLoader collate for (image, target) pairs
+    UltralyticsTrainer,         # YOLO / RT-DETR adapter (Ultralytics owns loop)
+    UltralyticsDistiller,       # response-based KD for YOLO (experimental)
+    DetectionTrainerProtocol,   # shared fit/evaluate/save surface
 
     # Callbacks
     Callback,                   # abstract base class
