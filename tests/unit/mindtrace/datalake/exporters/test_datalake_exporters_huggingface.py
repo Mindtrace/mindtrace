@@ -260,7 +260,11 @@ def test_huggingface_bbox_crop_classification_export_preserves_lineage(tmp_path:
     )
     dataset = ExportableDataset(
         name="pascal-voc",
-        metadata={"detection_class_names": ["aeroplane", "bicycle"]},
+        metadata={
+            "classification_type": "single_label",
+            "classification_source": "bbox_crops",
+            "detection_class_names": ["aeroplane", "bicycle"],
+        },
         items=[
             ExportableItem(
                 asset=sample_asset(),
@@ -285,8 +289,6 @@ def test_huggingface_bbox_crop_classification_export_preserves_lineage(tmp_path:
         destination=tmp_path / "voc-crops-hf",
         options={
             "task": "classification",
-            "classification_type": "single_label",
-            "classification_source": "bbox_crops",
         },
     )
     payload = json.loads((tmp_path / "voc-crops-hf" / "dataset_dict.json").read_text())

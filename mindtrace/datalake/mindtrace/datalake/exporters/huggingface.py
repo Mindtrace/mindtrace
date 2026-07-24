@@ -541,7 +541,9 @@ def export_dataset_as_huggingface(
         classification_type = (options or {}).get("classification_type") or dataset.metadata.get(
             "classification_type", "single_label"
         )
-        classification_source = (options or {}).get("classification_source", "annotations")
+        classification_source = (options or {}).get("classification_source") or dataset.metadata.get(
+            "classification_source", "annotations"
+        )
         if classification_source not in {"annotations", "bbox_crops"}:
             raise ValueError(
                 "Hugging Face classification export requires classification_source='annotations' or 'bbox_crops'."
