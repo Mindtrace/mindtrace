@@ -164,7 +164,7 @@ class HuggingFaceSemanticSegmentationDataset:
         self.split = split
         self.transform = transform
 
-        required_columns = {"asset_id", "class_names", "ignore_index", "image", "mask"}
+        required_columns = {"asset_id", "background_id", "class_names", "ignore_index", "image", "mask"}
         missing = sorted(required_columns - set(self._dataset.column_names))
         if missing:
             raise ValueError(f"Hugging Face semantic segmentation export is missing required column(s): {missing}.")
@@ -191,7 +191,13 @@ class HuggingFaceSemanticSegmentationDataset:
         if self.transform is not None:
             return self.transform(image, mask)
         image_tensor = pil_to_tensor(image).float().div(255)
-        mask_tensor = pil_to_tensor(mask).squeeze(0).long()
+        mask_tensor = pil_to_tensor(mask)
+        if mask_tensor.ndim != 3 or mask_tensor.shape[0] != 1:
+            raise ValueError(
+                "Semantic segmentation masks must decode as one-channel class-ID images; "
+                f"received shape {tuple(mask_tensor.shape)}."
+            )
+        mask_tensor = mask_tensor.squeeze(0).long()
         return image_tensor, mask_tensor
 
 
@@ -239,7 +245,7 @@ def build_dataloaders(
 
     normalized_format = format.strip().lower()
     if normalized_format != "huggingface":
-        raise ValueError("Generic classification DataLoaders currently support format='huggingface' only.")
+        raise ValueError("Generic Dataloaders currently support format='huggingface' only.")
     normalized_task = task.strip().lower()
     if normalized_task not in {
         "classification",
@@ -249,8 +255,7 @@ def build_dataloaders(
         "semantic-segmentation",
     }:
         raise ValueError(
-            "Generic DataLoaders support task='classification', task='detection', "
-            "or task='semantic_segmentation'."
+            "Generic DataLoaders support task='classification', task='detection', or task='semantic_segmentation'."
         )
     if batch_size <= 0:
         raise ValueError("batch_size must be greater than zero")

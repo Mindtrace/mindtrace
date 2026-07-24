@@ -43,8 +43,6 @@ VOC_CLASSES = [
     "tvmonitor",
 ]
 VOC_CLASS_TO_ID = {name: index + 1 for index, name in enumerate(VOC_CLASSES)}
-VOC_SEGMENTATION_CLASS_TO_ID = {"background": 0, **VOC_CLASS_TO_ID}
-VOC_SEGMENTATION_ID_TO_CLASS = {value: key for key, value in VOC_SEGMENTATION_CLASS_TO_ID.items()}
 
 
 @dataclass(slots=True)
@@ -301,25 +299,31 @@ def _ensure_schema(
         return datalake.get_annotation_schema_by_name_version(name, PASCAL_VOC_SCHEMA_VERSION)
 
 
-def _ensure_voc_schemas(datalake: Datalake) -> dict[str, AnnotationSchema]:
-    return {
-        "classification": _ensure_schema(
+def _ensure_voc_schemas(
+    datalake: Datalake,
+    tasks: tuple[str, ...] = VOC_TASKS,
+) -> dict[str, AnnotationSchema]:
+    schemas: dict[str, AnnotationSchema] = {}
+    if "classification" in tasks:
+        schemas["classification"] = _ensure_schema(
             datalake,
             name="pascal-voc-classification",
             task_type="classification",
             allowed_annotation_kinds=["classification"],
             labels=_schema_labels(),
             optional_attributes=["layer"],
-        ),
-        "detection": _ensure_schema(
+        )
+    if "detection" in tasks:
+        schemas["detection"] = _ensure_schema(
             datalake,
             name="pascal-voc-detection",
             task_type="detection",
             allowed_annotation_kinds=["bbox"],
             labels=_schema_labels(),
             optional_attributes=["difficult", "truncated", "pose", "occluded"],
-        ),
-        "segmentation": _ensure_schema(
+        )
+    if "semantic_segmentation" in tasks:
+        schemas["semantic_segmentation"] = _ensure_schema(
             datalake,
             name="pascal-voc-segmentation",
             task_type="segmentation",
@@ -327,8 +331,8 @@ def _ensure_voc_schemas(datalake: Datalake) -> dict[str, AnnotationSchema]:
             labels=[AnnotationLabelDefinition(name="semantic_mask"), *_schema_labels(include_background=True)],
             required_attributes=["encoding", "ignore_index"],
             optional_attributes=["source_mask"],
-        ),
-    }
+        )
+    return schemas
 
 
 def _create_annotation_set_if_needed(datalake: Datalake, *, datum_id: str, name: str, annotation_schema_id: str):
@@ -377,12 +381,10 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
     else:
         raise ValueError(f"Dataset version already exists: {dataset_name}@{config.dataset_version}")
 
-    schemas = _ensure_voc_schemas(datalake)
-    split_task = "semantic_segmentation" if tasks == ("semantic_segmentation",) else tasks[0]
+    schemas = _ensure_voc_schemas(datalake, tasks)
+    split_task = "semantic_segmentation" if tasks == ("semantic_segmentation",) else "detection"
     image_ids = _read_split_ids(voc_root, config.split, task=split_task)
-    classification_labels = (
-        _read_classification_labels(voc_root, config.split) if "classification" in tasks else {}
-    )
+    classification_labels = _read_classification_labels(voc_root, config.split) if "classification" in tasks else {}
     image_dir = voc_root / "JPEGImages"
     annotation_dir = voc_root / "Annotations"
     segmentation_mask_dir = voc_root / "SegmentationClass"
@@ -533,7 +535,7 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
                 datalake,
                 datum_id=datum.datum_id,
                 name="pascal-voc-segmentation",
-                annotation_schema_id=schemas["segmentation"].annotation_schema_id,
+                annotation_schema_id=schemas["semantic_segmentation"].annotation_schema_id,
             )
             records = [
                 {
@@ -551,24 +553,43 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
             datalake.add_annotation_records(records, annotation_set_id=annotation_set.annotation_set_id)
             segmentation_record_count += 1
 
+    dataset_metadata = {
+        "source_dataset": "pascal_voc",
+        "year": "2012",
+        "split": config.split,
+        "importer": "mindtrace.datalake.importers.pascal_voc",
+        "task_types": list(tasks),
+    }
+    if "classification" in tasks:
+        dataset_metadata.update(
+            {
+                "classification_type": "multi_label",
+                "classification_class_names": VOC_CLASSES,
+            }
+        )
+    if "detection" in tasks:
+        dataset_metadata.update(
+            {
+                "detection_class_names": VOC_CLASSES,
+                "detection_bbox_format": "xywh",
+                "detection_bbox_coordinates": "pixels",
+            }
+        )
+    if "semantic_segmentation" in tasks:
+        dataset_metadata.update(
+            {
+                "semantic_segmentation_class_names": ["background", *VOC_CLASSES],
+                "semantic_segmentation_background_id": 0,
+                "semantic_segmentation_ignore_index": 255,
+                "semantic_segmentation_mask_encoding": "class_id",
+            }
+        )
+
     dataset_version = datalake.create_dataset_version(
         dataset_name=dataset_name,
         version=config.dataset_version,
         manifest=manifest,
-        metadata={
-            "source_dataset": "pascal_voc",
-            "year": "2012",
-            "split": config.split,
-            "importer": "mindtrace.datalake.importers.pascal_voc",
-            "task_types": list(tasks),
-            "detection_class_names": VOC_CLASSES,
-            "detection_bbox_format": "xywh",
-            "detection_bbox_coordinates": "pixels",
-            "semantic_segmentation_class_names": ["background", *VOC_CLASSES],
-            "semantic_segmentation_background_id": 0,
-            "semantic_segmentation_ignore_index": 255,
-            "semantic_segmentation_mask_encoding": "class_id",
-        },
+        metadata=dataset_metadata,
         created_by=config.created_by,
     )
     return PascalVocImportSummary(

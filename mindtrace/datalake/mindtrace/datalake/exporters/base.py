@@ -127,8 +127,16 @@ def _build_exportable_item(
             annotation_sets=annotation_sets,
             payload_bytes=payload_bytes,
             source_filename=default_export_filename(asset),
-            related_assets={related_role: related_asset for related_role, related_asset in resolved_datum.assets.items()},
-            related_payload_bytes=dict(payload_bytes_by_role or {}),
+            related_assets={
+                related_role: related_asset
+                for related_role, related_asset in resolved_datum.assets.items()
+                if related_role != role
+            },
+            related_payload_bytes={
+                related_role: related_payload
+                for related_role, related_payload in (payload_bytes_by_role or {}).items()
+                if related_role != role
+            },
         ),
         warnings,
     )
