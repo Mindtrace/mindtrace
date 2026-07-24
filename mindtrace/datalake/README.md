@@ -205,10 +205,10 @@ with Datalake.create(
     )
 ```
 
-Then construct split-aware PyTorch loaders from the export:
+Then construct split-aware PyTorch datasets or loaders from the export:
 
 ```python
-from mindtrace.datalake import build_dataloaders
+from mindtrace.datalake import build_dataloaders, build_datasets
 from torchvision import transforms
 
 # Select preprocessing that matches the model being trained. Flowers102
@@ -220,6 +220,13 @@ image_transform = transforms.Compose(
         transforms.ToTensor(),
     ]
 )
+
+datasets = build_datasets(
+    "./exports/flowers102",
+    task="classification",
+    transforms=image_transform,
+)
+image, target = datasets["train"][0]
 
 loaders = build_dataloaders(
     "./exports/flowers102",
@@ -235,11 +242,16 @@ val_loader = loaders["val"]
 test_loader = loaders["test"]
 ```
 
-Pass either one transform or a split-to-transform mapping through `transforms=`. The transform should implement the
-resize, rescaling, and normalization contract expected by the selected model; train-only augmentation can be supplied
-separately from deterministic validation and test transforms. Training data is shuffled; validation and test data are
-not. COCO does not define a portable image-classification contract, so classification-only datasets raise a clear
-error when exported with `format="coco"`.
+Both builders return dictionaries keyed by the available or requested split names. `build_datasets()` exposes the
+indexable PyTorch-compatible task adapters; `build_dataloaders()` delegates to it and adds batching, shuffling,
+workers, and task-specific collation. Pass either one transform or a split-to-transform mapping through
+`transforms=`. The transform should implement the resize, rescaling, and normalization contract expected by the
+selected model; train-only augmentation can be supplied separately from deterministic validation and test transforms.
+Training data is shuffled; validation and test data are not. Classification schemas automatically select single-label
+or multi-label targets. Segmentation schemas automatically select semantic or instance profiles when using
+`task="segmentation"`; the explicit `semantic_segmentation` and `instance_segmentation` names are accepted as
+validation aliases. Instance-segmentation dataset adaptation is not implemented yet. COCO does not define a portable
+image-classification contract, so classification-only datasets raise a clear error when exported with `format="coco"`.
 
 ---
 
@@ -403,7 +415,7 @@ datalake.export_dataset_version_to_format(
 
 semantic_loaders = build_dataloaders(
     "./exports/voc-semantic",
-    task="semantic_segmentation",
+    task="segmentation",
     batch_size=8,
 )
 ```
