@@ -99,6 +99,8 @@ def test_import_flowers102_combines_and_preserves_all_splits(tmp_path: Path, mon
     dataset_version_kwargs = datalake.create_dataset_version.call_args.kwargs
     assert dataset_version_kwargs["manifest"] == ["datum_train", "datum_val", "datum_test"]
     assert dataset_version_kwargs["metadata"]["task_type"] == "classification"
+    assert dataset_version_kwargs["metadata"]["classification_type"] == "single_label"
+    assert dataset_version_kwargs["metadata"]["classification_class_names"] == flowers102._class_names()
     assert dataset_version_kwargs["metadata"]["label_index_base"] == 0
     assert all("on_conflict" not in call.kwargs for call in datalake.create_asset_from_object.call_args_list)
 

@@ -112,6 +112,33 @@ def test_classification_dataset_returns_normalized_image_and_long_target(monkeyp
     assert target.value == 1
     assert target.dtype == "long"
     assert dataset.class_names == ("pink primrose", "orchid")
+    assert dataset.classification_type == "single_label"
+
+
+def test_multi_label_classification_dataset_returns_float_target(monkeypatch):
+    image = _FakeImage()
+    labels_feature = SimpleNamespace(feature=SimpleNamespace(names=["aeroplane", "bicycle", "bird"]))
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset(
+            [{"image": image, "labels": [1.0, 0.0, 1.0], "label_ids": [0, 2]}],
+            column_names=["image", "labels", "label_ids"],
+            features={"label_ids": labels_feature},
+        ),
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    dataset = dataloaders.HuggingFaceClassificationDataset("/export", split="train")
+    sample, target = dataset[0]
+
+    assert sample == ("normalized", image, 255)
+    assert target.value == [1.0, 0.0, 1.0]
+    assert target.dtype == "float32"
+    assert dataset.class_names == ("aeroplane", "bicycle", "bird")
+    assert dataset.classification_type == "multi_label"
 
 
 def test_classification_dataset_is_picklable_for_spawned_workers(monkeypatch):

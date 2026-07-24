@@ -53,11 +53,17 @@ class HuggingFaceClassificationDataset:
         self.split = split
         self.transform = transform
 
-        required_columns = {"image", "label"}
-        missing = sorted(required_columns - set(self._dataset.column_names))
+        columns = set(self._dataset.column_names)
+        self.classification_type = "multi_label" if "labels" in columns else "single_label"
+        target_column = "labels" if self.classification_type == "multi_label" else "label"
+        missing = sorted({"image", target_column} - columns)
         if missing:
             raise ValueError(f"Hugging Face classification export is missing required column(s): {missing}.")
-        label_feature = self._dataset.features.get("label")
+        if self.classification_type == "multi_label":
+            label_ids_feature = self._dataset.features.get("label_ids")
+            label_feature = getattr(label_ids_feature, "feature", None)
+        else:
+            label_feature = self._dataset.features.get("label")
         self.class_names = tuple(getattr(label_feature, "names", ()) or ())
 
     def __len__(self) -> int:
@@ -78,7 +84,10 @@ class HuggingFaceClassificationDataset:
             image = self.transform(image)
         else:
             image = pil_to_tensor(image).float().div(255)
-        target = torch.tensor(int(row["label"]), dtype=torch.long)
+        if self.classification_type == "multi_label":
+            target = torch.tensor(row["labels"], dtype=torch.float32)
+        else:
+            target = torch.tensor(int(row["label"]), dtype=torch.long)
         return image, target
 
 

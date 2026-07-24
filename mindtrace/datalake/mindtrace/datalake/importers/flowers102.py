@@ -376,6 +376,8 @@ def import_flowers102(datalake: Datalake, config: Flowers102ImportConfig) -> Flo
         metadata={
             "source_dataset": "oxford-flowers-102",
             "task_type": "classification",
+            "classification_type": "single_label",
+            "classification_class_names": class_names,
             "splits": list(splits),
             "class_count": len(class_names),
             "class_names": class_names,

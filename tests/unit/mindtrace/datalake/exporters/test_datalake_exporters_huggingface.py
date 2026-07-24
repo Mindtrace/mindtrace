@@ -195,6 +195,112 @@ def test_huggingface_classification_export_rejects_label_name_mismatch(tmp_path:
         export_dataset_as_huggingface(dataset, destination=tmp_path / "invalid-label-hf")
 
 
+def test_huggingface_multi_label_classification_export_writes_multi_hot_targets(tmp_path: Path, monkeypatch):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+    from mindtrace.datalake.types import AnnotationRecord
+
+    monkeypatch.setattr(
+        huggingface_exporter.importlib,
+        "import_module",
+        lambda name: _fake_datasets_module(),
+    )
+    dataset = ExportableDataset(
+        name="pascal-voc",
+        metadata={
+            "task_types": ["classification"],
+            "classification_type": "multi_label",
+            "classification_class_names": ["aeroplane", "bicycle", "bird"],
+        },
+        items=[
+            ExportableItem(
+                asset=sample_asset(),
+                split="train",
+                payload_bytes=png_bytes(),
+                annotations=[
+                    AnnotationRecord(
+                        annotation_id="classification_1",
+                        kind="classification",
+                        label="bird",
+                        label_id=3,
+                        source={"type": "human", "name": "pascal-voc"},
+                    ),
+                    AnnotationRecord(
+                        annotation_id="classification_2",
+                        kind="classification",
+                        label="aeroplane",
+                        label_id=1,
+                        source={"type": "human", "name": "pascal-voc"},
+                    ),
+                ],
+            )
+        ],
+    )
+
+    result = export_dataset_as_huggingface(
+        dataset,
+        destination=tmp_path / "voc-multi-label-hf",
+        options={"task": "classification"},
+    )
+    payload = json.loads((tmp_path / "voc-multi-label-hf" / "dataset_dict.json").read_text())
+
+    assert result.annotation_count == 2
+    assert payload["train"][0]["labels"] == [1.0, 0.0, 1.0]
+    assert payload["train"][0]["label_ids"] == [0, 2]
+    assert payload["train"][0]["label_names"] == ["aeroplane", "bird"]
+
+
+def test_huggingface_bbox_crop_classification_export_preserves_lineage(tmp_path: Path, monkeypatch):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+    from mindtrace.datalake.types import AnnotationRecord
+
+    monkeypatch.setattr(
+        huggingface_exporter.importlib,
+        "import_module",
+        lambda name: _fake_datasets_module(),
+    )
+    dataset = ExportableDataset(
+        name="pascal-voc",
+        metadata={"detection_class_names": ["aeroplane", "bicycle"]},
+        items=[
+            ExportableItem(
+                asset=sample_asset(),
+                split="val",
+                payload_bytes=png_bytes(),
+                annotations=[
+                    AnnotationRecord(
+                        annotation_id="detection_1",
+                        kind="bbox",
+                        label="bicycle",
+                        label_id=2,
+                        geometry={"type": "bbox", "x": 0, "y": 0, "width": 1, "height": 1},
+                        source={"type": "human", "name": "pascal-voc"},
+                    )
+                ],
+            )
+        ],
+    )
+
+    result = export_dataset_as_huggingface(
+        dataset,
+        destination=tmp_path / "voc-crops-hf",
+        options={
+            "task": "classification",
+            "classification_type": "single_label",
+            "classification_source": "bbox_crops",
+        },
+    )
+    payload = json.loads((tmp_path / "voc-crops-hf" / "dataset_dict.json").read_text())
+    row = payload["val"][0]
+
+    assert result.asset_count == 1
+    assert row["label"] == 1
+    assert row["label_name"] == "bicycle"
+    assert row["source_image_asset_id"] == "asset_img"
+    assert row["source_annotation_id"] == "detection_1"
+    assert row["source_bbox"] == [0.0, 0.0, 1.0, 1.0]
+    assert row["image"]["path"] == "asset_img-detection_1.jpg"
+
+
 def test_huggingface_detection_export_writes_typed_objects_and_remaps_labels(tmp_path: Path, monkeypatch):
     from mindtrace.datalake.exporters import huggingface as huggingface_exporter
     from mindtrace.datalake.types import AnnotationRecord

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import io
 import json
 from pathlib import Path
 from typing import Any
@@ -72,13 +73,31 @@ def _classification_annotation(item) -> Any:
     return annotation
 
 
-def _classification_features(datasets_module: Any, class_names: list[str]):
+def _single_label_classification_features(datasets_module: Any, class_names: list[str]):
     return datasets_module.Features(
         {
             "image": datasets_module.Image(),
             "asset_id": datasets_module.Value("string"),
             "label": datasets_module.ClassLabel(names=class_names),
             "label_name": datasets_module.Value("string"),
+            "split": datasets_module.Value("string"),
+            "source_image_asset_id": datasets_module.Value("string"),
+            "source_annotation_id": datasets_module.Value("string"),
+            "source_bbox": datasets_module.Sequence(datasets_module.Value("float32"), length=4),
+            "metadata_json": datasets_module.Value("string"),
+            "asset_metadata_json": datasets_module.Value("string"),
+        }
+    )
+
+
+def _multi_label_classification_features(datasets_module: Any, class_names: list[str]):
+    return datasets_module.Features(
+        {
+            "image": datasets_module.Image(),
+            "asset_id": datasets_module.Value("string"),
+            "labels": datasets_module.Sequence(datasets_module.Value("float32"), length=len(class_names)),
+            "label_ids": datasets_module.Sequence(datasets_module.ClassLabel(names=class_names)),
+            "label_names": datasets_module.Sequence(datasets_module.Value("string")),
             "split": datasets_module.Value("string"),
             "metadata_json": datasets_module.Value("string"),
             "asset_metadata_json": datasets_module.Value("string"),
@@ -152,7 +171,7 @@ def _embedded_related_image(item, role: str, *, include_media: bool, task: str):
     return {"bytes": payload_bytes, "path": f"{asset.asset_id}.png"}
 
 
-def _export_classification_dataset(
+def _export_single_label_classification_dataset(
     datasets_module: Any,
     dataset: ExportableDataset,
     *,
@@ -160,7 +179,7 @@ def _export_classification_dataset(
     include_media: bool,
 ) -> ExportResult:
     class_names = _classification_class_names(dataset)
-    features = _classification_features(datasets_module, class_names)
+    features = _single_label_classification_features(datasets_module, class_names)
     rows_by_split: dict[str, list[dict[str, Any]]] = {}
 
     for item in dataset.items:
@@ -185,6 +204,9 @@ def _export_classification_dataset(
                 "label": annotation.label_id,
                 "label_name": annotation.label,
                 "split": item.split or "",
+                "source_image_asset_id": item.asset.asset_id,
+                "source_annotation_id": annotation.annotation_id,
+                "source_bbox": None,
                 "metadata_json": json.dumps(item.metadata or {}, sort_keys=True, default=str),
                 "asset_metadata_json": json.dumps(item.asset.metadata or {}, sort_keys=True, default=str),
             }
@@ -204,6 +226,150 @@ def _export_classification_dataset(
         dataset_name=dataset.name,
         asset_count=dataset.asset_count,
         annotation_count=dataset.annotation_count,
+        files_written=["."],
+        warnings=list(dataset.warnings),
+    )
+
+
+def _export_multi_label_classification_dataset(
+    datasets_module: Any,
+    dataset: ExportableDataset,
+    *,
+    destination: Path,
+    include_media: bool,
+) -> ExportResult:
+    class_names = _classification_class_names(dataset)
+    class_ids = {name: index for index, name in enumerate(class_names)}
+    features = _multi_label_classification_features(datasets_module, class_names)
+    rows_by_split: dict[str, list[dict[str, Any]]] = {}
+    annotation_count = 0
+
+    for item in dataset.items:
+        annotations = [annotation for annotation in item.annotations if annotation.kind == "classification"]
+        unknown = sorted({annotation.label for annotation in annotations} - set(class_ids))
+        if unknown:
+            raise ValueError(f"Multi-label classification annotations use unknown labels: {unknown}.")
+        positive_ids = sorted({class_ids[annotation.label] for annotation in annotations})
+        labels = [0.0] * len(class_names)
+        for label_id in positive_ids:
+            labels[label_id] = 1.0
+        annotation_count += len(annotations)
+        split_name = item.split or "default"
+        rows_by_split.setdefault(split_name, []).append(
+            {
+                "image": _embedded_image(item, include_media=include_media, task="classification"),
+                "asset_id": item.asset.asset_id,
+                "labels": labels,
+                "label_ids": positive_ids,
+                "label_names": [class_names[label_id] for label_id in positive_ids],
+                "split": item.split or "",
+                "metadata_json": json.dumps(item.metadata or {}, sort_keys=True, default=str),
+                "asset_metadata_json": json.dumps(item.asset.metadata or {}, sort_keys=True, default=str),
+            }
+        )
+
+    dataset_payload = {
+        split: datasets_module.Dataset.from_list(rows, features=features) for split, rows in rows_by_split.items()
+    }
+    if len(dataset_payload) == 1 and "default" in dataset_payload:
+        hf_dataset = dataset_payload["default"]
+    else:
+        hf_dataset = datasets_module.DatasetDict(dataset_payload)
+    hf_dataset.save_to_disk(str(destination))
+    return ExportResult(
+        format="huggingface",
+        destination=destination,
+        dataset_name=dataset.name,
+        asset_count=dataset.asset_count,
+        annotation_count=annotation_count,
+        files_written=["."],
+        warnings=list(dataset.warnings),
+    )
+
+
+def _crop_image_for_classification(item, annotation) -> dict[str, Any]:
+    if item.payload_bytes is None:
+        raise ValueError(
+            f"Hugging Face bbox-crop classification export requires payload bytes for asset {item.asset.asset_id}."
+        )
+    geometry = annotation.geometry
+    if geometry.get("type") != "bbox":
+        raise ValueError(f"Classification crop annotation {annotation.annotation_id!r} must use bbox geometry.")
+    x, y, width, height = (float(geometry.get(key, 0)) for key in ("x", "y", "width", "height"))
+    if width <= 0 or height <= 0:
+        raise ValueError(f"Classification crop annotation {annotation.annotation_id!r} has an empty bbox.")
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise ImportError("Bounding-box classification crops require Pillow.") from exc
+    with Image.open(io.BytesIO(item.payload_bytes)) as image:
+        left = max(0, int(x))
+        top = max(0, int(y))
+        right = min(image.width, int(x + width))
+        bottom = min(image.height, int(y + height))
+        if right <= left or bottom <= top:
+            raise ValueError(
+                f"Classification crop annotation {annotation.annotation_id!r} lies outside its source image."
+            )
+        crop = image.convert("RGB").crop((left, top, right, bottom))
+        payload = io.BytesIO()
+        crop.save(payload, format="JPEG")
+    return {
+        "bytes": payload.getvalue(),
+        "path": f"{item.asset.asset_id}-{annotation.annotation_id}.jpg",
+    }
+
+
+def _export_bbox_crop_classification_dataset(
+    datasets_module: Any,
+    dataset: ExportableDataset,
+    *,
+    destination: Path,
+    include_media: bool,
+) -> ExportResult:
+    class_names = _detection_class_names(dataset)
+    class_ids = {name: index for index, name in enumerate(class_names)}
+    features = _single_label_classification_features(datasets_module, class_names)
+    rows_by_split: dict[str, list[dict[str, Any]]] = {}
+    crop_count = 0
+
+    for item in dataset.items:
+        for annotation in item.annotations:
+            if annotation.kind != "bbox":
+                continue
+            split_name = item.split or "default"
+            rows_by_split.setdefault(split_name, []).append(
+                {
+                    "image": _crop_image_for_classification(item, annotation) if include_media else None,
+                    "asset_id": f"{item.asset.asset_id}:{annotation.annotation_id}",
+                    "label": class_ids[annotation.label],
+                    "label_name": annotation.label,
+                    "split": item.split or "",
+                    "source_image_asset_id": item.asset.asset_id,
+                    "source_annotation_id": annotation.annotation_id,
+                    "source_bbox": [
+                        float(annotation.geometry.get(key, 0)) for key in ("x", "y", "width", "height")
+                    ],
+                    "metadata_json": json.dumps(item.metadata or {}, sort_keys=True, default=str),
+                    "asset_metadata_json": json.dumps(item.asset.metadata or {}, sort_keys=True, default=str),
+                }
+            )
+            crop_count += 1
+
+    dataset_payload = {
+        split: datasets_module.Dataset.from_list(rows, features=features) for split, rows in rows_by_split.items()
+    }
+    if len(dataset_payload) == 1 and "default" in dataset_payload:
+        hf_dataset = dataset_payload["default"]
+    else:
+        hf_dataset = datasets_module.DatasetDict(dataset_payload)
+    hf_dataset.save_to_disk(str(destination))
+    return ExportResult(
+        format="huggingface",
+        destination=destination,
+        dataset_name=dataset.name,
+        asset_count=crop_count,
+        annotation_count=crop_count,
         files_written=["."],
         warnings=list(dataset.warnings),
     )
@@ -372,11 +538,33 @@ def export_dataset_as_huggingface(
     destination_path = prepare_export_destination(destination, overwrite=overwrite)
     requested_task = (options or {}).get("task") or dataset.metadata.get("task_type")
     if requested_task == "classification":
-        return _export_classification_dataset(
-            datasets_module,
-            dataset,
-            destination=destination_path,
-            include_media=include_media,
+        classification_type = (options or {}).get("classification_type") or dataset.metadata.get(
+            "classification_type", "single_label"
+        )
+        classification_source = (options or {}).get("classification_source", "annotations")
+        if classification_type == "single_label" and classification_source == "bbox_crops":
+            return _export_bbox_crop_classification_dataset(
+                datasets_module,
+                dataset,
+                destination=destination_path,
+                include_media=include_media,
+            )
+        if classification_type == "single_label":
+            return _export_single_label_classification_dataset(
+                datasets_module,
+                dataset,
+                destination=destination_path,
+                include_media=include_media,
+            )
+        if classification_type == "multi_label":
+            return _export_multi_label_classification_dataset(
+                datasets_module,
+                dataset,
+                destination=destination_path,
+                include_media=include_media,
+            )
+        raise ValueError(
+            "Hugging Face classification export requires classification_type='single_label' or 'multi_label'."
         )
     if requested_task in {"detection", "object_detection"}:
         return _export_detection_dataset(
