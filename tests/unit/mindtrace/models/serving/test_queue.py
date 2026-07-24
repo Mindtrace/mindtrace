@@ -1,24 +1,20 @@
-"""Unit tests for the async inference queue and thermal load shedding.
+"""Unit tests for the async inference queue.
 
 Covers:
 - InferenceQueue latency mode: drop-oldest under a slow predict_fn
 - InferenceQueue throughput mode: micro-batching, result splitting, blocking submit
 - Worker survival across predict_fn exceptions; stats consistency
 - close() draining, context-manager support, submit-after-close
-- ThermalGovernor hysteresis with scripted readers; None readings
-- read_temperature_c best-effort sysfs parsing
 """
 
 from __future__ import annotations
 
 import threading
-from pathlib import Path
 
 import numpy as np
 import pytest
 
-from mindtrace.models.serving import InferenceQueue, ThermalGovernor, read_temperature_c
-from mindtrace.models.serving import thermal as thermal_mod
+from mindtrace.models.serving import InferenceQueue
 
 # ===================================================================
 # 1. InferenceQueue — latency mode
@@ -209,77 +205,3 @@ def test_constructor_validation():
 
 
 # ===================================================================
-# 5. ThermalGovernor
-# ===================================================================
-
-
-def test_governor_hysteresis_fires_shed_and_resume_once():
-    readings = iter([80.0, 90.0, 80.0, 70.0])
-    sheds: list[float] = []
-    resumes: list[float] = []
-    governor = ThermalGovernor(
-        max_temp_c=85.0,
-        resume_temp_c=75.0,
-        reader=lambda: next(readings),
-        on_shed=sheds.append,
-        on_resume=resumes.append,
-    )
-
-    assert governor.check() is False  # 80: below max, keep serving
-    assert governor.check() is True  # 90: shed
-    assert governor.shedding is True
-    assert governor.check() is True  # 80: inside hysteresis band, still shedding
-    assert governor.check() is False  # 70: below resume threshold
-    assert governor.shedding is False
-
-    assert sheds == [90.0]
-    assert resumes == [70.0]
-
-
-def test_governor_none_readings_never_shed():
-    sheds: list[float] = []
-    governor = ThermalGovernor(reader=lambda: None, on_shed=sheds.append)
-    assert governor.check() is False
-    assert governor.check() is False
-    assert sheds == []
-
-
-def test_governor_none_reading_holds_current_state():
-    readings = iter([90.0, None, 70.0])
-    governor = ThermalGovernor(max_temp_c=85.0, resume_temp_c=75.0, reader=lambda: next(readings))
-    assert governor.check() is True
-    assert governor.check() is True  # None: no transition, state held
-    assert governor.check() is False
-
-
-def test_governor_requires_hysteresis_gap():
-    with pytest.raises(ValueError, match="lower than"):
-        ThermalGovernor(max_temp_c=80.0, resume_temp_c=80.0)
-
-
-# ===================================================================
-# 6. read_temperature_c
-# ===================================================================
-
-
-def test_read_temperature_c_best_effort_on_host():
-    result = read_temperature_c()
-    assert result is None or isinstance(result, float)
-
-
-def test_read_temperature_c_parses_fake_sysfs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    for name, millidegrees in (("thermal_zone0", "55000"), ("thermal_zone1", "63000\n"), ("thermal_zone2", "junk")):
-        zone_dir = tmp_path / name
-        zone_dir.mkdir()
-        (zone_dir / "temp").write_text(millidegrees)
-    monkeypatch.setattr(thermal_mod, "_THERMAL_BASE", tmp_path)
-
-    assert thermal_mod.read_temperature_c() == 63.0  # highest readable zone
-    assert thermal_mod.read_temperature_c("thermal_zone0") == 55.0
-    assert thermal_mod.read_temperature_c("thermal_zone2") is None  # unparsable
-    assert thermal_mod.read_temperature_c("no_such_zone") is None
-
-
-def test_read_temperature_c_empty_dir_returns_none(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(thermal_mod, "_THERMAL_BASE", tmp_path / "missing")
-    assert thermal_mod.read_temperature_c() is None
