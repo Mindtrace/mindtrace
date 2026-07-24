@@ -42,6 +42,7 @@ from mindtrace.models.training.callbacks import (
     UnfreezeSchedule,
 )
 from mindtrace.models.training.datalake_bridge import DatalakeDataset, build_datalake_loader
+from mindtrace.models.training.detection import DetectionTrainer, build_detection_model, detection_collate
 from mindtrace.models.training.optimizers import build_optimizer, build_scheduler
 from mindtrace.models.training.trainer import Trainer
 from mindtrace.models.training.ultralytics import UltralyticsDistiller, UltralyticsTrainer
@@ -52,6 +53,10 @@ __all__ = [
     # Ultralytics (YOLO) training adapter
     "UltralyticsTrainer",
     "UltralyticsDistiller",
+    # Object detection (torchvision-backed)
+    "DetectionTrainer",
+    "build_detection_model",
+    "detection_collate",
     # Callbacks
     "Callback",
     "ModelCheckpoint",
