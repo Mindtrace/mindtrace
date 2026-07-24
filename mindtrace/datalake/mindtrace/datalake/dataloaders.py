@@ -46,9 +46,10 @@ class HuggingFaceClassificationDataset:
         *,
         split: str,
         transform: Callable[[Any], Any] | None = None,
+        _payload: Any | None = None,
     ) -> None:
         datasets, _, _, _ = _require_huggingface_dataloader_dependencies()
-        payload = datasets.load_from_disk(str(export_path))
+        payload = _payload if _payload is not None else datasets.load_from_disk(str(export_path))
         self._dataset = _select_split(payload, split)
         self.split = split
         self.transform = transform
@@ -115,9 +116,10 @@ class HuggingFaceDetectionDataset:
         *,
         split: str,
         transform: Callable[[Any, dict[str, Any]], tuple[Any, dict[str, Any]]] | None = None,
+        _payload: Any | None = None,
     ) -> None:
         datasets, _, _, _ = _require_huggingface_dataloader_dependencies()
-        payload = datasets.load_from_disk(str(export_path))
+        payload = _payload if _payload is not None else datasets.load_from_disk(str(export_path))
         self._dataset = _select_split(payload, split)
         self.split = split
         self.transform = transform
@@ -166,9 +168,10 @@ class HuggingFaceSemanticSegmentationDataset:
         *,
         split: str,
         transform: Callable[[Any, Any], tuple[Any, Any]] | None = None,
+        _payload: Any | None = None,
     ) -> None:
         datasets, _, _, _ = _require_huggingface_dataloader_dependencies()
-        payload = datasets.load_from_disk(str(export_path))
+        payload = _payload if _payload is not None else datasets.load_from_disk(str(export_path))
         self._dataset = _select_split(payload, split)
         self.split = split
         self.transform = transform
@@ -235,6 +238,105 @@ def _transform_for_split(
     return transforms.get(split)
 
 
+def _normalize_task(task: str) -> str:
+    normalized_task = task.strip().lower().replace("-", "_")
+    aliases = {
+        "object_detection": "detection",
+        "semantic_segmentation": "semantic_segmentation",
+        "instance_segmentation": "instance_segmentation",
+    }
+    normalized_task = aliases.get(normalized_task, normalized_task)
+    if normalized_task not in {
+        "classification",
+        "detection",
+        "segmentation",
+        "semantic_segmentation",
+        "instance_segmentation",
+    }:
+        raise ValueError(
+            "Generic datasets support task='classification', task='detection', or task='segmentation'. "
+            "Explicit task='semantic_segmentation' and task='instance_segmentation' aliases are also accepted."
+        )
+    return normalized_task
+
+
+def _infer_segmentation_profile(dataset: Any) -> str:
+    columns = set(dataset.column_names)
+    has_semantic_mask = "mask" in columns
+    has_instances = "objects" in columns
+    if has_semantic_mask and has_instances:
+        raise ValueError(
+            "Segmentation export is ambiguous: it contains both a semantic 'mask' column and an instance "
+            "'objects' column. Request task='semantic_segmentation' or task='instance_segmentation' explicitly."
+        )
+    if has_semantic_mask:
+        return "semantic_segmentation"
+    if has_instances:
+        return "instance_segmentation"
+    raise ValueError(
+        "Unable to infer segmentation profile from the Hugging Face schema. Expected a semantic 'mask' column "
+        "or an instance 'objects' column."
+    )
+
+
+def build_datasets(
+    export_path: str | Path,
+    *,
+    format: str = "huggingface",
+    task: str = "classification",
+    splits: Sequence[str] | None = None,
+    transforms: Mapping[str, Callable[..., Any]] | Callable[..., Any] | None = None,
+) -> dict[str, Any]:
+    """Build split-aware PyTorch-compatible datasets over a Mindtrace dataset export."""
+
+    normalized_format = format.strip().lower()
+    if normalized_format != "huggingface":
+        raise ValueError("Generic datasets currently support format='huggingface' only.")
+    normalized_task = _normalize_task(task)
+
+    datasets_module, _, _, _ = _require_huggingface_dataloader_dependencies()
+    payload = datasets_module.load_from_disk(str(export_path))
+    available = _available_splits(payload)
+    requested = tuple(splits) if splits is not None else available
+    missing = sorted(set(requested) - set(available))
+    if missing:
+        raise KeyError(f"Export does not contain requested split(s) {missing}; available: {list(available)}.")
+
+    built: dict[str, Any] = {}
+    for split in requested:
+        transform = _transform_for_split(transforms, split)
+        profile = normalized_task
+        if profile == "segmentation":
+            profile = _infer_segmentation_profile(_select_split(payload, split))
+        if profile == "classification":
+            dataset = HuggingFaceClassificationDataset(
+                export_path,
+                split=split,
+                transform=transform,
+                _payload=payload,
+            )
+        elif profile == "detection":
+            dataset = HuggingFaceDetectionDataset(
+                export_path,
+                split=split,
+                transform=transform,
+                _payload=payload,
+            )
+        elif profile == "semantic_segmentation":
+            dataset = HuggingFaceSemanticSegmentationDataset(
+                export_path,
+                split=split,
+                transform=transform,
+                _payload=payload,
+            )
+        else:
+            raise NotImplementedError(
+                "Instance-segmentation exports are recognized, but their PyTorch dataset adapter is not implemented."
+            )
+        built[split] = dataset
+    return built
+
+
 def build_dataloaders(
     export_path: str | Path,
     *,
@@ -252,20 +354,6 @@ def build_dataloaders(
 ) -> dict[str, Any]:
     """Build split-aware PyTorch DataLoaders over a Mindtrace dataset export."""
 
-    normalized_format = format.strip().lower()
-    if normalized_format != "huggingface":
-        raise ValueError("Generic Dataloaders currently support format='huggingface' only.")
-    normalized_task = task.strip().lower()
-    if normalized_task not in {
-        "classification",
-        "detection",
-        "object_detection",
-        "semantic_segmentation",
-        "semantic-segmentation",
-    }:
-        raise ValueError(
-            "Generic DataLoaders support task='classification', task='detection', or task='semantic_segmentation'."
-        )
     if batch_size <= 0:
         raise ValueError("batch_size must be greater than zero")
     if num_workers < 0:
@@ -275,23 +363,17 @@ def build_dataloaders(
     if prefetch_factor is not None and num_workers == 0:
         raise ValueError("prefetch_factor requires num_workers > 0")
 
-    datasets, torch, DataLoader, _ = _require_huggingface_dataloader_dependencies()
-    payload = datasets.load_from_disk(str(export_path))
-    available = _available_splits(payload)
-    requested = tuple(splits) if splits is not None else available
-    missing = sorted(set(requested) - set(available))
-    if missing:
-        raise KeyError(f"Export does not contain requested split(s) {missing}; available: {list(available)}.")
+    built_datasets = build_datasets(
+        export_path,
+        format=format,
+        task=task,
+        splits=splits,
+        transforms=transforms,
+    )
+    _, torch, DataLoader, _ = _require_huggingface_dataloader_dependencies()
 
     loaders: dict[str, Any] = {}
-    for split in requested:
-        transform = _transform_for_split(transforms, split)
-        if normalized_task == "classification":
-            dataset = HuggingFaceClassificationDataset(export_path, split=split, transform=transform)
-        elif normalized_task in {"detection", "object_detection"}:
-            dataset = HuggingFaceDetectionDataset(export_path, split=split, transform=transform)
-        else:
-            dataset = HuggingFaceSemanticSegmentationDataset(export_path, split=split, transform=transform)
+    for split, dataset in built_datasets.items():
         generator = torch.Generator()
         generator.manual_seed(seed)
         loader_kwargs: dict[str, Any] = {
@@ -307,7 +389,7 @@ def build_dataloaders(
             loader_kwargs["persistent_workers"] = persistent_workers
             if prefetch_factor is not None:
                 loader_kwargs["prefetch_factor"] = prefetch_factor
-        if normalized_task != "classification":
+        if not isinstance(dataset, HuggingFaceClassificationDataset):
             loader_kwargs["collate_fn"] = _variable_size_collate_fn
         loaders[split] = DataLoader(dataset, **loader_kwargs)
     return loaders
@@ -317,5 +399,6 @@ __all__ = [
     "HuggingFaceClassificationDataset",
     "HuggingFaceDetectionDataset",
     "HuggingFaceSemanticSegmentationDataset",
+    "build_datasets",
     "build_dataloaders",
 ]

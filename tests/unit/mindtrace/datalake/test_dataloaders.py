@@ -237,6 +237,42 @@ def test_detection_dataloader_uses_variable_target_collator(monkeypatch):
     )
 
 
+def test_build_datasets_returns_requested_split_adapters_and_split_transforms(monkeypatch):
+    row = {"image": _FakeImage(), "label": 0}
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset([row]),
+        val=_FakeSplitDataset([row]),
+        test=_FakeSplitDataset([row]),
+    )
+    load_calls = []
+    dependencies = _dependency_bundle(payload)
+
+    def load_from_disk(path):
+        load_calls.append(path)
+        return payload
+
+    dependencies[0].load_from_disk = load_from_disk
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: dependencies,
+    )
+    train_transform = lambda image: ("train", image)
+    val_transform = lambda image: ("val", image)
+
+    datasets = dataloaders.build_datasets(
+        "/export",
+        splits=("train", "val"),
+        transforms={"train": train_transform, "val": val_transform},
+    )
+
+    assert tuple(datasets) == ("train", "val")
+    assert all(isinstance(dataset, dataloaders.HuggingFaceClassificationDataset) for dataset in datasets.values())
+    assert datasets["train"].transform is train_transform
+    assert datasets["val"].transform is val_transform
+    assert load_calls == ["/export"]
+
+
 def test_semantic_segmentation_dataset_returns_image_and_long_mask(monkeypatch):
     image = _FakeImage()
     mask = _FakeImage()
@@ -292,7 +328,7 @@ def test_semantic_segmentation_dataloader_uses_variable_size_collator(monkeypatc
         lambda: _dependency_bundle(payload),
     )
 
-    loaders = dataloaders.build_dataloaders("/export", task="semantic_segmentation")
+    loaders = dataloaders.build_dataloaders("/export", task="segmentation")
     collate_fn = loaders["train"].kwargs["collate_fn"]
 
     assert isinstance(loaders["train"].dataset, dataloaders.HuggingFaceSemanticSegmentationDataset)
@@ -300,6 +336,68 @@ def test_semantic_segmentation_dataloader_uses_variable_size_collator(monkeypatc
         ["image-a", "image-b"],
         ["mask-a", "mask-b"],
     )
+
+
+@pytest.mark.parametrize("task", ["segmentation", "semantic_segmentation", "semantic-segmentation"])
+def test_build_datasets_supports_inferred_and_explicit_semantic_profiles(monkeypatch, task):
+    row = {
+        "asset_id": "voc-1",
+        "image": _FakeImage(),
+        "mask": _FakeImage(),
+        "class_names": ["background", "person"],
+        "background_id": 0,
+        "ignore_index": 255,
+    }
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset([row], column_names=list(row), features={}),
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    datasets = dataloaders.build_datasets("/export", task=task)
+
+    assert isinstance(datasets["train"], dataloaders.HuggingFaceSemanticSegmentationDataset)
+
+
+def test_build_datasets_recognizes_unimplemented_instance_segmentation_schema(monkeypatch):
+    row = {"asset_id": "instance-1", "image": _FakeImage(), "objects": {"masks": []}}
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset([row], column_names=list(row), features={}),
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    with pytest.raises(NotImplementedError, match="recognized"):
+        dataloaders.build_datasets("/export", task="segmentation")
+
+    with pytest.raises(NotImplementedError, match="recognized"):
+        dataloaders.build_datasets("/export", task="instance_segmentation")
+
+
+def test_build_datasets_rejects_ambiguous_segmentation_schema(monkeypatch):
+    row = {
+        "asset_id": "panoptic-1",
+        "image": _FakeImage(),
+        "mask": _FakeImage(),
+        "objects": {"masks": []},
+    }
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset([row], column_names=list(row), features={}),
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    with pytest.raises(ValueError, match="ambiguous"):
+        dataloaders.build_datasets("/export", task="segmentation")
 
 
 def test_build_dataloaders_discovers_splits_and_only_shuffles_train(monkeypatch):
@@ -340,7 +438,7 @@ def test_build_dataloaders_discovers_splits_and_only_shuffles_train(monkeypatch)
     ("kwargs", "message"),
     [
         ({"format": "coco"}, "format='huggingface'"),
-        ({"task": "instance_segmentation"}, "task='semantic_segmentation'"),
+        ({"task": "panoptic"}, "task='segmentation'"),
         ({"batch_size": 0}, "batch_size"),
         ({"num_workers": -1}, "num_workers"),
         ({"persistent_workers": True}, "requires num_workers"),
@@ -362,3 +460,15 @@ def test_build_dataloaders_rejects_missing_requested_split(monkeypatch):
 
     with pytest.raises(KeyError, match="available"):
         dataloaders.build_dataloaders("/export", splits=("train", "test"))
+
+
+def test_build_datasets_rejects_missing_requested_split(monkeypatch):
+    payload = _FakeDatasetDict(train=_FakeSplitDataset([]))
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    with pytest.raises(KeyError, match="available"):
+        dataloaders.build_datasets("/export", splits=("train", "test"))

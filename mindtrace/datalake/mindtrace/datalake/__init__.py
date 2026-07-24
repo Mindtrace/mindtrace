@@ -36,6 +36,7 @@ from .dataloaders import (
     HuggingFaceClassificationDataset,
     HuggingFaceDetectionDataset,
     HuggingFaceSemanticSegmentationDataset,
+    build_datasets,
     build_dataloaders,
 )
 from .exporters import ExportableDataset, ExportableItem, ExportResult, export_dataset_to_format, get_dataset_exporter
@@ -171,6 +172,7 @@ __all__ = [
     "DatasetVersion",
     "DatalakeDirectUploadClient",
     "Datalake",
+    "build_datasets",
     "build_dataloaders",
     "DatalakeService",
     "DirectUploadSession",
