@@ -443,7 +443,6 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
             },
             size_bytes=len(image_bytes),
             created_by=config.created_by,
-            on_conflict="overwrite",
         )
         image_asset_count += 1
 
@@ -538,7 +537,6 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
                         "source_class_name": class_name,
                     },
                     created_by=config.created_by,
-                    on_conflict="overwrite",
                 )
                 mask_asset_count += 1
                 records.append(

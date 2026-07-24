@@ -291,7 +291,8 @@ with Datalake.create(
     print(summary)
 ```
 
-Importer notes: reuses downloaded trees when present; overwrite-on-conflict for importer writes; fails if the target `DatasetVersion` already exists.
+Importer notes: reuses downloaded trees when present; supports immutable registries; fails if the target
+`DatasetVersion` already exists.
 
 Export VOC detections to a typed Hugging Face dataset and build variable-target PyTorch loaders:
 

@@ -470,8 +470,8 @@ def test_import_pascal_voc_creates_classification_detection_and_segmentation_rec
     assert summary.detection_record_count == 1
     assert summary.segmentation_record_count == 1
     assert datalake.create_asset_from_object.call_count == 2
-    assert datalake.create_asset_from_object.call_args_list[0].kwargs["on_conflict"] == "overwrite"
     assert datalake.create_asset_from_object.call_args_list[1].kwargs["kind"] == "mask"
+    assert all("on_conflict" not in call.kwargs for call in datalake.create_asset_from_object.call_args_list)
 
     classification_records = datalake.add_annotation_records.call_args_list[0].args[0]
     detection_records = datalake.add_annotation_records.call_args_list[1].args[0]
