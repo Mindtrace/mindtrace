@@ -36,8 +36,8 @@ from .dataloaders import (
     HuggingFaceClassificationDataset,
     HuggingFaceDetectionDataset,
     HuggingFaceSemanticSegmentationDataset,
-    build_datasets,
     build_dataloaders,
+    build_datasets,
 )
 from .exporters import ExportableDataset, ExportableItem, ExportResult, export_dataset_to_format, get_dataset_exporter
 from .pagination_types import (

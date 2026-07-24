@@ -257,8 +257,12 @@ def test_build_datasets_returns_requested_split_adapters_and_split_transforms(mo
         "_require_huggingface_dataloader_dependencies",
         lambda: dependencies,
     )
-    train_transform = lambda image: ("train", image)
-    val_transform = lambda image: ("val", image)
+
+    def train_transform(image):
+        return "train", image
+
+    def val_transform(image):
+        return "val", image
 
     datasets = dataloaders.build_datasets(
         "/export",
