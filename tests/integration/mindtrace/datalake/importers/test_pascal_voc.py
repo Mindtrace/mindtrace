@@ -23,6 +23,7 @@ def test_pascal_voc_importer_end_to_end_with_tiny_fixture(sync_datalake: Datalak
 
     assert summary.datum_count == 1
     assert summary.image_asset_count == 1
+    assert summary.mask_asset_count == 1
     assert summary.classification_record_count == 1
     assert summary.detection_record_count == 1
     assert summary.segmentation_record_count == 1
@@ -30,7 +31,7 @@ def test_pascal_voc_importer_end_to_end_with_tiny_fixture(sync_datalake: Datalak
     dataset_version = sync_datalake.get_dataset_version("tiny-pascal-voc-train", "1.0.0")
     resolved = sync_datalake.resolve_datum(dataset_version.manifest[0])
 
-    assert list(resolved.assets.keys()) == ["image"]
+    assert list(resolved.assets.keys()) == ["image", "semantic_mask"]
     annotation_set_names = {annotation_set.name for annotation_set in resolved.annotation_sets}
     assert annotation_set_names == {
         "pascal-voc-classification",
@@ -44,4 +45,5 @@ def test_pascal_voc_importer_end_to_end_with_tiny_fixture(sync_datalake: Datalak
     assert "person" in labels
     assert kinds == {"classification", "bbox", "mask"}
     segmentation_records = [record for record in all_records if record.kind == "mask"]
-    assert [record.label for record in segmentation_records] == ["person"]
+    assert [record.label for record in segmentation_records] == ["semantic_mask"]
+    assert segmentation_records[0].geometry["mask_asset_id"] == resolved.assets["semantic_mask"].asset_id
