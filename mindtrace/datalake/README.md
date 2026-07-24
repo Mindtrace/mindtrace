@@ -250,8 +250,8 @@ selected model; train-only augmentation can be supplied separately from determin
 Training data is shuffled; validation and test data are not. Classification schemas automatically select single-label
 or multi-label targets. Segmentation schemas automatically select semantic or instance profiles when using
 `task="segmentation"`; the explicit `semantic_segmentation` and `instance_segmentation` names are accepted as
-validation aliases. Instance-segmentation dataset adaptation is not implemented yet. COCO does not define a portable
-image-classification contract, so classification-only datasets raise a clear error when exported with `format="coco"`.
+validation aliases. COCO does not define a portable image-classification contract, so classification-only datasets
+raise a clear error when exported with `format="coco"`.
 
 ---
 
@@ -423,6 +423,83 @@ semantic_loaders = build_dataloaders(
 Semantic samples are `(image, mask)` pairs where the image is a float tensor and the mask is a long tensor containing
 class IDs `0..20` and ignore ID `255`. The default collator keeps variable-resolution images and masks as lists. A
 paired transform may resize/crop both before collation; masks must use nearest-neighbour interpolation.
+
+---
+
+## Penn-Fudan instance segmentation
+
+Penn-Fudan contains 170 pedestrian images and indexed PNG masks representing 345 instances. It has no official
+splits, so the importer creates a deterministic filename-hash train/validation split (80/20 by default) and records
+the split seed and fraction in DatasetVersion metadata. Each source image and indexed mask is stored once. One
+`instance_mask` annotation per pedestrian references the shared indexed mask and retains its instance ID, bbox, area,
+and crowd flag.
+
+Import it from Python:
+
+```python
+from mindtrace.datalake import Datalake, PennFudanImportConfig, import_penn_fudan
+
+with Datalake.create(
+    mongo_db_uri="mongodb://mindtrace:mindtrace@localhost:27017",
+    mongo_db_name="mindtrace",
+) as datalake:
+    summary = import_penn_fudan(
+        datalake,
+        PennFudanImportConfig(
+            root_dir="./data/penn-fudan",
+            download=True,
+            val_fraction=0.2,
+            split_seed=42,
+        ),
+    )
+
+    datalake.export_dataset_version_to_format(
+        summary.dataset_name,
+        summary.dataset_version,
+        format="huggingface",
+        destination="./exports/penn-fudan",
+        exporter_options={"task": "segmentation"},
+    )
+```
+
+The equivalent importer CLI is:
+
+```bash
+mindtrace-datalake-import-penn-fudan \
+  --mongo-db-uri "mongodb://mindtrace:mindtrace@localhost:27017" \
+  --mongo-db-name "mindtrace" \
+  --root-dir "./data/penn-fudan" \
+  --val-fraction 0.2 \
+  --split-seed 42 \
+  --download
+```
+
+Build indexable datasets or DataLoaders through the same public task:
+
+```python
+from mindtrace.datalake import build_dataloaders, build_datasets
+
+datasets = build_datasets(
+    "./exports/penn-fudan",
+    task="segmentation",
+)
+image, target = datasets["train"][0]
+
+loaders = build_dataloaders(
+    "./exports/penn-fudan",
+    task="segmentation",
+    batch_size=4,
+    num_workers=4,
+    seed=42,
+)
+train_loader = loaders["train"]
+val_loader = loaders["val"]
+```
+
+The instance schema is inferred from its `objects` column. Each target follows torchvision's Mask R-CNN contract:
+`boxes` is `[N, 4]` in `xyxy` format, `labels` is `[N]`, `masks` is boolean `[N, H, W]`, and `area` and `iscrowd`
+are `[N]`. Images and targets remain lists at collation because image dimensions and instance counts vary. A paired
+transform receives `(image, target)` and must update masks and boxes together.
 
 ---
 

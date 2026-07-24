@@ -356,11 +356,11 @@ def import_penn_fudan(datalake: Datalake, config: PennFudanImportConfig) -> Penn
         dataset_name=config.dataset_name,
         version=config.dataset_version,
         manifest=manifest,
-        description="Penn-Fudan pedestrian detection and instance segmentation dataset",
+        description="Penn-Fudan pedestrian instance segmentation dataset",
         metadata={
             "source_dataset": "penn-fudan-ped",
             "task_type": "instance_segmentation",
-            "task_types": ["instance_segmentation", "detection"],
+            "task_types": ["instance_segmentation"],
             "instance_segmentation_class_names": list(PENN_FUDAN_CLASS_NAMES),
             "instance_segmentation_background_id": 0,
             "instance_segmentation_mask_encoding": "indexed_png",
