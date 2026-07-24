@@ -347,9 +347,7 @@ def _export_bbox_crop_classification_dataset(
                     "split": item.split or "",
                     "source_image_asset_id": item.asset.asset_id,
                     "source_annotation_id": annotation.annotation_id,
-                    "source_bbox": [
-                        float(annotation.geometry.get(key, 0)) for key in ("x", "y", "width", "height")
-                    ],
+                    "source_bbox": [float(annotation.geometry.get(key, 0)) for key in ("x", "y", "width", "height")],
                     "metadata_json": json.dumps(item.metadata or {}, sort_keys=True, default=str),
                     "asset_metadata_json": json.dumps(item.asset.metadata or {}, sort_keys=True, default=str),
                 }
