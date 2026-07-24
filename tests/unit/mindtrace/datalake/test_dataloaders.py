@@ -16,11 +16,10 @@ class _FakeImage:
 
 
 class _FakeSplitDataset:
-    column_names = ["image", "label"]
-    features = {"label": SimpleNamespace(names=["pink primrose", "orchid"])}
-
-    def __init__(self, rows):
+    def __init__(self, rows, *, column_names=None, features=None):
         self.rows = rows
+        self.column_names = column_names or ["image", "label"]
+        self.features = features or {"label": SimpleNamespace(names=["pink primrose", "orchid"])}
 
     def __len__(self):
         return len(self.rows)
@@ -44,6 +43,10 @@ class _FakeTensor:
     def div(self, value):
         return ("normalized", self.value, value)
 
+    def reshape(self, *shape):
+        self.shape = shape
+        return self
+
 
 class _FakeGenerator:
     def manual_seed(self, seed):
@@ -52,12 +55,17 @@ class _FakeGenerator:
 
 
 class _FakeTorch:
+    float32 = "float32"
     long = "long"
     Generator = _FakeGenerator
 
     @staticmethod
     def tensor(value, dtype=None):
         return _FakeTensor(value, dtype=dtype)
+
+    @staticmethod
+    def zeros(length, dtype=None):
+        return _FakeTensor([0] * length, dtype=dtype)
 
     @staticmethod
     def initial_seed():
@@ -126,6 +134,72 @@ def test_classification_dataset_rejects_export_without_media(monkeypatch):
         dataset[0]
 
 
+def test_detection_dataset_returns_xywh_targets_and_zero_based_labels(monkeypatch):
+    image = _FakeImage()
+    objects_feature = SimpleNamespace(feature={"category": SimpleNamespace(names=["aeroplane", "bicycle"])})
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset(
+            [
+                {
+                    "asset_id": "voc-1",
+                    "image": image,
+                    "objects": {
+                        "bbox": [[10.0, 20.0, 30.0, 40.0]],
+                        "category": [1],
+                        "area": [1200.0],
+                    },
+                }
+            ],
+            column_names=["asset_id", "image", "objects"],
+            features={"objects": objects_feature},
+        ),
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    dataset = dataloaders.HuggingFaceDetectionDataset("/export", split="train")
+    sample, target = dataset[0]
+
+    assert sample == ("normalized", image, 255)
+    assert target["boxes"].value == [[10.0, 20.0, 30.0, 40.0]]
+    assert target["boxes"].dtype == "float32"
+    assert target["boxes"].shape == (-1, 4)
+    assert target["labels"].value == [1]
+    assert target["labels"].dtype == "long"
+    assert target["area"].value == [1200.0]
+    assert target["iscrowd"].value == [0]
+    assert target["asset_id"] == "voc-1"
+    assert dataset.class_names == ("aeroplane", "bicycle")
+
+
+def test_detection_dataloader_uses_variable_target_collator(monkeypatch):
+    objects_feature = SimpleNamespace(feature={"category": SimpleNamespace(names=["object"])})
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset(
+            [{"asset_id": "asset-1", "image": _FakeImage(), "objects": []}],
+            column_names=["asset_id", "image", "objects"],
+            features={"objects": objects_feature},
+        ),
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    loaders = dataloaders.build_dataloaders("/export", task="detection")
+    collate_fn = loaders["train"].kwargs["collate_fn"]
+
+    assert isinstance(loaders["train"].dataset, dataloaders.HuggingFaceDetectionDataset)
+    assert collate_fn([("image-a", {"boxes": "a"}), ("image-b", {"boxes": "b"})]) == (
+        ["image-a", "image-b"],
+        [{"boxes": "a"}, {"boxes": "b"}],
+    )
+
+
 def test_build_dataloaders_discovers_splits_and_only_shuffles_train(monkeypatch):
     row = {"image": _FakeImage(), "label": 0}
     payload = _FakeDatasetDict(
@@ -164,7 +238,7 @@ def test_build_dataloaders_discovers_splits_and_only_shuffles_train(monkeypatch)
     ("kwargs", "message"),
     [
         ({"format": "coco"}, "format='huggingface'"),
-        ({"task": "detection"}, "task='classification'"),
+        ({"task": "segmentation"}, "task='classification' or task='detection'"),
         ({"batch_size": 0}, "batch_size"),
         ({"num_workers": -1}, "num_workers"),
         ({"persistent_workers": True}, "requires num_workers"),

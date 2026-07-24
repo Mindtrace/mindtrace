@@ -293,6 +293,29 @@ with Datalake.create(
 
 Importer notes: reuses downloaded trees when present; overwrite-on-conflict for importer writes; fails if the target `DatasetVersion` already exists.
 
+Export VOC detections to a typed Hugging Face dataset and build variable-target PyTorch loaders:
+
+```python
+datalake.export_dataset_version_to_format(
+    "pascal-voc-2012-train",
+    "1.0.0",
+    format="huggingface",
+    destination="./exports/voc-detection",
+    options={"task": "detection"},
+)
+
+loaders = build_dataloaders(
+    "./exports/voc-detection",
+    task="detection",
+    batch_size=8,
+)
+```
+
+Detection exports embed images and use an `objects` sequence with pixel-space `xywh` boxes, area, and a contiguous
+zero-based `ClassLabel`. Source label IDs such as VOC's one-based IDs are remapped by class name during export. A
+detection transform receives `(image, target)` and must return the transformed pair so boxes stay aligned with image
+geometry. The detection collator returns image and target lists because object counts vary between samples.
+
 ---
 
 ## Jobs and cluster

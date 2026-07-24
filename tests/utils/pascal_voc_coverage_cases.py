@@ -481,6 +481,10 @@ def test_import_pascal_voc_creates_classification_detection_and_segmentation_rec
     assert detection_records[0]["kind"] == "bbox"
     assert segmentation_records[0]["kind"] == "mask"
     assert segmentation_records[0]["geometry"]["mask_asset_id"] == "mask_asset"
+    dataset_metadata = datalake.create_dataset_version.call_args.kwargs["metadata"]
+    assert dataset_metadata["task_types"] == ["classification", "detection", "segmentation"]
+    assert dataset_metadata["detection_class_names"] == pascal_voc.VOC_CLASSES
+    assert dataset_metadata["detection_bbox_format"] == "xywh"
 
 
 def test_build_cli_parses_expected_arguments():

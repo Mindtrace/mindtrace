@@ -57,6 +57,7 @@ def _fake_datasets_module():
         Image=_FakeFeature,
         Value=_FakeFeature,
         ClassLabel=_FakeFeature,
+        Sequence=_FakeFeature,
     )
 
 
@@ -192,3 +193,101 @@ def test_huggingface_classification_export_rejects_label_name_mismatch(tmp_path:
 
     with pytest.raises(ValueError, match="maps to 'pink primrose'"):
         export_dataset_as_huggingface(dataset, destination=tmp_path / "invalid-label-hf")
+
+
+def test_huggingface_detection_export_writes_typed_objects_and_remaps_labels(tmp_path: Path, monkeypatch):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+    from mindtrace.datalake.types import AnnotationRecord
+
+    monkeypatch.setattr(
+        huggingface_exporter.importlib,
+        "import_module",
+        lambda name: _fake_datasets_module(),
+    )
+    dataset = ExportableDataset(
+        name="pascal-voc",
+        metadata={
+            "task_types": ["classification", "detection", "segmentation"],
+            "detection_class_names": ["aeroplane", "bicycle"],
+        },
+        items=[
+            ExportableItem(
+                asset=sample_asset(),
+                split="train",
+                payload_bytes=png_bytes(),
+                source_filename="voc.jpg",
+                annotations=[
+                    AnnotationRecord(
+                        annotation_id="detection_1",
+                        kind="bbox",
+                        label="bicycle",
+                        label_id=2,
+                        geometry={"type": "bbox", "x": 10, "y": 20, "width": 30, "height": 40},
+                        attributes={"difficult": 1, "truncated": 0},
+                        source={"type": "human", "name": "pascal-voc"},
+                    )
+                ],
+            )
+        ],
+    )
+
+    result = export_dataset_as_huggingface(
+        dataset,
+        destination=tmp_path / "voc-hf",
+        options={"task": "detection"},
+    )
+    payload = json.loads((tmp_path / "voc-hf" / "dataset_dict.json").read_text())
+
+    assert result.annotation_count == 1
+    assert payload["train"][0]["asset_id"] == "asset_img"
+    assert payload["train"][0]["image"]["path"] == "voc.jpg"
+    assert payload["train"][0]["objects"] == [
+        {
+            "area": 1200.0,
+            "bbox": [10.0, 20.0, 30.0, 40.0],
+            "category": 1,
+            "category_name": "bicycle",
+            "difficult": True,
+            "id": "detection_1",
+            "occluded": False,
+            "truncated": False,
+        }
+    ]
+
+
+def test_huggingface_detection_export_rejects_degenerate_boxes(tmp_path: Path, monkeypatch):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+    from mindtrace.datalake.types import AnnotationRecord
+
+    monkeypatch.setattr(
+        huggingface_exporter.importlib,
+        "import_module",
+        lambda name: _fake_datasets_module(),
+    )
+    dataset = ExportableDataset(
+        name="invalid",
+        metadata={"detection_class_names": ["object"]},
+        items=[
+            ExportableItem(
+                asset=sample_asset(),
+                payload_bytes=png_bytes(),
+                annotations=[
+                    AnnotationRecord(
+                        annotation_id="detection_1",
+                        kind="bbox",
+                        label="object",
+                        label_id=1,
+                        geometry={"type": "bbox", "x": 0, "y": 0, "width": 0, "height": 10},
+                        source={"type": "human"},
+                    )
+                ],
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="positive width and height"):
+        export_dataset_as_huggingface(
+            dataset,
+            destination=tmp_path / "invalid-hf",
+            options={"task": "detection"},
+        )
