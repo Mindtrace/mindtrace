@@ -205,10 +205,16 @@ class UnifiedMindtraceDocument(BaseModel):
             else:
                 annotations[field_name] = processed_type
 
+        # The generated class owns its id field
+        from beanie import PydanticObjectId
+
+        annotations["id"] = Optional[PydanticObjectId]
+
         # Create the class attributes dictionary
         class_dict = {
             "__annotations__": annotations,
             "__module__": cls.__module__,
+            "id": None,
         }
 
         # Add default values to class attributes
