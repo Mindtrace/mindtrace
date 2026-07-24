@@ -44,10 +44,14 @@ from mindtrace.models.training.callbacks import (
 from mindtrace.models.training.datalake_bridge import DatalakeDataset, build_datalake_loader
 from mindtrace.models.training.optimizers import build_optimizer, build_scheduler
 from mindtrace.models.training.trainer import Trainer
+from mindtrace.models.training.ultralytics import UltralyticsDistiller, UltralyticsTrainer
 
 __all__ = [
     # Training loop
     "Trainer",
+    # Ultralytics (YOLO) training adapter
+    "UltralyticsTrainer",
+    "UltralyticsDistiller",
     # Callbacks
     "Callback",
     "ModelCheckpoint",
