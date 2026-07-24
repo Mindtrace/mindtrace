@@ -58,6 +58,10 @@ models-pruning = ["mindtrace-models[pruning]>=0.14.0.dev0"]
 models-openvino = ["mindtrace-models[openvino]>=0.14.0.dev0"]
 models-executorch = ["mindtrace-models[executorch]>=0.14.0.dev0"]
 models-all = ["mindtrace-models[all]>=0.14.0.dev0"]
+# Note: the GPU inference extra `edge-gpu` (onnxruntime-gpu) is intentionally NOT
+# forwarded as a root extra — that would make `uv sync --all-extras` try to install
+# it alongside the CPU onnxruntime (a conflict). Install it on the models package
+# directly: `uv pip install "mindtrace-models[edge-gpu]"`. TensorRT: see models README.
 
 
 [dependency-groups]
