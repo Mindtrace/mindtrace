@@ -241,18 +241,16 @@ def test_huggingface_detection_export_writes_typed_objects_and_remaps_labels(tmp
     assert result.annotation_count == 1
     assert payload["train"][0]["asset_id"] == "asset_img"
     assert payload["train"][0]["image"]["path"] == "voc.jpg"
-    assert payload["train"][0]["objects"] == [
-        {
-            "area": 1200.0,
-            "bbox": [10.0, 20.0, 30.0, 40.0],
-            "category": 1,
-            "category_name": "bicycle",
-            "difficult": True,
-            "id": "detection_1",
-            "occluded": False,
-            "truncated": False,
-        }
-    ]
+    assert payload["train"][0]["objects"] == {
+        "area": [1200.0],
+        "bbox": [[10.0, 20.0, 30.0, 40.0]],
+        "category": [1],
+        "category_name": ["bicycle"],
+        "difficult": [True],
+        "id": ["detection_1"],
+        "occluded": [False],
+        "truncated": [False],
+    }
 
 
 def test_huggingface_detection_export_rejects_degenerate_boxes(tmp_path: Path, monkeypatch):

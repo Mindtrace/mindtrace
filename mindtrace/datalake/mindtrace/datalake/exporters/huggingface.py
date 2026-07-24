@@ -191,7 +191,16 @@ def _export_detection_dataset(
     rows_by_split: dict[str, list[dict[str, Any]]] = {}
 
     for item in dataset.items:
-        objects = []
+        objects: dict[str, list[Any]] = {
+            "id": [],
+            "area": [],
+            "bbox": [],
+            "category": [],
+            "category_name": [],
+            "difficult": [],
+            "truncated": [],
+            "occluded": [],
+        }
         for annotation in item.annotations:
             if annotation.kind != "bbox":
                 continue
@@ -204,18 +213,14 @@ def _export_detection_dataset(
                     f"Detection annotation {annotation.annotation_id!r} must have positive width and height."
                 )
             attributes = annotation.attributes or {}
-            objects.append(
-                {
-                    "id": annotation.annotation_id,
-                    "area": bbox[2] * bbox[3],
-                    "bbox": bbox,
-                    "category": class_ids[annotation.label],
-                    "category_name": annotation.label,
-                    "difficult": bool(attributes.get("difficult", False)),
-                    "truncated": bool(attributes.get("truncated", False)),
-                    "occluded": bool(attributes.get("occluded", False)),
-                }
-            )
+            objects["id"].append(annotation.annotation_id)
+            objects["area"].append(bbox[2] * bbox[3])
+            objects["bbox"].append(bbox)
+            objects["category"].append(class_ids[annotation.label])
+            objects["category_name"].append(annotation.label)
+            objects["difficult"].append(bool(attributes.get("difficult", False)))
+            objects["truncated"].append(bool(attributes.get("truncated", False)))
+            objects["occluded"].append(bool(attributes.get("occluded", False)))
 
         split_name = item.split or "default"
         rows_by_split.setdefault(split_name, []).append(
