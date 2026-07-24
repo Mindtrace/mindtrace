@@ -110,6 +110,22 @@ def _detection_features(datasets_module: Any, class_names: list[str]):
     )
 
 
+def _semantic_segmentation_features(datasets_module: Any):
+    return datasets_module.Features(
+        {
+            "image": datasets_module.Image(),
+            "mask": datasets_module.Image(),
+            "asset_id": datasets_module.Value("string"),
+            "split": datasets_module.Value("string"),
+            "class_names": datasets_module.Sequence(datasets_module.Value("string")),
+            "background_id": datasets_module.Value("int32"),
+            "ignore_index": datasets_module.Value("int32"),
+            "metadata_json": datasets_module.Value("string"),
+            "asset_metadata_json": datasets_module.Value("string"),
+        }
+    )
+
+
 def _embedded_image(item, *, include_media: bool, task: str):
     if not include_media:
         return None
@@ -119,6 +135,21 @@ def _embedded_image(item, *, include_media: bool, task: str):
         "bytes": item.payload_bytes,
         "path": item.source_filename or f"{item.asset.asset_id}.bin",
     }
+
+
+def _embedded_related_image(item, role: str, *, include_media: bool, task: str):
+    if role not in item.related_assets:
+        raise ValueError(f"Hugging Face {task} export requires related asset role {role!r}.")
+    if not include_media:
+        return None
+    payload_bytes = item.related_payload_bytes.get(role)
+    if payload_bytes is None:
+        raise ValueError(
+            f"Hugging Face {task} export requires payload bytes for related asset role {role!r} "
+            f"on asset {item.asset.asset_id}."
+        )
+    asset = item.related_assets[role]
+    return {"bytes": payload_bytes, "path": f"{asset.asset_id}.png"}
 
 
 def _export_classification_dataset(
@@ -253,6 +284,74 @@ def _export_detection_dataset(
     )
 
 
+def _export_semantic_segmentation_dataset(
+    datasets_module: Any,
+    dataset: ExportableDataset,
+    *,
+    destination: Path,
+    include_media: bool,
+) -> ExportResult:
+    class_names = _configured_class_names(dataset, "semantic_segmentation")
+    if not class_names:
+        raise ValueError("Semantic segmentation export requires dataset metadata semantic_segmentation_class_names.")
+    background_id = int(dataset.metadata.get("semantic_segmentation_background_id", 0))
+    ignore_index = int(dataset.metadata.get("semantic_segmentation_ignore_index", 255))
+    features = _semantic_segmentation_features(datasets_module)
+    rows_by_split: dict[str, list[dict[str, Any]]] = {}
+
+    for item in dataset.items:
+        mask_annotations = [annotation for annotation in item.annotations if annotation.kind == "mask"]
+        if len(mask_annotations) != 1:
+            raise ValueError(
+                "Semantic segmentation export requires exactly one categorical mask annotation per image; "
+                f"asset {item.asset.asset_id!r} has {len(mask_annotations)}."
+            )
+        mask_asset_id = mask_annotations[0].geometry.get("mask_asset_id")
+        semantic_mask_asset = item.related_assets.get("semantic_mask")
+        if semantic_mask_asset is None or semantic_mask_asset.asset_id != mask_asset_id:
+            raise ValueError(
+                f"Semantic mask annotation for asset {item.asset.asset_id!r} does not match "
+                "related asset role 'semantic_mask'."
+            )
+        split_name = item.split or "default"
+        rows_by_split.setdefault(split_name, []).append(
+            {
+                "image": _embedded_image(item, include_media=include_media, task="semantic segmentation"),
+                "mask": _embedded_related_image(
+                    item,
+                    "semantic_mask",
+                    include_media=include_media,
+                    task="semantic segmentation",
+                ),
+                "asset_id": item.asset.asset_id,
+                "split": item.split or "",
+                "class_names": class_names,
+                "background_id": background_id,
+                "ignore_index": ignore_index,
+                "metadata_json": json.dumps(item.metadata or {}, sort_keys=True, default=str),
+                "asset_metadata_json": json.dumps(item.asset.metadata or {}, sort_keys=True, default=str),
+            }
+        )
+
+    dataset_payload = {
+        split: datasets_module.Dataset.from_list(rows, features=features) for split, rows in rows_by_split.items()
+    }
+    if len(dataset_payload) == 1 and "default" in dataset_payload:
+        hf_dataset = dataset_payload["default"]
+    else:
+        hf_dataset = datasets_module.DatasetDict(dataset_payload)
+    hf_dataset.save_to_disk(str(destination))
+    return ExportResult(
+        format="huggingface",
+        destination=destination,
+        dataset_name=dataset.name,
+        asset_count=dataset.asset_count,
+        annotation_count=dataset.asset_count,
+        files_written=["."],
+        warnings=list(dataset.warnings),
+    )
+
+
 def export_dataset_as_huggingface(
     dataset: ExportableDataset,
     *,
@@ -281,6 +380,13 @@ def export_dataset_as_huggingface(
         )
     if requested_task in {"detection", "object_detection"}:
         return _export_detection_dataset(
+            datasets_module,
+            dataset,
+            destination=destination_path,
+            include_media=include_media,
+        )
+    if requested_task in {"semantic_segmentation", "semantic-segmentation"}:
+        return _export_semantic_segmentation_dataset(
             datasets_module,
             dataset,
             destination=destination_path,

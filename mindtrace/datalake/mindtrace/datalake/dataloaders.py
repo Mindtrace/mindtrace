@@ -148,7 +148,54 @@ class HuggingFaceDetectionDataset:
         return pil_to_tensor(image).float().div(255), target
 
 
-def _detection_collate_fn(batch: Sequence[tuple[Any, dict[str, Any]]]):
+class HuggingFaceSemanticSegmentationDataset:
+    """Map-style PyTorch dataset over a typed Mindtrace HF semantic segmentation export."""
+
+    def __init__(
+        self,
+        export_path: str | Path,
+        *,
+        split: str,
+        transform: Callable[[Any, Any], tuple[Any, Any]] | None = None,
+    ) -> None:
+        datasets, _, _, _ = _require_huggingface_dataloader_dependencies()
+        payload = datasets.load_from_disk(str(export_path))
+        self._dataset = _select_split(payload, split)
+        self.split = split
+        self.transform = transform
+
+        required_columns = {"asset_id", "class_names", "ignore_index", "image", "mask"}
+        missing = sorted(required_columns - set(self._dataset.column_names))
+        if missing:
+            raise ValueError(f"Hugging Face semantic segmentation export is missing required column(s): {missing}.")
+        metadata_row = self._dataset[0] if len(self._dataset) else {}
+        self.class_names = tuple(metadata_row.get("class_names", ()))
+        self.background_id = int(metadata_row.get("background_id", 0))
+        self.ignore_index = int(metadata_row.get("ignore_index", 255))
+
+    def __len__(self) -> int:
+        return len(self._dataset)
+
+    def __getitem__(self, index: int):
+        _, _, _, pil_to_tensor = _require_huggingface_dataloader_dependencies()
+        row = self._dataset[index]
+        image = row["image"]
+        mask = row["mask"]
+        if image is None or mask is None:
+            raise ValueError(
+                "The Hugging Face export does not include image and mask payloads. "
+                "Re-export with include_media=True before building DataLoaders."
+            )
+        if hasattr(image, "convert"):
+            image = image.convert("RGB")
+        if self.transform is not None:
+            return self.transform(image, mask)
+        image_tensor = pil_to_tensor(image).float().div(255)
+        mask_tensor = pil_to_tensor(mask).squeeze(0).long()
+        return image_tensor, mask_tensor
+
+
+def _variable_size_collate_fn(batch: Sequence[tuple[Any, Any]]):
     images, targets = zip(*batch, strict=True)
     return list(images), list(targets)
 
@@ -194,10 +241,16 @@ def build_dataloaders(
     if normalized_format != "huggingface":
         raise ValueError("Generic classification DataLoaders currently support format='huggingface' only.")
     normalized_task = task.strip().lower()
-    if normalized_task not in {"classification", "detection", "object_detection"}:
+    if normalized_task not in {
+        "classification",
+        "detection",
+        "object_detection",
+        "semantic_segmentation",
+        "semantic-segmentation",
+    }:
         raise ValueError(
-            "Generic DataLoaders support task='classification' or task='detection'; "
-            "segmentation adapters have not been implemented."
+            "Generic DataLoaders support task='classification', task='detection', "
+            "or task='semantic_segmentation'."
         )
     if batch_size <= 0:
         raise ValueError("batch_size must be greater than zero")
@@ -221,8 +274,10 @@ def build_dataloaders(
         transform = _transform_for_split(transforms, split)
         if normalized_task == "classification":
             dataset = HuggingFaceClassificationDataset(export_path, split=split, transform=transform)
-        else:
+        elif normalized_task in {"detection", "object_detection"}:
             dataset = HuggingFaceDetectionDataset(export_path, split=split, transform=transform)
+        else:
+            dataset = HuggingFaceSemanticSegmentationDataset(export_path, split=split, transform=transform)
         generator = torch.Generator()
         generator.manual_seed(seed)
         loader_kwargs: dict[str, Any] = {
@@ -239,9 +294,14 @@ def build_dataloaders(
             if prefetch_factor is not None:
                 loader_kwargs["prefetch_factor"] = prefetch_factor
         if normalized_task != "classification":
-            loader_kwargs["collate_fn"] = _detection_collate_fn
+            loader_kwargs["collate_fn"] = _variable_size_collate_fn
         loaders[split] = DataLoader(dataset, **loader_kwargs)
     return loaders
 
 
-__all__ = ["HuggingFaceClassificationDataset", "HuggingFaceDetectionDataset", "build_dataloaders"]
+__all__ = [
+    "HuggingFaceClassificationDataset",
+    "HuggingFaceDetectionDataset",
+    "HuggingFaceSemanticSegmentationDataset",
+    "build_dataloaders",
+]
