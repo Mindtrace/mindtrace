@@ -164,7 +164,7 @@ def test_detection_dataset_returns_xywh_targets_and_zero_based_labels(monkeypatc
     sample, target = dataset[0]
 
     assert sample == ("normalized", image, 255)
-    assert target["boxes"].value == [[10.0, 20.0, 30.0, 40.0]]
+    assert target["boxes"].value == [[10.0, 20.0, 40.0, 60.0]]
     assert target["boxes"].dtype == "float32"
     assert target["boxes"].shape == (-1, 4)
     assert target["labels"].value == [1]

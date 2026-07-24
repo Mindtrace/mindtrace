@@ -92,6 +92,11 @@ def _object_rows(objects: Any) -> list[dict[str, Any]]:
     return list(objects or [])
 
 
+def _xywh_to_xyxy(bbox: Sequence[float]) -> list[float]:
+    x, y, width, height = bbox
+    return [x, y, x + width, y + height]
+
+
 class HuggingFaceDetectionDataset:
     """Map-style PyTorch dataset over a typed Mindtrace Hugging Face detection export."""
 
@@ -132,7 +137,7 @@ class HuggingFaceDetectionDataset:
             image = image.convert("RGB")
         objects = _object_rows(row["objects"])
         target = {
-            "boxes": torch.tensor([obj["bbox"] for obj in objects], dtype=torch.float32).reshape(-1, 4),
+            "boxes": torch.tensor([_xywh_to_xyxy(obj["bbox"]) for obj in objects], dtype=torch.float32).reshape(-1, 4),
             "labels": torch.tensor([obj["category"] for obj in objects], dtype=torch.long),
             "area": torch.tensor([obj["area"] for obj in objects], dtype=torch.float32),
             "iscrowd": torch.zeros(len(objects), dtype=torch.long),

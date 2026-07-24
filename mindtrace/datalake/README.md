@@ -313,8 +313,9 @@ loaders = build_dataloaders(
 
 Detection exports embed images and use an `objects` sequence with pixel-space `xywh` boxes, area, and a contiguous
 zero-based `ClassLabel`. Source label IDs such as VOC's one-based IDs are remapped by class name during export. A
-detection transform receives `(image, target)` and must return the transformed pair so boxes stay aligned with image
-geometry. The detection collator returns image and target lists because object counts vary between samples.
+detection loader converts boxes to the `xyxy` tensors expected by torchvision models. Its transform receives
+`(image, target)` and must return the transformed pair so boxes stay aligned with image geometry. The detection
+collator returns image and target lists because object counts vary between samples.
 
 ---
 
