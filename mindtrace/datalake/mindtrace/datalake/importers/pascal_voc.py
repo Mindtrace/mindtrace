@@ -409,9 +409,7 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
     _ensure_required_layout(voc_root, tasks)
 
     dataset_names = (
-        _dataset_view_names(dataset_name, tasks)
-        if config.create_task_versions
-        else {"canonical": dataset_name}
+        _dataset_view_names(dataset_name, tasks) if config.create_task_versions else {"canonical": dataset_name}
     )
     _ensure_dataset_versions_absent(datalake, dataset_names, config.dataset_version)
 
@@ -577,9 +575,7 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
                             "source_image_id": image_id,
                             "source_datum_id": datum.datum_id,
                             "source_object_index": object_index,
-                            "source_bbox": [
-                                detection["geometry"][key] for key in ("x", "y", "width", "height")
-                            ],
+                            "source_bbox": [detection["geometry"][key] for key in ("x", "y", "width", "height")],
                             "derivation": "bbox_crop",
                         },
                     )

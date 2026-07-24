@@ -519,9 +519,7 @@ def test_import_pascal_voc_creates_classification_detection_and_segmentation_rec
     assert version_calls["pascal-voc-2012-train"]["manifest"] == ["datum_1"]
     assert version_calls["pascal-voc-2012-train-detection"]["manifest"] == ["datum_1"]
     assert version_calls["pascal-voc-2012-train-classification-multi-label"]["manifest"] == ["datum_1"]
-    assert version_calls["pascal-voc-2012-train-classification-single-label"]["manifest"] == [
-        "region_datum_1"
-    ]
+    assert version_calls["pascal-voc-2012-train-classification-single-label"]["manifest"] == ["region_datum_1"]
     assert version_calls["pascal-voc-2012-train-semantic-segmentation"]["manifest"] == ["datum_1"]
     assert summary.dataset_names["classification_single_label"].endswith("classification-single-label")
     assert summary.dataset_version_ids["canonical"] == "dataset_version_1"
