@@ -246,10 +246,11 @@ error when exported with `format="coco"`.
 ## Built-in Pascal VOC importer
 
 The package includes a one-pass importer for **Pascal VOC 2012**. By default it imports classification, detection,
-and semantic segmentation together and creates task-specific immutable DatasetVersions. The train import stores
-each of the 5,717 source JPEGs exactly once. Detection and multi-label classification views reference all 5,717
-canonical Datums; semantic segmentation references its 1,464-Datum subset; single-label classification uses
-lightweight region Datums that reference the same JPEG Assets.
+and semantic segmentation together and creates task-specific immutable DatasetVersions. VOC defines its Main and
+Segmentation train splits independently: Main contains 5,717 images, Segmentation contains 1,464, and 1,151 occur in
+both. The combined train import therefore stores their union of 6,030 source JPEGs exactly once. Detection and
+multi-label classification views reference the 5,717 Main Datums; semantic segmentation references its 1,464 Datums;
+single-label classification uses lightweight region Datums that reference the same JPEG Assets.
 
 Semantic segmentation preserves each original categorical mask, including background ID `0` and ignore ID `255`.
 The optional `tasks=(...)` setting limits which annotations and views are created. Set
