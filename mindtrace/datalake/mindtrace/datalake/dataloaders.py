@@ -84,6 +84,72 @@ class HuggingFaceClassificationDataset:
         return image, target
 
 
+def _object_rows(objects: Any) -> list[dict[str, Any]]:
+    if isinstance(objects, Mapping):
+        keys = tuple(objects)
+        lengths = {len(objects[key]) for key in keys}
+        if len(lengths) > 1:
+            raise ValueError("Hugging Face detection object columns have inconsistent lengths.")
+        return [dict(zip(keys, values, strict=True)) for values in zip(*(objects[key] for key in keys), strict=True)]
+    return list(objects or [])
+
+
+class HuggingFaceDetectionDataset:
+    """Map-style PyTorch dataset over a typed Mindtrace Hugging Face detection export."""
+
+    def __init__(
+        self,
+        export_path: str | Path,
+        *,
+        split: str,
+        transform: Callable[[Any, dict[str, Any]], tuple[Any, dict[str, Any]]] | None = None,
+    ) -> None:
+        datasets, _, _, _ = _require_huggingface_dataloader_dependencies()
+        payload = datasets.load_from_disk(str(export_path))
+        self._dataset = _select_split(payload, split)
+        self.split = split
+        self.transform = transform
+
+        required_columns = {"asset_id", "image", "objects"}
+        missing = sorted(required_columns - set(self._dataset.column_names))
+        if missing:
+            raise ValueError(f"Hugging Face detection export is missing required column(s): {missing}.")
+        objects_feature = self._dataset.features.get("objects")
+        category_feature = getattr(getattr(objects_feature, "feature", None), "get", lambda _: None)("category")
+        self.class_names = tuple(getattr(category_feature, "names", ()) or ())
+
+    def __len__(self) -> int:
+        return len(self._dataset)
+
+    def __getitem__(self, index: int):
+        _, torch, _, pil_to_tensor = _require_huggingface_dataloader_dependencies()
+        row = self._dataset[index]
+        image = row["image"]
+        if image is None:
+            raise ValueError(
+                "The Hugging Face export does not include image payloads. "
+                "Re-export with include_media=True before building DataLoaders."
+            )
+        if hasattr(image, "convert"):
+            image = image.convert("RGB")
+        objects = _object_rows(row["objects"])
+        target = {
+            "boxes": torch.tensor([obj["bbox"] for obj in objects], dtype=torch.float32).reshape(-1, 4),
+            "labels": torch.tensor([obj["category"] for obj in objects], dtype=torch.long),
+            "area": torch.tensor([obj["area"] for obj in objects], dtype=torch.float32),
+            "iscrowd": torch.zeros(len(objects), dtype=torch.long),
+            "asset_id": row["asset_id"],
+        }
+        if self.transform is not None:
+            return self.transform(image, target)
+        return pil_to_tensor(image).float().div(255), target
+
+
+def _detection_collate_fn(batch: Sequence[tuple[Any, dict[str, Any]]]):
+    images, targets = zip(*batch, strict=True)
+    return list(images), list(targets)
+
+
 def _worker_init_fn(_: int) -> None:
     _, torch, _, _ = _require_huggingface_dataloader_dependencies()
     worker_seed = torch.initial_seed() % (2**32)
@@ -96,9 +162,9 @@ def _worker_init_fn(_: int) -> None:
 
 
 def _transform_for_split(
-    transforms: Mapping[str, Callable[[Any], Any]] | Callable[[Any], Any] | None,
+    transforms: Mapping[str, Callable[..., Any]] | Callable[..., Any] | None,
     split: str,
-) -> Callable[[Any], Any] | None:
+) -> Callable[..., Any] | None:
     if transforms is None or callable(transforms):
         return transforms
     return transforms.get(split)
@@ -110,7 +176,7 @@ def build_dataloaders(
     format: str = "huggingface",
     task: str = "classification",
     splits: Sequence[str] | None = None,
-    transforms: Mapping[str, Callable[[Any], Any]] | Callable[[Any], Any] | None = None,
+    transforms: Mapping[str, Callable[..., Any]] | Callable[..., Any] | None = None,
     batch_size: int = 32,
     num_workers: int = 0,
     pin_memory: bool = False,
@@ -127,10 +193,10 @@ def build_dataloaders(
             "Generic classification DataLoaders currently support format='huggingface' only."
         )
     normalized_task = task.strip().lower()
-    if normalized_task != "classification":
+    if normalized_task not in {"classification", "detection", "object_detection"}:
         raise ValueError(
-            "Generic DataLoaders currently support task='classification' only; "
-            "detection and segmentation adapters have not been implemented."
+            "Generic DataLoaders support task='classification' or task='detection'; "
+            "segmentation adapters have not been implemented."
         )
     if batch_size <= 0:
         raise ValueError("batch_size must be greater than zero")
@@ -151,11 +217,11 @@ def build_dataloaders(
 
     loaders: dict[str, Any] = {}
     for split in requested:
-        dataset = HuggingFaceClassificationDataset(
-            export_path,
-            split=split,
-            transform=_transform_for_split(transforms, split),
-        )
+        transform = _transform_for_split(transforms, split)
+        if normalized_task == "classification":
+            dataset = HuggingFaceClassificationDataset(export_path, split=split, transform=transform)
+        else:
+            dataset = HuggingFaceDetectionDataset(export_path, split=split, transform=transform)
         generator = torch.Generator()
         generator.manual_seed(seed)
         loader_kwargs: dict[str, Any] = {
@@ -171,8 +237,10 @@ def build_dataloaders(
             loader_kwargs["persistent_workers"] = persistent_workers
             if prefetch_factor is not None:
                 loader_kwargs["prefetch_factor"] = prefetch_factor
+        if normalized_task != "classification":
+            loader_kwargs["collate_fn"] = _detection_collate_fn
         loaders[split] = DataLoader(dataset, **loader_kwargs)
     return loaders
 
 
-__all__ = ["HuggingFaceClassificationDataset", "build_dataloaders"]
+__all__ = ["HuggingFaceClassificationDataset", "HuggingFaceDetectionDataset", "build_dataloaders"]

@@ -563,6 +563,10 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
             "year": "2012",
             "split": config.split,
             "importer": "mindtrace.datalake.importers.pascal_voc",
+            "task_types": ["classification", "detection", "segmentation"],
+            "detection_class_names": VOC_CLASSES,
+            "detection_bbox_format": "xywh",
+            "detection_bbox_coordinates": "pixels",
         },
         created_by=config.created_by,
     )

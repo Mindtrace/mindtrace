@@ -9,10 +9,17 @@ from .base import prepare_export_destination, write_export_file
 from .types import ExportableDataset, ExportResult
 
 
-def _classification_class_names(dataset: ExportableDataset) -> list[str]:
-    configured = dataset.metadata.get("class_names")
+def _configured_class_names(dataset: ExportableDataset, task: str) -> list[str] | None:
+    configured = dataset.metadata.get(f"{task}_class_names") or dataset.metadata.get("class_names")
     if configured:
         return [str(name) for name in configured]
+    return None
+
+
+def _classification_class_names(dataset: ExportableDataset) -> list[str]:
+    configured = _configured_class_names(dataset, "classification")
+    if configured:
+        return configured
 
     labels_by_id: dict[int, str] = {}
     for item in dataset.items:
@@ -33,6 +40,24 @@ def _classification_class_names(dataset: ExportableDataset) -> list[str]:
             f"found {sorted(labels_by_id)}."
         )
     return [labels_by_id[label_id] for label_id in expected_ids]
+
+
+def _detection_class_names(dataset: ExportableDataset) -> list[str]:
+    configured = _configured_class_names(dataset, "detection")
+    labels = {
+        annotation.label
+        for item in dataset.items
+        for annotation in item.annotations
+        if annotation.kind == "bbox"
+    }
+    if configured:
+        unknown = sorted(labels - set(configured))
+        if unknown:
+            raise ValueError(f"Detection annotations use labels missing from detection_class_names: {unknown}.")
+        return configured
+    if not labels:
+        raise ValueError("Detection export requires bbox annotations or dataset metadata detection_class_names.")
+    return sorted(labels)
 
 
 def _classification_annotation(item) -> Any:
@@ -64,6 +89,41 @@ def _classification_features(datasets_module: Any, class_names: list[str]):
     )
 
 
+def _detection_features(datasets_module: Any, class_names: list[str]):
+    return datasets_module.Features(
+        {
+            "image": datasets_module.Image(),
+            "asset_id": datasets_module.Value("string"),
+            "split": datasets_module.Value("string"),
+            "objects": datasets_module.Sequence(
+                {
+                    "id": datasets_module.Value("string"),
+                    "area": datasets_module.Value("float32"),
+                    "bbox": datasets_module.Sequence(datasets_module.Value("float32"), length=4),
+                    "category": datasets_module.ClassLabel(names=class_names),
+                    "category_name": datasets_module.Value("string"),
+                    "difficult": datasets_module.Value("bool"),
+                    "truncated": datasets_module.Value("bool"),
+                    "occluded": datasets_module.Value("bool"),
+                }
+            ),
+            "metadata_json": datasets_module.Value("string"),
+            "asset_metadata_json": datasets_module.Value("string"),
+        }
+    )
+
+
+def _embedded_image(item, *, include_media: bool, task: str):
+    if not include_media:
+        return None
+    if item.payload_bytes is None:
+        raise ValueError(f"Hugging Face {task} export requires payload bytes for asset {item.asset.asset_id}.")
+    return {
+        "bytes": item.payload_bytes,
+        "path": item.source_filename or f"{item.asset.asset_id}.bin",
+    }
+
+
 def _export_classification_dataset(
     datasets_module: Any,
     dataset: ExportableDataset,
@@ -89,16 +149,7 @@ def _export_classification_dataset(
                 f"but annotation {annotation.annotation_id!r} uses {annotation.label!r}."
             )
         split_name = item.split or "default"
-        image = None
-        if include_media:
-            if item.payload_bytes is None:
-                raise ValueError(
-                    f"Hugging Face classification export requires payload bytes for asset {item.asset.asset_id}."
-                )
-            image = {
-                "bytes": item.payload_bytes,
-                "path": item.source_filename or f"{item.asset.asset_id}.bin",
-            }
+        image = _embedded_image(item, include_media=include_media, task="classification")
         rows_by_split.setdefault(split_name, []).append(
             {
                 "image": image,
@@ -130,6 +181,80 @@ def _export_classification_dataset(
     )
 
 
+def _export_detection_dataset(
+    datasets_module: Any,
+    dataset: ExportableDataset,
+    *,
+    destination: Path,
+    include_media: bool,
+) -> ExportResult:
+    class_names = _detection_class_names(dataset)
+    class_ids = {name: index for index, name in enumerate(class_names)}
+    features = _detection_features(datasets_module, class_names)
+    rows_by_split: dict[str, list[dict[str, Any]]] = {}
+
+    for item in dataset.items:
+        objects = []
+        for annotation in item.annotations:
+            if annotation.kind != "bbox":
+                continue
+            geometry = annotation.geometry
+            if geometry.get("type") != "bbox":
+                raise ValueError(
+                    f"Detection annotation {annotation.annotation_id!r} must use geometry type 'bbox'."
+                )
+            bbox = [float(geometry.get(key, 0)) for key in ("x", "y", "width", "height")]
+            if bbox[2] <= 0 or bbox[3] <= 0:
+                raise ValueError(
+                    f"Detection annotation {annotation.annotation_id!r} must have positive width and height."
+                )
+            attributes = annotation.attributes or {}
+            objects.append(
+                {
+                    "id": annotation.annotation_id,
+                    "area": bbox[2] * bbox[3],
+                    "bbox": bbox,
+                    "category": class_ids[annotation.label],
+                    "category_name": annotation.label,
+                    "difficult": bool(attributes.get("difficult", False)),
+                    "truncated": bool(attributes.get("truncated", False)),
+                    "occluded": bool(attributes.get("occluded", False)),
+                }
+            )
+
+        split_name = item.split or "default"
+        rows_by_split.setdefault(split_name, []).append(
+            {
+                "image": _embedded_image(item, include_media=include_media, task="detection"),
+                "asset_id": item.asset.asset_id,
+                "split": item.split or "",
+                "objects": objects,
+                "metadata_json": json.dumps(item.metadata or {}, sort_keys=True, default=str),
+                "asset_metadata_json": json.dumps(item.asset.metadata or {}, sort_keys=True, default=str),
+            }
+        )
+
+    dataset_payload = {
+        split: datasets_module.Dataset.from_list(rows, features=features) for split, rows in rows_by_split.items()
+    }
+    if len(dataset_payload) == 1 and "default" in dataset_payload:
+        hf_dataset = dataset_payload["default"]
+    else:
+        hf_dataset = datasets_module.DatasetDict(dataset_payload)
+    hf_dataset.save_to_disk(str(destination))
+    return ExportResult(
+        format="huggingface",
+        destination=destination,
+        dataset_name=dataset.name,
+        asset_count=dataset.asset_count,
+        annotation_count=sum(
+            annotation.kind == "bbox" for item in dataset.items for annotation in item.annotations
+        ),
+        files_written=["."],
+        warnings=list(dataset.warnings),
+    )
+
+
 def export_dataset_as_huggingface(
     dataset: ExportableDataset,
     *,
@@ -151,6 +276,13 @@ def export_dataset_as_huggingface(
     requested_task = (options or {}).get("task") or dataset.metadata.get("task_type")
     if requested_task == "classification":
         return _export_classification_dataset(
+            datasets_module,
+            dataset,
+            destination=destination_path,
+            include_media=include_media,
+        )
+    if requested_task in {"detection", "object_detection"}:
+        return _export_detection_dataset(
             datasets_module,
             dataset,
             destination=destination_path,

@@ -31,7 +31,7 @@ from .data_vault_backends import (
     LocalAsyncDataVaultBackend,
     LocalDataVaultBackend,
 )
-from .dataloaders import HuggingFaceClassificationDataset, build_dataloaders
+from .dataloaders import HuggingFaceClassificationDataset, HuggingFaceDetectionDataset, build_dataloaders
 from .datalake import Datalake
 from .exporters import ExportableDataset, ExportableItem, ExportResult, export_dataset_to_format, get_dataset_exporter
 from .pagination_types import (
@@ -133,6 +133,7 @@ __all__ = [
     "DataVault",
     "DataVaultBackend",
     "HuggingFaceClassificationDataset",
+    "HuggingFaceDetectionDataset",
     "DatalakeServiceAsyncDataVaultBackend",
     "DatalakeServiceDataVaultBackend",
     "LocalAsyncDataVaultBackend",
