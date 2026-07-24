@@ -225,7 +225,7 @@ def _export_single_label_classification_dataset(
         destination=destination,
         dataset_name=dataset.name,
         asset_count=dataset.asset_count,
-        annotation_count=dataset.annotation_count,
+        annotation_count=dataset.asset_count,
         files_written=["."],
         warnings=list(dataset.warnings),
     )
@@ -356,6 +356,8 @@ def _export_bbox_crop_classification_dataset(
             )
             crop_count += 1
 
+    if not crop_count:
+        raise ValueError("Bounding-box classification crop export requires at least one bbox annotation.")
     dataset_payload = {
         split: datasets_module.Dataset.from_list(rows, features=features) for split, rows in rows_by_split.items()
     }
@@ -542,6 +544,10 @@ def export_dataset_as_huggingface(
             "classification_type", "single_label"
         )
         classification_source = (options or {}).get("classification_source", "annotations")
+        if classification_source not in {"annotations", "bbox_crops"}:
+            raise ValueError(
+                "Hugging Face classification export requires classification_source='annotations' or 'bbox_crops'."
+            )
         if classification_type == "single_label" and classification_source == "bbox_crops":
             return _export_bbox_crop_classification_dataset(
                 datasets_module,
@@ -557,6 +563,8 @@ def export_dataset_as_huggingface(
                 include_media=include_media,
             )
         if classification_type == "multi_label":
+            if classification_source != "annotations":
+                raise ValueError("Multi-label classification export only supports classification_source='annotations'.")
             return _export_multi_label_classification_dataset(
                 datasets_module,
                 dataset,

@@ -201,6 +201,7 @@ with Datalake.create(
         "1.0.0",
         format="huggingface",
         destination="./exports/flowers102",
+        exporter_options={"task": "classification"},
     )
 ```
 
@@ -320,6 +321,86 @@ zero-based `ClassLabel`. Source label IDs such as VOC's one-based IDs are remapp
 detection loader converts boxes to the `xyxy` tensors expected by torchvision models. Its transform receives
 `(image, target)` and must return the transformed pair so boxes stay aligned with image geometry. The detection
 collator returns image and target lists because object counts vary between samples.
+
+VOC also supports two classification exports. Import classification and detection annotations together if both
+outputs are required:
+
+```python
+classification_summary = import_pascal_voc(
+    datalake,
+    PascalVocImportConfig(
+        root_dir="./data/pascal-voc",
+        split="train",
+        dataset_name="pascal-voc-2012-classification-train",
+        tasks=("classification", "detection"),
+    ),
+)
+```
+
+The native VOC whole-image task is multi-label. It exports one 20-element multi-hot float target per image:
+
+```python
+datalake.export_dataset_version_to_format(
+    classification_summary.dataset_name,
+    classification_summary.dataset_version,
+    format="huggingface",
+    destination="./exports/voc-multi-label",
+    exporter_options={
+        "task": "classification",
+        "classification_type": "multi_label",
+    },
+)
+```
+
+The same source version can be materialized as single-label object crops derived from its bounding boxes. Each HF row
+retains `source_image_asset_id`, `source_annotation_id`, and the source `xywh` bbox. Crops inherit the source image's
+split, preventing train/validation leakage:
+
+```python
+datalake.export_dataset_version_to_format(
+    classification_summary.dataset_name,
+    classification_summary.dataset_version,
+    format="huggingface",
+    destination="./exports/voc-object-crops",
+    exporter_options={
+        "task": "classification",
+        "classification_type": "single_label",
+        "classification_source": "bbox_crops",
+    },
+)
+```
+
+Both exports use the classification DataLoader. Classification images vary in size, so provide a transform that
+produces a fixed tensor shape:
+
+```python
+from torchvision import transforms
+
+image_transform = transforms.Compose(
+    [
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+    ]
+)
+
+multi_label_loaders = build_dataloaders(
+    "./exports/voc-multi-label",
+    task="classification",
+    transforms=image_transform,
+    batch_size=32,
+)
+crop_loaders = build_dataloaders(
+    "./exports/voc-object-crops",
+    task="classification",
+    transforms=image_transform,
+    batch_size=32,
+)
+```
+
+Single-label targets are scalar `LongTensor`s suitable for cross entropy. Multi-label targets are 20-element
+`FloatTensor`s suitable for binary cross entropy with logits. VOC classification flags greater than zero are treated
+as positive; absent and difficult/ambiguous flags are currently represented as zero. VOC provides `train` and `val`
+labels but no public labeled test split.
 
 Import, export, and load the semantic segmentation subset:
 
