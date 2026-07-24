@@ -18,7 +18,7 @@ PASCAL_VOC_2012_URL = "http://host.robots.ox.ac.uk/pascal/VOC/voc2012/VOCtrainva
 PASCAL_VOC_2012_ARCHIVE_NAME = "VOCtrainval_11-May-2012.tar"
 PASCAL_VOC_2012_DIRNAME = "VOC2012"
 PASCAL_VOC_SCHEMA_VERSION = "2012.2.0"
-PASCAL_VOC_IMPORTER_VERSION = "1.2.0"
+PASCAL_VOC_IMPORTER_VERSION = "1.2.1"
 VOC_TASKS = ("classification", "detection", "semantic_segmentation")
 VOC_CLASSES = [
     "aeroplane",
@@ -207,6 +207,23 @@ def _read_split_ids(voc_root: Path, split: str, *, task: str = "detection") -> l
     if not image_ids:
         raise ValueError(f"Pascal VOC split {split!r} is empty")
     return image_ids
+
+
+def _read_import_ids(
+    voc_root: Path,
+    split: str,
+    tasks: tuple[str, ...],
+) -> tuple[list[str], set[str], set[str]]:
+    main_ids = (
+        _read_split_ids(voc_root, split, task="detection") if {"classification", "detection"} & set(tasks) else []
+    )
+    segmentation_ids = (
+        _read_split_ids(voc_root, split, task="semantic_segmentation") if "semantic_segmentation" in tasks else []
+    )
+    main_id_set = set(main_ids)
+    segmentation_id_set = set(segmentation_ids)
+    image_ids = [*main_ids, *(image_id for image_id in segmentation_ids if image_id not in main_id_set)]
+    return image_ids, main_id_set, segmentation_id_set
 
 
 def _read_classification_labels(voc_root: Path, split: str) -> dict[str, list[str]]:
@@ -414,8 +431,7 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
     _ensure_dataset_versions_absent(datalake, dataset_names, config.dataset_version)
 
     schemas = _ensure_voc_schemas(datalake, tasks)
-    split_task = "semantic_segmentation" if tasks == ("semantic_segmentation",) else "detection"
-    image_ids = _read_split_ids(voc_root, config.split, task=split_task)
+    image_ids, main_id_set, segmentation_id_set = _read_import_ids(voc_root, config.split, tasks)
     classification_labels = _read_classification_labels(voc_root, config.split) if "classification" in tasks else {}
     image_dir = voc_root / "JPEGImages"
     annotation_dir = voc_root / "Annotations"
@@ -423,6 +439,7 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
     object_prefix = config.object_name_prefix or f"imports/pascal-voc-2012/{dataset_name}/{config.dataset_version}"
 
     manifest: list[str] = []
+    main_manifest: list[str] = []
     semantic_manifest: list[str] = []
     single_label_manifest: list[str] = []
     image_asset_count = 0
@@ -440,7 +457,7 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
         annotation_path = annotation_dir / f"{image_id}.xml"
         if not image_path.exists():
             raise FileNotFoundError(f"Pascal VOC image not found: {image_path}")
-        if "detection" in tasks and not annotation_path.exists():
+        if "detection" in tasks and image_id in main_id_set and not annotation_path.exists():
             raise FileNotFoundError(f"Pascal VOC annotation XML not found: {annotation_path}")
 
         image_bytes = image_path.read_bytes()
@@ -471,43 +488,42 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
 
         asset_refs = {"image": image_asset.asset_id}
         semantic_mask_asset = None
-        if "semantic_segmentation" in tasks:
+        if image_id in segmentation_id_set:
             mask_path = segmentation_mask_dir / f"{image_id}.png"
-            if mask_path.exists():
-                mask_bytes = mask_path.read_bytes()
-                semantic_mask_asset = datalake.create_asset_from_object(
-                    name=_asset_object_name(object_prefix, config.split, "semantic_masks", mask_path.name),
-                    obj=mask_bytes,
-                    kind="mask",
-                    media_type="image/png",
-                    mount=config.mount,
-                    object_metadata={
-                        "source_dataset": "pascal_voc",
-                        "year": "2012",
-                        "split": config.split,
-                        "source_image_id": image_id,
-                        "source_mask_type": "SegmentationClass",
-                        "mask_encoding": "class_id",
-                        "background_id": 0,
-                        "ignore_index": 255,
-                    },
-                    asset_metadata={
-                        "source_dataset": "pascal_voc",
-                        "year": "2012",
-                        "split": config.split,
-                        "source_image_id": image_id,
-                        "source_mask_type": "SegmentationClass",
-                        "mask_encoding": "class_id",
-                        "background_id": 0,
-                        "ignore_index": 255,
-                    },
-                    size_bytes=len(mask_bytes),
-                    created_by=config.created_by,
-                )
-                asset_refs["semantic_mask"] = semantic_mask_asset.asset_id
-                mask_asset_count += 1
-            elif tasks == ("semantic_segmentation",):
+            if not mask_path.exists():
                 raise FileNotFoundError(f"Pascal VOC semantic mask not found: {mask_path}")
+            mask_bytes = mask_path.read_bytes()
+            semantic_mask_asset = datalake.create_asset_from_object(
+                name=_asset_object_name(object_prefix, config.split, "semantic_masks", mask_path.name),
+                obj=mask_bytes,
+                kind="mask",
+                media_type="image/png",
+                mount=config.mount,
+                object_metadata={
+                    "source_dataset": "pascal_voc",
+                    "year": "2012",
+                    "split": config.split,
+                    "source_image_id": image_id,
+                    "source_mask_type": "SegmentationClass",
+                    "mask_encoding": "class_id",
+                    "background_id": 0,
+                    "ignore_index": 255,
+                },
+                asset_metadata={
+                    "source_dataset": "pascal_voc",
+                    "year": "2012",
+                    "split": config.split,
+                    "source_image_id": image_id,
+                    "source_mask_type": "SegmentationClass",
+                    "mask_encoding": "class_id",
+                    "background_id": 0,
+                    "ignore_index": 255,
+                },
+                size_bytes=len(mask_bytes),
+                created_by=config.created_by,
+            )
+            asset_refs["semantic_mask"] = semantic_mask_asset.asset_id
+            mask_asset_count += 1
 
         datum = datalake.create_datum(
             asset_refs=asset_refs,
@@ -519,6 +535,8 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
             },
         )
         manifest.append(datum.datum_id)
+        if image_id in main_id_set:
+            main_manifest.append(datum.datum_id)
 
         image_class_labels = sorted(set(classification_labels.get(image_id, [])))
         if image_class_labels:
@@ -542,7 +560,9 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
             datalake.add_annotation_records(records, annotation_set_id=annotation_set.annotation_set_id)
             classification_record_count += len(records)
 
-        detections = _parse_detection_annotations(annotation_path) if "detection" in tasks else []
+        detections = (
+            _parse_detection_annotations(annotation_path) if "detection" in tasks and image_id in main_id_set else []
+        )
         if detections:
             annotation_set = _create_annotation_set_if_needed(
                 datalake,
@@ -665,7 +685,7 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
     }
     if config.create_task_versions and "classification" in tasks:
         version_specs["classification_multi_label"] = (
-            manifest,
+            main_manifest,
             {
                 **dataset_metadata,
                 "task_type": "classification",
@@ -675,7 +695,7 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
         )
     if config.create_task_versions and "detection" in tasks:
         version_specs["detection"] = (
-            manifest,
+            main_manifest,
             {
                 **dataset_metadata,
                 "task_type": "detection",

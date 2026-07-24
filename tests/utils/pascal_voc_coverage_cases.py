@@ -50,6 +50,25 @@ def test_dataset_view_names_include_both_classification_profiles():
     }
 
 
+def test_read_import_ids_uses_union_of_main_and_segmentation_splits(tmp_path: Path):
+    main_dir = tmp_path / "ImageSets" / "Main"
+    segmentation_dir = tmp_path / "ImageSets" / "Segmentation"
+    main_dir.mkdir(parents=True)
+    segmentation_dir.mkdir(parents=True)
+    (main_dir / "train.txt").write_text("shared\nmain_only\n")
+    (segmentation_dir / "train.txt").write_text("shared\nsegmentation_only\n")
+
+    image_ids, main_ids, segmentation_ids = pascal_voc._read_import_ids(
+        tmp_path,
+        "train",
+        pascal_voc.VOC_TASKS,
+    )
+
+    assert image_ids == ["shared", "main_only", "segmentation_only"]
+    assert main_ids == {"shared", "main_only"}
+    assert segmentation_ids == {"shared", "segmentation_only"}
+
+
 def test_download_archive_uses_expected_download_strategy(tmp_path: Path):
     archive_path = tmp_path / pascal_voc.PASCAL_VOC_2012_ARCHIVE_NAME
 
