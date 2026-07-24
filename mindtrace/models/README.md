@@ -93,12 +93,28 @@ pip install mindtrace-models
 | `wandb` | `pip install mindtrace-models[wandb]` | Weights & Biases tracking |
 | `tensorboard` | `pip install mindtrace-models[tensorboard]` | TensorBoard tracking |
 | `onnx` | `pip install mindtrace-models[onnx]` | ONNX Runtime inference serving |
-| `edge` | `pip install mindtrace-models[edge]` | ONNX export + quantization toolchain (onnx, onnxruntime, onnxsim) |
+| `edge` | `pip install mindtrace-models[edge]` | ONNX export + quantization toolchain — **CPU** onnxruntime (onnx, onnxruntime, onnxsim) |
+| `edge-gpu` | `pip install "mindtrace-models[edge-gpu]"` | GPU counterpart of `edge` — CUDA onnxruntime-gpu. **Use instead of `edge`, not alongside** (they conflict). Opt-in only — not pulled by `--all-extras` |
 | `pruning` | `pip install mindtrace-models[pruning]` | Structured pruning via torch-pruning |
 | `openvino` | `pip install mindtrace-models[openvino]` | OpenVINO compilation, serving and archiver |
 | `executorch` | `pip install mindtrace-models[executorch]` | ExecuTorch .pte compilation for MCU/mobile targets |
 | `ultralytics` | `pip install mindtrace-models[ultralytics]` | Ultralytics archivers (YOLO, YOLOE, SAM) |
-| `all` | `pip install mindtrace-models[all]` | All optional dependencies |
+| `all` | `pip install mindtrace-models[all]` | All optional dependencies **except** the GPU-inference extras below |
+
+> **GPU inference note.** `all` deliberately ships the **CPU** onnxruntime, because
+> `onnxruntime-gpu` provides the same `onnxruntime` import and can't be installed beside it.
+> For GPU-accelerated inference on a CUDA workstation:
+>
+> - **ONNX Runtime on GPU** — use the `edge-gpu` extra *instead of* `edge`:
+>   ```bash
+>   uv pip install "mindtrace-models[edge-gpu]"
+>   ```
+> - **TensorRT** — install directly; it is intentionally **not** a bundled extra because
+>   its pip package is sdist-only (no NVIDIA index → a heavy build in every lock resolution):
+>   ```bash
+>   uv pip install tensorrt        # x86_64 + CUDA only
+>   ```
+>   On **Jetson**, TensorRT ships with JetPack — do **not** pip-install it there.
 
 ## Architectures
 
