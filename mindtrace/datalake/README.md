@@ -302,7 +302,7 @@ datalake.export_dataset_version_to_format(
     "1.0.0",
     format="huggingface",
     destination="./exports/voc-detection",
-    options={"task": "detection"},
+    exporter_options={"task": "detection"},
 )
 
 loaders = build_dataloaders(
