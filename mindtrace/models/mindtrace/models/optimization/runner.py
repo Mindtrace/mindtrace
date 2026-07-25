@@ -168,6 +168,62 @@ class OnnxModelAdapter(Mindtrace):
         return torch.from_numpy(np.asarray(outputs[0]))
 
 
+class _DetectionOnnxAdapter(Mindtrace):
+    """Present a detection ONNX model through the torch-detection interface.
+
+    Mirrors :class:`OnnxModelAdapter` (which returns classification logits) but
+    exposes the *list-in → list-of-dicts-out* contract that
+    :class:`~mindtrace.models.evaluation.runner.EvaluationRunner`'s detection
+    path expects, so a torch detector and its exported/quantized ONNX share one
+    mAP evaluation path.
+
+    Detection ONNX outputs are positional and their order varies by architecture
+    (Faster R-CNN → boxes, labels, scores; RetinaNet/FCOS → boxes, scores,
+    labels), so outputs are mapped by shape/dtype rather than index: the ``[N, 4]``
+    tensor is boxes, the integer ``[N]`` tensor is labels, the float ``[N]`` tensor
+    is scores.
+
+    Args:
+        path: Path to the detection ``.onnx`` file.
+        providers: ONNX Runtime execution providers (defaults to CPU).
+
+    Raises:
+        ImportError: If ``onnxruntime`` is not installed.
+    """
+
+    def __init__(self, path: str | Path, providers: list | None = None) -> None:
+        super().__init__()
+        if not _ORT_AVAILABLE:
+            raise ImportError(_ORT_INSTALL_MSG)
+        self.path = Path(path)
+        self._session = onnxruntime.InferenceSession(str(self.path), providers=providers or ["CPUExecutionProvider"])
+        self._input_name = self._session.get_inputs()[0].name
+
+    def to(self, device: Any) -> "_DetectionOnnxAdapter":
+        return self
+
+    def eval(self) -> "_DetectionOnnxAdapter":
+        return self
+
+    def __call__(self, inputs: Any) -> list[dict]:
+        images = inputs if isinstance(inputs, (list, tuple)) else list(inputs)
+        results: list[dict] = []
+        for image in images:
+            arr = image.detach().cpu().numpy() if isinstance(image, torch.Tensor) else np.asarray(image)
+            outs = self._session.run(None, {self._input_name: arr[None, ...].astype(np.float32)})
+            boxes = next(o for o in outs if o.ndim == 2 and o.shape[-1] == 4)
+            labels = next(o for o in outs if o.ndim == 1 and o.dtype.kind in "iu")
+            scores = next(o for o in outs if o.ndim == 1 and o.dtype.kind == "f")
+            results.append(
+                {
+                    "boxes": torch.from_numpy(np.asarray(boxes)),
+                    "scores": torch.from_numpy(np.asarray(scores)),
+                    "labels": torch.from_numpy(np.asarray(labels)),
+                }
+            )
+        return results
+
+
 class OptimizationRunner(Mindtrace):
     """Execute an :class:`OptimizationRecipe` with accuracy-aware gating.
 
@@ -344,7 +400,12 @@ class OptimizationRunner(Mindtrace):
             metric_drop: float | None = None
             rolled_back = False
             if gating and step.op in _LOSSY_OPS:
-                candidate = self.model if domain == "torch" else OnnxModelAdapter(artifact)
+                if domain == "torch":
+                    candidate = self.model
+                elif self.task == "detection":
+                    candidate = _DetectionOnnxAdapter(artifact)
+                else:
+                    candidate = OnnxModelAdapter(artifact)
                 metric = self._measure_metric(candidate)
                 metric_drop = baseline - metric  # type: ignore[operator]
                 if metric_drop > max_drop:
@@ -441,6 +502,22 @@ class OptimizationRunner(Mindtrace):
         if self.train_loader is None:
             raise ValueError("A 'finetune' step requires a train_loader; pass one to OptimizationRunner.")
 
+        # Detection finetunes through DetectionTrainer: the model computes its own
+        # multi-part loss (there is no single CrossEntropy on logits), and batches
+        # are lists of images/targets rather than stacked tensors.
+        if self.task == "detection":
+            from mindtrace.models.training import DetectionTrainer
+
+            if self.optimizer_factory is not None:
+                optimizer = self.optimizer_factory(self.model, step.lr)
+            else:
+                optimizer = torch.optim.AdamW([p for p in self.model.parameters() if p.requires_grad], lr=step.lr)
+            trainer = DetectionTrainer(
+                self.model, num_classes=self.num_classes or 1, optimizer=optimizer, tracker=self.tracker
+            )
+            trainer.fit(self.train_loader, epochs=step.epochs)
+            return
+
         from mindtrace.models.training import Trainer
 
         loss_fn = self.loss_fn if self.loss_fn is not None else nn.CrossEntropyLoss()
@@ -478,14 +555,18 @@ class OptimizationRunner(Mindtrace):
         suffix = "export_implicit" if implicit else "export"
         path = self.work_dir / f"{index:02d}_{suffix}.onnx"
         self.model.to("cpu")
+        # Detection graphs embed NMS (data-dependent output shapes), so a dynamic
+        # batch axis is unsafe; and the numerical parity check assumes a single
+        # tensor output rather than per-image dicts. Both are disabled for detection.
+        is_detection = self.task == "detection"
         return export_onnx(
             self.model,
             path,
             static_shape=static_shape,
             opset=step.opset,
-            dynamic_batch=True,
+            dynamic_batch=not is_detection,
             simplify=step.simplify,
-            check=step.check,
+            check=step.check and not is_detection,
         )
 
     def _quantize_step(self, step: Quantize, index: int, artifact: Path | None) -> Path:
@@ -525,6 +606,12 @@ class OptimizationRunner(Mindtrace):
 
         from mindtrace.models.optimization.quantize import StaticQuantizer
 
+        # Detection loaders yield (list_of_images, list_of_targets); the quantizer
+        # wants per-sample [1, C, H, W] feeds, so flatten images out of the batch.
+        calibration: Any = self.calibration_loader
+        if self.task == "detection":
+            calibration = self._detection_calibration_feeds(step.samples)
+
         quantizer = StaticQuantizer(
             precision=step.precision,
             per_channel=step.per_channel,
@@ -532,10 +619,21 @@ class OptimizationRunner(Mindtrace):
         )
         return quantizer.run(
             artifact,
-            self.calibration_loader,
+            calibration,
             samples=step.samples,
             output=self.work_dir / f"{index:02d}_quantize_static.onnx",
         )
+
+    def _detection_calibration_feeds(self, samples: int) -> list:
+        """Flatten a detection loader into per-image ``[1, C, H, W]`` calibration feeds."""
+        feeds: list = []
+        for images, _ in self.calibration_loader:
+            for image in images:
+                arr = image.detach().cpu().numpy() if hasattr(image, "detach") else np.asarray(image)
+                feeds.append(arr[None, ...].astype(np.float32))
+                if len(feeds) >= samples:
+                    return feeds
+        return feeds
 
     def _compile_step(self, step: Compile, index: int, artifact: Path | None) -> Path:
         """Compile the current ONNX artifact for a deployment target.
@@ -621,7 +719,10 @@ class OptimizationRunner(Mindtrace):
             for loader in (self.eval_loader, self.calibration_loader, self.train_loader):
                 if loader is not None:
                     inputs, _ = self._first_batch(loader)
-                    self._input_shape = tuple(inputs.shape)
+                    if isinstance(inputs, (list, tuple)):  # detection: a list of [C, H, W] images
+                        self._input_shape = (1, *tuple(inputs[0].shape))
+                    else:
+                        self._input_shape = tuple(inputs.shape)
                     break
             else:
                 for step in self.recipe.steps:
