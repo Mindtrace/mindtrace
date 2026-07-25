@@ -74,8 +74,20 @@ def compile_tensorrt(onnx_path: Path, target: TargetSpec, output_dir: Path, **op
     trt = _load_tensorrt()
 
     logger = trt.Logger(trt.Logger.WARNING)
+    # Register TensorRT's built-in plugins (ROIAlign, NMS, etc.). Without this the
+    # ONNX parser cannot resolve plugin-backed ops that detection models rely on,
+    # failing with "plugin was not found in the plugin registry".
+    try:
+        trt.init_libnvinfer_plugins(logger, "")
+    except Exception as exc:  # noqa: BLE001 — older TRT builds may lack this symbol
+        logger.log(trt.Logger.WARNING, f"init_libnvinfer_plugins unavailable: {exc}")
     builder = trt.Builder(logger)
-    network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
+    # Explicit batch: mandatory (and the default) since TensorRT 10, where the
+    # EXPLICIT_BATCH flag was removed. On TensorRT < 10 the flag must still be set,
+    # so probe for it and fall back to 0 (explicit batch) on newer versions.
+    explicit_batch = getattr(trt.NetworkDefinitionCreationFlag, "EXPLICIT_BATCH", None)
+    network_flags = (1 << int(explicit_batch)) if explicit_batch is not None else 0
+    network = builder.create_network(network_flags)
     parser = trt.OnnxParser(network, logger)
 
     if not parser.parse(onnx_path.read_bytes()):
@@ -87,13 +99,23 @@ def compile_tensorrt(onnx_path: Path, target: TargetSpec, output_dir: Path, **op
     if workspace_mb is not None:
         config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, int(workspace_mb) << 20)
 
+    # Precision flags: classic TensorRT exposes BuilderFlag.FP16 / .INT8. Newer
+    # CUDA-13 builds drop these in favour of strongly-typed networks, so guard each
+    # flag with hasattr rather than crashing with AttributeError on those builds.
     enabled_flags: list[str] = []
-    if "fp16" in target.precisions:
-        config.set_flag(trt.BuilderFlag.FP16)
-        enabled_flags.append("fp16")
-    if "int8" in target.precisions:
-        config.set_flag(trt.BuilderFlag.INT8)
-        enabled_flags.append("int8")
+    for precision, flag_name in (("fp16", "FP16"), ("int8", "INT8")):
+        if precision not in target.precisions:
+            continue
+        flag = getattr(trt.BuilderFlag, flag_name, None)
+        if flag is not None:
+            config.set_flag(flag)
+            enabled_flags.append(precision)
+        else:
+            logger.log(
+                trt.Logger.WARNING,
+                f"BuilderFlag.{flag_name} not available in TensorRT {trt.__version__}; "
+                "precision is governed by the network's types (strongly-typed build).",
+            )
 
     # Dynamic input dims (e.g. a dynamic batch axis) require an optimization
     # profile or the build fails outright.  min pins every dynamic dim to 1,
