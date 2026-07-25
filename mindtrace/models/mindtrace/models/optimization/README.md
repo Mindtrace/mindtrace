@@ -85,6 +85,10 @@ rows = profile(model, data=dataset)   # uniform {variant, metric, delta, latency
 provider's native-best path — so a caller uses only mindtrace, never raw
 ultralytics / torch / onnxruntime.
 
+> **Compile vs. run.** `profile` measures latency for the torch / ONNX-Runtime / OpenVINO
+> runtimes. A **TensorRT engine compiles but has no in-process inference runtime here** —
+> deploy the `.plan`, or use the Ultralytics path (which owns a TensorRT runtime) for YOLO.
+
 ## New to model optimization? Start with the concepts
 
 A trained model that runs well on a workstation GPU is usually too big and too slow for an edge device (an inspection box, a phone, an embedded board). "Optimization" is the set of techniques that shrink it and speed it up while keeping its accuracy. Each concept below has a short, plain-language guide with examples — **no prior background assumed**.
