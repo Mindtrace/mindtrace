@@ -14,6 +14,76 @@ The optimization sub-package provides:
 - **Export**: `export_onnx` with onnxsim simplification and ONNX Runtime parity checks
 - **Compilation**: `compile_model` dispatching on `TargetSpec` registry entries (ONNX Runtime, OpenVINO, TensorRT)
 - **Benchmarking**: `Benchmark` producing a `BenchmarkReport` (p50/p95 latency, fps, size, cold start, peak RSS)
+- **Unified adapters**: `load_model` + `profile` present Ultralytics / torchvision / torch·timm·HF through one `OptimizableModel` surface — provider-native execution, uniform result schema
+- **Capability matrix + clear failures**: `validate_optimization` / `assert_tensorrt_compilable` raise a specific `UnsupportedOptimizationError` instead of failing cryptically deep inside a backend
+
+## What works where — capability matrix
+
+Not every technique applies to every task and provider. This matrix is the single
+source of truth, defined in [`support.py`](support.py); the same data raises the runtime
+exceptions below, so the docs and the behaviour can never drift apart.
+
+| Technique | Classification / Segmentation | Detection (YOLO) | Detection (torchvision) | Notes |
+|---|:---:|:---:|:---:|---|
+| ONNX export | yes | yes | yes | Foundation for every ONNX-based path. |
+| FP16 | yes | yes | partial | torchvision detectors are latency-bound at batch 1 — little FP16 gain. |
+| Dynamic PTQ | partial | partial | partial | Weights-only; low value for conv-heavy nets. |
+| Static PTQ (INT8) | yes | partial | partial | Detection: the head is auto-excluded, else it collapses to zero mAP. |
+| QAT | yes | no | no | Detection: FX graph-mode cannot trace the dynamic control flow (NMS/proposals). |
+| Structured pruning | yes | partial | partial | Trace-based; experimental on detection graphs. |
+| Magnitude pruning | yes | yes | yes | Unstructured; no tracing required. |
+| Distillation | partial | partial | no | YOLO: `UltralyticsDistiller` (experimental). torchvision: not wired. |
+| Compile → ONNX Runtime | yes | yes | yes | CUDA EP on GPU; two-stage detection ops fall back to CPU (slow). |
+| Compile → TensorRT | yes | yes | **no** | torchvision detection: baked NMS = data-dependent shapes; RoiAlign needs a plugin. |
+| Compile → OpenVINO | partial | partial | partial | Intel CPU / iGPU / NPU only — no NVIDIA GPU (no CUDA backend). |
+| Compile → ExecuTorch | partial | partial | partial | ARM / mobile deployment target, not x86 + NVIDIA. |
+
+**Legend** — *yes*: supported · *partial*: works with a caveat (see notes) · *no*: not supported.
+
+### Why YOLO compiles to TensorRT but torchvision detection does not
+
+It is a property of the exported **graph**, not the task. Ultralytics ships a
+TensorRT-friendly ONNX (no baked-in NMS in the compiled portion, no RoiAlign).
+torchvision detectors trace to a graph with **NMS baked in**, whose number of outputs is
+**data-dependent** — and TensorRT can only build static or top-level-dynamic shapes.
+Two-stage detectors additionally use **RoiAlign**, which requires a TensorRT plugin. So
+the *same task* compiles from one provider and not the other. For torchvision detectors,
+use ONNX Runtime (CUDA), or export the backbone+head without NMS and run NMS outside the
+engine.
+
+### Clear failures, not cryptic ones
+
+When you ask for something the matrix marks unsupported, mindtrace tells you plainly:
+
+```python
+from mindtrace.models.optimization import compile_model, validate_optimization
+
+validate_optimization("QAT", task="detection", provider="torchvision")
+# UnsupportedOptimizationError: QAT is not supported for detection via torchvision.
+#   Reason: FX graph-mode cannot trace the dynamic control flow (NMS/proposals).
+#   Alternative: Use post-training INT8 with the head auto-excluded, or TensorRT-INT8 (best).
+
+compile_model("faster_rcnn.onnx", "trt-fp16")
+# UnsupportedOptimizationError: This ONNX model cannot be built into a TensorRT engine:
+#   it contains RoiAlign, NonMaxSuppression. ...  Alternative: use ONNX Runtime (CUDA) ...
+```
+
+The unified `profile()` sweep turns the same check into a labelled skip rather than
+aborting the whole run.
+
+### One surface for every provider
+
+```python
+from mindtrace.models.optimization import load_model, profile
+
+model = load_model("yolov8n.pt")                                    # UltralyticsAdapter
+model = load_model("fasterrcnn_resnet50_fpn", task="detection", num_classes=1)
+rows = profile(model, data=dataset)   # uniform {variant, metric, delta, latency, size, speedup, status}
+```
+
+`load_model` autodetects the provider and `profile` runs each variant through that
+provider's native-best path — so a caller uses only mindtrace, never raw
+ultralytics / torch / onnxruntime.
 
 ## New to model optimization? Start with the concepts
 
