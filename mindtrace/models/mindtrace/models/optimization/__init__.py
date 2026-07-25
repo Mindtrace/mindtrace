@@ -16,6 +16,18 @@ Heavy runtimes are optional: every backend guards its imports, so this package
 is importable with none of the edge extras installed.
 """
 
+from mindtrace.models.optimization.adapters import (
+    DEFAULT_SPECS,
+    OptimizableModel,
+    TorchModuleAdapter,
+    TorchvisionDetectionAdapter,
+    UltralyticsAdapter,
+    Variant,
+    VariantSpec,
+    detection_head_nodes,
+    load_model,
+    profile,
+)
 from mindtrace.models.optimization.bench import Benchmark, BenchmarkReport
 from mindtrace.models.optimization.compile import CompiledArtifact, compile_model, register_compiler
 from mindtrace.models.optimization.export import export_onnx, model_size_mb
@@ -50,6 +62,17 @@ from mindtrace.models.optimization.runner import (
 from mindtrace.models.optimization.targets import TargetSpec, get_target, list_targets, register_target
 
 __all__ = [
+    # Unified provider adapters (one optimization surface for every task/provider)
+    "OptimizableModel",
+    "load_model",
+    "profile",
+    "Variant",
+    "VariantSpec",
+    "DEFAULT_SPECS",
+    "UltralyticsAdapter",
+    "TorchvisionDetectionAdapter",
+    "TorchModuleAdapter",
+    "detection_head_nodes",
     # Recipes and runner
     "OptimizationRecipe",
     "Prune",
