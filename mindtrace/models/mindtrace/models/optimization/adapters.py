@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from mindtrace.core import Mindtrace
+from mindtrace.models.optimization.support import UnsupportedOptimizationError, validate_optimization
 
 #: Primary accuracy metric name per task.
 PRIMARY_METRIC = {"classification": "accuracy", "segmentation": "mIoU", "detection": "mAP50-95"}
@@ -423,6 +424,18 @@ def profile(model: OptimizableModel, specs: Any = DEFAULT_SPECS, *, data: Any = 
     rows = [_row(base, base_eval, metric, base_metric, base_lat, "baseline")]
 
     for spec in specs:
+        # Consult the capability matrix first: a combination it marks unsupported
+        # (e.g. torchvision detection -> TensorRT) skips with the matrix's reason
+        # rather than failing deep in the build.
+        technique = _RUNTIME_TECHNIQUE.get(spec.runtime)
+        if technique is not None:
+            try:
+                validate_optimization(technique, task=model.task, provider=model.provider)
+            except UnsupportedOptimizationError as exc:
+                rows.append({"variant": f"{spec.runtime}-{spec.precision}", "runtime": spec.runtime,
+                             "precision": spec.precision, metric: None,
+                             "status": f"unsupported: {str(exc).splitlines()[0]}"})
+                continue
         v = model.build(spec, wd)
         if not v.supported:
             rows.append({"variant": v.name, "runtime": v.runtime, "precision": v.precision,
@@ -431,6 +444,14 @@ def profile(model: OptimizableModel, specs: Any = DEFAULT_SPECS, *, data: Any = 
         ev = model.evaluate(v, data)
         rows.append(_row(v, ev, metric, base_metric, base_lat, "ok"))
     return rows
+
+
+#: Map a variant runtime to the capability-matrix technique it realises.
+_RUNTIME_TECHNIQUE = {
+    "onnxruntime": "Compile to ONNX Runtime",
+    "tensorrt": "Compile to TensorRT",
+    "openvino": "Compile to OpenVINO",
+}
 
 
 def _row(v: Variant, ev: dict, metric: str, base_metric: float, base_lat: float, status: str) -> dict:
