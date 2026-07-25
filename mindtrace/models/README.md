@@ -385,6 +385,21 @@ Each technique has a short, beginner-friendly concept guide (plain language, wit
 | Benchmarking | `Benchmark` / `BenchmarkReport` — cold start, p50/p95, sustained load, per-run memory, variant comparison |
 | Recipes | `OptimizationRecipe` (serializable step pipeline) + `OptimizationRunner` (accuracy/latency/size gates, rollback) |
 | Integrity | sha256-stamped `CompiledArtifact.checksum()/verify()`, sidecar manifests |
+| Unified surface | `load_model` + `profile` (one interface over Ultralytics / torchvision / torch·timm·HF); `validate_optimization` + the capability matrix |
+
+### What works for which task & provider
+
+Not every technique applies to every task and provider — and mindtrace **raises a clear
+`UnsupportedOptimizationError`** (naming the reason and an alternative) rather than failing
+deep inside a backend. The full, code-generated matrix lives in the optimization README:
+
+**→ [Optimization capability matrix](mindtrace/models/optimization/README.md#what-works-where--capability-matrix)**
+
+The headline limitations to know:
+
+- **Detection → TensorRT works for YOLO, not for torchvision** — torchvision detectors bake NMS into the traced graph (data-dependent shapes TensorRT can't build) and use RoiAlign (needs a plugin). YOLO ships a TensorRT-friendly export. For torchvision, use ONNX Runtime (CUDA).
+- **QAT is not supported for detection** (either family) — FX graph-mode can't trace the dynamic control flow; use post-training INT8 (the detection head is auto-excluded, or it collapses) or TensorRT-INT8.
+- **OpenVINO is an Intel target** (CPU / iGPU / NPU) — it cannot use an NVIDIA GPU.
 
 ### Basic Usage
 
