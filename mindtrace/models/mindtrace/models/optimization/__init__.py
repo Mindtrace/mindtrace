@@ -59,6 +59,17 @@ from mindtrace.models.optimization.runner import (
     OptimizationResult,
     OptimizationRunner,
 )
+from mindtrace.models.optimization.support import (
+    CAPABILITIES,
+    Capability,
+    OptimizationLane,
+    SupportLevel,
+    UnsupportedOptimizationError,
+    assert_tensorrt_compilable,
+    render_markdown_table,
+    supported_techniques,
+    validate_optimization,
+)
 from mindtrace.models.optimization.targets import TargetSpec, get_target, list_targets, register_target
 
 __all__ = [
@@ -73,6 +84,16 @@ __all__ = [
     "TorchvisionDetectionAdapter",
     "TorchModuleAdapter",
     "detection_head_nodes",
+    # Capability matrix + clear validation exceptions
+    "SupportLevel",
+    "OptimizationLane",
+    "Capability",
+    "CAPABILITIES",
+    "UnsupportedOptimizationError",
+    "validate_optimization",
+    "assert_tensorrt_compilable",
+    "supported_techniques",
+    "render_markdown_table",
     # Recipes and runner
     "OptimizationRecipe",
     "Prune",

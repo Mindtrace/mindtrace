@@ -71,6 +71,13 @@ def compile_tensorrt(onnx_path: Path, target: TargetSpec, output_dir: Path, **op
         RuntimeError: If TensorRT is not installed, or if parsing / engine
             building fails.
     """
+    # Fail fast with an actionable message if the graph has ops TensorRT cannot
+    # build (RoiAlign / NMS / NonZero) — typical of detection models with baked-in
+    # postprocessing — instead of a cryptic failure deep in the parser/builder.
+    from mindtrace.models.optimization.support import assert_tensorrt_compilable
+
+    assert_tensorrt_compilable(str(onnx_path))
+
     trt = _load_tensorrt()
 
     logger = trt.Logger(trt.Logger.WARNING)

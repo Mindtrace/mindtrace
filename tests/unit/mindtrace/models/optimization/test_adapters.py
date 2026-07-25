@@ -21,9 +21,13 @@ from mindtrace.models.optimization import (
 
 
 class _FakeAdapter:
-    """Minimal OptimizableModel: torch baseline + one buildable + one unsupported."""
+    """Minimal OptimizableModel: torch baseline + one buildable + one unsupported.
 
-    provider = "fake"
+    Uses the ultralytics lane (where TensorRT is allowed by the matrix) so the
+    unsupported path here is the build-level self-skip, not a matrix veto.
+    """
+
+    provider = "ultralytics"
     task = "detection"
     num_classes = 1
     input_size = 8
