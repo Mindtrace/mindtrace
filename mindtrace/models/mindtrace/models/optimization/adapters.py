@@ -334,9 +334,12 @@ class TorchModuleAdapter(Mindtrace):
             from mindtrace.models.optimization.quantize import StaticQuantizer  # noqa: F401
             from mindtrace.models.optimization.targets import TargetSpec
 
+            # Export traces on CPU; a prior torch latency Benchmark may have moved the
+            # model to CUDA, so pin it back before tracing.
+            self._model.to("cpu").eval()
             onnx_fp32 = export_onnx(
                 self._model, work_dir / "model.onnx",
-                static_shape=(1, 3, self.input_size, self.input_size), opset=17, check=False,
+                static_shape=(1, 3, self.input_size, self.input_size), dynamic_batch=True, opset=17, check=False,
             )
             if spec.runtime == "onnxruntime" and spec.precision == "fp32":
                 return Variant(name, "onnxruntime", "fp32", str(onnx_fp32), _mb(onnx_fp32))
@@ -360,7 +363,37 @@ class TorchModuleAdapter(Mindtrace):
 
         model_like = self._model if variant.runtime == "torch" else OnnxModelAdapter(variant.artifact)
         results = EvaluationRunner(model=model_like, task=self.task, num_classes=self.num_classes, device="cpu").run(data)
-        return {PRIMARY_METRIC[self.task]: round(float(results[PRIMARY_METRIC[self.task]]), 4), "latency_ms": 0.0}
+        return {
+            PRIMARY_METRIC[self.task]: round(float(results[PRIMARY_METRIC[self.task]]), 4),
+            "latency_ms": self._latency(variant),
+        }
+
+    def _latency(self, variant: Variant) -> float:
+        """Measure p50 inference latency via the Benchmark harness for the variant's runtime.
+
+        Note: Benchmark covers torch / onnxruntime / openvino. TensorRT engines
+        compile but have no in-process runtime here — deploy the engine (or use the
+        Ultralytics path for YOLO) to time them.
+        """
+        from mindtrace.models.optimization import Benchmark
+
+        shape = (1, 3, self.input_size, self.input_size)
+        try:
+            if variant.runtime == "torch":
+                report = Benchmark(runtime="torch", artifact=self._model, input_shape=shape, device="cuda").run()
+            elif variant.runtime == "onnxruntime":
+                report = Benchmark(
+                    runtime="onnxruntime", artifact=variant.artifact, input_shape=shape,
+                    providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+                ).run()
+            elif variant.runtime == "openvino":
+                report = Benchmark(runtime="openvino", artifact=variant.artifact, input_shape=shape).run()
+            else:
+                return 0.0  # e.g. tensorrt — no in-process runtime to time
+            return round(float(report.p50_ms), 3)
+        except Exception as exc:  # noqa: BLE001 — a latency-measurement hiccup must not fail evaluation
+            self.logger.warning("latency measurement failed for %s: %s", variant.name, exc)
+            return 0.0
 
 
 # ---------------------------------------------------------------------------

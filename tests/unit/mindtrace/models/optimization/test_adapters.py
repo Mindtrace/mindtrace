@@ -69,3 +69,22 @@ def test_load_model_routes_plain_module_to_torch_adapter():
     adapter = load_model(nn.Linear(4, 4), task="classification", num_classes=4)
     assert isinstance(adapter, TorchModuleAdapter)
     assert adapter.provider == "torch" and adapter.task == "classification"
+
+
+def test_torch_module_adapter_classification_end_to_end(tmp_path):
+    """A tiny classifier optimizes + profiles through the unified adapter (ONNX path)."""
+    import torch
+    from torch.utils.data import DataLoader, TensorDataset
+
+    from mindtrace.models.optimization import load_model, profile
+
+    model = torch.nn.Sequential(
+        nn.Conv2d(3, 4, 3, padding=1), nn.AdaptiveAvgPool2d(1), nn.Flatten(), nn.Linear(4, 3)
+    )
+    loader = DataLoader(TensorDataset(torch.rand(8, 3, 16, 16), torch.randint(0, 3, (8,))), batch_size=4)
+    adapter = load_model(model, task="classification", num_classes=3, input_size=16)
+
+    rows = profile(adapter, [VariantSpec("onnxruntime", "fp32")], data=loader, work_dir=tmp_path)
+    assert rows[0]["variant"] == "torch-fp32" and rows[0]["status"] == "baseline"
+    onnx = next(r for r in rows if r["runtime"] == "onnxruntime")
+    assert onnx["status"] == "ok" and "accuracy" in onnx  # exported, evaluated, uniform schema
