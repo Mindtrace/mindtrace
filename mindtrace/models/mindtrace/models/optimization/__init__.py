@@ -66,11 +66,14 @@ from mindtrace.models.optimization.runner import (
 )
 from mindtrace.models.optimization.support import (
     CAPABILITIES,
+    ArchFamily,
     Capability,
     OptimizationLane,
+    Recommendation,
     SupportLevel,
     UnsupportedOptimizationError,
     assert_tensorrt_compilable,
+    recommend,
     render_markdown_table,
     supported_techniques,
     validate_optimization,
@@ -92,8 +95,11 @@ __all__ = [
     # Capability matrix + clear validation exceptions
     "SupportLevel",
     "OptimizationLane",
+    "ArchFamily",
     "Capability",
     "CAPABILITIES",
+    "Recommendation",
+    "recommend",
     "UnsupportedOptimizationError",
     "validate_optimization",
     "assert_tensorrt_compilable",
