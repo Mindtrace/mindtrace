@@ -11,6 +11,8 @@ Tests cover:
 
 from __future__ import annotations
 
+import functools
+import inspect
 from pathlib import Path
 
 import onnx
@@ -24,6 +26,23 @@ from mindtrace.models.optimization.export import onnx_export as onnx_export_modu
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _spy_export_dynamo_flags(monkeypatch) -> list[bool]:
+    """Wrap ``torch.onnx.export`` to record the ``dynamo`` flag of each call.
+
+    Returns a list that the test can assert against; the real exporter still runs.
+    """
+    calls: list[bool] = []
+    real_export = onnx_export_module.torch.onnx.export
+
+    @functools.wraps(real_export)  # preserve the real signature so 'dynamo' stays detectable
+    def spy(*args, **kwargs):
+        calls.append(bool(kwargs.get("dynamo", False)))
+        return real_export(*args, **kwargs)
+
+    monkeypatch.setattr(onnx_export_module.torch.onnx, "export", spy)
+    return calls
 
 
 class TinyCNN(nn.Module):
@@ -131,8 +150,44 @@ class TestExportOnnx:
             raise AssertionError("should not reach torch.onnx.export")
 
         monkeypatch.setattr(onnx_export_module.torch.onnx, "export", _legacy_export)
-        with pytest.raises(ValueError, match="dynamo=True requires"):
+        with pytest.raises(ValueError, match="dynamo requires"):
             export_onnx(model, tmp_path / "tiny.onnx", static_shape=(1, 3, 16, 16), dynamo=True)
+
+    def test_invalid_exporter_raises(self, model: TinyCNN, tmp_path: Path):
+        with pytest.raises(ValueError, match="exporter must be one of"):
+            export_onnx(model, tmp_path / "tiny.onnx", static_shape=(1, 3, 16, 16), exporter="turbo")
+
+    def test_exporter_auto_passes_through_when_legacy_is_faithful(self, model: TinyCNN, tmp_path: Path, monkeypatch):
+        """On a well-behaved model, auto keeps the legacy export and does not fall back."""
+        pytest.importorskip("onnxruntime")
+        calls = _spy_export_dynamo_flags(monkeypatch)
+        out = export_onnx(model, tmp_path / "auto.onnx", static_shape=(1, 3, 16, 16), exporter="auto")
+        onnx.checker.check_model(onnx.load(str(out)))
+        assert calls == [False]  # exported once, legacy only — no dynamo fallback
+
+    def test_exporter_auto_falls_back_to_dynamo_on_parity_failure(self, model: TinyCNN, tmp_path: Path, monkeypatch):
+        """When the legacy graph fails parity, auto re-exports with dynamo and re-verifies."""
+        pytest.importorskip("onnxruntime")
+        pytest.importorskip("onnxscript")
+        if "dynamo" not in inspect.signature(torch.onnx.export).parameters:
+            pytest.skip("torch build has no dynamo ONNX exporter")
+
+        # Fail the parity check exactly once (the legacy attempt), pass afterwards.
+        state = {"n": 0}
+        real_parity = onnx_export_module._check_parity
+
+        def flaky_parity(*args, **kwargs):
+            state["n"] += 1
+            if state["n"] == 1:
+                raise ValueError("max abs diff 9.9 exceeds atol")
+            return real_parity(*args, **kwargs)
+
+        monkeypatch.setattr(onnx_export_module, "_check_parity", flaky_parity)
+        calls = _spy_export_dynamo_flags(monkeypatch)
+        out = export_onnx(model, tmp_path / "auto_fb.onnx", static_shape=(1, 3, 16, 16), exporter="auto")
+        onnx.checker.check_model(onnx.load(str(out)))
+        assert calls == [False, True]  # legacy first, then dynamo fallback
+        assert state["n"] == 2  # verified twice (legacy failed, dynamo passed)
 
 
 # ---------------------------------------------------------------------------

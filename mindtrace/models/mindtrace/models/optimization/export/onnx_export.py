@@ -65,6 +65,7 @@ def export_onnx(
     input_names: Sequence[str] = ("input",),
     output_names: Sequence[str] = ("output",),
     dynamic_batch: bool = False,
+    exporter: str = "legacy",
     dynamo: bool = False,
     simplify: bool = True,
     check: bool = True,
@@ -93,12 +94,24 @@ def export_onnx(
         dynamic_batch: When ``True``, axis 0 of every input and output is
             marked dynamic (named ``"batch"``); otherwise all shapes are fully
             static with the batch size pinned to the example input's.
-        dynamo: Use the ``torch.export``-based (dynamo) ONNX exporter instead of
-            the legacy TorchScript tracer.  Required for architectures whose ops
-            the legacy tracer silently mis-exports — notably rotary position
-            embeddings (e.g. DINOv3), where the traced graph produces wrong
-            outputs.  Needs the ``onnxscript`` package.  The dynamo exporter
-            optimizes the graph itself, so ``simplify`` is skipped in this mode.
+        exporter: Which ONNX exporter to use:
+
+            * ``"legacy"`` (default) — the TorchScript tracer.  Stable for
+              static shapes, but silently mis-exports a few op families
+              (notably rotary position embeddings), producing a graph that
+              runs but computes the wrong function.
+            * ``"dynamo"`` — the ``torch.export``-based exporter.  Faithful for
+              those modern ops; needs the ``onnxscript`` package.  It optimizes
+              the graph itself, so ``simplify`` is skipped in this mode.
+            * ``"auto"`` — export with the legacy tracer, verify numerical
+              parity, and transparently re-export with dynamo if the legacy
+              graph fails parity.  This makes a silently-wrong export
+              impossible whenever the parity check can run (``onnxruntime``
+              available); if it cannot, ``auto`` stays on the legacy tracer and
+              logs that fidelity could not be verified.  Recommended for
+              unknown/modern architectures.
+        dynamo: Deprecated alias for ``exporter="dynamo"``.  ``dynamo=True`` is
+            honored when ``exporter`` is left at its ``"legacy"`` default.
         simplify: Run ``onnxsim.simplify`` on the exported graph when the
             package is available.
         check: Run the exported model with ONNX Runtime and require the
@@ -116,6 +129,13 @@ def export_onnx(
     """
     if not _ONNX_AVAILABLE:
         raise ImportError(_ONNX_INSTALL_MSG)
+
+    if exporter not in ("legacy", "dynamo", "auto"):
+        raise ValueError(f"exporter must be one of 'legacy', 'dynamo', 'auto', got '{exporter}'")
+    # dynamo=True is the historical spelling of exporter="dynamo"; honor it only
+    # when the caller hasn't set the newer, more expressive `exporter` argument.
+    if dynamo and exporter == "legacy":
+        exporter = "dynamo"
 
     if example_input is None:
         if static_shape is None:
@@ -135,31 +155,51 @@ def export_onnx(
     if dynamic_batch:
         dynamic_axes = {name: {0: "batch"} for name in (*input_names, *output_names)}
 
-    export_kwargs: dict[str, Any] = {
-        "input_names": list(input_names),
-        "output_names": list(output_names),
-        "opset_version": opset,
-        "dynamic_axes": dynamic_axes,
-    }
-    # Newer torch versions default to the dynamo-based exporter; the legacy
-    # TorchScript tracer is stable for static shapes but silently mis-exports a
-    # few op families (e.g. rotary embeddings), so let the caller opt into dynamo.
-    if "dynamo" not in inspect.signature(torch.onnx.export).parameters:
-        if dynamo:
-            raise ValueError("dynamo=True requires a torch build whose torch.onnx.export supports the 'dynamo' argument.")
+    supports_dynamo = "dynamo" in inspect.signature(torch.onnx.export).parameters
+
+    def _export_with(use_dynamo: bool) -> None:
+        export_kwargs: dict[str, Any] = {
+            "input_names": list(input_names),
+            "output_names": list(output_names),
+            "opset_version": opset,
+            "dynamic_axes": dynamic_axes,
+        }
+        if supports_dynamo:
+            export_kwargs["dynamo"] = use_dynamo
+        elif use_dynamo:
+            raise ValueError("dynamo requires a torch build whose torch.onnx.export supports the 'dynamo' argument.")
+        logger.debug("Exporting to ONNX at %s (opset=%d, dynamic_batch=%s, dynamo=%s)", path, opset, dynamic_batch, use_dynamo)
+        torch.onnx.export(model, (example_input,), str(path), **export_kwargs)
+        # The dynamo exporter optimizes the graph itself; onnxsim on its output is
+        # redundant and occasionally regresses it, so only simplify the legacy path.
+        if simplify and not use_dynamo:
+            _simplify_graph(path)
+
+    if exporter == "auto":
+        # Export with the legacy tracer and verify it; on a parity failure, fall
+        # back to dynamo so a silently-wrong graph can never be returned. If parity
+        # cannot be verified (no onnxruntime), stay on legacy but say so.
+        _export_with(use_dynamo=False)
+        if not _ORT_AVAILABLE:
+            logger.warning(
+                "exporter='auto' could not verify export fidelity (onnxruntime not installed); "
+                "returning the legacy export unverified. Install onnxruntime, or pass exporter='dynamo' "
+                "for architectures with ops the legacy tracer mis-exports (e.g. rotary embeddings)."
+            )
+        else:
+            try:
+                _check_parity(path, example_input, torch_output, atol=atol)
+            except ValueError as legacy_error:
+                logger.warning(
+                    "Legacy ONNX export failed the parity check (%s); re-exporting with the dynamo exporter.",
+                    legacy_error,
+                )
+                _export_with(use_dynamo=True)
+                _check_parity(path, example_input, torch_output, atol=atol)
     else:
-        export_kwargs["dynamo"] = dynamo
-
-    logger.debug("Exporting model to ONNX at %s (opset=%d, dynamic_batch=%s, dynamo=%s)", path, opset, dynamic_batch, dynamo)
-    torch.onnx.export(model, (example_input,), str(path), **export_kwargs)
-
-    # The dynamo exporter already optimizes the graph; onnxsim on its output is
-    # redundant and occasionally regresses it, so only simplify the legacy path.
-    if simplify and not dynamo:
-        _simplify_graph(path)
-
-    if check:
-        _check_parity(path, example_input, torch_output, atol=atol)
+        _export_with(use_dynamo=(exporter == "dynamo"))
+        if check:
+            _check_parity(path, example_input, torch_output, atol=atol)
 
     logger.info("ONNX export complete: %s (%.2f MB)", path, model_size_mb(path))
     return path
