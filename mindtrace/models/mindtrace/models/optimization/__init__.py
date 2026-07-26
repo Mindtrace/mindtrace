@@ -30,7 +30,12 @@ from mindtrace.models.optimization.adapters import (
 )
 from mindtrace.models.optimization.bench import Benchmark, BenchmarkReport
 from mindtrace.models.optimization.compile import CompiledArtifact, compile_model, register_compiler
-from mindtrace.models.optimization.export import export_onnx, model_size_mb
+from mindtrace.models.optimization.export import (
+    NumericalInstabilityError,
+    assert_finite,
+    export_onnx,
+    model_size_mb,
+)
 from mindtrace.models.optimization.prune import (
     ChannelPruner,
     PruningSchedule,
@@ -108,6 +113,8 @@ __all__ = [
     # Export
     "export_onnx",
     "model_size_mb",
+    "NumericalInstabilityError",
+    "assert_finite",
     # Quantization
     "quantize_dynamic",
     "StaticQuantizer",
