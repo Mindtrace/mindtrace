@@ -45,6 +45,20 @@ class OptimizationLane(str, Enum):
     DETECTION_TORCHVISION = "detection (torchvision)"
 
 
+class ArchFamily(str, Enum):
+    """Architecture family — the axis that governs quantization behaviour.
+
+    The support matrix is indexed by task/provider, but whether INT8 survives is
+    really a property of the architecture: convolutional nets quantize cleanly
+    with post-training quantization, whereas attention-based (transformer) models
+    have activation outliers and softmax amplification that make static PTQ
+    collapse — they need quantization-aware training instead.
+    """
+
+    CNN = "cnn"
+    TRANSFORMER = "transformer"
+
+
 #: ONNX op types TensorRT cannot build in a plain ONNX->engine flow: RoiAlign
 #: needs a plugin; NonMaxSuppression / NonZero produce data-dependent output shapes.
 _TRT_HOSTILE_OPS: tuple[str, ...] = ("RoiAlign", "NonMaxSuppression", "NonZero")
@@ -183,6 +197,91 @@ def supported_techniques(task: str, provider: str) -> Iterator[str]:
     return (c.technique for c in CAPABILITIES if c.level(lane) is not SupportLevel.UNSUPPORTED)
 
 
+@dataclass(frozen=True)
+class Recommendation:
+    """A precision/technique recommendation for a model on a target.
+
+    Attributes:
+        precision: The precision to deploy in — ``"fp32"`` / ``"fp16"`` / ``"int8"``.
+        technique: The concrete path to get there (e.g. ``"TensorRT engine (fp16)"``,
+            ``"QAT"``, ``"Static PTQ (INT8)"``).
+        rationale: One line on why this is the recommendation.
+        caveats: Pitfalls to avoid on this path — the hard-won ones.
+    """
+
+    precision: str
+    technique: str
+    rationale: str
+    caveats: tuple[str, ...] = ()
+
+
+#: Reusable caveats, kept abstract (architecture-level, not model-specific).
+_FP16_OVERFLOW_CAVEAT = (
+    "Naive ONNX fp16 conversion can overflow attention activations (fp16 tops out at 65504) "
+    "and yield NaNs. Prefer bf16 (fp32 range) or fp16 autocast, which keep norms/softmax in fp32."
+)
+_INT8_GPU_CAVEAT = (
+    "On a compute-saturated GPU, INT8 can be slower than fp32 — the fp32 tensor cores already "
+    "dominate and QDQ overhead is pure cost. INT8 pays off on memory- or compute-bound edge targets."
+)
+_TRANSFORMER_PTQ_CAVEAT = (
+    "Static/dynamic PTQ typically collapses attention-based models (the sensitivity is in the "
+    "attention, not the task head, so excluding the head does not help). Quantization-aware "
+    "training recovers accuracy; plain PTQ does not."
+)
+
+
+def recommend(*, task: str, provider: str = "torch", arch: str = "cnn", target_device: str = "gpu") -> Recommendation:
+    """Recommend a precision and path for a model, given its architecture and target.
+
+    Encodes the axes the plain support matrix cannot: architecture family (CNN vs
+    transformer) governs whether INT8 survives PTQ, and the target device governs
+    whether INT8 is even worth it. Recommendations are deliberately architecture-level
+    and carry the pitfalls that most often waste a day.
+
+    Args:
+        task: ``"classification"`` / ``"segmentation"`` / ``"detection"``.
+        provider: ``"torch"`` / ``"ultralytics"`` / ``"torchvision"``.
+        arch: An :class:`ArchFamily` value (``"cnn"`` or ``"transformer"``).
+        target_device: ``"gpu"`` (compute-rich) or ``"cpu"`` / ``"edge"`` (memory/compute-bound).
+
+    Returns:
+        A :class:`Recommendation` with precision, technique, rationale and caveats.
+    """
+    family = ArchFamily(arch)
+    edge = target_device.lower() in ("cpu", "edge", "npu", "jetson", "mobile")
+
+    if not edge:
+        # GPU: latency comes from an engine at fp16; INT8 is usually not worth it.
+        caveats = [_INT8_GPU_CAVEAT]
+        if family is ArchFamily.TRANSFORMER:
+            caveats.insert(0, _FP16_OVERFLOW_CAVEAT)
+        return Recommendation(
+            precision="fp16",
+            technique="TensorRT engine (fp16), or ONNX Runtime CUDA",
+            rationale="On GPU, an fp16 engine gives the best latency at full accuracy; INT8 rarely beats it here.",
+            caveats=tuple(caveats),
+        )
+
+    # Edge / CPU: INT8 is the prize (4x smaller, faster on int8 kernels) — but the path
+    # depends on the architecture.
+    if family is ArchFamily.TRANSFORMER:
+        return Recommendation(
+            precision="int8",
+            technique="QAT (quantization-aware training)",
+            rationale="INT8 is worth it on edge, but attention models need QAT — PTQ collapses them.",
+            caveats=(_TRANSFORMER_PTQ_CAVEAT,),
+        )
+    return Recommendation(
+        precision="int8",
+        technique="Static PTQ (INT8) with calibration",
+        rationale="Convolutional nets quantize cleanly with post-training INT8; no retraining needed.",
+        caveats=("For detection, exclude the head from quantization or it collapses to zero mAP.",)
+        if task == "detection"
+        else (),
+    )
+
+
 def render_markdown_table() -> str:
     """Render the capability matrix as a GitHub-flavoured Markdown table (no icons)."""
     header = "| Technique | Classification / Segmentation | Detection (YOLO) | Detection (torchvision) | Notes |\n"
@@ -198,8 +297,11 @@ def render_markdown_table() -> str:
 __all__ = [
     "SupportLevel",
     "OptimizationLane",
+    "ArchFamily",
     "Capability",
     "CAPABILITIES",
+    "Recommendation",
+    "recommend",
     "UnsupportedOptimizationError",
     "validate_optimization",
     "trt_incompatible_ops",

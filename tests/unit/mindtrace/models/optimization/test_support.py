@@ -8,8 +8,10 @@ from onnx import TensorProto, helper
 
 from mindtrace.models.optimization import (
     CAPABILITIES,
+    Recommendation,
     UnsupportedOptimizationError,
     assert_tensorrt_compilable,
+    recommend,
     render_markdown_table,
     supported_techniques,
     validate_optimization,
@@ -53,6 +55,38 @@ def test_rendered_table_uses_words_not_icons():
     table = render_markdown_table()
     assert not any(icon in table for icon in "✅⚠️❌✓✗")
     assert "Technique" in table and len(CAPABILITIES) > 5
+
+
+class TestRecommend:
+    def test_gpu_prefers_fp16_engine(self):
+        rec = recommend(task="classification", arch="cnn", target_device="gpu")
+        assert isinstance(rec, Recommendation)
+        assert rec.precision == "fp16"
+        assert "int8" in " ".join(rec.caveats).lower()  # warns INT8 rarely beats fp32 on GPU
+
+    def test_gpu_transformer_warns_about_fp16_overflow(self):
+        rec = recommend(task="classification", arch="transformer", target_device="gpu")
+        assert rec.precision == "fp16"
+        assert any("overflow" in c.lower() or "65504" in c for c in rec.caveats)
+
+    def test_edge_transformer_recommends_qat(self):
+        rec = recommend(task="classification", arch="transformer", target_device="edge")
+        assert rec.precision == "int8"
+        assert "qat" in rec.technique.lower()
+        assert any("ptq" in c.lower() and "collapse" in c.lower() for c in rec.caveats)
+
+    def test_edge_cnn_recommends_static_ptq(self):
+        rec = recommend(task="classification", arch="cnn", target_device="cpu")
+        assert rec.precision == "int8"
+        assert "ptq" in rec.technique.lower()
+
+    def test_edge_cnn_detection_warns_about_head(self):
+        rec = recommend(task="detection", provider="ultralytics", arch="cnn", target_device="edge")
+        assert any("head" in c.lower() for c in rec.caveats)
+
+    def test_invalid_arch_raises(self):
+        with pytest.raises(ValueError):
+            recommend(task="classification", arch="quantum", target_device="gpu")
 
 
 def test_assert_tensorrt_compilable_flags_hostile_ops(tmp_path):
