@@ -119,6 +119,44 @@ class TestOnnxRuntime:
         assert report.size_mb is not None and report.size_mb > 0
 
 
+class TestProviderFidelity:
+    """A silently dropped execution provider must never be reported as if it ran."""
+
+    def _bench(self) -> Benchmark:
+        return Benchmark(runtime="callable", artifact=lambda x: x, input_shape=(1, 1, 8, 8))
+
+    def test_match_records_no_fallback(self) -> None:
+        b = self._bench()
+        b._record_provider_fidelity(["CPUExecutionProvider"], ["CPUExecutionProvider"])
+        f = b._provider_fidelity
+        assert f["provider_fell_back"] is False
+        assert f["effective_provider"] == "CPUExecutionProvider"
+        assert f["requested_providers"] == ["CPUExecutionProvider"]
+
+    def test_dropped_primary_provider_is_flagged(self) -> None:
+        b = self._bench()
+        # Requested TensorRT (with options tuple) but only CPU registered — a fallback.
+        b._record_provider_fidelity(
+            [("TensorrtExecutionProvider", {"trt_fp16_enable": True}), "CUDAExecutionProvider", "CPUExecutionProvider"],
+            ["CPUExecutionProvider"],
+        )
+        f = b._provider_fidelity
+        assert f["provider_fell_back"] is True
+        assert f["effective_provider"] == "CPUExecutionProvider"
+        assert f["requested_providers"][0] == "TensorrtExecutionProvider"  # tuple unwrapped to its name
+
+    def test_onnxruntime_report_carries_fidelity_meta(self, tmp_path: Path) -> None:
+        pytest.importorskip("onnxruntime")
+        onnx_path = tmp_path / "tiny.onnx"
+        torch.onnx.export(TinyCNN().eval(), (torch.rand(1, 1, 8, 8),), str(onnx_path),
+                          input_names=["input"], output_names=["output"], dynamo=False)
+        report = Benchmark(runtime="onnxruntime", artifact=str(onnx_path),
+                           input_shape=(1, 1, 8, 8), warmup=1, iterations=3).run()
+        assert "provider_fell_back" in report.meta
+        assert "CPUExecutionProvider" in report.meta["active_providers"]
+        assert report.meta["provider_fell_back"] is False  # CPU was requested and registered
+
+
 class TestCallableRuntime:
     def test_callable_runtime(self) -> None:
         def double(x: np.ndarray) -> np.ndarray:

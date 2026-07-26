@@ -337,6 +337,7 @@ class Benchmark(Mindtrace):
                 "requested_iterations": self.iterations,
                 "sustained_seconds": self.sustained_seconds,
                 "rss_method": rss_sampler.method,
+                **getattr(self, "_provider_fidelity", {}),
             },
         )
         self.logger.info(
@@ -410,6 +411,7 @@ class Benchmark(Mindtrace):
 
         providers = self.providers or ["CPUExecutionProvider"]
         session = ort.InferenceSession(str(self.artifact), providers=providers)
+        self._record_provider_fidelity(providers, session.get_providers())
         input_name = session.get_inputs()[0].name
         x = self._numpy_input()
 
@@ -417,6 +419,34 @@ class Benchmark(Mindtrace):
             return session.run(None, {input_name: x})
 
         return run_once
+
+    def _record_provider_fidelity(self, requested: list, active: list[str]) -> None:
+        """Compare requested vs actually-registered execution providers.
+
+        ONNX Runtime silently drops a provider that fails to initialize (e.g. a
+        TensorRT EP whose libraries don't match the installed CUDA/TRT), leaving
+        the session on a lower-priority provider. Reporting the requested provider
+        as if it ran would mislabel the result — a CUDA number stamped
+        "TensorRT". We record what actually registered and warn loudly on a
+        fallback so the benchmark row is never mislabeled.
+        """
+        requested_names = [p[0] if isinstance(p, (tuple, list)) else p for p in requested]
+        primary = requested_names[0] if requested_names else None
+        fell_back = primary is not None and primary not in active
+        effective = active[0] if active else None
+        if fell_back:
+            self.logger.warning(
+                "Requested execution provider '%s' did not activate (registered: %s). "
+                "Latency reflects the fallback provider '%s', NOT '%s' — check the runtime's "
+                "library/version match (e.g. TensorRT ABI vs installed CUDA).",
+                primary, active, effective, primary,
+            )
+        self._provider_fidelity = {
+            "requested_providers": requested_names,
+            "active_providers": list(active),
+            "effective_provider": effective,
+            "provider_fell_back": fell_back,
+        }
 
     def _build_openvino_runner(self) -> Callable[[], Any]:
         """Compile the model with OpenVINO and return its closure.
