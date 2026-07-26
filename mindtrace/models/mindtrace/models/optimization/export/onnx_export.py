@@ -65,6 +65,7 @@ def export_onnx(
     input_names: Sequence[str] = ("input",),
     output_names: Sequence[str] = ("output",),
     dynamic_batch: bool = False,
+    dynamo: bool = False,
     simplify: bool = True,
     check: bool = True,
     atol: float = 1e-4,
@@ -92,6 +93,12 @@ def export_onnx(
         dynamic_batch: When ``True``, axis 0 of every input and output is
             marked dynamic (named ``"batch"``); otherwise all shapes are fully
             static with the batch size pinned to the example input's.
+        dynamo: Use the ``torch.export``-based (dynamo) ONNX exporter instead of
+            the legacy TorchScript tracer.  Required for architectures whose ops
+            the legacy tracer silently mis-exports — notably rotary position
+            embeddings (e.g. DINOv3), where the traced graph produces wrong
+            outputs.  Needs the ``onnxscript`` package.  The dynamo exporter
+            optimizes the graph itself, so ``simplify`` is skipped in this mode.
         simplify: Run ``onnxsim.simplify`` on the exported graph when the
             package is available.
         check: Run the exported model with ONNX Runtime and require the
@@ -134,15 +141,21 @@ def export_onnx(
         "opset_version": opset,
         "dynamic_axes": dynamic_axes,
     }
-    # Newer torch versions default to the dynamo-based exporter; pin the
-    # legacy TorchScript exporter for stable static-shape behavior.
-    if "dynamo" in inspect.signature(torch.onnx.export).parameters:
-        export_kwargs["dynamo"] = False
+    # Newer torch versions default to the dynamo-based exporter; the legacy
+    # TorchScript tracer is stable for static shapes but silently mis-exports a
+    # few op families (e.g. rotary embeddings), so let the caller opt into dynamo.
+    if "dynamo" not in inspect.signature(torch.onnx.export).parameters:
+        if dynamo:
+            raise ValueError("dynamo=True requires a torch build whose torch.onnx.export supports the 'dynamo' argument.")
+    else:
+        export_kwargs["dynamo"] = dynamo
 
-    logger.debug("Exporting model to ONNX at %s (opset=%d, dynamic_batch=%s)", path, opset, dynamic_batch)
+    logger.debug("Exporting model to ONNX at %s (opset=%d, dynamic_batch=%s, dynamo=%s)", path, opset, dynamic_batch, dynamo)
     torch.onnx.export(model, (example_input,), str(path), **export_kwargs)
 
-    if simplify:
+    # The dynamo exporter already optimizes the graph; onnxsim on its output is
+    # redundant and occasionally regresses it, so only simplify the legacy path.
+    if simplify and not dynamo:
         _simplify_graph(path)
 
     if check:
