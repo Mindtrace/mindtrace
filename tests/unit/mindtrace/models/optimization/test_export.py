@@ -108,6 +108,32 @@ class TestExportOnnx:
         with pytest.raises(ValueError, match="example_input.*static_shape|static_shape.*example_input"):
             export_onnx(model, tmp_path / "tiny.onnx")
 
+    def test_dynamo_exporter_produces_valid_parity_checked_file(self, model: TinyCNN, tmp_path: Path):
+        """The dynamo (torch.export) path exports and passes the same parity gate.
+
+        Some architectures (e.g. rotary embeddings) are only faithfully exported
+        by the dynamo exporter; here we just assert the option is wired through
+        and yields a loadable, parity-checked graph on a well-behaved model.
+        """
+        pytest.importorskip("onnxscript")
+        import inspect
+
+        if "dynamo" not in inspect.signature(torch.onnx.export).parameters:
+            pytest.skip("torch build has no dynamo ONNX exporter")
+
+        out = export_onnx(model, tmp_path / "dyn.onnx", static_shape=(1, 3, 16, 16), dynamo=True, check=True)
+        onnx.checker.check_model(onnx.load(str(out)))
+
+    def test_dynamo_requested_but_unsupported_raises(self, model: TinyCNN, tmp_path: Path, monkeypatch):
+        """dynamo=True on a torch build without the argument fails loudly, not silently."""
+
+        def _legacy_export(*args, **kwargs):  # signature without a 'dynamo' parameter
+            raise AssertionError("should not reach torch.onnx.export")
+
+        monkeypatch.setattr(onnx_export_module.torch.onnx, "export", _legacy_export)
+        with pytest.raises(ValueError, match="dynamo=True requires"):
+            export_onnx(model, tmp_path / "tiny.onnx", static_shape=(1, 3, 16, 16), dynamo=True)
+
 
 # ---------------------------------------------------------------------------
 # model_size_mb
