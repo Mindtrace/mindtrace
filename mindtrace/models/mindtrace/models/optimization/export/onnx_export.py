@@ -52,7 +52,41 @@ _ONNX_INSTALL_MSG = "ONNX export requires the 'onnx' package. Install it with: p
 
 logger = get_logger(__name__)
 
-__all__ = ["export_onnx", "model_size_mb"]
+__all__ = ["export_onnx", "model_size_mb", "NumericalInstabilityError", "assert_finite"]
+
+
+class NumericalInstabilityError(ValueError):
+    """Raised when a model produces non-finite (NaN / Inf) outputs.
+
+    Subclasses :class:`ValueError` so callers already catching parity failures
+    (e.g. ``exporter="auto"``) still handle it, while callers that want to react
+    specifically — for instance by recommending bf16 over a naive fp16 cast —
+    can catch this type.
+    """
+
+
+def assert_finite(outputs: Any, *, context: str) -> None:
+    """Raise :class:`NumericalInstabilityError` if any output is NaN or Inf.
+
+    A silent NaN is one of the nastiest optimization failures: the model "runs",
+    but every downstream metric is meaningless (and ``nan > atol`` is ``False``,
+    so a naive tolerance check waves it through). This guard makes it loud.
+
+    Args:
+        outputs: A tensor / array, or a tuple/list of them.
+        context: Short description of where the outputs came from, for the message.
+    """
+    import numpy as np
+
+    items = outputs if isinstance(outputs, (tuple, list)) else [outputs]
+    for index, item in enumerate(items):
+        arr = item.detach().cpu().numpy() if hasattr(item, "detach") else np.asarray(item)
+        if not np.isfinite(np.asarray(arr, dtype=np.float64)).all():
+            raise NumericalInstabilityError(
+                f"{context} produced non-finite (NaN/Inf) values in output {index}. This usually means "
+                "numerical overflow — common when casting attention-heavy models to fp16, whose range "
+                "tops out at 65504. Prefer bf16 (same range as fp32) or fp16 autocast (keeps norms/softmax in fp32)."
+            )
 
 
 def export_onnx(
@@ -289,6 +323,11 @@ def _check_parity(
     session = onnxruntime.InferenceSession(str(path), providers=["CPUExecutionProvider"])
     feed = {session.get_inputs()[0].name: example_input.cpu().numpy()}
     ort_outputs = session.run(None, feed)
+
+    # Catch non-finite outputs before the tolerance comparison: max(|nan - x|) is
+    # nan, and `nan > atol` is False, so an overflowed export would slip through.
+    assert_finite(torch_outputs, context=f"PyTorch model (parity source for {path})")
+    assert_finite(ort_outputs, context=f"exported ONNX model {path}")
 
     if len(ort_outputs) != len(torch_outputs):
         raise ValueError(

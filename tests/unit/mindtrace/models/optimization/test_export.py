@@ -20,7 +20,12 @@ import pytest
 import torch
 from torch import nn
 
-from mindtrace.models.optimization.export import export_onnx, model_size_mb
+from mindtrace.models.optimization.export import (
+    NumericalInstabilityError,
+    assert_finite,
+    export_onnx,
+    model_size_mb,
+)
 from mindtrace.models.optimization.export import onnx_export as onnx_export_module
 
 # ---------------------------------------------------------------------------
@@ -188,6 +193,42 @@ class TestExportOnnx:
         onnx.checker.check_model(onnx.load(str(out)))
         assert calls == [False, True]  # legacy first, then dynamo fallback
         assert state["n"] == 2  # verified twice (legacy failed, dynamo passed)
+
+
+# ---------------------------------------------------------------------------
+# Numerical-validity guard
+# ---------------------------------------------------------------------------
+
+
+class NaNModel(nn.Module):
+    """Model whose output overflows to non-finite values (fp16-overflow analogue)."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * float("inf")
+
+
+class TestAssertFinite:
+    def test_passes_on_finite(self):
+        assert_finite(torch.zeros(3), context="unit")
+        assert_finite([torch.ones(2), torch.randn(4)], context="unit")
+
+    def test_raises_on_nan(self):
+        with pytest.raises(NumericalInstabilityError, match="non-finite"):
+            assert_finite(torch.tensor([float("nan"), 1.0]), context="unit")
+
+    def test_raises_on_inf_and_hints_bf16(self):
+        with pytest.raises(NumericalInstabilityError, match="bf16"):
+            assert_finite(torch.tensor([float("inf")]), context="unit")
+
+    def test_is_a_valueerror(self):
+        # exporter="auto" catches ValueError to fall back — the subtype must qualify.
+        assert issubclass(NumericalInstabilityError, ValueError)
+
+    def test_parity_check_flags_nonfinite_export(self, tmp_path: Path):
+        """A model that emits Inf must fail parity loudly, not slip past nan>atol."""
+        pytest.importorskip("onnxruntime")
+        with pytest.raises(NumericalInstabilityError):
+            export_onnx(NaNModel().eval(), tmp_path / "nan.onnx", static_shape=(1, 4), simplify=False, check=True)
 
 
 # ---------------------------------------------------------------------------
