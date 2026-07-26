@@ -216,6 +216,12 @@ class TestAssertFinite:
         with pytest.raises(NumericalInstabilityError, match="non-finite"):
             assert_finite(torch.tensor([float("nan"), 1.0]), context="unit")
 
+    def test_handles_dict_outputs(self):
+        # OpenVINO-style dict outputs must be checked by value, not skipped.
+        assert_finite({"logits": torch.zeros(2), "severity": torch.ones(1)}, context="unit")
+        with pytest.raises(NumericalInstabilityError):
+            assert_finite({"logits": torch.tensor([float("inf")])}, context="unit")
+
     def test_raises_on_inf_and_hints_bf16(self):
         with pytest.raises(NumericalInstabilityError, match="bf16"):
             assert_finite(torch.tensor([float("inf")]), context="unit")

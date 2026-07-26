@@ -119,6 +119,29 @@ class TestOnnxRuntime:
         assert report.size_mb is not None and report.size_mb > 0
 
 
+class TestFiniteGuard:
+    """Benchmarking a NaN/Inf model measures garbage — it must fail loudly."""
+
+    def test_nan_output_raises(self) -> None:
+        from mindtrace.models.optimization import NumericalInstabilityError
+
+        def nan_call(x: np.ndarray) -> np.ndarray:
+            return x * float("nan")
+
+        with pytest.raises(NumericalInstabilityError):
+            Benchmark(runtime="callable", artifact=nan_call, input_shape=(1, 4), warmup=0, iterations=2).run()
+
+    def test_finite_guard_can_be_disabled(self) -> None:
+        def nan_call(x: np.ndarray) -> np.ndarray:
+            return x * float("nan")
+
+        report = Benchmark(
+            runtime="callable", artifact=nan_call, input_shape=(1, 4),
+            warmup=0, iterations=2, validate_finite=False,
+        ).run()
+        assert report.iterations == 2  # completes without raising
+
+
 class TestProviderFidelity:
     """A silently dropped execution provider must never be reported as if it ran."""
 

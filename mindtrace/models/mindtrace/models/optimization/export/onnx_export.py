@@ -78,7 +78,12 @@ def assert_finite(outputs: Any, *, context: str) -> None:
     """
     import numpy as np
 
-    items = outputs if isinstance(outputs, (tuple, list)) else [outputs]
+    if isinstance(outputs, dict):
+        items: Any = list(outputs.values())
+    elif isinstance(outputs, (tuple, list)):
+        items = outputs
+    else:
+        items = [outputs]
     for index, item in enumerate(items):
         arr = item.detach().cpu().numpy() if hasattr(item, "detach") else np.asarray(item)
         if not np.isfinite(np.asarray(arr, dtype=np.float64)).all():

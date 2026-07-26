@@ -30,6 +30,7 @@ import torch.nn as nn
 
 from mindtrace.core import Mindtrace
 from mindtrace.models.optimization.bench.report import BenchmarkReport
+from mindtrace.models.optimization.export.onnx_export import assert_finite
 
 # ---------------------------------------------------------------------------
 # Optional runtime imports
@@ -238,6 +239,7 @@ class Benchmark(Mindtrace):
         sustained_seconds: float | None = None,
         device: str = "cpu",
         providers: list | None = None,
+        validate_finite: bool = True,
     ) -> None:
         """Initialise the benchmark configuration.
 
@@ -262,6 +264,7 @@ class Benchmark(Mindtrace):
         self.sustained_seconds = sustained_seconds
         self.device = device
         self.providers = providers
+        self.validate_finite = validate_finite
         self.logger.debug(
             "Benchmark configured: runtime=%s input_shape=%s dtype=%s warmup=%d iterations=%d",
             runtime,
@@ -289,8 +292,14 @@ class Benchmark(Mindtrace):
         with _RssSampler() as rss_sampler:
             cold_t0 = time.perf_counter()
             run_once = self._build_runner()
-            run_once()  # First inference completes the cold start.
+            cold_output = run_once()  # First inference completes the cold start.
             cold_start_ms = (time.perf_counter() - cold_t0) * 1000.0
+
+            # Benchmarking a model that emits NaN/Inf is measuring a broken model — a
+            # collapsed quantization or an overflowed fp16 cast. Catch it loudly (same
+            # guard the export parity check uses) instead of reporting a latency for garbage.
+            if self.validate_finite:
+                assert_finite(cold_output, context=f"{self.runtime} runtime output ({self._artifact_name()})")
 
             for _ in range(self.warmup):
                 run_once()
