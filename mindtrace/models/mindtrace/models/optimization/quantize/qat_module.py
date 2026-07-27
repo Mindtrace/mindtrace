@@ -29,7 +29,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-__all__ = ["QuantScheme", "FakeQuantLinear", "QuantizedLinear", "prepare_qat", "convert_qat"]
+__all__ = [
+    "QuantScheme",
+    "FakeQuantLinear",
+    "QuantizedLinear",
+    "prepare_qat",
+    "convert_qat",
+    "quantization_manifest",
+]
 
 
 @dataclass(frozen=True)
@@ -217,3 +224,39 @@ def convert_qat(model: nn.Module) -> nn.Module:
     model.eval()
     _map_modules(model, lambda m: isinstance(m, FakeQuantLinear), lambda m: QuantizedLinear(m))
     return model
+
+
+def quantization_manifest(model: nn.Module) -> dict:
+    """Describe how a model is quantized — the self-describing introspection record.
+
+    Because :class:`QuantizedLinear` carries its :class:`QuantScheme` and baked scales
+    as part of the module, a saved model is self-describing: ``torch.save`` round-trips
+    the scheme and scales with the weights, so nothing downstream can re-derive a
+    divergent recipe. This returns a JSON-able summary of every quantized layer — the
+    analogue of a "print quant summary" call, useful as a guardrail and a model-card entry.
+
+    Args:
+        model: A model that has been through :func:`prepare_qat` and/or :func:`convert_qat`.
+
+    Returns:
+        ``{"quantized_layers": [...], "count": int, "converted": bool}`` where each layer
+        records its path, kind, bit-widths, granularity, and weight shape.
+    """
+    layers = []
+    converted = False
+    for path, m in model.named_modules():
+        if isinstance(m, (FakeQuantLinear, QuantizedLinear)):
+            s = m.scheme
+            entry = {
+                "path": path,
+                "kind": type(m).__name__,
+                "weight_bits": s.weight_bits,
+                "weight_per_channel": s.weight_per_channel,
+                "activation_bits": s.activation_bits,
+            }
+            if isinstance(m, QuantizedLinear):
+                converted = True
+                entry["weight_shape"] = list(m.weight_int8.shape)
+                entry["weight_dtype"] = str(m.weight_int8.dtype)
+            layers.append(entry)
+    return {"quantized_layers": layers, "count": len(layers), "converted": converted}

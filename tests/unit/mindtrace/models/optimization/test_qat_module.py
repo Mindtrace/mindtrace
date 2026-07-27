@@ -11,7 +11,12 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mindtrace.models.optimization import QuantScheme, convert_qat, prepare_qat
+from mindtrace.models.optimization import (
+    QuantScheme,
+    convert_qat,
+    prepare_qat,
+    quantization_manifest,
+)
 from mindtrace.models.optimization.quantize.qat_module import FakeQuantLinear, QuantizedLinear
 
 
@@ -111,6 +116,39 @@ class TestDeployedForm:
         int8_bytes = qlin.weight_int8.numel() * qlin.weight_int8.element_size()
         fp32_bytes = qlin.weight_int8.numel() * 4
         assert int8_bytes == fp32_bytes // 4
+
+
+class TestSelfDescribing:
+    def test_manifest_describes_prepared_model(self):
+        model = prepare_qat(MLP(), QuantScheme(weight_bits=8, activation_bits=8))
+        man = quantization_manifest(model)
+        assert man["count"] == 2 and man["converted"] is False
+        assert all(layer["kind"] == "FakeQuantLinear" and layer["weight_bits"] == 8
+                   for layer in man["quantized_layers"])
+
+    def test_manifest_describes_converted_model(self):
+        model = convert_qat(prepare_qat(MLP(), QuantScheme.int4_weight_only()))
+        man = quantization_manifest(model)
+        assert man["converted"] is True
+        layer = man["quantized_layers"][0]
+        assert layer["kind"] == "QuantizedLinear" and layer["weight_bits"] == 4
+        assert layer["weight_dtype"] == "torch.int8" and layer["weight_shape"]
+
+    def test_saved_model_is_self_describing_and_round_trips(self, tmp_path):
+        # The scheme + baked scales travel with the weights: reload reproduces numerics
+        # AND the manifest, so nothing downstream can re-derive a divergent recipe.
+        torch.manual_seed(3)
+        model = convert_qat(prepare_qat(MLP(), QuantScheme.int8()))
+        x = torch.randn(8, 16)
+        before = model(x).detach()
+        manifest_before = quantization_manifest(model)
+
+        path = tmp_path / "quantized.pt"
+        torch.save(model, path)
+        reloaded = torch.load(path, weights_only=False)
+
+        assert torch.allclose(before, reloaded(x).detach(), atol=1e-6)
+        assert quantization_manifest(reloaded) == manifest_before
 
 
 class TestTransformerCapable:

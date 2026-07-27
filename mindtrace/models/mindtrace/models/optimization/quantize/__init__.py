@@ -14,6 +14,7 @@ from mindtrace.models.optimization.quantize.qat_module import (
     QuantizedLinear,
     QuantScheme,
     convert_qat,
+    quantization_manifest,
     prepare_qat,
 )
 from mindtrace.models.optimization.quantize.sensitivity import (
@@ -34,6 +35,7 @@ __all__ = [
     "StaticQuantizer",
     "convert_qat",
     "prepare_qat",
+    "quantization_manifest",
     "quantize_dynamic",
     "sensitivity_scan",
 ]
