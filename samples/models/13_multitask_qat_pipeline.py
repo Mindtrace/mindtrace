@@ -29,13 +29,13 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 # mindtrace is torch-NATIVE: it owns the ML *workflow* (train / optimize / export /
-# compile / benchmark), not the tensor primitives. So model definition (nn.Module),
-# tensors, losses (F.*), and data loading (DataLoader) stay pure torch by design — you
-# keep torch's full flexibility. Anything workflow-level goes through mindtrace, including
-# optimizer/scheduler construction via build_optimizer / build_scheduler.
+# compile / benchmark), not the tensor primitives. Model definition (nn.Module), tensors,
+# and data loading (DataLoader) stay pure torch by design — you keep torch's full
+# flexibility. Everything workflow-level goes through mindtrace: optimizers, schedulers,
+# and losses via build_optimizer / build_scheduler / build_loss (custom losses can still
+# be any callable you write in torch).
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
 # ── Optional dependency guard ──────────────────────────────────────────────
@@ -50,7 +50,7 @@ except ImportError:
     print("SKIPPING: onnx/onnxruntime not installed — pip install mindtrace-models[edge]")
     raise SystemExit(0)
 
-from mindtrace.models import Trainer, build_optimizer, build_scheduler
+from mindtrace.models import MultiTaskLoss, TaskSpec, Trainer, build_loss, build_optimizer, build_scheduler
 from mindtrace.models.optimization import (
     Benchmark,
     QuantScheme,
@@ -104,9 +104,11 @@ class TwoHead(nn.Module):
         return self.cls_head(h), self.reg_head(h).squeeze(-1)
 
 
-def multitask_loss(outputs, targets):
-    logits, reg = outputs
-    return F.cross_entropy(logits, targets["cls"]) + 0.5 * F.mse_loss(reg, targets["reg"])
+# The coupled loss composed from mindtrace: cross-entropy on head 0, MSE on head 1.
+multitask_loss = MultiTaskLoss({
+    "cls": TaskSpec(build_loss("cross_entropy"), output=0, target="cls"),
+    "reg": TaskSpec(build_loss("mse"), output=1, target="reg", weight=0.5),
+})
 
 
 def accuracy(outputs, targets):
