@@ -51,6 +51,7 @@ from mindtrace.models.optimization.quantize import (
     StaticQuantizer,
     convert_qat,
     prepare_qat,
+    quantization_manifest,
     quantize_dynamic,
     sensitivity_scan,
 )
@@ -133,6 +134,7 @@ __all__ = [
     "QuantScheme",
     "prepare_qat",
     "convert_qat",
+    "quantization_manifest",
     "sensitivity_scan",
     "MixedPrecisionSearch",
     # Pruning
