@@ -169,7 +169,8 @@ class QuantizedLinear(nn.Module):
         self.register_buffer("weight_int8", q)
         # Per-channel scale flattened to 1-D (axis 0) for torch.fake_quantize_per_channel_affine.
         self.register_buffer("weight_scale", w_scale.reshape(-1).clone())
-        self.register_buffer("weight_zp", torch.zeros(w_scale.numel(), dtype=torch.int32))
+        # zero_point must live on the same device as the weights (symmetric -> all zeros).
+        self.register_buffer("weight_zp", torch.zeros(w_scale.numel(), dtype=torch.int32, device=w.device))
         self.register_buffer("act_scale", fq.act_scale.detach().reshape(()).clone())
         self.bias = nn.Parameter(fq.lin.bias.detach().clone()) if fq.lin.bias is not None else None
 
