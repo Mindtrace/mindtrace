@@ -42,6 +42,36 @@ def _load_tensorrt() -> Any:
         raise RuntimeError(_TRT_MISSING_MSG) from None
 
 
+def _resolve_network_flags(trt: Any, target: TargetSpec, strongly_typed: bool) -> tuple[int, bool]:
+    """Decide the network-creation flags and whether to build a strongly-typed network.
+
+    TensorRT 10 and earlier select reduced precision with ``BuilderFlag.FP16``/``.INT8``
+    on a weakly-typed network (the builder auto-mixes precision). TensorRT 11+ (CUDA 13)
+    removed those flags: precision is dictated by the network's tensor types, which
+    requires a **strongly-typed** network built from a typed (fp16/bf16) ONNX. We build
+    strongly-typed when the caller asks for it, or when reduced precision is requested
+    but the builder-flags are gone — so half-precision engines actually get half-precision
+    kernels instead of silently falling back to fp32.
+
+    Args:
+        trt: The ``tensorrt`` module.
+        target: The deployment target (its ``precisions`` drive the decision).
+        strongly_typed: Explicit caller override.
+
+    Returns:
+        ``(network_flags, is_strongly_typed)``.
+    """
+    explicit_batch = getattr(trt.NetworkDefinitionCreationFlag, "EXPLICIT_BATCH", None)
+    flags = (1 << int(explicit_batch)) if explicit_batch is not None else 0
+    has_precision_flags = any(getattr(trt.BuilderFlag, f, None) is not None for f in ("FP16", "INT8"))
+    wants_reduced = any(p in target.precisions for p in ("fp16", "bf16", "int8"))
+    st_flag = getattr(trt.NetworkDefinitionCreationFlag, "STRONGLY_TYPED", None)
+    use_strong = (strongly_typed or (wants_reduced and not has_precision_flags)) and st_flag is not None
+    if use_strong:
+        flags |= 1 << int(st_flag)
+    return flags, use_strong
+
+
 @register_compiler("tensorrt")
 def compile_tensorrt(onnx_path: Path, target: TargetSpec, output_dir: Path, **opts: Any) -> CompiledArtifact:
     """Build a serialized TensorRT engine from an ONNX model.
@@ -89,11 +119,10 @@ def compile_tensorrt(onnx_path: Path, target: TargetSpec, output_dir: Path, **op
     except Exception as exc:  # noqa: BLE001 — older TRT builds may lack this symbol
         logger.log(trt.Logger.WARNING, f"init_libnvinfer_plugins unavailable: {exc}")
     builder = trt.Builder(logger)
-    # Explicit batch: mandatory (and the default) since TensorRT 10, where the
-    # EXPLICIT_BATCH flag was removed. On TensorRT < 10 the flag must still be set,
-    # so probe for it and fall back to 0 (explicit batch) on newer versions.
-    explicit_batch = getattr(trt.NetworkDefinitionCreationFlag, "EXPLICIT_BATCH", None)
-    network_flags = (1 << int(explicit_batch)) if explicit_batch is not None else 0
+    # Explicit batch is mandatory since TensorRT 10; a strongly-typed network is added
+    # when reduced precision is requested but the builder-flags are gone (TensorRT 11+),
+    # so half precision comes from the (typed) ONNX rather than silently reverting to fp32.
+    network_flags, is_strongly_typed = _resolve_network_flags(trt, target, bool(opts.get("strongly_typed", False)))
     network = builder.create_network(network_flags)
     parser = trt.OnnxParser(network, logger)
 
@@ -110,19 +139,26 @@ def compile_tensorrt(onnx_path: Path, target: TargetSpec, output_dir: Path, **op
     # CUDA-13 builds drop these in favour of strongly-typed networks, so guard each
     # flag with hasattr rather than crashing with AttributeError on those builds.
     enabled_flags: list[str] = []
-    for precision, flag_name in (("fp16", "FP16"), ("int8", "INT8")):
-        if precision not in target.precisions:
-            continue
-        flag = getattr(trt.BuilderFlag, flag_name, None)
-        if flag is not None:
-            config.set_flag(flag)
-            enabled_flags.append(precision)
-        else:
-            logger.log(
-                trt.Logger.WARNING,
-                f"BuilderFlag.{flag_name} not available in TensorRT {trt.__version__}; "
-                "precision is governed by the network's types (strongly-typed build).",
-            )
+    if is_strongly_typed:
+        # Strongly-typed: precision is fixed by the network's tensor types, and setting
+        # (or even having) the builder precision flags is disallowed. Record what the
+        # typed graph is expected to deliver.
+        enabled_flags = [p for p in ("fp16", "bf16", "int8") if p in target.precisions]
+        logger.log(trt.Logger.INFO, "Building a strongly-typed engine; precision comes from the ONNX tensor types.")
+    else:
+        for precision, flag_name in (("fp16", "FP16"), ("int8", "INT8")):
+            if precision not in target.precisions:
+                continue
+            flag = getattr(trt.BuilderFlag, flag_name, None)
+            if flag is not None:
+                config.set_flag(flag)
+                enabled_flags.append(precision)
+            else:
+                logger.log(
+                    trt.Logger.WARNING,
+                    f"BuilderFlag.{flag_name} not available in TensorRT {trt.__version__}; "
+                    "pass strongly_typed=True and a typed ONNX to build reduced precision.",
+                )
 
     # Dynamic input dims (e.g. a dynamic batch axis) require an optimization
     # profile or the build fails outright.  min pins every dynamic dim to 1,
@@ -162,6 +198,7 @@ def compile_tensorrt(onnx_path: Path, target: TargetSpec, output_dir: Path, **op
         meta={
             "device": target.device,
             "precision_flags": enabled_flags,
+            "strongly_typed": is_strongly_typed,
             "source": str(onnx_path),
         },
     )
