@@ -963,3 +963,89 @@ class TestFitIntegration:
             for v in values:
                 assert v > 0.0
                 assert v < float("inf")
+
+
+# ---------------------------------------------------------------------------
+# Metrics & multi-task training
+# ---------------------------------------------------------------------------
+
+
+class _TwoHead(nn.Module):
+    """Multi-task model: shared trunk, a classification head and a regression head."""
+
+    def __init__(self):
+        super().__init__()
+        self.trunk = nn.Linear(IN_FEATURES, 16)
+        self.cls = nn.Linear(16, OUT_FEATURES)
+        self.reg = nn.Linear(16, 1)
+
+    def forward(self, x):
+        h = torch.relu(self.trunk(x))
+        return self.cls(h), self.reg(h).squeeze(-1)
+
+
+def _mt_loss(outputs, targets):
+    logits, reg = outputs
+    return nn.functional.cross_entropy(logits, targets["cls"]) + nn.functional.mse_loss(reg, targets["reg"])
+
+
+def _mt_loader(n_batches: int = 3, batch_size: int = BATCH_SIZE):
+    batches = []
+    for _ in range(n_batches):
+        x = torch.randn(batch_size, IN_FEATURES)
+        batches.append((x, {"cls": torch.randint(0, OUT_FEATURES, (batch_size,)), "reg": torch.randn(batch_size)}))
+    return batches
+
+
+class TestMetrics:
+    def test_single_task_accuracy_metric_reported(self, simple_model, loss_fn, optimizer):
+        def accuracy(outputs, targets):
+            return (outputs.argmax(1) == targets).float().mean().item()
+
+        trainer = Trainer(simple_model, loss_fn, optimizer, metrics={"accuracy": accuracy})
+        history = trainer.fit(_make_loader(), _make_loader(), epochs=1)
+        assert "val/accuracy" in history
+        assert 0.0 <= history["val/accuracy"][-1] <= 1.0
+
+    def test_multi_task_reports_both_metrics(self):
+        model = _TwoHead()
+        optimizer = SGD(model.parameters(), lr=0.01)
+
+        def defect_acc(outputs, targets):
+            logits, _ = outputs
+            return (logits.argmax(1) == targets["cls"]).float().mean().item()
+
+        def mae(outputs, targets):
+            _, reg = outputs
+            return (reg - targets["reg"]).abs().mean().item()
+
+        trainer = Trainer(model, _mt_loss, optimizer, metrics={"defect_acc": defect_acc, "mae": mae})
+        history = trainer.fit(_mt_loader(), _mt_loader(), epochs=1)
+
+        # Multi-task loss trained, and BOTH task metrics were tracked — no hand-rolled loop.
+        assert "val/loss" in history
+        assert "val/defect_acc" in history and "val/mae" in history
+        assert 0.0 <= history["val/defect_acc"][-1] <= 1.0
+        assert history["val/mae"][-1] >= 0.0
+
+    def test_metrics_are_sample_weighted(self, simple_model, loss_fn, optimizer):
+        # Two uneven batches; a metric that returns the batch mean must pool correctly.
+        val = [
+            (torch.zeros(2, IN_FEATURES), torch.zeros(2, dtype=torch.long)),
+            (torch.zeros(6, IN_FEATURES), torch.zeros(6, dtype=torch.long)),
+        ]
+
+        def const_batchmean(outputs, targets):
+            # 1.0 for the 2-sample batch, 0.0 for the 6-sample batch
+            return 1.0 if targets.shape[0] == 2 else 0.0
+
+        trainer = Trainer(simple_model, loss_fn, optimizer, metrics={"m": const_batchmean})
+        history = trainer.fit(_make_loader(), val, epochs=1)
+        # Sample-weighted mean = (1.0*2 + 0.0*6) / 8 = 0.25 (unweighted would be 0.5).
+        assert history["val/m"][-1] == pytest.approx(0.25)
+
+    def test_batch_size_inference(self):
+        assert Trainer._batch_size(torch.zeros(5, 3)) == 5
+        assert Trainer._batch_size({"a": torch.zeros(7)}) == 7
+        assert Trainer._batch_size((torch.zeros(4, 2), torch.zeros(4))) == 4
+        assert Trainer._batch_size("not a tensor") == 1

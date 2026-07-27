@@ -64,6 +64,7 @@ class Trainer(Mindtrace):
         loss_fn: nn.Module | Callable | None,
         optimizer: Optimizer,
         *,
+        metrics: dict[str, Callable] | None = None,
         train_loader: Any | None = None,
         val_loader: Any | None = None,
         scheduler: LRScheduler | None = None,
@@ -83,10 +84,18 @@ class Trainer(Mindtrace):
         Args:
             model: PyTorch module to train.
             loss_fn: Loss function. Called as ``loss_fn(outputs, targets)``.
-                When ``None`` the model is expected to compute its own loss:
-                ``model(inputs, targets)`` must return a dict with a ``"loss"``
-                key or a tuple whose first element is the loss tensor.
+                For multi-task models this may return the combined loss from a
+                tuple/dict of outputs and a dict of targets — the trainer treats
+                the loss as opaque. When ``None`` the model is expected to compute
+                its own loss: ``model(inputs, targets)`` must return a dict with a
+                ``"loss"`` key or a tuple whose first element is the loss tensor.
             optimizer: Optimizer that updates ``model`` parameters.
+            metrics: Optional ``{name: fn}`` where each ``fn(outputs, targets) ->
+                float`` computes a validation metric per batch (e.g. accuracy, MAE).
+                Metrics are sample-weighted, averaged over the validation set, and
+                reported in ``history`` as ``val/<name>``. This is what makes
+                multi-task training first-class: a model returning ``(logits,
+                severity)`` can report both ``val/defect_acc`` and ``val/mae``.
             train_loader: Optional default training data loader.  Stored and
                 used by :meth:`train` and as a fallback by :meth:`fit` when
                 the *train_loader* argument is ``None``.
@@ -137,6 +146,7 @@ class Trainer(Mindtrace):
 
         self.model = model
         self.loss_fn = loss_fn
+        self.metrics: dict[str, Callable] = metrics or {}
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.tracker = tracker
@@ -470,6 +480,8 @@ class Trainer(Mindtrace):
 
         total_loss = 0.0
         num_batches = 0
+        metric_sums: dict[str, float] = {name: 0.0 for name in self.metrics}
+        total_samples = 0
 
         with torch.no_grad():
             for raw_batch in loader:
@@ -479,15 +491,40 @@ class Trainer(Mindtrace):
 
                 if self._amp_enabled:
                     with torch.amp.autocast(device_type=self.device.type):
-                        loss, _outputs = self._compute_loss(inputs, targets)
+                        loss, outputs = self._compute_loss(inputs, targets)
                 else:
-                    loss, _outputs = self._compute_loss(inputs, targets)
+                    loss, outputs = self._compute_loss(inputs, targets)
 
                 total_loss += loss.item()
                 num_batches += 1
 
+                if self.metrics:
+                    batch_size = self._batch_size(targets)
+                    total_samples += batch_size
+                    for name, fn in self.metrics.items():
+                        metric_sums[name] += float(fn(outputs, targets)) * batch_size
+
         avg_loss = total_loss / max(num_batches, 1)
-        return {"val/loss": avg_loss}
+        result = {"val/loss": avg_loss}
+        for name, summed in metric_sums.items():
+            result[f"val/{name}"] = summed / max(total_samples, 1)
+        return result
+
+    @staticmethod
+    def _batch_size(data: Any) -> int:
+        """Infer the number of samples in a batch (for sample-weighted metrics)."""
+        if isinstance(data, torch.Tensor):
+            return data.shape[0] if data.dim() > 0 else 1
+        if isinstance(data, dict):
+            for value in data.values():
+                if isinstance(value, torch.Tensor):
+                    return value.shape[0] if value.dim() > 0 else 1
+        if isinstance(data, (list, tuple)):
+            for value in data:
+                size = Trainer._batch_size(value)
+                if size:
+                    return size
+        return 1
 
     # ------------------------------------------------------------------
     # Utility helpers
