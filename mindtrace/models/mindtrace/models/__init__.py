@@ -71,6 +71,9 @@ from mindtrace.models.training import (
 )
 from mindtrace.models.training.losses import (
     CIoULoss,
+    MultiTaskLoss,
+    TaskSpec,
+    build_loss,
     ComboLoss,
     DiceLoss,
     FocalLoss,
@@ -143,8 +146,11 @@ __all__ = [
     "ProgressLogger",
     "UnfreezeSchedule",
     "OptunaCallback",
+    "build_loss",
     "build_optimizer",
     "build_scheduler",
+    "MultiTaskLoss",
+    "TaskSpec",
     # training — datalake bridge
     "DatalakeDataset",
     "build_datalake_loader",
