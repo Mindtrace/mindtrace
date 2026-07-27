@@ -28,6 +28,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Iterator
 
+from mindtrace.models.optimization.errors import OptimizationError
+
 
 class SupportLevel(str, Enum):
     """How well a technique is supported for a given task/provider lane."""
@@ -64,12 +66,12 @@ class ArchFamily(str, Enum):
 _TRT_HOSTILE_OPS: tuple[str, ...] = ("RoiAlign", "NonMaxSuppression", "NonZero")
 
 
-class UnsupportedOptimizationError(ValueError):
+class UnsupportedOptimizationError(OptimizationError):
     """Raised when an optimization is requested that cannot work as asked.
 
-    Subclasses :class:`ValueError` so existing ``except ValueError`` handlers
-    (and the profiling sweep) still catch it, while carrying a message that names
-    the technique, the reason, and a working alternative.
+    Subclasses :class:`OptimizationError` (a :class:`ValueError`) so existing
+    ``except ValueError`` handlers (and the profiling sweep) still catch it, while
+    carrying a message that names the technique, the reason, and a working alternative.
     """
 
 

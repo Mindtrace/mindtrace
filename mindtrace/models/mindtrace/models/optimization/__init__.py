@@ -28,6 +28,12 @@ from mindtrace.models.optimization.adapters import (
     load_model,
     profile,
 )
+from mindtrace.models.optimization.errors import (
+    CalibrationError,
+    InvalidSchemeError,
+    OptimizationError,
+    UnsupportedModelError,
+)
 from mindtrace.models.optimization.bench import Benchmark, BenchmarkReport
 from mindtrace.models.optimization.compile import CompiledArtifact, compile_model, register_compiler
 from mindtrace.models.optimization.export import (
@@ -105,6 +111,10 @@ __all__ = [
     "CAPABILITIES",
     "Recommendation",
     "recommend",
+    "OptimizationError",
+    "UnsupportedModelError",
+    "InvalidSchemeError",
+    "CalibrationError",
     "UnsupportedOptimizationError",
     "validate_optimization",
     "assert_tensorrt_compilable",
