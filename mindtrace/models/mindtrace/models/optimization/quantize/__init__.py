@@ -14,6 +14,7 @@ from mindtrace.models.optimization.quantize.qat_module import (
     QuantizedLinear,
     QuantScheme,
     convert_qat,
+    export_quantized_onnx,
     quantization_manifest,
     prepare_qat,
 )
@@ -34,6 +35,7 @@ __all__ = [
     "SensitivityReport",
     "StaticQuantizer",
     "convert_qat",
+    "export_quantized_onnx",
     "prepare_qat",
     "quantization_manifest",
     "quantize_dynamic",

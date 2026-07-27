@@ -38,6 +38,7 @@ __all__ = [
     "prepare_qat",
     "convert_qat",
     "quantization_manifest",
+    "export_quantized_onnx",
 ]
 
 
@@ -86,13 +87,23 @@ class QuantScheme:
         return (1 << (self.weight_bits - 1)) - 1
 
     @property
+    def weight_qmin(self) -> int:
+        # Full signed range (e.g. -128 for int8) — ONNX QuantizeLinear requires it,
+        # and symmetric scales never reach it, so numerics are unaffected.
+        return -(1 << (self.weight_bits - 1))
+
+    @property
     def act_qmax(self) -> int:
         return (1 << (self.activation_bits - 1)) - 1 if self.activation_bits else 0
 
+    @property
+    def act_qmin(self) -> int:
+        return -(1 << (self.activation_bits - 1)) if self.activation_bits else 0
 
-def _fake_quant(x: torch.Tensor, scale: torch.Tensor, qmax: int) -> torch.Tensor:
+
+def _fake_quant(x: torch.Tensor, scale: torch.Tensor, qmin: int, qmax: int) -> torch.Tensor:
     """Symmetric fake-quantization with a straight-through gradient estimator."""
-    q = torch.clamp(torch.round(x / scale), -qmax, qmax)
+    q = torch.clamp(torch.round(x / scale), qmin, qmax)
     xq = q * scale
     return x + (xq - x).detach()  # STE: identity gradient, quantized forward
 
@@ -133,9 +144,9 @@ class FakeQuantLinear(nn.Module):
         if self.scheme.act_qmax:
             if self.training:
                 self._observe(x)
-            x = _fake_quant(x, self.act_scale, self.scheme.act_qmax)
+            x = _fake_quant(x, self.act_scale, self.scheme.act_qmin, self.scheme.act_qmax)
         w_scale = _weight_scale(self.lin.weight, self.scheme.weight_per_channel, self.scheme.weight_qmax)
-        w = _fake_quant(self.lin.weight, w_scale, self.scheme.weight_qmax)
+        w = _fake_quant(self.lin.weight, w_scale, self.scheme.weight_qmin, self.scheme.weight_qmax)
         return F.linear(x, w, self.lin.bias)
 
 
@@ -153,18 +164,29 @@ class QuantizedLinear(nn.Module):
         scheme = fq.scheme
         self.scheme = scheme
         w = fq.lin.weight.detach()
-        w_scale = _weight_scale(w, scheme.weight_per_channel, scheme.weight_qmax)
-        q = torch.clamp(torch.round(w / w_scale), -scheme.weight_qmax, scheme.weight_qmax).to(torch.int8)
+        w_scale = _weight_scale(w, scheme.weight_per_channel, scheme.weight_qmax)  # [out, 1, ...]
+        q = torch.clamp(torch.round(w / w_scale), scheme.weight_qmin, scheme.weight_qmax).to(torch.int8)
         self.register_buffer("weight_int8", q)
-        self.register_buffer("weight_scale", w_scale)
-        self.register_buffer("act_scale", fq.act_scale.detach().clone())
+        # Per-channel scale flattened to 1-D (axis 0) for torch.fake_quantize_per_channel_affine.
+        self.register_buffer("weight_scale", w_scale.reshape(-1).clone())
+        self.register_buffer("weight_zp", torch.zeros(w_scale.numel(), dtype=torch.int32))
+        self.register_buffer("act_scale", fq.act_scale.detach().reshape(()).clone())
         self.bias = nn.Parameter(fq.lin.bias.detach().clone()) if fq.lin.bias is not None else None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Use torch.fake_quantize_* ops so the eval numerics are unchanged (idempotent
+        # re-quantization of already-quantized values) AND the ONNX exporter emits
+        # QuantizeLinear/DequantizeLinear nodes carrying the learned scales — a real
+        # QDQ int8 graph that TensorRT/ORT compile into int8 kernels.
+        w_deq = self.weight_int8.to(self.weight_scale.dtype) * self.weight_scale.unsqueeze(1)
+        w = torch.fake_quantize_per_channel_affine(
+            w_deq, self.weight_scale, self.weight_zp, 0, self.scheme.weight_qmin, self.scheme.weight_qmax
+        )
         if self.scheme.act_qmax:
-            x = _fake_quant(x, self.act_scale, self.scheme.act_qmax)
-        w = self.weight_int8.to(x.dtype) * self.weight_scale  # dequant with the frozen scale
-        return F.linear(x, w, self.bias)
+            x = torch.fake_quantize_per_tensor_affine(
+                x, float(self.act_scale), 0, self.scheme.act_qmin, self.scheme.act_qmax
+            )
+        return F.linear(x, w.to(x.dtype), self.bias)
 
 
 # nn.MultiheadAttention reaches into its inner Linears' .weight directly, so wrapping
@@ -228,6 +250,55 @@ def convert_qat(model: nn.Module) -> nn.Module:
     model.eval()
     _map_modules(model, lambda m: isinstance(m, FakeQuantLinear), lambda m: QuantizedLinear(m))
     return model
+
+
+def export_quantized_onnx(
+    model: nn.Module,
+    path,
+    *,
+    example_input: torch.Tensor | None = None,
+    static_shape: tuple[int, ...] | None = None,
+    opset: int = 13,
+    exporter: str = "legacy",
+    **kwargs,
+):
+    """Export a :func:`convert_qat` model to a QDQ INT8 ONNX carrying the QAT scales.
+
+    Because :class:`QuantizedLinear` computes through ``torch.fake_quantize_*`` ops, the
+    exporter emits ``QuantizeLinear``/``DequantizeLinear`` nodes with the *learned* scales
+    baked in — a real quantized graph that TensorRT / ONNX Runtime lower to INT8 kernels,
+    rather than a fresh (and possibly divergent) post-hoc quantization. This is the last
+    mile that makes the QAT accuracy actually deployable at INT8.
+
+    Args:
+        model: A model that has been through :func:`convert_qat`.
+        path: Destination ``.onnx`` path.
+        example_input / static_shape: Tracing input (one is required).
+        opset: ONNX opset (>= 13 for per-channel QDQ).
+        exporter: ``"legacy"`` / ``"dynamo"`` / ``"auto"`` (see ``export_onnx``).
+        **kwargs: Forwarded to ``export_onnx`` (e.g. ``input_names``, ``output_names``).
+
+    Returns:
+        Path to the QDQ ONNX file.
+
+    Raises:
+        InvalidSchemeError: If ``opset < 13`` (per-channel QuantizeLinear needs it).
+    """
+    from mindtrace.models.optimization.export import export_onnx
+
+    if opset < 13:
+        raise InvalidSchemeError("QDQ export requires opset >= 13 for per-channel QuantizeLinear/DequantizeLinear.")
+    for m in model.modules():
+        if isinstance(m, QuantizedLinear) and (m.scheme.weight_bits != 8 or m.scheme.activation_bits not in (0, 8)):
+            raise InvalidSchemeError(
+                "QDQ ONNX export supports 8-bit only (ONNX QuantizeLinear has no sub-8-bit form); "
+                f"got weight_bits={m.scheme.weight_bits}, activation_bits={m.scheme.activation_bits}."
+            )
+    model.eval()
+    return export_onnx(
+        model, path, example_input=example_input, static_shape=static_shape,
+        opset=opset, exporter=exporter, check=False, **kwargs,
+    )
 
 
 def quantization_manifest(model: nn.Module) -> dict:
