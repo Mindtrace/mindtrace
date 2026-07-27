@@ -7,6 +7,7 @@ that silently collapses a model re-quantized with a different recipe).
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 import torch
 import torch.nn as nn
@@ -14,9 +15,11 @@ import torch.nn as nn
 from mindtrace.models.optimization import (
     QuantScheme,
     convert_qat,
+    export_quantized_onnx,
     prepare_qat,
     quantization_manifest,
 )
+from mindtrace.models.optimization.errors import InvalidSchemeError
 from mindtrace.models.optimization.quantize.qat_module import FakeQuantLinear, QuantizedLinear
 
 
@@ -149,6 +152,43 @@ class TestSelfDescribing:
 
         assert torch.allclose(before, reloaded(x).detach(), atol=1e-6)
         assert quantization_manifest(reloaded) == manifest_before
+
+
+class TestQDQExport:
+    """The last mile: a real QDQ int8 ONNX carrying the QAT-learned scales."""
+
+    def test_export_emits_qdq_nodes(self, tmp_path):
+        import onnx
+
+        model = convert_qat(prepare_qat(MLP(), QuantScheme.int8()))
+        path = export_quantized_onnx(model, tmp_path / "qdq.onnx", static_shape=(1, 16))
+        graph = onnx.load(str(path)).graph
+        ops = {n.op_type for n in graph.node}
+        assert "QuantizeLinear" in ops and "DequantizeLinear" in ops
+
+    def test_qdq_onnx_matches_torch_under_ort(self, tmp_path):
+        pytest.importorskip("onnxruntime")
+        import onnxruntime as ort
+
+        torch.manual_seed(7)
+        model = prepare_qat(MLP(), QuantScheme.int8())
+        x = torch.randn(4, 16)
+        _calibrate(model, x)
+        convert_qat(model)
+        torch_out = model(x).detach().numpy()
+
+        path = export_quantized_onnx(model, tmp_path / "qdq.onnx", static_shape=(1, 16), input_names=("input",))
+        sess = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+        iname = sess.get_inputs()[0].name
+        onnx_out = np.concatenate([sess.run(None, {iname: x[i:i + 1].numpy()})[0] for i in range(4)])
+
+        # The QDQ graph carries the same scales, so it reproduces the torch QAT numerics.
+        assert np.allclose(torch_out, onnx_out, atol=1e-4)
+
+    def test_opset_below_13_rejected(self, tmp_path):
+        model = convert_qat(prepare_qat(MLP()))
+        with pytest.raises(InvalidSchemeError, match="opset"):
+            export_quantized_onnx(model, tmp_path / "x.onnx", static_shape=(1, 16), opset=12)
 
 
 class TestTransformerCapable:
