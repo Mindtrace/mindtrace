@@ -41,6 +41,7 @@ from pydantic import ValidationError  # noqa: E402
 from torch.utils.data import DataLoader, TensorDataset  # noqa: E402
 
 from mindtrace.models.optimization import (  # noqa: E402
+    QAT,
     Compile,
     Export,
     Finetune,
@@ -50,6 +51,7 @@ from mindtrace.models.optimization import (  # noqa: E402
     Prune,
     Quantize,
 )
+from mindtrace.models.optimization.quantize.qat_module import QuantizedLinear  # noqa: E402
 from mindtrace.models.optimization import runner as runner_module  # noqa: E402
 
 NUM_CLASSES = 4
@@ -164,6 +166,43 @@ class TestOptimizationRunner:
         assert not any(h["rolled_back"] for h in result.history)
         assert result.artifact_path.exists()
         assert "quantize" in result.artifact_path.name
+        assert _ort_logits(result.artifact_path).shape == (2, NUM_CLASSES)
+
+    def test_qat_step_runs_and_converts_under_the_gate(self, tmp_path):
+        result = OptimizationRunner(
+            _build_cnn(),
+            OptimizationRecipe(steps=[QAT(epochs=1, lr=1e-3)]),
+            train_loader=_build_loader(),
+            eval_loader=_build_loader(),
+            constraints={"max_accuracy_drop": 1.0},  # gate active but lenient
+            work_dir=tmp_path,
+        )
+        result_out = result.run()
+        assert [h["op"] for h in result_out.history] == ["qat"]
+        # QAT converted the Linear head to a real INT8 QuantizedLinear...
+        assert any(isinstance(m, QuantizedLinear) for m in result.model.modules())
+        # ...and the accuracy gate measured a drop against the fixed baseline.
+        assert result_out.history[0]["metric_drop"] is not None
+
+    def test_qat_requires_train_loader(self, tmp_path):
+        with pytest.raises(ValueError, match="qat.*train_loader"):
+            OptimizationRunner(
+                _build_cnn(),
+                OptimizationRecipe(steps=[QAT()]),
+                eval_loader=_build_loader(),
+                work_dir=tmp_path,
+            ).run()
+
+    def test_qat_then_export_produces_onnx(self, tmp_path):
+        result = OptimizationRunner(
+            _build_cnn(),
+            OptimizationRecipe(steps=[QAT(epochs=1, lr=1e-3), Export()]),
+            train_loader=_build_loader(),
+            eval_loader=_build_loader(),
+            work_dir=tmp_path,
+        ).run()
+        assert [h["op"] for h in result.history] == ["qat", "export"]
+        assert result.artifact_path.exists()
         assert _ort_logits(result.artifact_path).shape == (2, NUM_CLASSES)
 
     def test_implicit_export_before_bare_quantize(self, tmp_path):

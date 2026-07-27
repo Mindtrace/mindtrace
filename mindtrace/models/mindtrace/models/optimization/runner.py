@@ -46,7 +46,8 @@ from mindtrace.core import Mindtrace
 from mindtrace.models.optimization.bench import Benchmark, BenchmarkReport
 from mindtrace.models.optimization.compile import compile_model
 from mindtrace.models.optimization.export import export_onnx
-from mindtrace.models.optimization.recipes import Compile, Export, Finetune, OptimizationRecipe, Prune, Quantize
+from mindtrace.models.optimization.quantize.qat_module import QuantScheme, convert_qat, prepare_qat
+from mindtrace.models.optimization.recipes import QAT, Compile, Export, Finetune, OptimizationRecipe, Prune, Quantize
 from mindtrace.models.optimization.targets import get_target
 
 # ---------------------------------------------------------------------------
@@ -71,7 +72,7 @@ __all__ = [
     "OptimizationRunner",
 ]
 
-_LOSSY_OPS = frozenset({"prune", "finetune", "quantize"})
+_LOSSY_OPS = frozenset({"prune", "finetune", "qat", "quantize"})
 
 _KNOWN_CONSTRAINTS = frozenset({"max_accuracy_drop", "p95_latency_ms", "max_size_mb"})
 
@@ -383,6 +384,8 @@ class OptimizationRunner(Mindtrace):
                 self._prune_step(step)
             elif step.op == "finetune":
                 self._finetune_step(step)
+            elif step.op == "qat":
+                self._qat_step(step)
             elif step.op == "export":
                 artifact = self._export_step(step, index)
                 domain = "onnx"
@@ -518,16 +521,47 @@ class OptimizationRunner(Mindtrace):
             trainer.fit(self.train_loader, epochs=step.epochs)
             return
 
+        self._train_classification(epochs=step.epochs, lr=step.lr)
+
+    def _train_classification(self, *, epochs: int, lr: float) -> None:
+        """Train the live torch model on the classification task (shared by finetune/QAT)."""
         from mindtrace.models.training import Trainer
 
         loss_fn = self.loss_fn if self.loss_fn is not None else nn.CrossEntropyLoss()
         if self.optimizer_factory is not None:
-            optimizer = self.optimizer_factory(self.model, step.lr)
+            optimizer = self.optimizer_factory(self.model, lr)
         else:
-            optimizer = torch.optim.AdamW(self.model.parameters(), lr=step.lr)
+            optimizer = torch.optim.AdamW(self.model.parameters(), lr=lr)
 
         trainer = Trainer(self.model, loss_fn, optimizer, tracker=self.tracker)
-        trainer.fit(self.train_loader, self.eval_loader, epochs=step.epochs)
+        trainer.fit(self.train_loader, self.eval_loader, epochs=epochs)
+
+    def _qat_step(self, step: QAT) -> None:
+        """Quantization-aware training: fake-quant -> train -> scheme-preserving convert.
+
+        Operates on the live torch model, so the runner's accuracy gate measures the
+        converted INT8 model against the fixed baseline and rolls it back if it drops
+        too far — exactly like any other lossy step.
+
+        Raises:
+            ValueError: If no ``train_loader`` was provided, or the task is detection
+                (module-level QAT targets classification/segmentation transformers & CNNs).
+        """
+        if self.train_loader is None:
+            raise ValueError("A 'qat' step requires a train_loader; pass one to OptimizationRunner.")
+        if self.task == "detection":
+            raise ValueError(
+                "Module-level QAT is not wired for detection (its head/NMS control flow). "
+                "Use static PTQ with the head auto-excluded, or TensorRT-INT8."
+            )
+        scheme = QuantScheme(
+            weight_bits=step.weight_bits,
+            activation_bits=step.activation_bits,
+            weight_per_channel=step.weight_per_channel,
+        )
+        prepare_qat(self.model, scheme)
+        self._train_classification(epochs=step.epochs, lr=step.lr)
+        convert_qat(self.model)
 
     def _export_step(self, step: Export, index: int, *, implicit: bool = False) -> Path:
         """Export the live torch model to ONNX.

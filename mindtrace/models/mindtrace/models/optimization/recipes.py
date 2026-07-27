@@ -36,6 +36,7 @@ __all__ = [
     "Finetune",
     "OptimizationRecipe",
     "Prune",
+    "QAT",
     "Quantize",
     "RecipeStep",
 ]
@@ -71,6 +72,32 @@ class Finetune(BaseModel):
     op: Literal["finetune"] = "finetune"
     epochs: int = Field(default=1, ge=1)
     lr: float = Field(default=1e-4, gt=0.0)
+
+
+class QAT(BaseModel):
+    """Quantization-aware training step (torch domain, transformer-capable).
+
+    Inserts module-level fake-quant (:func:`~mindtrace.models.optimization.prepare_qat`),
+    trains so the weights adapt to INT8 rounding, then converts to a scheme-preserving
+    INT8 model (:func:`~mindtrace.models.optimization.convert_qat`). Unlike static PTQ
+    (onnx domain), QAT operates on the live torch model, so it must precede any Export
+    step — and the runner's accuracy gate wraps it like any other lossy step.
+
+    Attributes:
+        op: Discriminator, always ``"qat"``.
+        epochs: Training epochs to adapt to quantization.
+        lr: Learning rate for the (default AdamW) optimizer.
+        weight_bits: Weight bit-width (2–8).
+        activation_bits: Activation bit-width; ``0`` = weight-only.
+        weight_per_channel: Per-output-channel weight scales.
+    """
+
+    op: Literal["qat"] = "qat"
+    epochs: int = Field(default=1, ge=1)
+    lr: float = Field(default=1e-4, gt=0.0)
+    weight_bits: int = Field(default=8, ge=2, le=8)
+    activation_bits: int = Field(default=8, ge=0, le=8)
+    weight_per_channel: bool = True
 
 
 class Quantize(BaseModel):
@@ -128,7 +155,7 @@ class Compile(BaseModel):
     target: str
 
 
-RecipeStep = Annotated[Union[Prune, Finetune, Quantize, Export, Compile], Field(discriminator="op")]
+RecipeStep = Annotated[Union[Prune, Finetune, QAT, Quantize, Export, Compile], Field(discriminator="op")]
 """Discriminated union of all recipe step types, keyed on ``op``."""
 
 

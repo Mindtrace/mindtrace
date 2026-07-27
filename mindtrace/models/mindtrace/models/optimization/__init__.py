@@ -62,6 +62,7 @@ from mindtrace.models.optimization.quantize import (
     sensitivity_scan,
 )
 from mindtrace.models.optimization.recipes import (
+    QAT,
     Compile,
     Export,
     Finetune,
@@ -124,6 +125,7 @@ __all__ = [
     "OptimizationRecipe",
     "Prune",
     "Finetune",
+    "QAT",
     "Quantize",
     "Export",
     "Compile",
