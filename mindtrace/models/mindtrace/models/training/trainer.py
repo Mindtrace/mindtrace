@@ -68,6 +68,7 @@ class Trainer(Mindtrace):
         train_loader: Any | None = None,
         val_loader: Any | None = None,
         scheduler: LRScheduler | None = None,
+        scheduler_interval: str = "step",
         tracker: Any | None = None,
         callbacks: list[Callback] | None = None,
         device: str = "auto",
@@ -102,8 +103,14 @@ class Trainer(Mindtrace):
             val_loader: Optional default validation data loader.  Stored and
                 used by :meth:`train` and as a fallback by :meth:`fit` when
                 the *val_loader* argument is ``None``.
-            scheduler: Optional LR scheduler. ``ReduceLROnPlateau`` is
-                stepped after validation; all others after each optimizer step.
+            scheduler: Optional LR scheduler. ``ReduceLROnPlateau`` is always
+                stepped after validation against the val loss; all others are
+                stepped according to ``scheduler_interval``.
+            scheduler_interval: ``"step"`` (default) steps non-plateau schedulers
+                after every optimizer step — right for step-based schedules (e.g.
+                cosine over total steps). ``"epoch"`` steps once per epoch — right
+                for epoch-based schedules (warmup+cosine over epochs), which
+                otherwise decay far too fast when stepped per batch.
             tracker: Optional experiment-tracking object (e.g. a
                 ``mindtrace.models.tracking.Tracker``) with a
                 ``log(metrics, step)`` interface.
@@ -143,12 +150,15 @@ class Trainer(Mindtrace):
 
         if gradient_accumulation_steps < 1:
             raise ValueError(f"gradient_accumulation_steps must be >= 1, got {gradient_accumulation_steps}")
+        if scheduler_interval not in ("step", "epoch"):
+            raise ValueError(f"scheduler_interval must be 'step' or 'epoch', got '{scheduler_interval}'")
 
         self.model = model
         self.loss_fn = loss_fn
         self.metrics: dict[str, Callable] = metrics or {}
         self.optimizer = optimizer
         self.scheduler = scheduler
+        self.scheduler_interval = scheduler_interval
         self.tracker = tracker
         self.callbacks: list[Callback] = callbacks or []
         self.mixed_precision = mixed_precision
@@ -328,6 +338,14 @@ class Trainer(Mindtrace):
                     if val_loss is not None:
                         self.scheduler.step(val_loss)
 
+            # Epoch-interval schedulers advance once per epoch (plateau handled above).
+            if (
+                self.scheduler_interval == "epoch"
+                and self.scheduler is not None
+                and not isinstance(self.scheduler, ReduceLROnPlateau)
+            ):
+                self.scheduler.step()
+
             # Accumulate history
             for metric, value in logs.items():
                 self.history.setdefault(metric, []).append(value)
@@ -460,8 +478,13 @@ class Trainer(Mindtrace):
 
         self.optimizer.zero_grad()
 
-        # Step non-Plateau schedulers after optimizer update
-        if self.scheduler is not None and not isinstance(self.scheduler, ReduceLROnPlateau):
+        # Step-interval schedulers advance after each optimizer update (plateau is
+        # always epoch-based; epoch-interval schedulers advance in fit()).
+        if (
+            self.scheduler_interval == "step"
+            and self.scheduler is not None
+            and not isinstance(self.scheduler, ReduceLROnPlateau)
+        ):
             self.scheduler.step()
 
     def _val_epoch(self, loader: Any) -> dict[str, float]:
