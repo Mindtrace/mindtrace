@@ -36,6 +36,7 @@ from mindtrace.models.optimization.export import (
     export_onnx,
     model_size_mb,
 )
+from mindtrace.models.optimization.precision import to_precision
 from mindtrace.models.optimization.prune import (
     ChannelPruner,
     PruningSchedule,
@@ -124,6 +125,7 @@ __all__ = [
     "model_size_mb",
     "NumericalInstabilityError",
     "assert_finite",
+    "to_precision",
     # Quantization
     "quantize_dynamic",
     "StaticQuantizer",

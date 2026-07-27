@@ -85,7 +85,8 @@ def assert_finite(outputs: Any, *, context: str) -> None:
     else:
         items = [outputs]
     for index, item in enumerate(items):
-        arr = item.detach().cpu().numpy() if hasattr(item, "detach") else np.asarray(item)
+        # .float() first: numpy has no bfloat16, and it normalizes fp16 too.
+        arr = item.detach().float().cpu().numpy() if hasattr(item, "detach") else np.asarray(item)
         if not np.isfinite(np.asarray(arr, dtype=np.float64)).all():
             raise NumericalInstabilityError(
                 f"{context} produced non-finite (NaN/Inf) values in output {index}. This usually means "
