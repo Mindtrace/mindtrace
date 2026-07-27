@@ -12,6 +12,7 @@ from __future__ import annotations
 import torch
 
 from mindtrace.core import get_logger
+from mindtrace.models.optimization.errors import InvalidSchemeError
 from mindtrace.models.optimization.export.onnx_export import assert_finite
 
 logger = get_logger(__name__)
@@ -53,7 +54,7 @@ def to_precision(
     if isinstance(dtype, str):
         key = dtype.lower()
         if key not in _DTYPES:
-            raise ValueError(f"Unknown precision '{dtype}'. Expected one of: {sorted(set(_DTYPES))}.")
+            raise InvalidSchemeError(f"Unknown precision '{dtype}'. Expected one of: {sorted(set(_DTYPES))}.")
         torch_dtype = _DTYPES[key]
     else:
         torch_dtype = dtype

@@ -20,6 +20,7 @@ from typing import Any, Sequence
 import torch
 
 from mindtrace.core import get_logger
+from mindtrace.models.optimization.errors import OptimizationError
 
 # ---------------------------------------------------------------------------
 # Optional ONNX-stack imports
@@ -55,13 +56,13 @@ logger = get_logger(__name__)
 __all__ = ["export_onnx", "model_size_mb", "NumericalInstabilityError", "assert_finite"]
 
 
-class NumericalInstabilityError(ValueError):
+class NumericalInstabilityError(OptimizationError):
     """Raised when a model produces non-finite (NaN / Inf) outputs.
 
-    Subclasses :class:`ValueError` so callers already catching parity failures
-    (e.g. ``exporter="auto"``) still handle it, while callers that want to react
-    specifically — for instance by recommending bf16 over a naive fp16 cast —
-    can catch this type.
+    Subclasses :class:`OptimizationError` (a :class:`ValueError`) so callers already
+    catching parity failures (e.g. ``exporter="auto"``) still handle it, while callers
+    that want to react specifically — for instance by recommending bf16 over a naive
+    fp16 cast — can catch this type.
     """
 
 

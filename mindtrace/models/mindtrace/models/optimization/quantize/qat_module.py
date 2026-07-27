@@ -29,6 +29,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from mindtrace.models.optimization.errors import InvalidSchemeError
+
 __all__ = [
     "QuantScheme",
     "FakeQuantLinear",
@@ -59,9 +61,9 @@ class QuantScheme:
 
     def __post_init__(self) -> None:
         if not 2 <= self.weight_bits <= 8:
-            raise ValueError(f"weight_bits must be in [2, 8], got {self.weight_bits}")
+            raise InvalidSchemeError(f"weight_bits must be in [2, 8], got {self.weight_bits}")
         if self.activation_bits not in (0,) and not 2 <= self.activation_bits <= 8:
-            raise ValueError(f"activation_bits must be 0 or in [2, 8], got {self.activation_bits}")
+            raise InvalidSchemeError(f"activation_bits must be 0 or in [2, 8], got {self.activation_bits}")
 
     # --- named presets (progressive disclosure: good defaults over hand-tuning) ---
     @classmethod
@@ -200,7 +202,9 @@ def prepare_qat(model: nn.Module, scheme: QuantScheme | None = None) -> nn.Modul
     supported = {"Linear": nn.Linear}
     unknown = set(scheme.target_types) - supported.keys()
     if unknown:
-        raise ValueError(f"prepare_qat supports target_types {tuple(supported)}; got unsupported {tuple(unknown)}")
+        raise InvalidSchemeError(
+            f"prepare_qat supports target_types {tuple(supported)}; got unsupported {tuple(unknown)}"
+        )
     types = tuple(supported[t] for t in scheme.target_types)
     _map_modules(model, lambda m: isinstance(m, types), lambda m: FakeQuantLinear(m, scheme))
     model._qat_scheme = scheme  # type: ignore[attr-defined]
