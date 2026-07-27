@@ -1049,3 +1049,35 @@ class TestMetrics:
         assert Trainer._batch_size({"a": torch.zeros(7)}) == 7
         assert Trainer._batch_size((torch.zeros(4, 2), torch.zeros(4))) == 4
         assert Trainer._batch_size("not a tensor") == 1
+
+
+# ---------------------------------------------------------------------------
+# Scheduler interval (epoch vs step)
+# ---------------------------------------------------------------------------
+
+
+class TestSchedulerInterval:
+    def test_invalid_interval_raises(self, simple_model, loss_fn, optimizer):
+        with pytest.raises(ValueError, match="scheduler_interval"):
+            Trainer(simple_model, loss_fn, optimizer, scheduler_interval="minute")
+
+    def test_epoch_interval_steps_once_per_epoch(self, simple_model, loss_fn, optimizer):
+        # StepLR(step_size=1, gamma=0.1): lr = base * 0.1 ** (num scheduler steps).
+        sched = StepLR(optimizer, step_size=1, gamma=0.1)
+        base = optimizer.param_groups[0]["lr"]
+        trainer = Trainer(simple_model, loss_fn, optimizer, scheduler=sched, scheduler_interval="epoch")
+        trainer.fit(_make_loader(n_batches=3), epochs=2)
+        # 2 epochs -> 2 steps, regardless of the 3 batches/epoch.
+        assert optimizer.param_groups[0]["lr"] == pytest.approx(base * (0.1 ** 2))
+
+    def test_step_interval_steps_every_batch(self, simple_model, loss_fn, optimizer):
+        sched = StepLR(optimizer, step_size=1, gamma=0.1)
+        base = optimizer.param_groups[0]["lr"]
+        trainer = Trainer(simple_model, loss_fn, optimizer, scheduler=sched, scheduler_interval="step")
+        trainer.fit(_make_loader(n_batches=3), epochs=2)
+        # 2 epochs * 3 batches = 6 optimizer steps -> 6 scheduler steps (the default).
+        assert optimizer.param_groups[0]["lr"] == pytest.approx(base * (0.1 ** 6))
+
+    def test_default_interval_is_step(self, simple_model, loss_fn, optimizer):
+        trainer = Trainer(simple_model, loss_fn, optimizer)
+        assert trainer.scheduler_interval == "step"
