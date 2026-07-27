@@ -56,6 +56,22 @@ class QuantScheme:
         if self.activation_bits not in (0,) and not 2 <= self.activation_bits <= 8:
             raise ValueError(f"activation_bits must be 0 or in [2, 8], got {self.activation_bits}")
 
+    # --- named presets (progressive disclosure: good defaults over hand-tuning) ---
+    @classmethod
+    def int8(cls, *, per_channel: bool = True) -> "QuantScheme":
+        """Standard INT8 (per-channel weights, per-tensor activations)."""
+        return cls(weight_bits=8, weight_per_channel=per_channel, activation_bits=8)
+
+    @classmethod
+    def weight_only(cls, *, bits: int = 8, per_channel: bool = True) -> "QuantScheme":
+        """Weight-only quantization (activations stay fp32) — memory-bound / LLM style."""
+        return cls(weight_bits=bits, weight_per_channel=per_channel, activation_bits=0)
+
+    @classmethod
+    def int4_weight_only(cls, *, per_channel: bool = True) -> "QuantScheme":
+        """4-bit weight-only — aggressive size reduction for large models."""
+        return cls(weight_bits=4, weight_per_channel=per_channel, activation_bits=0)
+
     @property
     def weight_qmax(self) -> int:
         return (1 << (self.weight_bits - 1)) - 1

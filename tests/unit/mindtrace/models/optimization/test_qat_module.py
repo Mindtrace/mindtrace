@@ -140,6 +140,30 @@ class TestTraining:
         assert grads and all(g.abs().sum() > 0 for g in grads)
 
 
+class TestSchemePresets:
+    def test_int8_preset(self):
+        s = QuantScheme.int8()
+        assert s.weight_bits == 8 and s.activation_bits == 8 and s.weight_per_channel
+
+    def test_weight_only_preset(self):
+        s = QuantScheme.weight_only(bits=8)
+        assert s.activation_bits == 0 and s.act_qmax == 0 and s.weight_bits == 8
+
+    def test_int4_weight_only_preset(self):
+        s = QuantScheme.int4_weight_only()
+        assert s.weight_bits == 4 and s.weight_qmax == 7 and s.activation_bits == 0
+
+    def test_preset_drives_prepare_convert_parity(self):
+        torch.manual_seed(2)
+        model = prepare_qat(MLP(), QuantScheme.int4_weight_only())
+        x = torch.randn(8, 16)
+        _calibrate(model, x)
+        model.eval()
+        before = model(x).detach()
+        convert_qat(model)
+        assert torch.allclose(before, model(x).detach(), atol=1e-5)
+
+
 class TestSchemeValidation:
     def test_bad_weight_bits_raise(self):
         with pytest.raises(ValueError, match="weight_bits"):
