@@ -446,7 +446,7 @@ class Benchmark(Mindtrace):
         if fell_back:
             self.logger.warning(
                 "Requested execution provider '%s' did not activate (registered: %s). "
-                "Latency reflects the fallback provider '%s', NOT '%s' — check the runtime's "
+                "Latency reflects the fallback provider '%s', NOT '%s'; check the runtime's "
                 "library/version match (e.g. TensorRT ABI vs installed CUDA).",
                 primary, active, effective, primary,
             )
@@ -471,7 +471,9 @@ class Benchmark(Mindtrace):
         x = self._numpy_input()
 
         def run_once() -> Any:
-            return compiled([x])
+            # Normalize the OVDict (keyed by ConstOutput) to a plain list of arrays so the
+            # finite guard and any downstream handling see standard numpy types.
+            return list(compiled([x]).values())
 
         return run_once
 
