@@ -15,6 +15,7 @@ Backbone API::
 Head classes::
 
     from mindtrace.models.architectures import (
+        CrossAttentionMultiTaskHead,           # cross-attention multi-task head
         LinearHead, MLPHead, MultiLabelHead,   # classification
         LinearSegHead, FPNSegHead,              # segmentation
         DetectionHead,                          # detection
@@ -52,6 +53,7 @@ from mindtrace.models.architectures.factory import ModelWrapper, build_model, bu
 from mindtrace.models.architectures.heads import (
     DetectionHead,
     FPNSegHead,
+    CrossAttentionMultiTaskHead,
     LinearHead,
     LinearSegHead,
     MLPHead,
