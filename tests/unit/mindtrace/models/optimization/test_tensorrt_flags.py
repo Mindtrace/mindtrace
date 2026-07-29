@@ -14,7 +14,12 @@ import onnx
 import pytest
 from onnx import TensorProto, helper, numpy_helper
 
-from mindtrace.models.optimization.compile.tensorrt import _resolve_network_flags, _simplified_onnx
+from mindtrace.models.optimization.compile import tensorrt as trt_mod
+from mindtrace.models.optimization.compile.tensorrt import (
+    _parse_onnx_into_network,
+    _resolve_network_flags,
+    _simplified_onnx,
+)
 from mindtrace.models.optimization.targets import TargetSpec
 
 EXPLICIT_BATCH = 0
@@ -103,3 +108,88 @@ class TestSimplifiedOnnxFallback:
 
         monkeypatch.setattr(onnxsim, "simplify", boom)
         assert _simplified_onnx(_tiny_onnx(tmp_path / "m.onnx")) is None
+
+
+class _FakeLogger:
+    INTERNAL_ERROR = 0
+    INFO = 3
+    WARNING = 2
+
+    def __init__(self, _severity=0):
+        pass
+
+    def log(self, _severity, _msg):
+        pass
+
+
+class _FakeParser:
+    """Returns queued parse() results and canned errors, like trt.OnnxParser."""
+
+    def __init__(self, network, _logger, results):
+        self.network = network
+        self._results = results
+
+    def parse(self, _data):
+        return self._results.pop(0)
+
+    @property
+    def num_errors(self):
+        return 2
+
+    def get_error(self, i):
+        return f"err{i}"
+
+
+class _FakeBuilder:
+    def __init__(self):
+        self.networks = 0
+
+    def create_network(self, _flags):
+        self.networks += 1
+        return f"network-{self.networks}"
+
+
+def _fake_parse_trt(parse_results):
+    parsers = []
+
+    def make_parser(network, logger):
+        p = _FakeParser(network, logger, parse_results)
+        parsers.append(p)
+        return p
+
+    trt = types.SimpleNamespace(Logger=_FakeLogger, OnnxParser=make_parser)
+    return trt, parsers
+
+
+class TestParseOnnxIntoNetwork:
+    """The parse control flow: silent first attempt, simplify-and-retry, clean errors."""
+
+    def test_returns_network_on_first_parse(self, tmp_path, monkeypatch):
+        called = {"simplify": False}
+        monkeypatch.setattr(trt_mod, "_simplified_onnx", lambda p: called.__setitem__("simplify", True) or b"x")
+        trt, _ = _fake_parse_trt([True])
+        builder = _FakeBuilder()
+        net = _parse_onnx_into_network(trt, builder, _FakeLogger(), _tiny_onnx(tmp_path / "m.onnx"), 0)
+        assert net == "network-1"
+        assert called["simplify"] is False  # no simplification when the first parse works
+        assert builder.networks == 1
+
+    def test_retries_on_simplified_graph(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(trt_mod, "_simplified_onnx", lambda p: b"simplified-bytes")
+        trt, _ = _fake_parse_trt([False, True])  # fail raw, succeed simplified
+        builder = _FakeBuilder()
+        net = _parse_onnx_into_network(trt, builder, _FakeLogger(), _tiny_onnx(tmp_path / "m.onnx"), 0)
+        assert net == "network-2"  # the retry's fresh network
+        assert builder.networks == 2
+
+    def test_raises_when_simplify_unavailable(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(trt_mod, "_simplified_onnx", lambda p: None)
+        trt, _ = _fake_parse_trt([False])
+        with pytest.raises(RuntimeError, match="failed to parse"):
+            _parse_onnx_into_network(trt, _FakeBuilder(), _FakeLogger(), _tiny_onnx(tmp_path / "m.onnx"), 0)
+
+    def test_raises_with_both_errors_when_retry_also_fails(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(trt_mod, "_simplified_onnx", lambda p: b"simplified-bytes")
+        trt, _ = _fake_parse_trt([False, False])
+        with pytest.raises(RuntimeError, match="simplified graph also failed"):
+            _parse_onnx_into_network(trt, _FakeBuilder(), _FakeLogger(), _tiny_onnx(tmp_path / "m.onnx"), 0)
