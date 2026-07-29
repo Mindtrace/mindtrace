@@ -72,12 +72,12 @@ class MultiTaskTiny(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.features = nn.Sequential(nn.Conv2d(3, 4, 3, padding=1), nn.ReLU(), nn.AdaptiveAvgPool2d(1))
-        self.defect = nn.Linear(4, 3)
-        self.severity = nn.Linear(4, 1)
+        self.category = nn.Linear(4, 3)
+        self.score = nn.Linear(4, 1)
 
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         h = self.features(x).flatten(1)
-        return {"defect": self.defect(h), "severity": self.severity(h).squeeze(-1)}
+        return {"category": self.category(h), "score": self.score(h).squeeze(-1)}
 
 
 @pytest.fixture()
@@ -136,12 +136,12 @@ class TestExportOnnx:
             MultiTaskTiny().eval(),
             tmp_path / "multitask.onnx",
             static_shape=(1, 3, 16, 16),
-            output_names=("defect", "severity"),
+            output_names=("category", "score"),
             check=True,
             atol=1e-4,
         )
         assert out.exists()
-        assert [o.name for o in onnx.load(str(out)).graph.output] == ["defect", "severity"]
+        assert [o.name for o in onnx.load(str(out)).graph.output] == ["category", "score"]
 
     def test_dynamic_batch_axis(self, model: TinyCNN, tmp_path: Path):
         static = export_onnx(
@@ -249,7 +249,7 @@ class TestAssertFinite:
 
     def test_handles_dict_outputs(self):
         # OpenVINO-style dict outputs must be checked by value, not skipped.
-        assert_finite({"logits": torch.zeros(2), "severity": torch.ones(1)}, context="unit")
+        assert_finite({"logits": torch.zeros(2), "score": torch.ones(1)}, context="unit")
         with pytest.raises(NumericalInstabilityError):
             assert_finite({"logits": torch.tensor([float("inf")])}, context="unit")
 

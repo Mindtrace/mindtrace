@@ -96,7 +96,7 @@ class Trainer(Mindtrace):
                 Metrics are sample-weighted, averaged over the validation set, and
                 reported in ``history`` as ``val/<name>``. This is what makes
                 multi-task training first-class: a model returning ``(logits,
-                severity)`` can report both ``val/defect_acc`` and ``val/mae``.
+                score)`` can report both ``val/category_acc`` and ``val/mae``.
             train_loader: Optional default training data loader.  Stored and
                 used by :meth:`train` and as a fallback by :meth:`fit` when
                 the *train_loader* argument is ``None``.

@@ -340,7 +340,7 @@ async def main():
     robot = RobotController("http://localhost:8003", "RTU_LUBE_SYSTEM")
     await robot.initialize("192.168.160.3")
 
-    # Move robot to weld inspection point
+    # Move robot to inspection point
     await robot.move_to_position(150.0, 200.0, 50.0)
 
     # Get current position

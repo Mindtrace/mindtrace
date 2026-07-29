@@ -124,11 +124,11 @@ class TestDetectionTrainerLogic:
     def test_save_requires_registry(self):
         trainer = DetectionTrainer(_FakeDetector(), num_classes=1, device="cpu")
         with pytest.raises(ValueError, match="requires a registry"):
-            trainer.save("weld-det:v1")
+            trainer.save("detector:v1")
 
     def test_save_uses_registry(self):
         registry = MagicMock()
         model = _FakeDetector()
         trainer = DetectionTrainer(model, num_classes=1, device="cpu", registry=registry)
-        assert trainer.save("weld-det:v1") == "weld-det:v1"
-        registry.save.assert_called_once_with("weld-det:v1", model)
+        assert trainer.save("detector:v1") == "detector:v1"
+        registry.save.assert_called_once_with("detector:v1", model)

@@ -187,7 +187,7 @@ def _make_service(engine_file: Path, **kwargs: Any):
 
     return TensorRTModelService(
         engine_path=str(engine_file),
-        model_name="weld-detector",
+        model_name="detector",
         model_version="v3",
         **kwargs,
     )
@@ -202,7 +202,7 @@ def test_missing_engine_path_and_registry_raises() -> None:
     from mindtrace.models.serving.tensorrt_service import TensorRTModelService
 
     with pytest.raises(ValueError, match="engine_path.*registry|registry.*engine_path"):
-        TensorRTModelService(model_name="weld-detector", model_version="v3")
+        TensorRTModelService(model_name="detector", model_version="v3")
 
 
 def test_import_error_mentions_compile_agent(
@@ -230,7 +230,7 @@ def test_missing_engine_file_raises(fake_trt: types.ModuleType, tmp_path: Path) 
     with pytest.raises(FileNotFoundError, match="TensorRT engine not found"):
         TensorRTModelService(
             engine_path=str(tmp_path / "missing.plan"),
-            model_name="weld-detector",
+            model_name="detector",
             model_version="v3",
         )
 
@@ -248,12 +248,12 @@ def test_registry_mismatched_device_refuses(fake_trt: types.ModuleType) -> None:
 
     class _FakeRegistry:
         def load(self, key: str) -> TensorRTEngine:
-            assert key == "weld-detector:v3"
+            assert key == "detector:v3"
             return stored
 
     with pytest.raises(RuntimeError, match="not portable"):
         TensorRTModelService(
-            model_name="weld-detector",
+            model_name="detector",
             model_version="v3",
             registry=_FakeRegistry(),
         )
@@ -279,7 +279,7 @@ def test_registry_mismatched_trt_version_refuses(fake_trt: types.ModuleType) -> 
 
     with pytest.raises(RuntimeError, match="Refusing to load"):
         TensorRTModelService(
-            model_name="weld-detector",
+            model_name="detector",
             model_version="v3",
             registry=_FakeRegistry(),
         )
@@ -409,11 +409,11 @@ def test_registry_matching_metadata_loads_and_info(fake_trt: types.ModuleType) -
 
     class _FakeRegistry:
         def load(self, key: str) -> TensorRTEngine:
-            assert key == "weld-detector:v3"
+            assert key == "detector:v3"
             return stored
 
     svc = TensorRTModelService(
-        model_name="weld-detector",
+        model_name="detector",
         model_version="v3",
         registry=_FakeRegistry(),
         warmup=1,

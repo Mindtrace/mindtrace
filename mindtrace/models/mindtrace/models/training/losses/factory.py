@@ -116,8 +116,8 @@ class MultiTaskLoss(nn.Module):
     Example::
 
         loss = MultiTaskLoss({
-            "defect":   TaskSpec(build_loss("cross_entropy"), output=0, target="defect"),
-            "severity": TaskSpec(build_loss("mse"), output=1, target="severity", weight=0.5),
+            "category": TaskSpec(build_loss("cross_entropy"), output=0, target="category"),
+            "score":    TaskSpec(build_loss("mse"), output=1, target="score", weight=0.5),
         })
         # trainer = Trainer(model, loss, opt, metrics={...})
     """

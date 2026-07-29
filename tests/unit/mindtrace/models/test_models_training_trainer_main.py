@@ -1011,7 +1011,7 @@ class TestMetrics:
         model = _TwoHead()
         optimizer = SGD(model.parameters(), lr=0.01)
 
-        def defect_acc(outputs, targets):
+        def category_acc(outputs, targets):
             logits, _ = outputs
             return (logits.argmax(1) == targets["cls"]).float().mean().item()
 
@@ -1019,13 +1019,13 @@ class TestMetrics:
             _, reg = outputs
             return (reg - targets["reg"]).abs().mean().item()
 
-        trainer = Trainer(model, _mt_loss, optimizer, metrics={"defect_acc": defect_acc, "mae": mae})
+        trainer = Trainer(model, _mt_loss, optimizer, metrics={"category_acc": category_acc, "mae": mae})
         history = trainer.fit(_mt_loader(), _mt_loader(), epochs=1)
 
         # Multi-task loss trained, and BOTH task metrics were tracked — no hand-rolled loop.
         assert "val/loss" in history
-        assert "val/defect_acc" in history and "val/mae" in history
-        assert 0.0 <= history["val/defect_acc"][-1] <= 1.0
+        assert "val/category_acc" in history and "val/mae" in history
+        assert 0.0 <= history["val/category_acc"][-1] <= 1.0
         assert history["val/mae"][-1] >= 0.0
 
     def test_metrics_are_sample_weighted(self, simple_model, loss_fn, optimizer):
