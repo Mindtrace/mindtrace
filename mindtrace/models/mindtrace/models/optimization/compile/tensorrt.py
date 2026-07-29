@@ -98,6 +98,59 @@ def _simplified_onnx(onnx_path: Path) -> bytes | None:
         return None
 
 
+def _parser_errors(parser: Any) -> str:
+    """Join a TensorRT ONNX parser's collected errors into one message."""
+    return "; ".join(str(parser.get_error(i)) for i in range(int(parser.num_errors)))
+
+
+def _parse_onnx_into_network(trt: Any, builder: Any, logger: Any, onnx_path: Path, network_flags: int) -> Any:
+    """Parse an ONNX file into a populated TensorRT network, with a simplify retry.
+
+    The first parse is speculative and uses a silent logger: some functionally
+    valid graphs (notably after a LoRA merge) leave redundant nodes and
+    initializers the parser rejects but graph simplification folds away, and a
+    failure we recover from should not spam TensorRT's error stream. If it fails,
+    the graph is simplified with ``onnxsim`` and parsed once more on a fresh
+    network using the caller's logger. Parser errors are surfaced through the
+    raised exception, so nothing is lost when every attempt fails.
+
+    Args:
+        trt: The imported ``tensorrt`` module.
+        builder: The TensorRT builder that creates networks.
+        logger: The builder's logger, used for the real (non-speculative) parse.
+        onnx_path: Path to the source ONNX model.
+        network_flags: Network-creation flags from :func:`_resolve_network_flags`.
+
+    Returns:
+        The populated TensorRT network definition.
+
+    Raises:
+        RuntimeError: If the graph fails to parse both as-is and simplified.
+    """
+    # Speculative parse under a silent logger. The Logger is bound to a local so
+    # it outlives the parser (TensorRT keeps a reference to it during parsing).
+    quiet = trt.Logger(trt.Logger.INTERNAL_ERROR)
+    network = builder.create_network(network_flags)
+    parser = trt.OnnxParser(network, quiet)
+    if parser.parse(onnx_path.read_bytes()):
+        return network
+    errors = _parser_errors(parser)
+
+    simplified = _simplified_onnx(onnx_path)
+    if simplified is None:
+        raise RuntimeError(f"TensorRT failed to parse ONNX model '{onnx_path}': {errors}")
+
+    network = builder.create_network(network_flags)
+    parser = trt.OnnxParser(network, logger)
+    if not parser.parse(simplified):
+        raise RuntimeError(
+            f"TensorRT failed to parse ONNX model '{onnx_path}': {errors} "
+            f"(retry on the simplified graph also failed: {_parser_errors(parser)})"
+        )
+    logger.log(trt.Logger.INFO, "Initial ONNX parse failed; succeeded after graph simplification.")
+    return network
+
+
 @register_compiler("tensorrt")
 def compile_tensorrt(onnx_path: Path, target: TargetSpec, output_dir: Path, **opts: Any) -> CompiledArtifact:
     """Build a serialized TensorRT engine from an ONNX model.
@@ -105,6 +158,11 @@ def compile_tensorrt(onnx_path: Path, target: TargetSpec, output_dir: Path, **op
     Parses the ONNX file into a TensorRT network, enables FP16/INT8 builder
     flags according to the target's supported precisions, builds a serialized
     engine and writes it to ``<stem>.plan`` in ``output_dir``.
+
+    If the parser rejects the graph, it is simplified with ``onnxsim`` and
+    parsed once more before failing (see :func:`_parse_onnx_into_network`).
+    This recovers graphs the parser refuses over redundant nodes, such as those
+    left by a LoRA merge, without altering graphs that parse as-is.
 
     Note:
         INT8 builds normally require a calibrator (or a QDQ-quantized ONNX
@@ -149,26 +207,9 @@ def compile_tensorrt(onnx_path: Path, target: TargetSpec, output_dir: Path, **op
     # when reduced precision is requested but the builder-flags are gone (TensorRT 11+),
     # so half precision comes from the (typed) ONNX rather than silently reverting to fp32.
     network_flags, is_strongly_typed = _resolve_network_flags(trt, target, bool(opts.get("strongly_typed", False)))
-    network = builder.create_network(network_flags)
-    parser = trt.OnnxParser(network, logger)
-
-    if not parser.parse(onnx_path.read_bytes()):
-        errors = "; ".join(str(parser.get_error(i)) for i in range(int(parser.num_errors)))
-        # Some graphs (notably after a LoRA merge) carry redundant nodes and
-        # initializers the parser rejects but graph simplification folds away.
-        # Retry once on a simplified graph, mirroring export_onnx's auto fallback,
-        # before giving up. A fresh network/parser is used so the retry is clean.
-        simplified = _simplified_onnx(onnx_path)
-        if simplified is not None:
-            network = builder.create_network(network_flags)
-            parser = trt.OnnxParser(network, logger)
-        if simplified is None or not parser.parse(simplified):
-            retry_note = ""
-            if simplified is not None:
-                retry_errors = "; ".join(str(parser.get_error(i)) for i in range(int(parser.num_errors)))
-                retry_note = f" (retry on the simplified graph also failed: {retry_errors})"
-            raise RuntimeError(f"TensorRT failed to parse ONNX model '{onnx_path}': {errors}{retry_note}")
-        logger.log(trt.Logger.INFO, "Initial ONNX parse failed; succeeded after graph simplification.")
+    # Parse the graph into a network, retrying once on a simplified graph if the
+    # first parse fails (see _parse_onnx_into_network for why).
+    network = _parse_onnx_into_network(trt, builder, logger, onnx_path, network_flags)
 
     config = builder.create_builder_config()
     workspace_mb = opts.get("workspace_mb")
