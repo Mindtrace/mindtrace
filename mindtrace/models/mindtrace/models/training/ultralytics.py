@@ -74,8 +74,8 @@ class UltralyticsTrainer(Mindtrace):
     Example::
 
         trainer = UltralyticsTrainer("yolov8n.pt", tracker=tracker, registry=registry)
-        results = trainer.fit(data="weld.yaml", epochs=100, imgsz=640)
-        trainer.save("weld-detector:v1")
+        results = trainer.fit(data="dataset.yaml", epochs=100, imgsz=640)
+        trainer.save("object-detector:v1")
     """
 
     def __init__(self, model: Any, *, tracker: Any = None, registry: Any = None) -> None:
@@ -232,7 +232,7 @@ class UltralyticsDistiller(Mindtrace):
         distiller = UltralyticsDistiller(teacher="yolov8l.pt", alpha=0.5)
         trainer = UltralyticsTrainer("yolov8n.pt")
         distiller.attach(trainer.model)
-        trainer.fit(data="weld.yaml", epochs=100)
+        trainer.fit(data="dataset.yaml", epochs=100)
     """
 
     def __init__(self, teacher: Any, *, alpha: float = 0.5) -> None:

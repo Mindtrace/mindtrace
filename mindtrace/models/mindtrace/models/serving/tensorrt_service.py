@@ -22,9 +22,9 @@ Usage (engine file)::
     from mindtrace.models.serving.tensorrt_service import TensorRTModelService
 
     svc = TensorRTModelService(
-        model_name="weld-detector",
+        model_name="object-detector",
         model_version="v3",
-        engine_path="/models/weld-detector-v3.plan",
+        engine_path="/models/detector-v3.plan",
         device_index=0,
         warmup=2,
     )
@@ -33,7 +33,7 @@ Usage (engine file)::
 Usage (registry path)::
 
     svc = TensorRTModelService(
-        model_name="weld-detector",
+        model_name="object-detector",
         model_version="v3",
         registry=Registry(),
     )
