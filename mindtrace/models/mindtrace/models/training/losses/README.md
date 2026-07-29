@@ -7,8 +7,8 @@ All losses accept logits (not probabilities) unless stated otherwise.
 from mindtrace.models.training.losses import (
     # Classification
     FocalLoss, LabelSmoothingCrossEntropy, SupConLoss,
-    # Detection (bounding-box regression)
-    GIoULoss, CIoULoss,
+    # Detection (bounding-box regression + set prediction)
+    GIoULoss, CIoULoss, HungarianMatcher, DetectionSetCriterion,
     # Segmentation
     DiceLoss, TverskyLoss, IoULoss,
     # Composite
@@ -84,6 +84,23 @@ Complete IoU. Adds centre-point distance and aspect-ratio consistency penalties 
 ```python
 ciou = CIoULoss(reduction="mean")
 loss = ciou(pred_boxes, target_boxes)   # both (N, 4)  xyxy
+```
+
+### `HungarianMatcher` and `DetectionSetCriterion`
+
+Set-prediction training for a query-based detector such as `QueryDetectionHead`. `HungarianMatcher`
+assigns each ground-truth box to one query by minimizing a class + L1 + GIoU cost (needs `scipy`);
+`DetectionSetCriterion` then applies a weighted class cross-entropy (unmatched queries supervised to a
+no-object class) plus L1 and GIoU box losses over the matched pairs.
+
+```python
+from mindtrace.models.training.losses import DetectionSetCriterion
+
+criterion = DetectionSetCriterion(num_classes=1)
+# outputs = {"logits": (B, Q, num_classes + 1), "boxes": (B, Q, 4) cxcywh}
+# targets = [{"boxes": (M, 4) cxcywh, "labels": (M,)}, ...]  one dict per image
+losses = criterion(outputs, targets)     # {"loss", "loss_class", "loss_bbox", "loss_giou"}
+losses["loss"].backward()
 ```
 
 ---

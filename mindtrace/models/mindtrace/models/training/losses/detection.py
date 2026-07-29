@@ -3,9 +3,13 @@
 Provides:
 - ``GIoULoss``: Generalised Intersection-over-Union loss.
 - ``CIoULoss``: Complete Intersection-over-Union loss with aspect-ratio term.
+- ``HungarianMatcher`` / ``DetectionSetCriterion``: set-prediction training for a
+  query-based detector (e.g. ``QueryDetectionHead``), with the ``box_cxcywh_to_xyxy``
+  and ``generalized_box_iou_pairwise`` helpers.
 
-Both losses expect boxes in ``(x1, y1, x2, y2)`` absolute-coordinate format
-and return ``1 - IoU_variant`` so that minimising the loss maximises overlap.
+The IoU losses expect boxes in ``(x1, y1, x2, y2)`` absolute-coordinate format and
+return ``1 - IoU_variant``; the set-prediction pieces work in normalized
+``(cx, cy, w, h)`` box space.
 """
 
 from __future__ import annotations

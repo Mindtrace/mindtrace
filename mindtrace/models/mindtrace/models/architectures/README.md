@@ -21,7 +21,7 @@ The architectures sub-package provides:
 
 - **Model Factory**: `build_model` and `build_model_from_hf` assemble a backbone + head into a single `nn.Module`
 - **Backbone Registry**: 33 built-in backbones with a decorator-based extension mechanism
-- **Head Types**: 7 task-specific heads for classification, segmentation, detection, and multi-task token-level prediction
+- **Head Types**: 8 task-specific heads for classification, segmentation, detection (pooled and query-based), and multi-task token-level prediction
 - **LoRA Support**: Parameter-efficient fine-tuning via PEFT for HuggingFace DINO backbones
 - **Automatic Routing**: HF DINO + segmentation head produces `HFDINOSegWrapper` with spatial upsampling
 
@@ -42,7 +42,7 @@ architectures/
     ├── __init__.py          # All head exports
     ├── classification.py    # LinearHead, MLPHead, MultiLabelHead
     ├── segmentation.py      # LinearSegHead, FPNSegHead
-    ├── detection.py         # DetectionHead
+    ├── detection.py         # DetectionHead, QueryDetectionHead
     └── attention.py         # CrossAttentionMultiTaskHead, DecoderBlock
 ```
 
@@ -193,6 +193,22 @@ from mindtrace.models.architectures import DetectionHead
 head = DetectionHead(in_channels=768, num_classes=80, num_anchors=1)
 logits, deltas = head(features)  # features (B, in_channels)
 # logits: (B, num_classes), deltas: (B, 4 * num_anchors)
+```
+
+### Query Detection Head
+
+`QueryDetectionHead` is a DETR-style detector over a backbone's **patch tokens** (`[B, N, D]`). A
+fixed set of learned object queries self-attend and cross-attend to the patch tokens through decoder
+blocks, then each query predicts a class (with a trailing no-object class) and a normalized box.
+Because it predicts a fixed set with no non-maximum suppression, it exports and compiles cleanly.
+Train it as set prediction with `HungarianMatcher` and `DetectionSetCriterion` (see the losses docs).
+
+```python
+from mindtrace.models.architectures import QueryDetectionHead
+
+head = QueryDetectionHead(dim=768, num_classes=1, num_queries=20, layers=3)
+out = head(tokens)          # tokens: (B, N, 768) from a token-level backbone
+# out["logits"]: (B, 20, num_classes + 1), out["boxes"]: (B, 20, 4) cxcywh in [0, 1]
 ```
 
 ### Multi-Task Head
