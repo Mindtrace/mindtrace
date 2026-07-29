@@ -321,11 +321,15 @@ def _check_parity(
         return
 
     import numpy as np
+    from torch.utils._pytree import tree_flatten
 
-    if isinstance(torch_output, (tuple, list)):
-        torch_outputs = [t.detach().cpu().numpy() for t in torch_output]
-    else:
-        torch_outputs = [torch_output.detach().cpu().numpy()]
+    # Flatten the PyTorch output with the same pytree traversal torch.onnx.export
+    # uses to lay out graph outputs, so a tensor, a tuple/list, or a dict (a
+    # multi-task head returns {"task": tensor, ...}) all line up positionally with
+    # the ONNX Runtime outputs. Non-tensor leaves are dropped: ONNX exports only
+    # tensors, so keeping them would desynchronize the counts.
+    leaves, _ = tree_flatten(torch_output)
+    torch_outputs = [leaf.detach().cpu().numpy() for leaf in leaves if hasattr(leaf, "detach")]
 
     session = onnxruntime.InferenceSession(str(path), providers=["CPUExecutionProvider"])
     feed = {session.get_inputs()[0].name: example_input.cpu().numpy()}
