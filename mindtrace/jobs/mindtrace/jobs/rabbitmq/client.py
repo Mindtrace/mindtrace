@@ -1,5 +1,7 @@
 import json
 import uuid
+from contextlib import contextmanager
+from typing import Iterator, Sequence
 
 import pika
 import pika.exceptions
@@ -11,6 +13,7 @@ from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
 from mindtrace.jobs.consumers.consumer import Consumer
 from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
 from mindtrace.jobs.rabbitmq.consumer_backend import RabbitMQConsumerBackend
+from mindtrace.jobs.types.batch import BatchPublishResult
 
 
 class RabbitMQClient(OrchestratorBackend):
@@ -223,6 +226,57 @@ class RabbitMQClient(OrchestratorBackend):
             self.logger.error(f"Unexpected error: {str(e)}")
             return {"status": "error", "message": f"Unexpected error: {str(e)}"}
 
+    def _publish_on_channel(self, channel, queue_name: str, message: pydantic.BaseModel, **kwargs) -> str:
+        """Publish one message on an existing channel."""
+        job_id = str(uuid.uuid1())
+        exchange = kwargs.get("exchange", "default")
+        routing_key = kwargs.get("routing_key", queue_name)
+        delivery_mode = kwargs.get("delivery_mode", DeliveryMode.Persistent)
+        mandatory = kwargs.get("mandatory", True)
+        priority = kwargs.get("priority", 0)
+        message_dict = message.model_dump()
+        channel.basic_publish(
+            exchange=exchange,
+            routing_key=routing_key,
+            body=json.dumps(message_dict).encode("utf-8"),
+            properties=BasicProperties(
+                content_type="application/json",
+                headers={"job_id": job_id, "routing_key": routing_key},
+                delivery_mode=delivery_mode,
+                priority=priority,
+            ),
+            mandatory=mandatory,
+        )
+        self.logger.debug(
+            f"RabbitMQClient sent message (job_id: {job_id}) with routing key: {routing_key} to exchange: {exchange}"
+        )
+        return job_id
+
+    @contextmanager
+    def _batch_channel(self) -> Iterator:
+        """Open one owned RabbitMQ connection and channel for a batch."""
+        connection = RabbitMQConnection(
+            host=self._host,
+            port=self._port,
+            username=self._username,
+            password=self._password,
+        )
+        channel = None
+        try:
+            connection.connect()
+            channel = connection.get_channel()
+            yield channel
+        finally:
+            if channel is not None and getattr(channel, "is_open", False):
+                try:
+                    channel.close()
+                except Exception as exc:
+                    self.logger.warning(f"Failed to close RabbitMQ batch channel: {exc}")
+            try:
+                connection.close()
+            except Exception as exc:
+                self.logger.warning(f"Failed to close RabbitMQ batch connection: {exc}")
+
     def publish(self, queue_name: str, message: pydantic.BaseModel, **kwargs):
         """Publish a message to the specified exchange using RabbitMQ.
         Args:
@@ -237,34 +291,11 @@ class RabbitMQClient(OrchestratorBackend):
             str: The generated job ID for the message.
         """
         channel = self.create_connection()
-        job_id = str(uuid.uuid1())
         exchange = kwargs.get("exchange", "default")
         routing_key = kwargs.get("routing_key", queue_name)
-        # durable = kwargs.get("durable", True)
-        delivery_mode = kwargs.get("delivery_mode", DeliveryMode.Persistent)
-        mandatory = kwargs.get("mandatory", True)
-        priority = kwargs.get("priority", 0)
-        self.logger.info(f"exchange: {exchange}, routing_key: {routing_key}")
+        self.logger.debug(f"exchange: {exchange}, routing_key: {routing_key}")
         try:
-            message_dict = message.model_dump()
-            channel.basic_publish(
-                exchange=exchange,
-                routing_key=routing_key,
-                body=json.dumps(message_dict).encode("utf-8"),
-                properties=BasicProperties(
-                    content_type="application/json",
-                    headers={"job_id": job_id, "routing_key": routing_key},
-                    delivery_mode=delivery_mode,
-                    priority=priority,
-                ),
-                mandatory=mandatory,
-            )
-            self.logger.debug(
-                f"RabbitMQClient sent message (job_id: {job_id}) "
-                f"with routing key: {routing_key} "
-                f"to exchange: {exchange}"
-            )
-            return job_id
+            return self._publish_on_channel(channel, queue_name, message, **kwargs)
         except pika.exceptions.UnroutableError as e:
             self.logger.error("Unroutable Message error: %s \n ", e)
             raise
@@ -277,6 +308,45 @@ class RabbitMQClient(OrchestratorBackend):
         except Exception as e:
             self.logger.error(f"Unexpected error in publish: {e}")
             raise e
+
+    def publish_batch(
+        self,
+        queue_name: str,
+        messages: Sequence[pydantic.BaseModel],
+        **kwargs,
+    ) -> BatchPublishResult:
+        """Publish a batch using one RabbitMQ connection and channel.
+
+        The operation is not atomic. Publishing stops after the first synchronous
+        publish error and preserves job IDs returned before that error. Publisher
+        confirms are not enabled, so a returned job ID means ``basic_publish``
+        completed without a synchronous error, not that the broker confirmed
+        acceptance. Asynchronous broker rejection may surface later and cannot be
+        attributed precisely to an input index. Connection and channel setup
+        errors are raised before any item is attempted.
+        """
+        result = BatchPublishResult.for_batch_size(len(messages))
+        if not messages:
+            return result
+
+        exchange = kwargs.get("exchange", "default")
+        routing_key = kwargs.get("routing_key", queue_name)
+        self.logger.debug(
+            f"Publishing RabbitMQ batch of {len(messages)} messages to exchange: {exchange}, routing_key: {routing_key}"
+        )
+        with self._batch_channel() as channel:
+            for index, message in enumerate(messages):
+                try:
+                    result.job_ids[index] = self._publish_on_channel(channel, queue_name, message, **kwargs)
+                except Exception as exc:
+                    self.logger.error(f"Failed to publish RabbitMQ batch item {index}: {exc}")
+                    result.errors[index] = {
+                        "error": type(exc).__name__,
+                        "message": str(exc),
+                    }
+                    break
+
+        return result
 
     def clean_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Remove all messages from a queue."""
