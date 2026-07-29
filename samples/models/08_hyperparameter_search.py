@@ -14,11 +14,11 @@ Demonstrates:
 import os
 
 import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from mindtrace.models.architectures.factory import build_model
 from mindtrace.models.training.callbacks import OptunaCallback
+from mindtrace.models.training.losses import build_loss
 from mindtrace.models.training.optimizers import build_optimizer
 from mindtrace.models.training.trainer import Trainer
 
@@ -86,7 +86,7 @@ if _OPTUNA:
         optimizer = build_optimizer("adamw", model, lr=lr, weight_decay=wd)
         trainer = Trainer(
             model=model,
-            loss_fn=nn.CrossEntropyLoss(),
+            loss_fn=build_loss("cross_entropy"),
             optimizer=optimizer,
             callbacks=[OptunaCallback(trial, monitor="val/loss")],
             device="auto",
@@ -132,7 +132,7 @@ if _OPTUNA:
         cb = OptunaCallback(trial, monitor="val/loss")
         trainer = Trainer(
             model=model,
-            loss_fn=nn.CrossEntropyLoss(),
+            loss_fn=build_loss("cross_entropy"),
             optimizer=optimizer,
             callbacks=[cb],
             device="auto",
@@ -185,7 +185,7 @@ if _OPTUNA:
     )
     final_trainer = Trainer(
         model=final_model,
-        loss_fn=nn.CrossEntropyLoss(),
+        loss_fn=build_loss("cross_entropy"),
         optimizer=final_opt,
         device="auto",
     )
@@ -200,7 +200,7 @@ else:
     fallback_opt = build_optimizer("adamw", fallback_model, lr=3e-4, weight_decay=1e-2)
     fallback_trainer = Trainer(
         model=fallback_model,
-        loss_fn=nn.CrossEntropyLoss(),
+        loss_fn=build_loss("cross_entropy"),
         optimizer=fallback_opt,
         device="auto",
     )
@@ -237,7 +237,7 @@ duck_model = build_model(BACKBONE, "linear", num_classes=NUM_CLASSES, pretrained
 duck_opt = build_optimizer("adam", duck_model, lr=1e-3)
 duck_trainer = Trainer(
     model=duck_model,
-    loss_fn=nn.CrossEntropyLoss(),
+    loss_fn=build_loss("cross_entropy"),
     optimizer=duck_opt,
     callbacks=[duck_cb],
     device="auto",

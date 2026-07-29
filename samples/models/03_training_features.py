@@ -32,6 +32,7 @@ from mindtrace.models import (
     ProgressLogger,
     Trainer,
     UnfreezeSchedule,
+    build_loss,
     build_model,
     build_optimizer,
     build_scheduler,
@@ -105,7 +106,7 @@ callbacks = [
 
 trainer = Trainer(
     model=model,
-    loss_fn=nn.CrossEntropyLoss(),
+    loss_fn=build_loss("cross_entropy"),
     optimizer=opt,
     scheduler=sched,
     callbacks=callbacks,
@@ -189,7 +190,7 @@ sched = build_scheduler("cosine", opt, total_steps=_steps())
 
 trainer = Trainer(
     model=model,
-    loss_fn=nn.CrossEntropyLoss(),
+    loss_fn=build_loss("cross_entropy"),
     optimizer=opt,
     scheduler=sched,
     device="auto",
@@ -213,7 +214,7 @@ opt = build_optimizer("adamw", model, lr=1e-3)
 try:
     trainer = Trainer(
         model=model,
-        loss_fn=nn.CrossEntropyLoss(),
+        loss_fn=build_loss("cross_entropy"),
         optimizer=opt,
         device="auto",
         gradient_checkpointing=True,  # silently ignored for resnet18
@@ -247,7 +248,7 @@ opt = build_optimizer("adamw", model, lr=1e-3)
 
 trainer = Trainer(
     model=model,
-    loss_fn=nn.CrossEntropyLoss(),
+    loss_fn=build_loss("cross_entropy"),
     optimizer=opt,
     device="auto",
     batch_fn=unpack_dict,
@@ -287,7 +288,7 @@ reg_val = DataLoader(TensorDataset(reg_val_x, reg_val_y), batch_size=8)
 reg_opt = build_optimizer("adamw", reg_model, lr=1e-3)
 reg_trainer = Trainer(
     model=reg_model,
-    loss_fn=nn.MSELoss(),
+    loss_fn=build_loss("mse"),
     optimizer=reg_opt,
     device="auto",
 )
@@ -331,7 +332,7 @@ opt = build_optimizer("adamw", model, lr=1e-3)
 
 trainer = Trainer(
     model=model,
-    loss_fn=nn.CrossEntropyLoss(),
+    loss_fn=build_loss("cross_entropy"),
     optimizer=opt,
     callbacks=[OptunaCallback(fake_trial, monitor="val/loss")],
     device="auto",
