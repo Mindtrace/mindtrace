@@ -187,12 +187,12 @@ class TestClassificationResult:
         assert "extra" not in d
 
     def test_from_dict_with_class_key(self):
-        r = ClassificationResult.from_dict({"class": "weld", "confidence": 0.7})
-        assert r.cls == "weld"
+        r = ClassificationResult.from_dict({"class": "widget", "confidence": 0.7})
+        assert r.cls == "widget"
 
     def test_from_dict_with_cls_key(self):
-        r = ClassificationResult.from_dict({"cls": "weld", "confidence": 0.7})
-        assert r.cls == "weld"
+        r = ClassificationResult.from_dict({"cls": "widget", "confidence": 0.7})
+        assert r.cls == "widget"
 
     def test_from_dict_defaults(self):
         r = ClassificationResult.from_dict({})
@@ -209,7 +209,7 @@ class TestClassificationResult:
 
 class TestDetectionResult:
     def test_basic_construction(self):
-        r = DetectionResult(bbox=(10, 20, 100, 200), cls="defect", confidence=0.85)
+        r = DetectionResult(bbox=(10, 20, 100, 200), cls="widget", confidence=0.85)
         assert r.bbox == (10, 20, 100, 200)
         assert r.id == ""
         assert r.extra == {}
@@ -254,7 +254,7 @@ class TestDetectionResult:
 class TestSegmentationResult:
     def test_basic_construction(self):
         mask = np.zeros((100, 200), dtype=np.int32)
-        mapping = {0: "background", 1: "defect"}
+        mapping = {0: "background", 1: "widget"}
         r = SegmentationResult(data=mask, class_mapping=mapping)
         assert r.height == 100
         assert r.width == 200
@@ -699,8 +699,8 @@ class TestTorchServeModelService:
         defaults = dict(
             ts_inference_url="http://localhost:8080",
             ts_management_url="http://localhost:8081",
-            ts_model_name="weld-det",
-            model_name="weld-det",
+            ts_model_name="detector",
+            model_name="detector",
             model_version="v1",
             registry=None,
         )
@@ -720,7 +720,7 @@ class TestTorchServeModelService:
         svc = self._make_ts_svc(_patch_core_config)
         assert svc.ts_inference_url == "http://localhost:8080"
         assert svc.ts_management_url == "http://localhost:8081"
-        assert svc.ts_model_name == "weld-det"
+        assert svc.ts_model_name == "detector"
 
     def test_init_strips_trailing_slash(self, _patch_core_config):
         svc = self._make_ts_svc(
@@ -803,7 +803,7 @@ class TestTorchServeModelService:
         svc = self._make_ts_svc(_patch_core_config)
         req = PredictRequest(images=["img.png"])
 
-        payload = {"class": "defect", "score": 0.8}
+        payload = {"class": "widget", "score": 0.8}
         mock_resp = MagicMock()
         mock_resp.read.return_value = json.dumps(payload).encode()
         mock_resp.__enter__ = MagicMock(return_value=mock_resp)
@@ -812,14 +812,14 @@ class TestTorchServeModelService:
         with patch("urllib.request.urlopen", return_value=mock_resp):
             resp = svc.predict(req)
 
-        assert resp.results == [{"class": "defect", "score": 0.8}]
+        assert resp.results == [{"class": "widget", "score": 0.8}]
 
     def test_predict_http_error(self, _patch_core_config):
         svc = self._make_ts_svc(_patch_core_config)
         req = PredictRequest(images=["img.png"])
 
         exc = urllib.error.HTTPError(
-            url="http://localhost:8080/predictions/weld-det",
+            url="http://localhost:8080/predictions/detector",
             code=500,
             msg="Internal Server Error",
             hdrs=None,  # type: ignore
@@ -856,8 +856,8 @@ class TestTorchServeModelService:
         info = svc.info()
         assert info.extra["ts_inference_url"] == "http://localhost:8080"
         assert info.extra["ts_management_url"] == "http://localhost:8081"
-        assert info.extra["ts_model_name"] == "weld-det"
-        assert info.name == "weld-det"
+        assert info.extra["ts_model_name"] == "detector"
+        assert info.name == "detector"
         assert info.task == "generic"
 
     def test_timeout_stored(self, _patch_core_config):

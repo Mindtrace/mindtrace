@@ -142,24 +142,24 @@ history = trainer.fit(train_loader, val_loader, epochs=50)
 `metrics` maps a name to `fn(outputs, targets) -> float`. Each function runs per
 validation batch, is sample-weighted, averaged over the validation set, and
 reported in `history` as `val/<name>`. A multi-task model returning `(logits,
-severity)` can report several metrics in one pass:
+score)` can report several metrics in one pass:
 
 ```python
-def defect_acc(outputs, targets):
+def category_acc(outputs, targets):
     logits, _ = outputs
-    return (logits.argmax(1) == targets["defect"]).float().mean().item()
+    return (logits.argmax(1) == targets["category"]).float().mean().item()
 
-def severity_mae(outputs, targets):
-    _, sev = outputs
-    return (sev.squeeze(-1) - targets["severity"]).abs().mean().item()
+def score_mae(outputs, targets):
+    _, score = outputs
+    return (score.squeeze(-1) - targets["score"]).abs().mean().item()
 
 trainer = Trainer(
     model=model,
     loss_fn=loss_fn,
     optimizer=optimizer,
-    metrics={"defect_acc": defect_acc, "mae": severity_mae},
+    metrics={"category_acc": category_acc, "mae": score_mae},
 )
-# history["val/defect_acc"], history["val/mae"]
+# history["val/category_acc"], history["val/mae"]
 ```
 
 ### Scheduler Interval
@@ -370,10 +370,10 @@ in `named_losses`.
 from mindtrace.models.training.losses import MultiTaskLoss, TaskSpec, build_loss
 
 loss_fn = MultiTaskLoss({
-    "defect":   TaskSpec(build_loss("cross_entropy"), output=0, target="defect"),
-    "severity": TaskSpec(build_loss("mse"), output=1, target="severity", weight=0.5),
+    "category": TaskSpec(build_loss("cross_entropy"), output=0, target="category"),
+    "score":    TaskSpec(build_loss("mse"), output=1, target="score", weight=0.5),
 })
-# model returns (logits, severity); targets is {"defect": ..., "severity": ...}
+# model returns (logits, score); targets is {"category": ..., "score": ...}
 loss = loss_fn(outputs, targets)
 ```
 

@@ -225,11 +225,11 @@ task's target from the batch's target dict.
 from mindtrace.models.training.losses import MultiTaskLoss, TaskSpec, build_loss
 
 loss_fn = MultiTaskLoss({
-    "defect":   TaskSpec(build_loss("cross_entropy"), output=0, target="defect"),
-    "severity": TaskSpec(build_loss("mse"), output=1, target="severity", weight=0.5),
+    "category": TaskSpec(build_loss("cross_entropy"), output=0, target="category"),
+    "score":    TaskSpec(build_loss("mse"), output=1, target="score", weight=0.5),
 })
 
-# model returns (logits, severity); targets is {"defect": ..., "severity": ...}
+# model returns (logits, score); targets is {"category": ..., "score": ...}
 loss = loss_fn(outputs, targets)
 print(loss_fn.named_losses)   # per-task weighted values from the last forward
 ```

@@ -45,15 +45,15 @@ class TestUltralyticsTrainer:
     def test_fit_delegates_to_yolo_train(self):
         yolo = _FakeYolo()
         trainer = UltralyticsTrainer(yolo)
-        result = trainer.fit(data="weld.yaml", epochs=5, imgsz=640)
+        result = trainer.fit(data="data.yaml", epochs=5, imgsz=640)
 
         assert result == "results"
-        yolo.train.assert_called_once_with(data="weld.yaml", epochs=5, imgsz=640)
+        yolo.train.assert_called_once_with(data="data.yaml", epochs=5, imgsz=640)
 
     def test_fit_attaches_tracker_bridge(self):
         yolo = _FakeYolo()
         trainer = UltralyticsTrainer(yolo, tracker=MagicMock())
-        trainer.fit(data="weld.yaml", epochs=1)
+        trainer.fit(data="data.yaml", epochs=1)
 
         # The bridge registers on_fit_epoch_end + on_train_end callbacks.
         assert "on_fit_epoch_end" in yolo.callbacks
@@ -61,7 +61,7 @@ class TestUltralyticsTrainer:
 
     def test_fit_without_tracker_registers_no_callbacks(self):
         yolo = _FakeYolo()
-        UltralyticsTrainer(yolo).fit(data="weld.yaml", epochs=1)
+        UltralyticsTrainer(yolo).fit(data="data.yaml", epochs=1)
         assert yolo.callbacks == {}
 
     def test_val_and_export_delegate(self):
@@ -77,26 +77,26 @@ class TestUltralyticsTrainer:
         # DetectionTrainer emits, so both satisfy DetectionTrainerProtocol.
         yolo = _FakeYolo()
         yolo.val = MagicMock(return_value=SimpleNamespace(box=SimpleNamespace(map50=0.8, map=0.5)))
-        metrics = UltralyticsTrainer(yolo).evaluate("weld.yaml", imgsz=640)
+        metrics = UltralyticsTrainer(yolo).evaluate("data.yaml", imgsz=640)
         assert metrics == {"mAP50": 0.8, "mAP5095": 0.5}
-        yolo.val.assert_called_once_with(data="weld.yaml", imgsz=640)
+        yolo.val.assert_called_once_with(data="data.yaml", imgsz=640)
 
     def test_save_uses_registry(self):
         yolo = _FakeYolo()
         registry = MagicMock()
         trainer = UltralyticsTrainer(yolo, registry=registry)
-        assert trainer.save("weld:v1") == "weld:v1"
-        registry.save.assert_called_once_with("weld:v1", yolo)
+        assert trainer.save("model:v1") == "model:v1"
+        registry.save.assert_called_once_with("model:v1", yolo)
 
     def test_save_without_registry_raises(self):
         with pytest.raises(ValueError, match="requires a registry"):
-            UltralyticsTrainer(_FakeYolo()).save("weld:v1")
+            UltralyticsTrainer(_FakeYolo()).save("model:v1")
 
     def test_fit_save_key_persists(self):
         yolo = _FakeYolo()
         registry = MagicMock()
-        UltralyticsTrainer(yolo, registry=registry).fit(data="d.yaml", epochs=1, save_key="weld:v1")
-        registry.save.assert_called_once_with("weld:v1", yolo)
+        UltralyticsTrainer(yolo, registry=registry).fit(data="d.yaml", epochs=1, save_key="model:v1")
+        registry.save.assert_called_once_with("model:v1", yolo)
 
 
 # ---------------------------------------------------------------------------

@@ -19,10 +19,10 @@ class TestDecoderBlock:
 
 class TestCrossAttentionMultiTaskHead:
     def test_multitask_output_shapes(self):
-        head = CrossAttentionMultiTaskHead(dim=64, tasks={"defect": 9, "severity": 1}, layers=2)
+        head = CrossAttentionMultiTaskHead(dim=64, tasks={"category": 5, "score": 1}, layers=2)
         out = head(torch.randn(4, 197, 64))
-        assert out["defect"].shape == (4, 9)
-        assert out["severity"].shape == (4,)  # 1-dim task squeezed
+        assert out["category"].shape == (4, 5)
+        assert out["score"].shape == (4,)  # 1-dim task squeezed
 
     def test_single_task(self):
         head = CrossAttentionMultiTaskHead(dim=48, tasks={"cls": 5})
@@ -35,10 +35,10 @@ class TestCrossAttentionMultiTaskHead:
         assert head.queries.shape == (1, 3, 32)
 
     def test_gradients_flow_to_backbone_tokens(self):
-        head = CrossAttentionMultiTaskHead(dim=32, tasks={"defect": 4, "severity": 1})
+        head = CrossAttentionMultiTaskHead(dim=32, tasks={"category": 4, "score": 1})
         tokens = torch.randn(2, 40, 32, requires_grad=True)
         out = head(tokens)
-        (out["defect"].sum() + out["severity"].sum()).backward()
+        (out["category"].sum() + out["score"].sum()).backward()
         assert tokens.grad is not None and tokens.grad.abs().sum() > 0
 
     def test_empty_tasks_rejected(self):

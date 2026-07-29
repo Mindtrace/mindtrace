@@ -3,13 +3,13 @@
 The pooled-feature heads (linear, mlp) discard spatial structure and can only
 serve one task. This head keeps the backbone's patch tokens and attaches one
 learned query token per task. The query tokens self-attend to each other (so
-coupled tasks such as a defect type and its severity can condition on one
+coupled tasks such as a category and a continuous score can condition on one
 another) and cross-attend to the patch tokens (so each task reads the image),
 through a stack of transformer decoder blocks. Each query produces its own
 task output.
 
     tokens [B, N, D] (patch tokens from a token-level backbone)
-      queries [defect, severity, ...]
+      queries [category, score, ...]
         -> self-attention (queries communicate)
         -> cross-attention (read the patch tokens)
         -> feed-forward
@@ -50,7 +50,7 @@ class CrossAttentionMultiTaskHead(nn.Module):
     Args:
         dim: Backbone token dimension (the ``D`` of the ``[B, N, D]`` input).
         tasks: Mapping of task name to output dimension, e.g.
-            ``{"defect": 9, "severity": 1}``. Order defines the query order.
+            ``{"category": 5, "score": 1}``. Order defines the query order.
         num_heads: Attention heads in each decoder block.
         layers: Number of stacked decoder blocks.
         ffn_mult: Hidden expansion factor of the feed-forward sub-layer.

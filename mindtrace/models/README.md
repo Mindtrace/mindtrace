@@ -285,7 +285,7 @@ loss = MultiTaskLoss({
 
 ### Validation metrics and multi-task
 
-`Trainer` accepts `metrics={name: fn(outputs, targets) -> float}`; each is sample-weighted over the validation set and reported in `history` as `val/<name>`. This is what makes multi-task training first-class: a model returning `(logits, severity)` reports both `val/accuracy` and `val/mae`. Set `scheduler_interval="epoch"` to advance an epoch-based LR schedule once per epoch instead of once per optimizer step.
+`Trainer` accepts `metrics={name: fn(outputs, targets) -> float}`; each is sample-weighted over the validation set and reported in `history` as `val/<name>`. This is what makes multi-task training first-class: a model returning `(logits, score)` reports both `val/accuracy` and `val/mae`. Set `scheduler_interval="epoch"` to advance an epoch-based LR schedule once per epoch instead of once per optimizer step.
 
 ```python
 trainer = Trainer(

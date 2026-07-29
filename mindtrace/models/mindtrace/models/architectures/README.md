@@ -21,7 +21,7 @@ The architectures sub-package provides:
 
 - **Model Factory**: `build_model` and `build_model_from_hf` assemble a backbone + head into a single `nn.Module`
 - **Backbone Registry**: 33 built-in backbones with a decorator-based extension mechanism
-- **Head Types**: 6 task-specific heads for classification, segmentation, and detection
+- **Head Types**: 7 task-specific heads for classification, segmentation, detection, and multi-task token-level prediction
 - **LoRA Support**: Parameter-efficient fine-tuning via PEFT for HuggingFace DINO backbones
 - **Automatic Routing**: HF DINO + segmentation head produces `HFDINOSegWrapper` with spatial upsampling
 
@@ -42,7 +42,8 @@ architectures/
     ├── __init__.py          # All head exports
     ├── classification.py    # LinearHead, MLPHead, MultiLabelHead
     ├── segmentation.py      # LinearSegHead, FPNSegHead
-    └── detection.py         # DetectionHead
+    ├── detection.py         # DetectionHead
+    └── attention.py         # CrossAttentionMultiTaskHead, DecoderBlock
 ```
 
 ## Model Factory
@@ -192,6 +193,23 @@ from mindtrace.models.architectures import DetectionHead
 head = DetectionHead(in_channels=768, num_classes=80, num_anchors=1)
 logits, deltas = head(features)  # features (B, in_channels)
 # logits: (B, num_classes), deltas: (B, 4 * num_anchors)
+```
+
+### Multi-Task Head
+
+`CrossAttentionMultiTaskHead` reads a backbone's **patch tokens** (`[B, N, D]`) rather than a
+pooled vector, and predicts several tasks at once. It attaches one learned query token per task; the
+queries self-attend (so coupled tasks such as a category and a continuous score condition on one
+another) and cross-attend to the patch tokens through a stack of transformer decoder blocks. The
+forward pass returns a dict mapping each task name to its output; a task with output dimension 1 is
+squeezed.
+
+```python
+from mindtrace.models.architectures import CrossAttentionMultiTaskHead
+
+head = CrossAttentionMultiTaskHead(dim=768, tasks={"category": 5, "score": 1}, layers=2)
+out = head(tokens)          # tokens: (B, N, 768) from a token-level backbone
+# out["category"]: (B, 5), out["score"]: (B,)
 ```
 
 ## LoRA Fine-Tuning
