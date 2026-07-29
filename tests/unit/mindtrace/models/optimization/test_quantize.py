@@ -159,6 +159,24 @@ class TestQuantizeDynamic:
         with pytest.raises(FileNotFoundError):
             quantize_dynamic(tmp_path / "nope.onnx")
 
+    def test_preprocesses_before_quantizing(self, cnn_onnx, tmp_path, monkeypatch):
+        """Dynamic quantization must pre-process the graph first (shape inference),
+        matching the static path. Without it, models with a dimension-reducing head
+        (e.g. a 768->9 classifier MatMul) fail at session load with
+        "Inferred shape and existing shape differ". This locks the fix in place."""
+        from mindtrace.models.optimization.quantize import ptq
+
+        calls = []
+        real = ptq.preprocess_for_quantization
+        monkeypatch.setattr(
+            ptq, "preprocess_for_quantization", lambda p, w: calls.append(p) or real(p, w)
+        )
+
+        out = quantize_dynamic(cnn_onnx, tmp_path / "pre.onnx")
+
+        assert calls, "quantize_dynamic did not pre-process the model before quantizing"
+        assert _run_ort(out).shape == (1, 10)  # loads and runs after preprocessing
+
 
 # ---------------------------------------------------------------------------
 # StaticQuantizer
