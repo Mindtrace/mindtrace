@@ -189,7 +189,7 @@ def test_tensorrt_mocked_build_writes_plan(tiny_onnx: Path, tmp_path: Path, monk
     mock_trt = MagicMock(name="tensorrt")
     builder = mock_trt.Builder.return_value
     parser = mock_trt.OnnxParser.return_value
-    parser.parse.return_value = True
+    parser.parse_from_file.return_value = True
     parser.num_errors = 0
     builder.build_serialized_network.return_value = b"fake-engine-bytes"
     monkeypatch.setitem(sys.modules, "tensorrt", mock_trt)
@@ -205,7 +205,7 @@ def test_tensorrt_mocked_build_writes_plan(tiny_onnx: Path, tmp_path: Path, monk
     # The Builder / NetworkDefinition / OnnxParser flow was exercised.
     mock_trt.Builder.assert_called_once()
     builder.create_network.assert_called_once()
-    parser.parse.assert_called_once_with(tiny_onnx.read_bytes())
+    parser.parse_from_file.assert_called_once_with(str(tiny_onnx))
     config = builder.create_builder_config.return_value
     config.set_flag.assert_any_call(mock_trt.BuilderFlag.FP16)
     config.set_flag.assert_any_call(mock_trt.BuilderFlag.INT8)
@@ -231,7 +231,7 @@ def _mock_trt_with_input(monkeypatch, shape):
     mock_trt = MagicMock(name="tensorrt")
     builder = mock_trt.Builder.return_value
     parser = mock_trt.OnnxParser.return_value
-    parser.parse.return_value = True
+    parser.parse_from_file.return_value = True
     parser.num_errors = 0
     builder.build_serialized_network.return_value = b"fake-engine-bytes"
     network = builder.create_network.return_value
