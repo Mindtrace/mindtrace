@@ -1,8 +1,8 @@
 [![PyPI version](https://img.shields.io/pypi/v/mindtrace-models)](https://pypi.org/project/mindtrace-models/)
 
-# Mindtrace Models -- Serving
+# Mindtrace Models: Serving
 
-Model inference services with a uniform `predict()` interface. Two runtime backends are provided: ONNX Runtime (CPU/GPU via onnxruntime) and TorchServe.
+Model inference services with a uniform `predict()` interface. This document covers two runtime backends in depth: ONNX Runtime (CPU/GPU via onnxruntime) and TorchServe. The package also ships OpenVINO, TensorRT, edge, and in-process execution paths (see [API Reference](#api-reference)).
 
 ## Table of Contents
 
@@ -30,15 +30,23 @@ The serving sub-package provides:
 
 ```
 serving/
-├── __init__.py              # ModelService, schemas, resolve_device
-├── base.py                  # ModelService abstract base class
-├── schemas.py               # PredictRequest, PredictResponse, ModelInfo, result types
+├── __init__.py              # Public API exports
+├── service.py               # ModelService abstract base, resolve_device
+├── schemas.py               # PredictRequest, PredictResponse, ModelInfo
+├── results.py               # ClassificationResult, DetectionResult, SegmentationResult
+├── openvino_service.py      # OpenVINOModelService
+├── tensorrt_service.py      # TensorRTModelService
+├── edge.py                  # EdgeModelService, probe_runtimes
+├── inprocess.py             # InProcessPredictor
+├── queue.py                 # InferenceQueue
+├── tiling.py                # TiledInference, TileDetection
+├── compile_agent.py         # CompileAgentService
 ├── onnx/
 │   ├── __init__.py
 │   └── service.py           # OnnxModelService
 └── torchserve/
     ├── __init__.py
-    ├── service.py           # TorchServeModelService
+    ├── client.py            # TorchServeModelService
     ├── exporter.py          # TorchServeExporter
     └── handler.py           # MindtraceHandler (TorchServe custom handler)
 ```
@@ -204,18 +212,25 @@ resp = svc.predict(PredictRequest(images=["img.jpg"]))
 |-----------|------|---------|-------------|
 | `ts_inference_url` | `str` | required | TorchServe inference endpoint |
 | `ts_management_url` | `str` | required | TorchServe management endpoint |
-| `ts_model_name` | `str` | required | Model name registered in TorchServe |
+| `ts_model_name` | `str` or `None` | `None` | Model name registered in TorchServe (defaults to `model_name`) |
 | `timeout_s` | `float` | `30.0` | HTTP request timeout |
 
 ### TorchServeExporter
 
 Export a model to TorchServe `.mar` archive format.
 
+`export` is a static method; there is no need to instantiate the class. Weights come from `model_path` or `registry`.
+
 ```python
 from mindtrace.models.serving.torchserve import TorchServeExporter
 
-exporter = TorchServeExporter(model=model, model_name="image-classifier")
-exporter.export(output_dir="/tmp/ts_models")
+mar_path = TorchServeExporter.export(
+    model_name="image-classifier",
+    version="v3",
+    handler="image_classifier",   # built-in handler name, a .py file, or a MindtraceHandler subclass
+    model_path="model.pt",        # or: registry=my_registry
+    output_dir="/tmp/ts_models",
+)
 ```
 
 ## Request and Response Schemas
@@ -246,9 +261,9 @@ info = ModelInfo(
 
 | Class | Task | Fields |
 |-------|------|--------|
-| `ClassificationResult` | Classification | `class_name`, `score`, `class_id` |
-| `DetectionResult` | Detection | `boxes`, `scores`, `labels` |
-| `SegmentationResult` | Segmentation | `mask`, `class_ids` |
+| `ClassificationResult` | Classification | `cls`, `confidence`, `severity`, `extra` |
+| `DetectionResult` | Detection | `bbox` (x1, y1, x2, y2), `cls`, `confidence`, `id`, `extra` |
+| `SegmentationResult` | Segmentation | `data` (H×W class-index array), `class_mapping` |
 
 ## Backend Comparison
 
@@ -288,6 +303,18 @@ from mindtrace.models.serving import (
     ClassificationResult,       # typed classification output
     DetectionResult,            # typed detection output
     SegmentationResult,         # typed segmentation output
+
+    # Additional backends
+    OpenVINOModelService,       # native OpenVINO runtime
+    TensorRTModelService,       # native TensorRT runtime
+    EdgeModelService,           # edge deployment service
+    probe_runtimes,             # detect available edge runtimes
+    InProcessPredictor,         # zero-copy in-process inference
+
+    # Utilities
+    InferenceQueue,             # async capture/inference decoupling
+    TiledInference,             # tiled inference for large frames
+    TileDetection,              # tile result type
 )
 
 from mindtrace.models.serving.onnx import (

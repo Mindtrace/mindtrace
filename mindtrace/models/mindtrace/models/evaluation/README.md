@@ -1,6 +1,6 @@
 [![PyPI version](https://img.shields.io/pypi/v/mindtrace-models)](https://pypi.org/project/mindtrace-models/)
 
-# Mindtrace Models -- Evaluation
+# Mindtrace Models: Evaluation
 
 Framework-agnostic evaluation with pure-NumPy metric functions for classification, detection, segmentation, and regression. The `EvaluationRunner` orchestrates inference over a PyTorch DataLoader and computes task-specific metrics automatically.
 

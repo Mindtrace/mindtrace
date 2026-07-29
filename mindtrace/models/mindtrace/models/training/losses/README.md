@@ -13,6 +13,10 @@ from mindtrace.models.training.losses import (
     DiceLoss, TverskyLoss, IoULoss,
     # Composite
     ComboLoss,
+    # Distillation
+    DistillationLoss, FeatureDistillation,
+    # Factory + multi-task
+    build_loss, MultiTaskLoss, TaskSpec,
 )
 ```
 
@@ -54,7 +58,7 @@ Supervised contrastive loss (Khosla et al., NeurIPS 2020). Pulls same-class embe
 import torch.nn.functional as F
 
 loss_fn = SupConLoss(temperature=0.07, base_temperature=0.07)
-feats = F.normalize(backbone(x), dim=1)   # (N, D) — must be L2-normalised
+feats = F.normalize(backbone(x), dim=1)   # (N, D), must be L2-normalised
 loss  = loss_fn(feats, labels)            # labels (N,)
 ```
 
@@ -66,7 +70,7 @@ Boxes are expected in `(x1, y1, x2, y2)` absolute pixel format.
 
 ### `GIoULoss`
 
-Generalised IoU — extends IoU with a penalty term based on the enclosing box, providing gradients even when boxes do not overlap.
+Generalised IoU. Extends IoU with a penalty term based on the enclosing box, providing gradients even when boxes do not overlap.
 
 ```python
 giou = GIoULoss(reduction="mean")
@@ -75,7 +79,7 @@ loss = giou(pred_boxes, target_boxes)   # both (N, 4)  xyxy
 
 ### `CIoULoss`
 
-Complete IoU — adds centre-point distance and aspect-ratio consistency penalties to GIoU for faster convergence.
+Complete IoU. Adds centre-point distance and aspect-ratio consistency penalties to GIoU for faster convergence.
 
 ```python
 ciou = CIoULoss(reduction="mean")
@@ -139,13 +143,13 @@ Weighted sum of any number of sub-losses. Sub-losses receive the **same** `args`
 ```python
 from mindtrace.models.training.losses import ComboLoss, DiceLoss, FocalLoss
 
-# Named dict form — best for per-component logging
+# Named dict form: best for per-component logging
 combo = ComboLoss(
     losses={"dice": DiceLoss(), "focal": FocalLoss()},
     weights={"dice": 0.6, "focal": 0.4},
 )
 
-# List form — auto-named "loss_0", "loss_1", …
+# List form: auto-named "loss_0", "loss_1", ...
 combo = ComboLoss(
     losses=[DiceLoss(), FocalLoss()],
     weights=[0.6, 0.4],    # None = equal weights (1.0 each)
@@ -160,14 +164,86 @@ print(combo.named_losses)
 
 ---
 
+## Distillation
+
+### `DistillationLoss`
+
+Combines a base loss on ground-truth targets with a temperature-scaled KL term
+against teacher logits, optionally augmented by a feature-matching term.
+
+```python
+from mindtrace.models.training.losses import DistillationLoss, FeatureDistillation
+
+loss_fn = DistillationLoss(
+    base=nn.CrossEntropyLoss(),   # any callable base loss
+    alpha=0.7,                    # KL vs base weight, in [0, 1]
+    temperature=4.0,              # softmax temperature for the KL term; > 0
+)
+loss = loss_fn(student_logits, targets, teacher_outputs=teacher_logits)
+# teacher_outputs=None -> only the base loss (feature term skipped)
+```
+
+### `FeatureDistillation`
+
+FitNets-style intermediate feature matching between student and teacher submodules
+via forward hooks. Pass an instance as `DistillationLoss(..., features=...)` to add
+a feature term.
+
+---
+
+## Loss factory
+
+### `build_loss`
+
+Constructs a loss by name from one registry spanning torch built-ins and mindtrace
+losses, mirroring `build_optimizer` / `build_scheduler`.
+
+```python
+from mindtrace.models.training.losses import build_loss
+
+ce   = build_loss("cross_entropy")          # torch: ce/cross_entropy, mse/l2, l1/mae,
+mse  = build_loss("mse")                    #        bce, bce_with_logits, huber, smooth_l1, nll
+focal = build_loss("focal", gamma=2.0)      # mindtrace: focal, label_smoothing, supcon,
+dice  = build_loss("dice", smooth=1.0)      #            dice, tversky, iou, giou, ciou, combo, distillation
+```
+
+`kwargs` are forwarded to the constructor; an unknown name raises `ValueError`.
+
+---
+
+## Multi-task loss
+
+### `MultiTaskLoss`
+
+Weighted sum of per-task losses, each routed to its own output head and target key.
+`ComboLoss` forwards one `(output, target)` to every sub-loss; a multi-head model
+instead needs each loss to see a different output and target. `output` is an int
+index into a tuple output or a str key into a dict output; `target` selects the
+task's target from the batch's target dict.
+
+```python
+from mindtrace.models.training.losses import MultiTaskLoss, TaskSpec, build_loss
+
+loss_fn = MultiTaskLoss({
+    "defect":   TaskSpec(build_loss("cross_entropy"), output=0, target="defect"),
+    "severity": TaskSpec(build_loss("mse"), output=1, target="severity", weight=0.5),
+})
+
+# model returns (logits, severity); targets is {"defect": ..., "severity": ...}
+loss = loss_fn(outputs, targets)
+print(loss_fn.named_losses)   # per-task weighted values from the last forward
+```
+
+---
+
 ## Choosing a loss
 
 | Task | Recommended | When to combine |
 |------|-------------|-----------------|
-| Classification (balanced) | `nn.CrossEntropyLoss` | — |
+| Classification (balanced) | `nn.CrossEntropyLoss` | none |
 | Classification (imbalanced) | `FocalLoss` | + `LabelSmoothingCrossEntropy` |
 | Representation learning | `SupConLoss` | + `FocalLoss` |
 | Detection regression | `CIoULoss` | + class loss |
 | Segmentation (general) | `DiceLoss` | + `FocalLoss` or CE |
-| Segmentation (FN-critical) | `TverskyLoss(alpha=0.3, beta=0.7)` | — |
+| Segmentation (FN-critical) | `TverskyLoss(alpha=0.3, beta=0.7)` | none |
 | Multi-objective | `ComboLoss` | any combination |

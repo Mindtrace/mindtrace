@@ -26,7 +26,7 @@ names = list_backbones()   # sorted list of all registered backbone names
 # ── Build ────────────────────────────────────────────────────────────────────
 info: BackboneInfo = build_backbone("resnet50", pretrained=True)
 info.name          # "resnet50"
-info.num_features  # 2048   — output embedding dimension
+info.num_features  # 2048   (output embedding dimension)
 info.model         # nn.Module
 
 # ── Register ─────────────────────────────────────────────────────────────────
@@ -68,7 +68,7 @@ def _build_my_swin(pretrained: bool = True, **kwargs) -> BackboneInfo:
 | `vit_b_32` | 768 | ImageNet-21k |
 | `vit_l_16` | 1024 | ImageNet-21k |
 
-### DINOv2 (torch.hub — `facebookresearch/dinov2`)
+### DINOv2 (torch.hub, `facebookresearch/dinov2`)
 
 | Name | `num_features` |
 |------|---------------|
@@ -81,7 +81,7 @@ def _build_my_swin(pretrained: bool = True, **kwargs) -> BackboneInfo:
 | `dino_v2_large_reg` | 1024 |
 | `dino_v2_giant_reg` | 1536 |
 
-### DINOv3 (HuggingFace — requires `transformers`)
+### DINOv3 (HuggingFace, requires `transformers`)
 
 **ViT variants:**
 
@@ -107,7 +107,7 @@ def _build_my_swin(pretrained: bool = True, **kwargs) -> BackboneInfo:
 
 ---
 
-## HuggingFaceDINOBackbone — advanced DINO API
+## HuggingFaceDINOBackbone: advanced DINO API
 
 Full-featured wrapper for DINOv2/v3 checkpoints from HuggingFace Hub,
 with optional LoRA fine-tuning and rich feature extraction.
@@ -126,9 +126,9 @@ bb = HuggingFaceDINOBackbone(
 ### Properties
 
 ```python
-bb.embed_dim           # 768  — output feature dimension
-bb.is_vit              # True  — ViT vs ConvNeXt
-bb.patch_size          # 14   — patch size in pixels
+bb.embed_dim           # 768  (output feature dimension)
+bb.is_vit              # True  (ViT vs ConvNeXt)
+bb.patch_size          # 14   (patch size in pixels)
 bb.num_register_tokens # 0
 bb.lora_enabled        # False
 ```
@@ -136,10 +136,10 @@ bb.lora_enabled        # False
 ### Forward variants
 
 ```python
-# Classification path — returns (B, D)
+# Classification path, returns (B, D)
 cls_vec  = bb(x)                    # = bb.forward(x)
 
-# Segmentation path — returns (B, D, H_p, W_p)
+# Segmentation path, returns (B, D, H_p, W_p)
 spatial  = bb.forward_spatial(x)
 ```
 
@@ -160,8 +160,8 @@ regs     = bb.get_register_tokens(x)  # (B, num_registers, D)
 
 # Intermediate transformer layer outputs
 out = bb.get_intermediate_layers(x, n=4, return_class_token=True)
-# out.cls_tokens   — list of (B, D), one per layer
-# out.patch_tokens — list of (B, N, D), one per layer
+# out.cls_tokens   : list of (B, D), one per layer
+# out.patch_tokens : list of (B, N, D), one per layer
 
 # Last self-attention weights
 attn = bb.get_last_self_attention(x)  # (B, num_heads, N+1, N+1)
@@ -210,7 +210,7 @@ bb.save_pretrained("/checkpoints/merged")
 
 ---
 
-## HuggingFaceBackbone — generic AutoModel wrapper
+## HuggingFaceBackbone: generic AutoModel wrapper
 
 For any HuggingFace vision model that is not a DINO checkpoint.
 Resolves `embed_dim` automatically from the model config.

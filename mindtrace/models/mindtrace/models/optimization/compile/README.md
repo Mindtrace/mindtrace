@@ -1,63 +1,55 @@
 # Compilation
 
-> Turn a portable model into a hardware-specific executable that runs as fast as the chip allows.
+Turn a portable ONNX model into a hardware-specific executable. [Export](../export/README.md) produces one ONNX file that runs anywhere an ONNX runtime exists, but not necessarily fast anywhere. Compilation takes that file and produces an artifact tuned for one target: it fuses operations, selects the fastest kernel per layer, and plans memory ahead of time.
 
-## The idea in plain terms
-
-[Export](../export/README.md) gives you a portable ONNX file that runs *anywhere* — but not necessarily *fast* anywhere. **Compilation** takes that portable file and produces an executable tuned for **one specific piece of hardware**: it fuses operations together, picks the fastest kernel for each layer, and plans memory ahead of time.
-
-**Analogy:** export is the **recipe** — readable by any cook. Compilation is the **meal prepped for your exact kitchen** — knowing your oven, your pans, your burners. The recipe travels; the prepped meal is for this kitchen only.
-
-That last part is the key mental model:
-
-> **Export produces one portable format. Compilation produces many hardware-specific formats — and those are not interchangeable.**
+The key distinction: export produces one portable format; compilation produces many hardware-specific formats, and those are not interchangeable.
 
 ## Export vs compilation
 
 | | Export | Compilation |
 |--|--------|-------------|
 | Output | ONNX (one portable file) | OpenVINO IR, TensorRT engine, ExecuTorch `.pte`, optimized ONNX |
-| Runs on | Anything with an ONNX runtime | The one target it was built for |
-| Optimizes for hardware? | No | Yes — fusion, kernel selection, memory planning |
-| Portable? | Yes | **No** — a TensorRT engine built for one GPU won't run on another |
+| Runs on | Anything with an ONNX runtime | Only the target it was built for |
+| Hardware-specific optimization | No | Yes: fusion, kernel selection, memory planning |
+| Portable | Yes | No. A TensorRT engine built for one GPU will not run on another |
 
 ## Targets and backends
 
-A **`TargetSpec`** names a deployment target (a chip + runtime + supported precisions). `compile_model` looks at the target's runtime and dispatches to the right backend:
+A `TargetSpec` names a deployment target: a chip, a runtime, and its supported precisions. `compile_model` reads the target's runtime and dispatches to the matching backend.
 
 ```python
 from mindtrace.models.optimization import compile_model, list_targets
 
 print(list_targets())
-# ort-cpu, ort-cuda, intel-cpu-openvino, intel-igpu-openvino,
-# jetson-orin-nx, jetson-orin-nano, rpi5-cpu, executorch-generic, ...
+# executorch-generic, hailo-8, intel-cpu-openvino, intel-igpu-openvino,
+# jetson-orin-nano, jetson-orin-nx, ort-cpu, ort-cuda, rknn-3588, rpi5-cpu
 
 # Intel CPU/iGPU -> OpenVINO IR (model.xml + model.bin)
 artifact = compile_model("classifier-int8.onnx", "intel-cpu-openvino")
 
-# NVIDIA Jetson -> TensorRT engine (.plan) — must be built ON the Jetson
+# NVIDIA Jetson -> TensorRT engine, built ON the Jetson
 artifact = compile_model("classifier-int8.onnx", "jetson-orin-nx")
 
-# Phones / microcontrollers -> ExecuTorch (.pte)
-artifact = compile_model(model, "executorch-generic")   # compiles from the torch model
+# Phones / microcontrollers -> ExecuTorch, compiled from the torch model
+artifact = compile_model(model, "executorch-generic")
 ```
 
-Each returns a `CompiledArtifact` with the output path, the runtime, and metadata.
+Each call returns a `CompiledArtifact` with the output path, runtime, and metadata.
 
-### What the backends do
+### Backends
 
-- **ONNX Runtime (`ort`)** — graph-level optimization (still an `.onnx`, just fused/reordered). The lightest "compilation".
-- **OpenVINO** — converts to Intel's IR format, optimized for Intel CPUs, iGPUs and NPUs.
-- **TensorRT** — builds a serialized `.plan` engine for one NVIDIA GPU, with the best kernels for that exact device.
-- **ExecuTorch** — lowers a torch program to a `.pte` for mobile/embedded runtimes (compiles from the model, not from ONNX).
+- ONNX Runtime (`ort`): graph-level optimization. Output is still an `.onnx`, fused and reordered. The lightest form of compilation.
+- OpenVINO: converts to Intel's IR, optimized for Intel CPUs, iGPUs, and NPUs.
+- TensorRT: builds a serialized engine for one NVIDIA GPU with the best kernels for that device.
+- ExecuTorch: lowers a torch program to a `.pte` for mobile and embedded runtimes. Compiles from the model, not from ONNX.
 
-## Why "build it where it runs"
+## Build it where it runs
 
-TensorRT engines and NPU binaries are **device-specific** — you can't build them in CI and ship them around; they must be built on (or for) the exact target. That's the whole reason the serving layer ships a **compile agent** that runs on each edge box, pulls the portable ONNX, compiles locally, benchmarks, and stores the result. Portable ONNX travels; engines are built where they run.
+TensorRT engines and NPU binaries are device-specific. You cannot build them in CI and ship them around; they must be built on (or for) the exact target. This is why the serving layer ships a compile agent that runs on each edge box, pulls the portable ONNX, compiles locally, benchmarks, and stores the result.
 
-## Honest notes
+## Notes
 
-- **Compiling doesn't guarantee a speedup by itself** — an INT8 model may run faster under OpenVINO but slower under ONNX Runtime CPU. This is exactly why you [benchmark](../bench/README.md) each variant per target instead of assuming.
-- TensorRT and NPU targets need their vendor toolchains present; the backends raise a clear error (pointing at the on-device compile agent) when they're missing.
+- Compiling does not guarantee a speedup. An INT8 model may run faster under OpenVINO but slower under ONNX Runtime CPU, so [benchmark](../bench/README.md) each variant per target.
+- TensorRT and NPU targets need their vendor toolchains present. The backends raise a clear error pointing at the on-device compile agent when they are missing.
 
 See the [optimization overview](../README.md) for using `Compile` as the final step of a recipe.
