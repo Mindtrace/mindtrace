@@ -324,7 +324,13 @@ def quantize_dynamic(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     weight_type = QuantType.QInt8 if precision == "int8" else QuantType.QUInt8
-    _ort_quantize_dynamic(str(onnx_path), str(output_path), weight_type=weight_type)
+    # Pre-process (symbolic shape inference + graph optimization) before quantizing,
+    # exactly as the static path does. Without it, dynamic quantization can leave the
+    # graph with stale shape annotations that clash at session load, e.g. a classifier
+    # head raising "Inferred shape and existing shape differ" on its final MatMul.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        prepared = preprocess_for_quantization(onnx_path, Path(tmpdir))
+        _ort_quantize_dynamic(str(prepared), str(output_path), weight_type=weight_type)
     return output_path
 
 
