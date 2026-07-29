@@ -58,7 +58,7 @@ except ImportError:
 if not (_ORT_AVAILABLE and _TV_AVAILABLE):
     raise SystemExit(0)
 
-from mindtrace.models import EvaluationRunner, ProgressLogger, Trainer, build_optimizer
+from mindtrace.models import EvaluationRunner, ProgressLogger, Trainer, build_loss, build_optimizer
 from mindtrace.models.optimization import (
     Compile,
     Export,
@@ -214,7 +214,7 @@ def main() -> None:
 
     trainer = Trainer(
         model=model,
-        loss_fn=nn.CrossEntropyLoss(),
+        loss_fn=build_loss("cross_entropy"),
         optimizer=build_optimizer("adamw", model, lr=1e-3),
         callbacks=[ProgressLogger()],
         device="auto",
@@ -229,7 +229,7 @@ def main() -> None:
     qat = QATCallback(start_epoch=0, backend="x86", example_inputs=torch.randn(*INPUT_SHAPE))
     qat_trainer = Trainer(
         model=copy.deepcopy(fp32_model),
-        loss_fn=nn.CrossEntropyLoss(),
+        loss_fn=build_loss("cross_entropy"),
         optimizer=build_optimizer("adamw", fp32_model, lr=1e-4),
         callbacks=[qat, ProgressLogger()],
         device="cpu",  # convert_fx targets the x86 CPU INT8 backend

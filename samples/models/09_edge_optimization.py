@@ -32,7 +32,6 @@ import time
 from pathlib import Path
 
 import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader, Subset, TensorDataset
 
 # ── Optional dependency guards ─────────────────────────────────────────────
@@ -61,6 +60,7 @@ from mindtrace.models import (
     ModelStage,
     ProgressLogger,
     Trainer,
+    build_loss,
     build_model,
     build_optimizer,
 )
@@ -195,7 +195,7 @@ def main() -> None:
     model = build_model("resnet18", "linear", num_classes=NUM_CLASSES, pretrained=False)
     trainer = Trainer(
         model=model,
-        loss_fn=nn.CrossEntropyLoss(),
+        loss_fn=build_loss("cross_entropy"),
         optimizer=build_optimizer("adamw", model, lr=1e-3),
         callbacks=[ProgressLogger()],
         device="auto",

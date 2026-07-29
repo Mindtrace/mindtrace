@@ -33,6 +33,7 @@ from mindtrace.models import (
     TensorBoardTracker,
     Trainer,
     WandBTracker,
+    build_loss,
     build_model,
     build_optimizer,
     build_scheduler,
@@ -256,7 +257,7 @@ sched = build_scheduler("cosine_warmup", opt, warmup_steps=max(1, total_s // 5),
 with mem_tracker.run("trainer_run", config={"lr": 1e-3, "epochs": 2}):
     trainer = Trainer(
         model=model,
-        loss_fn=nn.CrossEntropyLoss(),
+        loss_fn=build_loss("cross_entropy"),
         optimizer=opt,
         scheduler=sched,
         tracker=mem_tracker,

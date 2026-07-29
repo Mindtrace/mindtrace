@@ -20,7 +20,6 @@ import tempfile
 from pathlib import Path
 
 import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from mindtrace.models import (
@@ -32,6 +31,7 @@ from mindtrace.models import (
     ProgressLogger,
     RegistryBridge,
     Trainer,
+    build_loss,
     build_model,
     build_optimizer,
     build_scheduler,
@@ -94,7 +94,7 @@ print(f"\n[3] Registry initialised at: {registry._core.backend.uri if hasattr(re
 print(f"\n[4] Training for {EPOCHS} epochs...")
 trainer = Trainer(
     model=model,
-    loss_fn=nn.CrossEntropyLoss(),
+    loss_fn=build_loss("cross_entropy"),
     optimizer=optimizer,
     scheduler=scheduler,
     callbacks=[

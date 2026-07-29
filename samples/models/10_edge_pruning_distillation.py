@@ -74,6 +74,7 @@ from mindtrace.models import (
     EvaluationRunner,
     ProgressLogger,
     Trainer,
+    build_loss,
     build_model,
     build_optimizer,
 )
@@ -214,7 +215,7 @@ def train_one(
     Returns:
         The trained model.
     """
-    trainer_kwargs.setdefault("loss_fn", nn.CrossEntropyLoss())
+    trainer_kwargs.setdefault("loss_fn", build_loss("cross_entropy"))
     trainer_kwargs.setdefault("callbacks", [ProgressLogger()])
     if extra_params is not None:
         optimizer = build_optimizer("adamw", [{"params": [*model.parameters(), *extra_params]}], lr=lr)
@@ -311,7 +312,7 @@ def main() -> None:
         train_loader,
         test_loader,
         epochs=STUDENT_EPOCHS,
-        loss_fn=DistillationLoss(nn.CrossEntropyLoss(), alpha=0.7, temperature=4.0),
+        loss_fn=DistillationLoss(build_loss("cross_entropy"), alpha=0.7, temperature=4.0),
         teacher=teacher,
     )
     logit_acc = evaluate(logit_student, test_loader)
@@ -335,7 +336,7 @@ def main() -> None:
             test_loader,
             epochs=STUDENT_EPOCHS,
             loss_fn=DistillationLoss(
-                nn.CrossEntropyLoss(), alpha=0.7, temperature=4.0, features=feature_distiller, feature_weight=0.3
+                build_loss("cross_entropy"), alpha=0.7, temperature=4.0, features=feature_distiller, feature_weight=0.3
             ),
             teacher=teacher,
             extra_params=feature_distiller.parameters(),
