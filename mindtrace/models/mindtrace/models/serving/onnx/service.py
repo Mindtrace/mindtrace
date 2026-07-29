@@ -14,7 +14,7 @@ Usage (registry path)::
     from mindtrace.registry import Registry
     from mindtrace.models.serving.onnx.service import OnnxModelService
 
-    class WeldClassifierOnnxService(OnnxModelService):
+    class ImageClassifierOnnxService(OnnxModelService):
         _task = "classification"
 
         def predict(self, request):
@@ -23,18 +23,18 @@ Usage (registry path)::
             results = self._postprocess(outputs)
             return PredictResponse(results=results, timing_s=0.0)
 
-    svc = WeldClassifierOnnxService(
-        model_name="weld-classifier",
+    svc = ImageClassifierOnnxService(
+        model_name="image-classifier",
         model_version="v2",
         registry=Registry(),
     )
 
 Usage (file path)::
 
-    svc = WeldClassifierOnnxService(
-        model_name="weld-classifier",
+    svc = ImageClassifierOnnxService(
+        model_name="image-classifier",
         model_version="v2",
-        model_path="/models/weld-classifier-v2.onnx",
+        model_path="/models/classifier-v2.onnx",
     )
 """
 

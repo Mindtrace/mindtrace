@@ -20,7 +20,7 @@ Usage::
 
     from mindtrace.models.serving.inprocess import InProcessPredictor
 
-    predictor = InProcessPredictor.from_path("weld-detector.onnx")
+    predictor = InProcessPredictor.from_path("detector.onnx")
     for frame in camera:                # HWC uint8 BGR frames
         outputs = predictor(frame)      # first output array
     predictor.close()
@@ -254,7 +254,7 @@ class InProcessPredictor(Mindtrace):
 
         Args:
             registry: A ``mindtrace.registry.Registry`` instance.
-            key: Registry object name (e.g. ``"weld-detector"`` or the
+            key: Registry object name (e.g. ``"object-detector"`` or the
                 ``"name:version"`` convention used by the model services).
             version: Optional registry version.  ``None`` loads ``"latest"``.
             **kwargs: Forwarded to :meth:`from_path` (``runtime``,

@@ -13,11 +13,11 @@ Usage::
     from mindtrace.models.serving.torchserve.client import TorchServeModelService
 
     svc = TorchServeModelService(
-        model_name="weld-detector",
+        model_name="object-detector",
         model_version="v3",
         ts_inference_url="http://localhost:8080",
         ts_management_url="http://localhost:8081",
-        ts_model_name="weld-detector",   # as registered in TorchServe
+        ts_model_name="object-detector",   # as registered in TorchServe
     )
     response = svc.predict(request)
 """

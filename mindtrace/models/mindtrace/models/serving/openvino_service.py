@@ -12,9 +12,9 @@ Usage (file path)::
     from mindtrace.models.serving.openvino_service import OpenVINOModelService
 
     svc = OpenVINOModelService(
-        model_name="weld-classifier",
+        model_name="image-classifier",
         model_version="v2",
-        model_path="/models/weld-classifier-v2.xml",
+        model_path="/models/classifier.xml",
         device="CPU",
         warmup=2,
     )
@@ -23,7 +23,7 @@ Usage (file path)::
 Usage (registry path)::
 
     svc = OpenVINOModelService(
-        model_name="weld-classifier",
+        model_name="image-classifier",
         model_version="v2",
         registry=Registry(),
     )

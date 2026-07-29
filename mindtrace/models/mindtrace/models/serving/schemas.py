@@ -51,7 +51,7 @@ class ModelInfo(BaseModel):
     """Metadata about a loaded model.
 
     Attributes:
-        name: Model identifier (e.g. ``"yolov8-weld-detector"``).
+        name: Model identifier (e.g. ``"yolov8-detector"``).
         version: Semantic version string for the model weights.
         device: Compute device the model is loaded on (``"cuda"`` / ``"cpu"``).
         task: High-level task the model performs (``"detection"``, ``"classification"``, etc.).

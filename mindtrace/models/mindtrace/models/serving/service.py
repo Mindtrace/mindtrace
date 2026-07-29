@@ -92,7 +92,7 @@ class ModelService(Service):
 
         Args:
             model_name: Human-readable model identifier
-                (e.g. ``"yolov8-weld-detector"``).
+                (e.g. ``"yolov8-detector"``).
             model_version: Semantic version string for the model weights.
             device: Compute device.  ``"auto"`` selects CUDA when available,
                 otherwise CPU.  Pass ``"cuda"``, ``"cuda:0"``, ``"cpu"``, etc.
@@ -302,7 +302,7 @@ class ModelService(Service):
 
         Example::
 
-            class WeldDetector(OnnxModelService):
+            class ObjectDetector(OnnxModelService):
                 _task = "detection"
 
                 def predict(self, request):
@@ -310,10 +310,10 @@ class ModelService(Service):
                     return PredictResponse(results=postprocess(outputs))
 
             # Blocking — runs until Ctrl-C:
-            WeldDetector.serve(
-                model_name="weld-detector",
+            ObjectDetector.serve(
+                model_name="object-detector",
                 model_version="v2",
-                model_path="weld-v2.onnx",
+                model_path="detector.onnx",
                 host="0.0.0.0",
                 port=8080,
             )

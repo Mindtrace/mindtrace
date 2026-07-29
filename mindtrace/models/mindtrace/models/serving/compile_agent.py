@@ -84,7 +84,7 @@ __all__ = [
 class CompileJobInput(BaseModel):
     """Request payload for an on-device compile job."""
 
-    model: str = Field(default="", description="Registry key of the source ONNX model (e.g. 'weld-detector:v2').")
+    model: str = Field(default="", description="Registry key of the source ONNX model (e.g. 'detector:v2').")
     model_path: str = Field(default="", description="Local ONNX file path; alternative to 'model'.")
     target: str = Field(
         default="self",

@@ -18,9 +18,9 @@ Usage::
     from mindtrace.models.serving.edge import EdgeModelService
 
     svc = EdgeModelService(
-        model_name="weld-classifier",
+        model_name="image-classifier",
         model_version="v2",
-        model_path="/models/weld-classifier-v2.onnx",
+        model_path="/models/classifier-v2.onnx",
         prefer=["openvino", "cpu"],   # optional; default tries TensorRT/CUDA first
         warmup=3,
     )

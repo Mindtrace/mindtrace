@@ -17,7 +17,7 @@ part of the lifecycle polymorphically::
     ]
     for t in trainers:
         metrics = t.evaluate(val_data)   # both return {"mAP50": ..., "mAP5095": ...}
-        t.save(f"weld-{key}")
+        t.save(f"detector-{key}")
 
 The unification is honest, not cosmetic. The **surface** is identical; the **data
 contract is deliberately per-provider**, because that is where the providers truly

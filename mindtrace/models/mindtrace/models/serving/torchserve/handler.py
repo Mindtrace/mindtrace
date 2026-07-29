@@ -5,11 +5,11 @@ Bridges the TorchServe handler protocol to a mindtrace
 
 Subclass this, set ``service_class``, and point TorchServe at the file::
 
-    # weld_detector_handler.py
+    # object_detector_handler.py
     from mindtrace.models.serving.torchserve.handler import MindtraceHandler
     from mip.services.detector import DetectorService
 
-    class WeldDetectorHandler(MindtraceHandler):
+    class ObjectDetectorHandler(MindtraceHandler):
         service_class = DetectorService
 
 Then export::
@@ -17,9 +17,9 @@ Then export::
     from mindtrace.models.serving.torchserve.exporter import TorchServeExporter
 
     TorchServeExporter.export(
-        model_name="weld-detector",
+        model_name="object-detector",
         version="v3",
-        handler=WeldDetectorHandler,      # class reference — source file resolved automatically
+        handler=ObjectDetectorHandler,      # class reference — source file resolved automatically
         registry=Registry(),
         output_dir="/serve/model-store",
     )
