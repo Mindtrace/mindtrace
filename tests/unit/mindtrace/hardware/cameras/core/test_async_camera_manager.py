@@ -40,6 +40,56 @@ async def test_open_idempotent_and_close():
 
 
 @pytest.mark.asyncio
+async def test_open_restores_batch_config_before_connection_test(monkeypatch, tmp_path):
+    """Committed batch settings are restored; later single-camera tweaks are not."""
+    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    try:
+        camera = await manager.open(name, test_connection=False)
+        assert (await manager.batch_configure({name: {"exposure": 15000}}))[name] is True
+
+        # Single-camera configure is intentionally transient and must not
+        # replace the defaults persisted by batch_configure.
+        assert await camera.configure(exposure=25000) is True
+        assert await camera.get_exposure() == 25000
+        await manager.close(name)
+
+        async def check_restored_config(self):
+            assert self.exposure_time == 15000
+            return True
+
+        monkeypatch.setattr(MockBaslerCameraBackend, "check_connection", check_restored_config)
+
+        reopened = await manager.open(name, test_connection=True)
+        assert await reopened.get_exposure() == 15000
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_open_skips_saved_config_when_restore_saved_config_false(tmp_path):
+    """Persisted batch defaults can be skipped when reopening a camera."""
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    try:
+        camera = await manager.open(name, test_connection=False)
+        assert (await manager.batch_configure({name: {"exposure": 15000}}))[name] is True
+        assert await camera.configure(exposure=25000) is True
+        await manager.close(name)
+
+        reopened = await manager.open(name, test_connection=False, restore_saved_config=False)
+        assert await reopened.get_exposure() == 20000
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_batch_capture_with_mock_backend(monkeypatch):
     """Test batch capture with controlled mock cameras instead of discovery-dependent."""
     manager = AsyncCameraManager(include_mocks=True, max_concurrent_captures=2)

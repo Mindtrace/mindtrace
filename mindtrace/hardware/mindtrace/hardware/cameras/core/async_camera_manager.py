@@ -403,14 +403,20 @@ class AsyncCameraManager(Mindtrace):
         return all_details if details else all_cameras
 
     async def open(
-        self, names: Optional[Union[str, List[str]]] = None, test_connection: bool = True, **kwargs
+        self,
+        names: Optional[Union[str, List[str]]] = None,
+        test_connection: bool = True,
+        restore_saved_config: bool = True,
+        **kwargs,
     ) -> Union[AsyncCamera, Dict[str, AsyncCamera]]:
         """Open one or more cameras with optional connection testing.
 
         Args:
             names: Camera name or list of names in the form "Backend:device_name". If None, opens the first available camera (preferring OpenCV).
             test_connection: Whether to test camera connection(s) after opening.
-            **kwargs: Camera configuration parameters.
+            restore_saved_config: Whether to restore the persisted batch configuration
+                from ``MINDTRACE_HW_CAMERA_CONFIG_DIR`` before testing the connection.
+            **kwargs: Backend constructor parameters forwarded to the camera backend.
 
         Returns:
             AsyncCamera if a single name was provided, otherwise a dict mapping names to AsyncCamera.
@@ -451,6 +457,15 @@ class AsyncCameraManager(Mindtrace):
                 self.logger.error(f"Failed to initialize camera '{camera_name}': {e}")
                 raise CameraInitializationError(f"Failed to initialize camera '{camera_name}': {e}")
 
+            # Register the proxy before restoring so _auto_import_config can
+            # resolve it. Persisted configs represent explicitly committed
+            # defaults (written by batch_configure), and must be applied before
+            # the connection test exercises the camera.
+            proxy = AsyncCamera(camera, camera_name)
+            self._cameras[camera_name] = proxy
+            if restore_saved_config:
+                await self._auto_import_config(camera_name)
+
             if test_connection:
                 self.logger.info(f"Testing connection for camera '{camera_name}'...")
                 try:
@@ -465,12 +480,11 @@ class AsyncCameraManager(Mindtrace):
                     self.logger.info(f"Camera '{camera_name}' passed connection test")
                 except Exception as e:
                     await camera.close()
+                    self._cameras.pop(camera_name, None)
                     if isinstance(e, CameraConnectionError):
                         raise
                     raise CameraConnectionError(f"Camera '{camera_name}' connection test failed: {e}")
 
-            proxy = AsyncCamera(camera, camera_name)
-            self._cameras[camera_name] = proxy
             self.logger.info(f"Camera '{camera_name}' initialized successfully")
 
             return proxy
@@ -485,7 +499,12 @@ class AsyncCameraManager(Mindtrace):
                     self.logger.info(f"Camera '{camera_name}' already initialized")
                     opened[camera_name] = self._cameras[camera_name]
                     continue
-                proxy = await self.open(camera_name, test_connection=test_connection, **kwargs)
+                proxy = await self.open(
+                    camera_name,
+                    test_connection=test_connection,
+                    restore_saved_config=restore_saved_config,
+                    **kwargs,
+                )
                 opened[camera_name] = proxy
                 self.logger.info(f"Camera '{camera_name}' initialized successfully")
             except (CameraInitializationError, CameraConnectionError, ValueError) as e:
@@ -718,10 +737,9 @@ class AsyncCameraManager(Mindtrace):
         except Exception as e:
             self.logger.warning(f"Error closing '{camera_name}' during reinit: {e}")
 
-        # Re-open and restore config
+        # Re-open restores the persisted config before testing the connection.
         try:
             await self.open(camera_name, test_connection=True)
-            await self._auto_import_config(camera_name)
             # Re-export to keep the saved file fresh
             await self._auto_export_config(camera_name)
             self._failure_counts[camera_name] = 0

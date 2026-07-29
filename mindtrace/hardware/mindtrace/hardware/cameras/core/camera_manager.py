@@ -54,7 +54,11 @@ class CameraManager(Mindtrace):
         return AsyncCameraManager.discover(backends=backends, details=details, include_mocks=include_mocks)
 
     def open(
-        self, names: Optional[Union[str, List[str]]] = None, test_connection: bool = True, **kwargs
+        self,
+        names: Optional[Union[str, List[str]]] = None,
+        test_connection: bool = True,
+        restore_saved_config: bool = True,
+        **kwargs,
     ) -> Union["Camera", Dict[str, "Camera"]]:
         """Open one or more cameras.
 
@@ -62,6 +66,7 @@ class CameraManager(Mindtrace):
             names: Camera name (e.g., "Backend:device") or a list of names. If None, opens the first available camera
                 (prefers OpenCV).
             test_connection: If True, perform a lightweight connection test after opening.
+            restore_saved_config: If True, restore the persisted batch configuration before testing the connection.
             **kwargs: Optional backend-specific configuration to apply during open.
 
         Returns:
@@ -77,7 +82,14 @@ class CameraManager(Mindtrace):
         Notes:
             - This method is idempotent for single-name calls; if the camera is already open, the existing instance is returned.
         """
-        result = self._submit_coro(self._manager.open(names, test_connection=test_connection, **kwargs))
+        result = self._submit_coro(
+            self._manager.open(
+                names,
+                test_connection=test_connection,
+                restore_saved_config=restore_saved_config,
+                **kwargs,
+            )
+        )
         if isinstance(result, AsyncCamera):
             return Camera(result, self._loop)
         # assume dict[str, AsyncCamera]
