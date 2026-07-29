@@ -1,6 +1,6 @@
 [![PyPI version](https://img.shields.io/pypi/v/mindtrace-models)](https://pypi.org/project/mindtrace-models/)
 
-# Mindtrace Models -- Architectures
+# Mindtrace Models: Architectures
 
 Backbone + head assembly for ML models. Build any architecture with one call, extend the backbone registry with custom models, and fine-tune with LoRA.
 
@@ -47,7 +47,7 @@ architectures/
 
 ## Model Factory
 
-### `build_model` -- registered backbone + head
+### `build_model`: registered backbone + head
 
 Assembles a backbone from the registry and a head by type key into a single `ModelWrapper`. Head construction is handled by an internal `_build_head` helper that centralizes instantiation logic.
 
@@ -79,7 +79,7 @@ logits   = model.head(features) # (B, num_classes)
 info     = model.backbone_info  # BackboneInfo(name, num_features, model)
 ```
 
-### `build_model_from_hf` -- any HuggingFace vision model
+### `build_model_from_hf`: any HuggingFace vision model
 
 ```python
 from mindtrace.models.architectures import build_model_from_hf

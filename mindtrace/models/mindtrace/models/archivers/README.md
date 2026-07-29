@@ -1,6 +1,6 @@
 [![PyPI version](https://img.shields.io/pypi/v/mindtrace-models)](https://pypi.org/project/mindtrace-models/)
 
-# Mindtrace Models -- Archivers
+# Mindtrace Models: Archivers
 
 ML model serialization and deserialization for the Mindtrace Registry. Each archiver handles a specific model framework and self-registers with the Registry at import time so that `registry.save()` and `registry.load()` automatically select the correct serialization strategy based on the model type.
 
@@ -19,10 +19,10 @@ ML model serialization and deserialization for the Mindtrace Registry. Each arch
 
 The archivers sub-package provides:
 
-- **Automatic Registration**: Archivers register themselves when `mindtrace.models` is imported; no manual setup needed
+- **Automatic Registration**: Archivers register themselves when `mindtrace.models` is imported
 - **Type-Based Dispatch**: The Registry resolves the correct archiver by walking the MRO of the saved object
 - **Guard Imports**: Missing optional dependencies (e.g. `transformers`, `ultralytics`) do not prevent the rest of the framework from loading
-- **Seven Archivers**: HuggingFace models, HuggingFace processors, ONNX, timm, YOLO, YOLOE, SAM
+- **Nine Archivers**: HuggingFace models, HuggingFace processors, ONNX, OpenVINO, TensorRT engines, timm, YOLO, YOLOE, SAM
 
 ## Architecture
 
@@ -36,6 +36,10 @@ archivers/
 │   └── timm_model_archiver.py     # TimmModelArchiver
 ├── onnx/
 │   └── onnx_model_archiver.py     # OnnxModelArchiver
+├── openvino/
+│   └── openvino_archiver.py       # OpenVINOModelArchiver
+├── tensorrt/
+│   └── tensorrt_archiver.py       # TensorRTEngineArchiver, TensorRTEngine
 └── ultralytics/
     ├── yolo_archiver.py            # YoloArchiver
     ├── yoloe_archiver.py           # YoloEArchiver
@@ -69,6 +73,8 @@ Registry.register_default_materializer(YOLOWorld, YoloArchiver)
 | `HuggingFaceModelArchiver` | `PreTrainedModel`, `PeftModel` | `transformers` | Yes | `config.json` + `pytorch_model.bin` or `model.safetensors` |
 | `HuggingFaceProcessorArchiver` | `ProcessorMixin`, `PreTrainedTokenizerBase`, `ImageProcessingMixin`, `FeatureExtractionMixin` | `transformers` | Yes | Standard HF processor layout |
 | `OnnxModelArchiver` | `onnx.ModelProto` | `onnx` | Yes | `model.onnx` + `metadata.json` |
+| `OpenVINOModelArchiver` | `openvino.Model` | `openvino` | Yes | `model.xml` + `model.bin` (IR) |
+| `TensorRTEngineArchiver` | `TensorRTEngine` (engine-bytes wrapper) | none to load, `tensorrt` to build | Yes | `engine.bin` + `meta.json` |
 | `TimmModelArchiver` | timm models (`nn.Module` with `pretrained_cfg`) | `timm` | No (explicit) | `config.json` + `model.pt` |
 | `YoloArchiver` | `ultralytics.YOLO`, `ultralytics.YOLOWorld` | `ultralytics` | Yes | `model.pt` |
 | `YoloEArchiver` | `ultralytics.YOLOE` | `ultralytics` | Yes | `model.pt` |
@@ -167,6 +173,30 @@ registry.save("sam-segmenter:v1", model)
 loaded = registry.load("sam-segmenter:v1")
 ```
 
+### OpenVINO Models
+
+Saves an `openvino.Model` as IR (`model.xml` + `model.bin`), stored without FP16 compression to keep round-trips lossless.
+
+```python
+import openvino as ov
+
+model = ov.convert_model("model.onnx")
+registry.save("detector-ov:v1", model)
+loaded = registry.load("detector-ov:v1")  # returns openvino.Model
+```
+
+### TensorRT Engines
+
+TensorRT engines are stored as opaque bytes wrapped in a `TensorRTEngine`, alongside `meta.json` recording the build device and TensorRT version. On load, the archiver validates that the current device and TensorRT version match what the engine was built with, and raises otherwise (engines are not portable across devices or TensorRT versions).
+
+```python
+from mindtrace.models.archivers.tensorrt.tensorrt_archiver import TensorRTEngine
+
+engine = TensorRTEngine.from_path("model.engine")
+registry.save("detector-trt:v1", engine)
+loaded = registry.load("detector-trt:v1")  # returns TensorRTEngine
+```
+
 ## Registration Order and Dispatch
 
 The Registry resolves archivers by walking the MRO of the object being saved. More specific types win over general ones.
@@ -177,6 +207,8 @@ The Registry resolves archivers by walking the MRO of the object being saved. Mo
 | `PeftModel` | `HuggingFaceModelArchiver` | Yes |
 | `ProcessorMixin` / `PreTrainedTokenizerBase` | `HuggingFaceProcessorArchiver` | Yes |
 | `onnx.ModelProto` | `OnnxModelArchiver` | Yes |
+| `openvino.Model` | `OpenVINOModelArchiver` | Yes |
+| `TensorRTEngine` | `TensorRTEngineArchiver` | Yes |
 | `ultralytics.YOLO` | `YoloArchiver` | Yes |
 | `ultralytics.YOLOWorld` | `YoloArchiver` | Yes |
 | `ultralytics.YOLOE` | `YoloEArchiver` | Yes |
@@ -191,6 +223,8 @@ Each archiver guards its framework import. You only need to install the librarie
 |----------|-----------------|
 | HuggingFace model/processor | `transformers` (+ `peft` for LoRA) |
 | ONNX | `onnx` |
+| OpenVINO | `openvino` |
+| TensorRT | none to load engine bytes; `tensorrt` to build engines |
 | timm | `timm` |
 | Ultralytics (YOLO/SAM) | `ultralytics` |
 
@@ -208,6 +242,8 @@ import mindtrace.models
 from mindtrace.models.archivers.huggingface.hf_model_archiver import HuggingFaceModelArchiver
 from mindtrace.models.archivers.huggingface.hf_processor_archiver import HuggingFaceProcessorArchiver
 from mindtrace.models.archivers.onnx.onnx_model_archiver import OnnxModelArchiver
+from mindtrace.models.archivers.openvino.openvino_archiver import OpenVINOModelArchiver
+from mindtrace.models.archivers.tensorrt.tensorrt_archiver import TensorRTEngineArchiver, TensorRTEngine
 from mindtrace.models.archivers.timm.timm_model_archiver import TimmModelArchiver
 from mindtrace.models.archivers.ultralytics.yolo_archiver import YoloArchiver
 from mindtrace.models.archivers.ultralytics.yoloe_archiver import YoloEArchiver

@@ -31,7 +31,7 @@ The models module consists of eight sub-packages:
 - **Training**: Supervised training loop with AMP, DDP, gradient accumulation, 7 callbacks, 10 loss functions (including knowledge distillation), optimizer/scheduler factories
 - **Tracking**: Unified experiment tracking with MLflow, WandB, TensorBoard backends and framework bridges
 - **Evaluation**: Framework-agnostic metric computation (pure NumPy) with EvaluationRunner for orchestrated inference
-- **Optimization**: Edge deployment toolkit — quantization (PTQ/QAT), pruning, ONNX export, compilation (ONNX Runtime, OpenVINO, TensorRT, ExecuTorch), benchmarking, and accuracy-gated optimization recipes
+- **Optimization**: Edge deployment toolkit: quantization (PTQ/QAT), pruning, ONNX export, compilation (ONNX Runtime, OpenVINO, TensorRT, ExecuTorch), benchmarking, and accuracy-gated optimization recipes
 - **Lifecycle**: Model stage management (DEV/STAGING/PRODUCTION/ARCHIVED) with metric-gated promotion and per-target compiled variants
 - **Serving**: Model inference services via ONNX Runtime, OpenVINO, TensorRT and TorchServe, plus edge operations (tiled inference, pipeline pooling, inference queues)
 - **Archivers**: ML model serialization that self-registers with the Mindtrace Registry at import time
@@ -93,8 +93,8 @@ pip install mindtrace-models
 | `wandb` | `pip install mindtrace-models[wandb]` | Weights & Biases tracking |
 | `tensorboard` | `pip install mindtrace-models[tensorboard]` | TensorBoard tracking |
 | `onnx` | `pip install mindtrace-models[onnx]` | ONNX Runtime inference serving |
-| `edge` | `pip install mindtrace-models[edge]` | ONNX export + quantization toolchain — **CPU** onnxruntime (onnx, onnxruntime, onnxsim) |
-| `edge-gpu` | `pip install "mindtrace-models[edge-gpu]"` | GPU counterpart of `edge` — CUDA onnxruntime-gpu. **Use instead of `edge`, not alongside** (they conflict). Opt-in only — not pulled by `--all-extras` |
+| `edge` | `pip install mindtrace-models[edge]` | ONNX export and quantization toolchain on **CPU** onnxruntime (onnx, onnxruntime, onnxsim) |
+| `edge-gpu` | `pip install "mindtrace-models[edge-gpu]"` | GPU counterpart of `edge` (CUDA onnxruntime-gpu). **Use instead of `edge`, not alongside** (they conflict). Opt-in only; not pulled by `--all-extras` |
 | `pruning` | `pip install mindtrace-models[pruning]` | Structured pruning via torch-pruning |
 | `openvino` | `pip install mindtrace-models[openvino]` | OpenVINO compilation, serving and archiver |
 | `executorch` | `pip install mindtrace-models[executorch]` | ExecuTorch .pte compilation for MCU/mobile targets |
@@ -105,16 +105,16 @@ pip install mindtrace-models
 > `onnxruntime-gpu` provides the same `onnxruntime` import and can't be installed beside it.
 > For GPU-accelerated inference on a CUDA workstation:
 >
-> - **ONNX Runtime on GPU** — use the `edge-gpu` extra *instead of* `edge`:
+> - **ONNX Runtime on GPU**: use the `edge-gpu` extra *instead of* `edge`:
 >   ```bash
 >   uv pip install "mindtrace-models[edge-gpu]"
 >   ```
-> - **TensorRT** — install directly; it is intentionally **not** a bundled extra because
->   its pip package is sdist-only (no NVIDIA index → a heavy build in every lock resolution):
+> - **TensorRT**: install directly. It is intentionally **not** a bundled extra because
+>   its pip package is sdist-only (no NVIDIA index, so a heavy build in every lock resolution):
 >   ```bash
 >   uv pip install tensorrt        # x86_64 + CUDA only
 >   ```
->   On **Jetson**, TensorRT ships with JetPack — do **not** pip-install it there.
+>   On **Jetson**, TensorRT ships with JetPack, so do **not** pip-install it there.
 
 ## Architectures
 
@@ -127,18 +127,18 @@ Build models by combining any registered backbone with a task-specific head. The
 | `build_model` | Registered backbone + head key | `ModelWrapper` |
 | `build_model_from_hf` | Any HuggingFace model ID + head key | `ModelWrapper` |
 | `build_backbone` | Backbone only | `BackboneInfo` |
-| `register_backbone` | Decorator to add custom backbones | -- |
+| `register_backbone` | Decorator to add custom backbones |  |
 | `list_backbones` | List all registered names | `list[str]` |
 
 ### Backbone Registry
 
 | Family | Names | Feature dim |
 |--------|-------|-------------|
-| ResNet | `resnet18`, `resnet34`, `resnet50`, `resnet101`, `resnet152` | 512--2048 |
-| ViT | `vit_b_16`, `vit_b_32`, `vit_l_16` | 768--1024 |
-| DINOv2 | `dino_v2_small`, `dino_v2_base`, `dino_v2_large`, `dino_v2_giant` | 384--1536 |
-| DINOv2+regs | `dino_v2_small_reg`, `dino_v2_base_reg`, `dino_v2_large_reg`, `dino_v2_giant_reg` | 384--1536 |
-| DINOv3 ViT | `dino_v3_small`, `dino_v3_base`, `dino_v3_large`, `dino_v3_huge_plus`, `dino_v3_7b` | 384--4096 |
+| ResNet | `resnet18`, `resnet34`, `resnet50`, `resnet101`, `resnet152` | 512-2048 |
+| ViT | `vit_b_16`, `vit_b_32`, `vit_l_16` | 768-1024 |
+| DINOv2 | `dino_v2_small`, `dino_v2_base`, `dino_v2_large`, `dino_v2_giant` | 384-1536 |
+| DINOv2+regs | `dino_v2_small_reg`, `dino_v2_base_reg`, `dino_v2_large_reg`, `dino_v2_giant_reg` | 384-1536 |
+| DINOv3 ViT | `dino_v3_small`, `dino_v3_base`, `dino_v3_large`, `dino_v3_huge_plus`, `dino_v3_7b` | 384-4096 |
 | DINOv3 ConvNeXt | `dino_v3_convnext_tiny`, `dino_v3_convnext_small`, `dino_v3_convnext_base`, `dino_v3_convnext_large` | varies |
 | EfficientNet | via torchvision (when available) | varies |
 
@@ -151,7 +151,7 @@ Build models by combining any registered backbone with a task-specific head. The
 | `"multilabel"` | `MultiLabelHead` | Multi-label | `(B, C)` with sigmoid |
 | `"linear_seg"` | `LinearSegHead` | Segmentation | `(B, C, H, W)` |
 | `"fpn_seg"` | `FPNSegHead` | Segmentation | `(B, C, H, W)` |
-| -- | `DetectionHead` | Detection | `(cls_logits, bbox_deltas)` |
+|  | `DetectionHead` | Detection | `(cls_logits, bbox_deltas)` |
 
 ### Basic Usage
 
@@ -208,9 +208,9 @@ See [Architectures Documentation](mindtrace/models/architectures/README.md) for 
 | Interface | AMP | DDP | Callbacks | Tracker |
 |-----------|-----|-----|-----------|---------|
 | `Trainer` | Yes | Yes | Yes | Yes |
-| `build_optimizer` | -- | -- | -- | -- |
-| `build_scheduler` | -- | -- | -- | -- |
-| `DatalakeDataset` | -- | -- | -- | -- |
+| `build_optimizer` |  |  |  |  |
+| `build_scheduler` |  |  |  |  |
+| `DatalakeDataset` |  |  |  |  |
 
 ### Basic Usage
 
@@ -267,6 +267,34 @@ history = trainer.fit(train_loader, val_loader, epochs=50)
 | `IoULoss` | Segmentation | `from mindtrace.models import IoULoss` |
 | `ComboLoss` | Composite | `from mindtrace.models import ComboLoss` |
 | `DistillationLoss` | Knowledge distillation | `from mindtrace.models.training.losses import DistillationLoss` (logit KD; pair with `FeatureDistillation` and `Trainer(teacher=...)`) |
+
+Construct any of these by name with `build_loss` (the loss counterpart of `build_optimizer` / `build_scheduler`), and compose per-head losses for multi-task models with `MultiTaskLoss`:
+
+```python
+from mindtrace.models import build_loss, MultiTaskLoss, TaskSpec
+
+# named loss over torch built-ins and mindtrace losses
+loss = build_loss("focal", gamma=2.0)
+
+# multi-task: route each sub-loss to its own output head and target key
+loss = MultiTaskLoss({
+    "cls": TaskSpec(build_loss("cross_entropy"), output=0, target="cls"),
+    "reg": TaskSpec(build_loss("mse"), output=1, target="reg", weight=0.5),
+})
+```
+
+### Validation metrics and multi-task
+
+`Trainer` accepts `metrics={name: fn(outputs, targets) -> float}`; each is sample-weighted over the validation set and reported in `history` as `val/<name>`. This is what makes multi-task training first-class: a model returning `(logits, severity)` reports both `val/accuracy` and `val/mae`. Set `scheduler_interval="epoch"` to advance an epoch-based LR schedule once per epoch instead of once per optimizer step.
+
+```python
+trainer = Trainer(
+    model, loss, build_optimizer("adamw", model, lr=3e-4),
+    metrics={"accuracy": acc_fn, "mae": mae_fn},
+    scheduler=build_scheduler("cosine", opt, T_max=50),
+    scheduler_interval="epoch",
+)
+```
 
 ### Multi-GPU Training
 
@@ -360,46 +388,47 @@ See [Evaluation Documentation](mindtrace/models/evaluation/README.md) for detail
 
 The optimization sub-package turns a trained model into an edge-deployable artifact: compress it (quantize, prune, distill), compile it for target hardware, benchmark it, and gate every lossy step on accuracy so a degraded model never ships.
 
-### New to model optimization?
+### Concepts
 
-Each technique has a short, beginner-friendly concept guide (plain language, with examples and analogies — no prior background assumed):
+Each technique has a focused guide. Quantization and QAT survive differently across architectures (PTQ holds for CNNs, transformers need QAT), and INT8 pays off on memory-bound edge targets rather than compute-saturated GPUs.
 
-| Concept | What it is | Guide |
-|---------|-----------|-------|
-| Quantization | Store the model's numbers with less precision (INT8) — smaller and often faster | [optimization/quantize](mindtrace/models/optimization/quantize/README.md) |
-| Pruning | Remove the parts that contribute little — a smaller, faster network | [optimization/prune](mindtrace/models/optimization/prune/README.md) |
-| Distillation | Train a small "student" to imitate a big accurate "teacher" | [optimization overview → Distillation](mindtrace/models/optimization/README.md#distillation) |
-| Export | Convert to a portable file (ONNX) that runs without Python | [optimization/export](mindtrace/models/optimization/export/README.md) |
-| Compilation | Turn the portable file into a hardware-specific executable | [optimization/compile](mindtrace/models/optimization/compile/README.md) |
-| Benchmarking | Measure the real speed/size — "smaller" isn't always "faster" | [optimization/bench](mindtrace/models/optimization/bench/README.md) |
+| Concept | What it does | Guide |
+|---------|--------------|-------|
+| Quantization | Represents weights (and optionally activations) as INT8 instead of fp32: 4x smaller, faster on INT8 hardware. | [optimization/quantize](mindtrace/models/optimization/quantize/README.md) |
+| Pruning | Removes low-importance weights (unstructured) or whole channels (structured) to cut parameters and compute. | [optimization/prune](mindtrace/models/optimization/prune/README.md) |
+| Distillation | Trains a smaller student against a larger teacher's soft output distribution. | [optimization overview, Distillation](mindtrace/models/optimization/README.md#distillation) |
+| Export | Serializes the graph to ONNX, the portable interchange format runtimes consume. | [optimization/export](mindtrace/models/optimization/export/README.md) |
+| Compilation | Builds a hardware-specific engine (OpenVINO, TensorRT, ExecuTorch) with fused kernels. | [optimization/compile](mindtrace/models/optimization/compile/README.md) |
+| Benchmarking | Measures latency, size, and memory on the real runtime. | [optimization/bench](mindtrace/models/optimization/bench/README.md) |
 
 ### Capability Map
 
 | Family | Tools |
 |--------|-------|
-| Quantization | `quantize_dynamic`, `StaticQuantizer` (INT8 PTQ with calibration), `QATCallback`, `sensitivity_scan`, `MixedPrecisionSearch` |
+| Quantization | `quantize_dynamic`, `StaticQuantizer` (INT8 PTQ with calibration), `prepare_qat`/`convert_qat`/`QuantScheme` (module-level scheme-preserving QAT, transformer-capable), `export_quantized_onnx` (QDQ INT8), `QATCallback` (FX graph-mode, CNNs), `sensitivity_scan`, `MixedPrecisionSearch` |
+| Precision | `to_precision` (fp16/bf16 cast with overflow validation), `recommend` (precision/technique for a task, architecture, and target) |
 | Pruning | `ChannelPruner` (structured, dependency-aware), `magnitude_prune`, `PruningSchedule`, `to_sparse_24` |
 | Distillation | `DistillationLoss` (logit KD) + `FeatureDistillation` (intermediate matching), `Trainer(teacher=...)` |
 | Export | `export_onnx` (parity-checked), `fuse_preprocessing` (uint8/resize/normalize folded into the graph), `export_ultralytics` |
-| Compilation | `compile_model` + `TargetSpec` registry — ONNX Runtime, OpenVINO IR, TensorRT engines, ExecuTorch `.pte` |
-| Benchmarking | `Benchmark` / `BenchmarkReport` — cold start, p50/p95, sustained load, per-run memory, variant comparison |
+| Compilation | `compile_model` + `TargetSpec` registry for ONNX Runtime, OpenVINO IR, TensorRT engines, and ExecuTorch `.pte` |
+| Benchmarking | `Benchmark` / `BenchmarkReport`: cold start, p50/p95, sustained load, per-run memory, variant comparison |
 | Recipes | `OptimizationRecipe` (serializable step pipeline) + `OptimizationRunner` (accuracy/latency/size gates, rollback) |
 | Integrity | sha256-stamped `CompiledArtifact.checksum()/verify()`, sidecar manifests |
-| Unified surface | `load_model` + `profile` (one interface over Ultralytics / torchvision / torch·timm·HF); `validate_optimization` + the capability matrix |
+| Unified surface | `load_model` + `profile` (one interface over Ultralytics, torchvision, and torch/timm/HF); `validate_optimization` + the capability matrix |
 
 ### What works for which task & provider
 
-Not every technique applies to every task and provider — and mindtrace **raises a clear
-`UnsupportedOptimizationError`** (naming the reason and an alternative) rather than failing
+Not every technique applies to every task and provider. mindtrace raises a clear
+`UnsupportedOptimizationError` (naming the reason and an alternative) rather than failing
 deep inside a backend. The full, code-generated matrix lives in the optimization README:
 
-**→ [Optimization capability matrix](mindtrace/models/optimization/README.md#what-works-where--capability-matrix)**
+See [the optimization capability matrix](mindtrace/models/optimization/README.md#what-works-where-capability-matrix).
 
 The headline limitations to know:
 
-- **Detection → TensorRT works for YOLO, not for torchvision** — torchvision detectors bake NMS into the traced graph (data-dependent shapes TensorRT can't build) and use RoiAlign (needs a plugin). YOLO ships a TensorRT-friendly export. For torchvision, use ONNX Runtime (CUDA).
-- **QAT is not supported for detection** (either family) — FX graph-mode can't trace the dynamic control flow; use post-training INT8 (the detection head is auto-excluded, or it collapses) or TensorRT-INT8.
-- **OpenVINO is an Intel target** (CPU / iGPU / NPU) — it cannot use an NVIDIA GPU.
+- **Detection to TensorRT works for YOLO but not torchvision.** torchvision detectors bake NMS into the traced graph (data-dependent shapes TensorRT can't build) and use RoiAlign (needs a plugin). YOLO ships a TensorRT-friendly export. For torchvision, use ONNX Runtime (CUDA).
+- **QAT is not supported for detection** (either family). FX graph-mode can't trace the dynamic control flow; use post-training INT8 (the detection head is auto-excluded, or it collapses) or TensorRT-INT8.
+- **OpenVINO is an Intel target** (CPU / iGPU / NPU); it cannot use an NVIDIA GPU.
 
 ### Basic Usage
 
@@ -476,7 +505,7 @@ See [Lifecycle Documentation](mindtrace/models/lifecycle/README.md) for details.
 | Service class | `OnnxModelService` | `OpenVINOModelService` | `TensorRTModelService` | `TorchServeModelService` |
 | Hardware | CPU / GPU | Intel CPU / iGPU | NVIDIA GPU | CPU / GPU |
 | Zero-subclass inference | Yes | Yes | Yes | No |
-| Warmup on load | Yes | Yes | Yes | -- |
+| Warmup on load | Yes | Yes | Yes |  |
 | Python dependency | `onnxruntime` | `openvino` | `tensorrt` (on-device) | TorchServe server |
 
 `EdgeModelService` probes the box at startup and builds an execution-provider fallback chain (TensorRT → CUDA → OpenVINO → CPU) so one deployment manifest runs anywhere. For on-box camera loops, `InProcessPredictor` skips HTTP/base64 entirely; `TiledInference`, `PipelinePool` and `InferenceQueue` cover the remaining edge operations (see the [Optimization guide](mindtrace/models/optimization/README.md)).
@@ -515,7 +544,7 @@ See [Serving Documentation](mindtrace/models/serving/README.md) for details.
 | `HuggingFaceProcessorArchiver` | `ProcessorMixin`, `PreTrainedTokenizerBase` | `transformers` | Yes |
 | `OnnxModelArchiver` | `onnx.ModelProto` | `onnx` | Yes |
 | `OpenVINOModelArchiver` | `openvino.Model` (IR) | `openvino` | Yes |
-| `TensorRTEngineArchiver` | `TensorRTEngine` (`.plan`, device/version-keyed) | -- | Yes |
+| `TensorRTEngineArchiver` | `TensorRTEngine` (`.plan`, device/version-keyed) |  | Yes |
 | `TimmModelArchiver` | timm models | `timm` | No (explicit) |
 | `YoloArchiver` | `ultralytics.YOLO`, `YOLOWorld` | `ultralytics` | Yes |
 | `YoloEArchiver` | `ultralytics.YOLOE` | `ultralytics` | Yes |
@@ -590,7 +619,7 @@ Everything below is importable directly from `mindtrace.models`:
 
 ```python
 from mindtrace.models import (
-    # -- Architectures --
+    # Architectures
     build_model,                    # Build backbone+head from registry names
     build_model_from_hf,            # Build from any HuggingFace model ID
     build_backbone,                 # Instantiate a registered backbone
@@ -607,7 +636,7 @@ from mindtrace.models import (
     FPNSegHead,                     # Feature Pyramid Network segmentation head
     DetectionHead,                  # Object detection head
 
-    # -- Training --
+    # Training
     Trainer,                        # Core training loop (AMP, DDP, grad accum)
     Callback,                       # Abstract callback base class
     ModelCheckpoint,                # Save on metric improvement
@@ -621,7 +650,7 @@ from mindtrace.models import (
     DatalakeDataset,                # torch Dataset backed by Datalake query
     build_datalake_loader,          # Factory: Datalake query -> DataLoader
 
-    # -- Losses --
+    # Losses
     FocalLoss,                      # Class-imbalanced classification
     LabelSmoothingCrossEntropy,     # Soft-label regularization
     SupConLoss,                     # Supervised contrastive loss
@@ -630,9 +659,12 @@ from mindtrace.models import (
     DiceLoss,                       # Differentiable Dice (segmentation)
     TverskyLoss,                    # Asymmetric Dice (segmentation)
     IoULoss,                        # Jaccard / IoU (segmentation)
-    ComboLoss,                      # Weighted sum of sub-losses
+    ComboLoss,                      # Weighted sum of sub-losses (shared output/target)
+    build_loss,                     # Factory: name -> loss module (torch + mindtrace)
+    MultiTaskLoss,                  # Per-head loss composition for multi-task models
+    TaskSpec,                       # One task (loss, output, target, weight) in MultiTaskLoss
 
-    # -- Tracking --
+    # Tracking
     Tracker,                        # Abstract tracker base (extends MindtraceABC)
     CompositeTracker,               # Fan-out to multiple backends
     MLflowTracker,                  # MLflow backend
@@ -642,7 +674,7 @@ from mindtrace.models import (
     UltralyticsTrackerBridge,       # Adapt Ultralytics training to Tracker
     HuggingFaceTrackerBridge,       # Adapt HF Transformers training to Tracker
 
-    # -- Evaluation --
+    # Evaluation
     EvaluationRunner,               # Orchestrate inference + metric computation
     accuracy,                       # Classification accuracy (NumPy)
     mean_iou,                       # Mean intersection-over-union (NumPy)
@@ -653,7 +685,7 @@ from mindtrace.models import (
     rmse,                           # Root mean squared error (NumPy)
     r2_score,                       # R-squared (NumPy)
 
-    # -- Lifecycle --
+    # Lifecycle
     ModelStage,                     # Enum: DEV, STAGING, PRODUCTION, ARCHIVED
     VALID_PROMOTIONS,              # Allowed forward promotion graph
     VALID_DEMOTIONS,                # Allowed backward demotion graph
@@ -668,7 +700,7 @@ from mindtrace.models import (
     PromotionResult,                # Outcome of promote/demote call
     PromotionError,                 # Raised on failed promotion gate
 
-    # -- Serving --
+    # Serving
     ModelService,                   # Abstract base (extends mindtrace.services.Service)
     ModelInfo,                      # Model metadata schema
     PredictRequest,                 # Inference request schema
@@ -693,10 +725,14 @@ from mindtrace.models import PipelinePool     # Memory-budgeted LRU pool of pipe
 # Edge optimization (see the Optimization section and its README)
 from mindtrace.models.optimization import (
     OptimizationRecipe, OptimizationRunner,           # Declarative, accuracy-gated pipelines
-    Prune, Finetune, Quantize, Export, Compile,       # Recipe steps
-    export_onnx, model_size_mb,                       # Parity-checked ONNX export
-    quantize_dynamic, StaticQuantizer, QATCallback,   # Quantization
+    Prune, Finetune, QAT, Quantize, Export, Compile,  # Recipe steps
+    export_onnx, model_size_mb, to_precision,         # ONNX export + validated fp16/bf16 cast
+    assert_finite, NumericalInstabilityError,         # Non-finite (overflow) guard
+    quantize_dynamic, StaticQuantizer, QATCallback,   # PTQ + FX-graph-mode QAT
+    prepare_qat, convert_qat, QuantScheme,            # Module-level scheme-preserving QAT
+    export_quantized_onnx, quantization_manifest,     # QDQ INT8 export + introspection
     sensitivity_scan, MixedPrecisionSearch,           # Accuracy-aware INT8 tuning
+    recommend, validate_optimization,                 # Precision/technique advice + capability checks
     ChannelPruner, magnitude_prune, PruningSchedule,  # Pruning
     to_sparse_24, sparsity,                           # 2:4 semi-structured sparsity
     Benchmark, BenchmarkReport,                       # Edge benchmarking
@@ -711,7 +747,7 @@ from mindtrace.models.serving import (
 )
 ```
 
-Sample scripts covering every flow are in `samples/models/` — see `09_edge_optimization.py`, `10_edge_pruning_distillation.py`, `11_edge_advanced_quantization.py` and `12_edge_deployment_ops.py` for the optimization pillar end to end.
+Sample scripts covering every flow are in `samples/models/`. See `09_edge_optimization.py`, `10_edge_pruning_distillation.py`, `11_edge_advanced_quantization.py`, and `12_edge_deployment_ops.py` for the optimization pillar end to end.
 
 ## License
 
