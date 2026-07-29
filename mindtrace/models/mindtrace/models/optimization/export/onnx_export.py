@@ -121,6 +121,10 @@ def export_onnx(
     ``onnxruntime`` is installed the exported model is executed on the example
     input and compared against the PyTorch output.
 
+    Multi-output models are supported: a module whose forward returns a
+    tuple/list or a dict of tensors (such as a multi-task head) exports and
+    parity-checks, provided ``output_names`` names each output in order.
+
     Args:
         model: The module to export.  It is switched to eval mode.
         path: Destination file path for the ``.onnx`` file.  Parent
@@ -305,8 +309,11 @@ def _check_parity(
     Args:
         path: Path to the exported ONNX file.
         example_input: The tensor the model was traced with.
-        torch_output: Output of the PyTorch model on ``example_input``
-            (a tensor, or a tuple/list of tensors).
+        torch_output: Output of the PyTorch model on ``example_input`` — a
+            tensor, a tuple/list of tensors, or a dict of named tensors (as a
+            multi-task head returns). It is flattened with the same pytree
+            traversal ``torch.onnx.export`` uses, so the leaves line up
+            positionally with the ONNX Runtime outputs.
         atol: Absolute tolerance for the comparison.
 
     Raises:

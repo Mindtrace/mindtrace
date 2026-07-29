@@ -40,7 +40,7 @@ Each call returns a `CompiledArtifact` with the output path, runtime, and metada
 
 - ONNX Runtime (`ort`): graph-level optimization. Output is still an `.onnx`, fused and reordered. The lightest form of compilation.
 - OpenVINO: converts to Intel's IR, optimized for Intel CPUs, iGPUs, and NPUs.
-- TensorRT: builds a serialized engine for one NVIDIA GPU with the best kernels for that device.
+- TensorRT: builds a serialized engine for one NVIDIA GPU with the best kernels for that device. If the parser rejects a graph over redundant nodes (for example, those left by a LoRA merge), it is simplified with `onnxsim` and parsed once more before failing.
 - ExecuTorch: lowers a torch program to a `.pte` for mobile and embedded runtimes. Compiles from the model, not from ONNX.
 
 ## Build it where it runs

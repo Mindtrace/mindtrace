@@ -296,6 +296,12 @@ def quantize_dynamic(
     float and are quantized on the fly at inference time.  No calibration
     data is required.
 
+    The graph is pre-processed with ``quant_pre_process`` (symbolic shape
+    inference and graph optimization) before quantizing, matching the static
+    path.  This keeps the quantized graph's shapes consistent — without it,
+    models with a dimension-reducing head can fail to load with a shape
+    inference error on their final ``MatMul``.
+
     Args:
         onnx_path: Path to the FP32 ONNX model.
         output: Destination path for the quantized model.  Defaults to the

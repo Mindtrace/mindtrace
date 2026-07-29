@@ -12,7 +12,7 @@ The optimization sub-package provides:
 - **Quantization**: `quantize_dynamic`, `StaticQuantizer` (calibrated PTQ), module-level scheme-preserving QAT (`prepare_qat` / `convert_qat` / `QuantScheme`, `export_quantized_onnx`), the FX-graph-mode `QATCallback`, plus `sensitivity_scan` and `MixedPrecisionSearch`.
 - **Precision**: `to_precision` casts to fp16/bf16 and validates against silent overflow.
 - **Pruning**: `ChannelPruner` (physical channel removal), `magnitude_prune`, `PruningSchedule` (gradual, in-training), `to_sparse_24`, `sparsity`.
-- **Export**: `export_onnx` with graph simplification, an optional dynamo exporter for ops the legacy tracer mis-exports, and a numerical parity check.
+- **Export**: `export_onnx` with graph simplification, an optional dynamo exporter for ops the legacy tracer mis-exports, and a numerical parity check that covers single- and multi-output models (a tuple/list or a dict of tensors, such as a multi-task head).
 - **Compilation**: `compile_model` dispatching on `TargetSpec` registry entries (ONNX Runtime, OpenVINO, TensorRT, ExecuTorch).
 - **Benchmarking**: `Benchmark` producing a `BenchmarkReport` (p50/p95 latency, fps, size, cold start, peak RSS) and recording the execution provider that actually ran.
 - **Unified adapters**: `load_model` + `profile` present Ultralytics, torchvision, and torch/timm/HF models through one `OptimizableModel` surface with provider-native execution and a uniform result schema.
