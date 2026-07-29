@@ -52,6 +52,7 @@ from mindtrace.models.architectures.factory import ModelWrapper, build_model, bu
 # Heads
 from mindtrace.models.architectures.heads import (
     DetectionHead,
+    QueryDetectionHead,
     FPNSegHead,
     CrossAttentionMultiTaskHead,
     LinearHead,
@@ -79,4 +80,5 @@ __all__ = [
     "LinearSegHead",
     # Detection heads
     "DetectionHead",
+    "QueryDetectionHead",
 ]

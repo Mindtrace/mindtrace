@@ -40,7 +40,12 @@ from mindtrace.models.training.losses.classification import (
     SupConLoss,
 )
 from mindtrace.models.training.losses.composite import ComboLoss
-from mindtrace.models.training.losses.detection import CIoULoss, GIoULoss
+from mindtrace.models.training.losses.detection import (
+    CIoULoss,
+    DetectionSetCriterion,
+    GIoULoss,
+    HungarianMatcher,
+)
 from mindtrace.models.training.losses.distillation import DistillationLoss, FeatureDistillation
 from mindtrace.models.training.losses.factory import MultiTaskLoss, TaskSpec, build_loss
 from mindtrace.models.training.losses.segmentation import DiceLoss, IoULoss, TverskyLoss
@@ -52,6 +57,8 @@ __all__ = [
     "SupConLoss",
     # detection
     "GIoULoss",
+    "HungarianMatcher",
+    "DetectionSetCriterion",
     "CIoULoss",
     # segmentation
     "DiceLoss",
