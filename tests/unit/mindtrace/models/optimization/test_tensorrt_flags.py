@@ -9,11 +9,28 @@ from __future__ import annotations
 
 import types
 
-from mindtrace.models.optimization.compile.tensorrt import _resolve_network_flags
+import numpy as np
+import onnx
+import pytest
+from onnx import TensorProto, helper, numpy_helper
+
+from mindtrace.models.optimization.compile.tensorrt import _resolve_network_flags, _simplified_onnx
 from mindtrace.models.optimization.targets import TargetSpec
 
 EXPLICIT_BATCH = 0
 STRONGLY_TYPED = 1
+
+
+def _tiny_onnx(path):
+    """A minimal valid ONNX model (x + w) with one initializer."""
+    w = numpy_helper.from_array(np.ones((4,), dtype=np.float32), name="w")
+    x = helper.make_tensor_value_info("x", TensorProto.FLOAT, [1, 4])
+    y = helper.make_tensor_value_info("y", TensorProto.FLOAT, [1, 4])
+    node = helper.make_node("Add", ["x", "w"], ["y"])
+    graph = helper.make_graph([node], "g", [x], [y], [w])
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
+    onnx.save(model, str(path))
+    return path
 
 
 def _fake_trt(*, has_precision_flags: bool, has_strongly_typed: bool = True):
@@ -60,3 +77,29 @@ class TestResolveNetworkFlags:
             _fake_trt(has_precision_flags=False, has_strongly_typed=False), _target("fp16"), True
         )
         assert strong is False
+
+
+class TestSimplifiedOnnxFallback:
+    """The parser fallback: when TensorRT rejects a graph (e.g. after a LoRA merge),
+    compile_tensorrt retries on an onnxsim-simplified graph. This covers the helper
+    that produces it."""
+
+    def test_returns_valid_serialized_bytes(self, tmp_path):
+        out = _simplified_onnx(_tiny_onnx(tmp_path / "m.onnx"))
+        assert isinstance(out, (bytes, bytearray)) and len(out) > 0
+        onnx.load_from_string(out)  # round-trips as a valid model
+
+    def test_returns_none_when_simplify_reports_failure(self, tmp_path, monkeypatch):
+        import onnxsim
+
+        monkeypatch.setattr(onnxsim, "simplify", lambda m: (m, False))
+        assert _simplified_onnx(_tiny_onnx(tmp_path / "m.onnx")) is None
+
+    def test_returns_none_when_simplify_raises(self, tmp_path, monkeypatch):
+        import onnxsim
+
+        def boom(_m):
+            raise RuntimeError("simplify blew up")
+
+        monkeypatch.setattr(onnxsim, "simplify", boom)
+        assert _simplified_onnx(_tiny_onnx(tmp_path / "m.onnx")) is None

@@ -72,6 +72,32 @@ def _resolve_network_flags(trt: Any, target: TargetSpec, strongly_typed: bool) -
     return flags, use_strong
 
 
+def _simplified_onnx(onnx_path: Path) -> bytes | None:
+    """Return the model's bytes after ``onnxsim`` graph simplification.
+
+    Used as a TensorRT parser fallback: LoRA-merged and some exported graphs
+    carry redundant nodes and initializers the parser rejects but simplification
+    folds away. Returns ``None`` (so the caller keeps the original error) when
+    ``onnxsim`` is unavailable or simplification does not succeed.
+
+    Args:
+        onnx_path: Path to the source ONNX model.
+
+    Returns:
+        Serialized simplified model bytes, or ``None``.
+    """
+    try:
+        import onnx
+        import onnxsim
+    except ImportError:
+        return None
+    try:
+        model, ok = onnxsim.simplify(onnx.load(str(onnx_path)))
+        return model.SerializeToString() if ok else None
+    except Exception:  # noqa: BLE001 — simplification is best-effort
+        return None
+
+
 @register_compiler("tensorrt")
 def compile_tensorrt(onnx_path: Path, target: TargetSpec, output_dir: Path, **opts: Any) -> CompiledArtifact:
     """Build a serialized TensorRT engine from an ONNX model.
@@ -128,7 +154,21 @@ def compile_tensorrt(onnx_path: Path, target: TargetSpec, output_dir: Path, **op
 
     if not parser.parse(onnx_path.read_bytes()):
         errors = "; ".join(str(parser.get_error(i)) for i in range(int(parser.num_errors)))
-        raise RuntimeError(f"TensorRT failed to parse ONNX model '{onnx_path}': {errors}")
+        # Some graphs (notably after a LoRA merge) carry redundant nodes and
+        # initializers the parser rejects but graph simplification folds away.
+        # Retry once on a simplified graph, mirroring export_onnx's auto fallback,
+        # before giving up. A fresh network/parser is used so the retry is clean.
+        simplified = _simplified_onnx(onnx_path)
+        if simplified is not None:
+            network = builder.create_network(network_flags)
+            parser = trt.OnnxParser(network, logger)
+        if simplified is None or not parser.parse(simplified):
+            retry_note = ""
+            if simplified is not None:
+                retry_errors = "; ".join(str(parser.get_error(i)) for i in range(int(parser.num_errors)))
+                retry_note = f" (retry on the simplified graph also failed: {retry_errors})"
+            raise RuntimeError(f"TensorRT failed to parse ONNX model '{onnx_path}': {errors}{retry_note}")
+        logger.log(trt.Logger.INFO, "Initial ONNX parse failed; succeeded after graph simplification.")
 
     config = builder.create_builder_config()
     workspace_mb = opts.get("workspace_mb")
