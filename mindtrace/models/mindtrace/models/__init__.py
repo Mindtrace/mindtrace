@@ -15,6 +15,7 @@ lifecycle     Model stage management, ModelCard, and promotion logic.
 from mindtrace.models.architectures import (
     BackboneInfo,
     DetectionHead,
+    QueryDetectionHead,
     FPNSegHead,
     CrossAttentionMultiTaskHead,
     LinearHead,
@@ -186,6 +187,7 @@ __all__ = [
     "LinearSegHead",
     "FPNSegHead",
     "DetectionHead",
+    "QueryDetectionHead",
     # evaluation
     "EvaluationRunner",
     "accuracy",
