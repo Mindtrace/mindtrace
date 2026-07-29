@@ -1,41 +1,23 @@
-"""Strongly-typed network selection for TensorRT — logic tested without a real TRT.
+"""Network-flag selection and ONNX parsing for TensorRT — tested without a real TRT.
 
 TensorRT 10 uses BuilderFlag.FP16/.INT8 (weakly-typed); TensorRT 11+ removed them and
 requires a strongly-typed network for reduced precision. _resolve_network_flags picks
-the right mode so half-precision engines don't silently fall back to fp32.
+the right mode so half-precision engines don't silently fall back to fp32. Parsing goes
+through parse_from_file so external-data weights resolve against the model's directory.
 """
 
 from __future__ import annotations
 
 import types
+from pathlib import Path
 
-import numpy as np
-import onnx
 import pytest
-from onnx import TensorProto, helper, numpy_helper
 
-from mindtrace.models.optimization.compile import tensorrt as trt_mod
-from mindtrace.models.optimization.compile.tensorrt import (
-    _parse_onnx_into_network,
-    _resolve_network_flags,
-    _simplified_onnx,
-)
+from mindtrace.models.optimization.compile.tensorrt import _parse_onnx_into_network, _resolve_network_flags
 from mindtrace.models.optimization.targets import TargetSpec
 
 EXPLICIT_BATCH = 0
 STRONGLY_TYPED = 1
-
-
-def _tiny_onnx(path):
-    """A minimal valid ONNX model (x + w) with one initializer."""
-    w = numpy_helper.from_array(np.ones((4,), dtype=np.float32), name="w")
-    x = helper.make_tensor_value_info("x", TensorProto.FLOAT, [1, 4])
-    y = helper.make_tensor_value_info("y", TensorProto.FLOAT, [1, 4])
-    node = helper.make_node("Add", ["x", "w"], ["y"])
-    graph = helper.make_graph([node], "g", [x], [y], [w])
-    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
-    onnx.save(model, str(path))
-    return path
 
 
 def _fake_trt(*, has_precision_flags: bool, has_strongly_typed: bool = True):
@@ -84,36 +66,15 @@ class TestResolveNetworkFlags:
         assert strong is False
 
 
-class TestSimplifiedOnnxFallback:
-    """The parser fallback: when TensorRT rejects a graph (e.g. after a LoRA merge),
-    compile_tensorrt retries on an onnxsim-simplified graph. This covers the helper
-    that produces it."""
-
-    def test_returns_valid_serialized_bytes(self, tmp_path):
-        out = _simplified_onnx(_tiny_onnx(tmp_path / "m.onnx"))
-        assert isinstance(out, (bytes, bytearray)) and len(out) > 0
-        onnx.load_from_string(out)  # round-trips as a valid model
-
-    def test_returns_none_when_simplify_reports_failure(self, tmp_path, monkeypatch):
-        import onnxsim
-
-        monkeypatch.setattr(onnxsim, "simplify", lambda m: (m, False))
-        assert _simplified_onnx(_tiny_onnx(tmp_path / "m.onnx")) is None
-
-    def test_returns_none_when_simplify_raises(self, tmp_path, monkeypatch):
-        import onnxsim
-
-        def boom(_m):
-            raise RuntimeError("simplify blew up")
-
-        monkeypatch.setattr(onnxsim, "simplify", boom)
-        assert _simplified_onnx(_tiny_onnx(tmp_path / "m.onnx")) is None
+# ---------------------------------------------------------------------------
+# ONNX parsing (path-aware, external-data safe)
+# ---------------------------------------------------------------------------
 
 
 class _FakeLogger:
     INTERNAL_ERROR = 0
-    INFO = 3
     WARNING = 2
+    INFO = 3
 
     def __init__(self, _severity=0):
         pass
@@ -123,14 +84,16 @@ class _FakeLogger:
 
 
 class _FakeParser:
-    """Returns queued parse() results and canned errors, like trt.OnnxParser."""
+    """Mimics trt.OnnxParser: parse_from_file returns a preset result plus canned errors."""
 
-    def __init__(self, network, _logger, results):
+    def __init__(self, network, _logger, result):
         self.network = network
-        self._results = results
+        self._result = result
+        self.parsed_path = None
 
-    def parse(self, _data):
-        return self._results.pop(0)
+    def parse_from_file(self, path):
+        self.parsed_path = path
+        return self._result
 
     @property
     def num_errors(self):
@@ -149,11 +112,11 @@ class _FakeBuilder:
         return f"network-{self.networks}"
 
 
-def _fake_parse_trt(parse_results):
+def _fake_parse_trt(parse_result):
     parsers = []
 
     def make_parser(network, logger):
-        p = _FakeParser(network, logger, parse_results)
+        p = _FakeParser(network, logger, parse_result)
         parsers.append(p)
         return p
 
@@ -162,34 +125,17 @@ def _fake_parse_trt(parse_results):
 
 
 class TestParseOnnxIntoNetwork:
-    """The parse control flow: silent first attempt, simplify-and-retry, clean errors."""
+    """Parsing goes through parse_from_file so external-data weights resolve by path."""
 
-    def test_returns_network_on_first_parse(self, tmp_path, monkeypatch):
-        called = {"simplify": False}
-        monkeypatch.setattr(trt_mod, "_simplified_onnx", lambda p: called.__setitem__("simplify", True) or b"x")
-        trt, _ = _fake_parse_trt([True])
+    def test_returns_network_on_success(self):
+        trt, parsers = _fake_parse_trt(True)
         builder = _FakeBuilder()
-        net = _parse_onnx_into_network(trt, builder, _FakeLogger(), _tiny_onnx(tmp_path / "m.onnx"), 0)
+        net = _parse_onnx_into_network(trt, builder, _FakeLogger(), Path("dir/model.onnx"), 0)
         assert net == "network-1"
-        assert called["simplify"] is False  # no simplification when the first parse works
         assert builder.networks == 1
+        assert parsers[0].parsed_path == "dir/model.onnx"  # parsed by path, not from bytes
 
-    def test_retries_on_simplified_graph(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(trt_mod, "_simplified_onnx", lambda p: b"simplified-bytes")
-        trt, _ = _fake_parse_trt([False, True])  # fail raw, succeed simplified
-        builder = _FakeBuilder()
-        net = _parse_onnx_into_network(trt, builder, _FakeLogger(), _tiny_onnx(tmp_path / "m.onnx"), 0)
-        assert net == "network-2"  # the retry's fresh network
-        assert builder.networks == 2
-
-    def test_raises_when_simplify_unavailable(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(trt_mod, "_simplified_onnx", lambda p: None)
-        trt, _ = _fake_parse_trt([False])
-        with pytest.raises(RuntimeError, match="failed to parse"):
-            _parse_onnx_into_network(trt, _FakeBuilder(), _FakeLogger(), _tiny_onnx(tmp_path / "m.onnx"), 0)
-
-    def test_raises_with_both_errors_when_retry_also_fails(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(trt_mod, "_simplified_onnx", lambda p: b"simplified-bytes")
-        trt, _ = _fake_parse_trt([False, False])
-        with pytest.raises(RuntimeError, match="simplified graph also failed"):
-            _parse_onnx_into_network(trt, _FakeBuilder(), _FakeLogger(), _tiny_onnx(tmp_path / "m.onnx"), 0)
+    def test_raises_with_parser_errors_on_failure(self):
+        trt, _ = _fake_parse_trt(False)
+        with pytest.raises(RuntimeError, match="failed to parse.*err0; err1"):
+            _parse_onnx_into_network(trt, _FakeBuilder(), _FakeLogger(), Path("model.onnx"), 0)
