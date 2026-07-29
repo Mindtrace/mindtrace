@@ -66,6 +66,20 @@ class TinyCNN(nn.Module):
         return self.head(self.features(x).flatten(1))
 
 
+class MultiTaskTiny(nn.Module):
+    """Small model returning a dict of outputs, like a multi-task head."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.features = nn.Sequential(nn.Conv2d(3, 4, 3, padding=1), nn.ReLU(), nn.AdaptiveAvgPool2d(1))
+        self.defect = nn.Linear(4, 3)
+        self.severity = nn.Linear(4, 1)
+
+    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
+        h = self.features(x).flatten(1)
+        return {"defect": self.defect(h), "severity": self.severity(h).squeeze(-1)}
+
+
 @pytest.fixture()
 def model() -> TinyCNN:
     torch.manual_seed(0)
@@ -111,6 +125,23 @@ class TestExportOnnx:
 
         with pytest.raises(ValueError, match="max abs diff"):
             export_onnx(model, tmp_path / "tiny.onnx", static_shape=(1, 3, 16, 16), check=True)
+
+    def test_dict_output_model_passes_parity(self, tmp_path: Path):
+        """A model whose forward returns a dict (a multi-task head) exports and
+        verifies: the parity check flattens the dict the same way torch.onnx does,
+        so each task output lines up positionally with the ONNX Runtime outputs."""
+        pytest.importorskip("onnxruntime")
+        torch.manual_seed(0)
+        out = export_onnx(
+            MultiTaskTiny().eval(),
+            tmp_path / "multitask.onnx",
+            static_shape=(1, 3, 16, 16),
+            output_names=("defect", "severity"),
+            check=True,
+            atol=1e-4,
+        )
+        assert out.exists()
+        assert [o.name for o in onnx.load(str(out)).graph.output] == ["defect", "severity"]
 
     def test_dynamic_batch_axis(self, model: TinyCNN, tmp_path: Path):
         static = export_onnx(
