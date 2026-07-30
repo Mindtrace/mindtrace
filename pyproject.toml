@@ -271,6 +271,8 @@ docstring-code-format = false
 # This only has an effect when the `docstring-code-format` setting is
 # enabled.
 docstring-code-line-length = "dynamic"
+# Ruff 0.16 formats Markdown code blocks; our docs hand-align trailing comments.
+exclude = ["*.md"]
 
 [tool.setuptools.packages.find]
 where = ["."]
