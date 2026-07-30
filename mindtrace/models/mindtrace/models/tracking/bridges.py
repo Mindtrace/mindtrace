@@ -18,9 +18,21 @@ Usage::
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Trackers such as MLflow only accept metric names made of alphanumerics, ``_``,
+# ``-``, ``.``, space, ``:``, and ``/``. Ultralytics emits names like
+# ``metrics/precision(B)`` with parentheses, which would reject the whole batch,
+# so disallowed characters are stripped before logging.
+_INVALID_METRIC_CHARS = re.compile(r"[^0-9A-Za-z_./: -]")
+
+
+def _sanitize_metric_name(name: str) -> str:
+    """Strip characters a tracker backend may reject from a metric name."""
+    return _INVALID_METRIC_CHARS.sub("", name)
 
 
 class UltralyticsTrackerBridge:
@@ -74,11 +86,12 @@ class UltralyticsTrackerBridge:
                 if key in raw_metrics:
                     val = raw_metrics[key]
                     if isinstance(val, (int, float)):
-                        loggable[key] = float(val)
+                        loggable[_sanitize_metric_name(key)] = float(val)
 
             for key, val in raw_metrics.items():
-                if key not in loggable and isinstance(val, (int, float)):
-                    loggable[key] = float(val)
+                sk = _sanitize_metric_name(key)
+                if sk not in loggable and isinstance(val, (int, float)):
+                    loggable[sk] = float(val)
 
             logger.debug("UltralyticsTrackerBridge: epoch=%d metrics=%s", epoch, loggable)
 
@@ -104,7 +117,7 @@ class UltralyticsTrackerBridge:
             if bridge._tracker is not None and final_loggable:
                 try:
                     bridge._tracker.log(
-                        {f"final/{k}": v for k, v in final_loggable.items()},
+                        {f"final/{_sanitize_metric_name(k)}": v for k, v in final_loggable.items()},
                         step=bridge._current_epoch,
                     )
                 except Exception as exc:

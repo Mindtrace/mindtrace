@@ -784,8 +784,26 @@ class TestUltralyticsTrackerBridge:
         logged_metrics = tracker.log.call_args[0][0]
         assert logged_metrics["train/box_loss"] == 0.5
         assert logged_metrics["train/cls_loss"] == 0.3
-        assert logged_metrics["metrics/mAP50(B)"] == 0.85
+        # Ultralytics names like "metrics/mAP50(B)" carry parentheses that MLflow rejects;
+        # the bridge strips them so the whole batch is not rejected.
+        assert logged_metrics["metrics/mAP50B"] == 0.85
+        assert "metrics/mAP50(B)" not in logged_metrics
         assert "non_numeric" not in logged_metrics
+
+    def test_sanitizes_metric_names_for_the_tracker(self):
+        """Every logged metric name must be free of characters trackers reject (e.g. parentheses)."""
+        tracker = MagicMock()
+        bridge = UltralyticsTrackerBridge(tracker)
+        model = MagicMock()
+        bridge.attach(model)
+        epoch_cb = [c[0][1] for c in model.add_callback.call_args_list if c[0][0] == "on_fit_epoch_end"][0]
+        trainer_mock = MagicMock()
+        trainer_mock.epoch = 0
+        trainer_mock.metrics = {"metrics/precision(B)": 0.9, "metrics/recall(B)": 0.8, "lr/pg0": 0.001}
+        epoch_cb(trainer_mock)
+        logged = tracker.log.call_args[0][0]
+        assert all("(" not in k and ")" not in k for k in logged), logged
+        assert logged["metrics/precisionB"] == 0.9 and logged["metrics/recallB"] == 0.8
 
     def test_on_fit_epoch_end_updates_current_epoch(self):
         bridge = UltralyticsTrackerBridge(MagicMock())
