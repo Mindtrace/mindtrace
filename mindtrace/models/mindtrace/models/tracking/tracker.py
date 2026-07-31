@@ -9,12 +9,9 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Generator
+from typing import Any, Generator
 
 from mindtrace.core import MindtraceABC
-
-if TYPE_CHECKING:
-    pass
 
 
 class Tracker(MindtraceABC):

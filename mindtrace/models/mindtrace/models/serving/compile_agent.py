@@ -355,8 +355,9 @@ class CompileAgentService(Service):
         """
         buildable = _buildable_runtimes()
         infos = [
-            TargetInfo(name=name, runtime=get_target(name).runtime, buildable=get_target(name).runtime in buildable)
+            TargetInfo(name=name, runtime=spec.runtime, buildable=spec.runtime in buildable)
             for name in list_targets()
+            for spec in (get_target(name),)
         ]
         return TargetsOutput(targets=infos)
 
@@ -367,38 +368,18 @@ class CompileAgentService(Service):
     def _registry_from_env(self) -> Any:
         """Construct a registry from environment variables, if configured.
 
-        Mirrors the resolution used by
-        :class:`~mindtrace.models.serving.service.ModelService`:
-        ``MINDTRACE_REGISTRY_URI`` (``gs://`` URIs) takes precedence over
-        ``MINDTRACE_REGISTRY_PATH`` (local path).
+        Delegates to the shared
+        :func:`~mindtrace.models.serving.service.registry_from_env` helper so
+        the resolution rules (``MINDTRACE_REGISTRY_URI`` ``gs://`` precedence
+        over ``MINDTRACE_REGISTRY_PATH``) stay in one place.
 
         Returns:
             A registry instance, or ``None`` when nothing is configured or
             construction fails.
         """
-        registry_uri = os.environ.get("MINDTRACE_REGISTRY_URI", "")
-        registry_path = os.environ.get("MINDTRACE_REGISTRY_PATH", "")
-        if registry_uri.startswith("gs://"):
-            try:
-                from mindtrace.registry import Registry
-                from mindtrace.registry.backends.gcp_registry_backend import GCPRegistryBackend
+        from mindtrace.models.serving.service import registry_from_env
 
-                backend = GCPRegistryBackend(uri=registry_uri)
-                return Registry(backend=backend, use_cache=True)
-            except Exception:
-                self.logger.warning(
-                    "Failed to create GCS Registry from MINDTRACE_REGISTRY_URI=%s", registry_uri, exc_info=True
-                )
-        elif registry_path:
-            try:
-                from mindtrace.registry import Registry
-
-                return Registry(registry_path)
-            except Exception:
-                self.logger.warning(
-                    "Failed to create Registry from MINDTRACE_REGISTRY_PATH=%s", registry_path, exc_info=True
-                )
-        return None
+        return registry_from_env(self.logger)
 
     def _resolve_model(self, payload: CompileJobInput) -> tuple[Path, Path | None]:
         """Resolve the source ONNX model to a local file path.

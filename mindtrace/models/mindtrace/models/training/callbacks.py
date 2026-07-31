@@ -99,7 +99,8 @@ class ModelCheckpoint(Callback):
             model_name="resnet50",
             version_prefix="v",
         )
-        trainer.fit(train_loader, val_loader, epochs=10, callbacks=[checkpoint])
+        trainer = Trainer(..., callbacks=[checkpoint])
+        trainer.fit(train_loader, val_loader, epochs=10)
     """
 
     def __init__(
@@ -130,6 +131,9 @@ class ModelCheckpoint(Callback):
             raise_on_save_failure: When ``True``, re-raise save exceptions
                 instead of silently swallowing them.  Defaults to ``False``
                 for backward compatibility.
+            task: Task string recorded on the :class:`ModelCard` created for
+                each saved checkpoint (``ModelCard(task=...)``).  Defaults to
+                ``""``.
 
         Raises:
             ValueError: If *mode* is not ``"min"`` or ``"max"``.
@@ -239,7 +243,8 @@ class EarlyStopping(Callback):
     Example::
 
         early_stop = EarlyStopping(monitor="val/loss", patience=5, mode="min")
-        trainer.fit(train_loader, val_loader, epochs=100, callbacks=[early_stop])
+        trainer = Trainer(..., callbacks=[early_stop])
+        trainer.fit(train_loader, val_loader, epochs=100)
     """
 
     def __init__(
@@ -334,7 +339,8 @@ class LRMonitor(Callback):
     Example::
 
         lr_monitor = LRMonitor(tracker=wandb_tracker)
-        trainer.fit(train_loader, epochs=50, callbacks=[lr_monitor])
+        trainer = Trainer(..., callbacks=[lr_monitor])
+        trainer.fit(train_loader, epochs=50)
     """
 
     def __init__(self, tracker: Any | None = None) -> None:
@@ -404,7 +410,8 @@ class UnfreezeSchedule(Callback):
             schedule={5: ["backbone.layer3", "backbone.layer4"], 10: ["backbone"]},
             new_lr=5e-5,
         )
-        trainer.fit(train_loader, epochs=15, callbacks=[unfreeze])
+        trainer = Trainer(..., callbacks=[unfreeze])
+        trainer.fit(train_loader, epochs=15)
     """
 
     def __init__(
@@ -563,7 +570,8 @@ class ProgressLogger(Callback):
     Example::
 
         progress = ProgressLogger()
-        trainer.fit(train_loader, val_loader, epochs=20, callbacks=[progress])
+        trainer = Trainer(..., callbacks=[progress])
+        trainer.fit(train_loader, val_loader, epochs=20)
     """
 
     def __init__(self) -> None:

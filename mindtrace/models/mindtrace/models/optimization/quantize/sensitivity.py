@@ -15,6 +15,7 @@ from typing import Any, Callable
 
 from mindtrace.core import Mindtrace
 from mindtrace.models.optimization.quantize.ptq import (
+    _CALIBRATION_METHODS,
     FeedCalibrationReader,
     StaticQuantizer,
     _default_output,
@@ -161,11 +162,9 @@ def _quantize_with(
     )
 
     quant_type = QuantType.QInt8 if quantizer.precision == "int8" else QuantType.QUInt8
-    method = {
-        "minmax": CalibrationMethod.MinMax,
-        "entropy": CalibrationMethod.Entropy,
-        "percentile": CalibrationMethod.Percentile,
-    }[quantizer.calibration_method]
+    # Reuse ptq's centralized name->enum-attr mapping so the two never drift
+    # (StaticQuantizer.__init__ validates calibration_method against the same dict).
+    method = getattr(CalibrationMethod, _CALIBRATION_METHODS[quantizer.calibration_method])
 
     quantize_static(
         str(model_path),
