@@ -16,7 +16,7 @@ import torch.nn as nn
 # Internal registry store
 # ---------------------------------------------------------------------------
 
-_BACKBONE_REGISTRY: dict[str, Callable[..., nn.Module]] = {}
+_BACKBONE_REGISTRY: dict[str, Callable[..., tuple[nn.Module, int]]] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -27,9 +27,11 @@ _BACKBONE_REGISTRY: dict[str, Callable[..., nn.Module]] = {}
 def register_backbone(name: str) -> Callable:
     """Decorator that registers a backbone factory function under *name*.
 
-    The decorated callable must accept arbitrary keyword arguments and return
-    an ``nn.Module`` whose output dimension matches the ``num_features`` value
-    supplied when building a :class:`BackboneInfo`.
+    The decorated callable must accept arbitrary keyword arguments and return a
+    ``tuple[nn.Module, int]`` of ``(model, num_features)`` — the model and its
+    output feature dimension.  :func:`build_backbone` unpacks exactly this pair
+    to construct the :class:`BackboneInfo`, so returning a bare ``nn.Module``
+    raises ``TypeError`` at build time.
 
     Args:
         name: Unique registry key (e.g. ``"resnet50"``, ``"dino_v2_base"``).
@@ -42,11 +44,12 @@ def register_backbone(name: str) -> Callable:
 
     Example:
         >>> @register_backbone("my_backbone")
-        ... def _build_my_backbone(pretrained: bool = True) -> nn.Module:
-        ...     ...
+        ... def _build_my_backbone(pretrained: bool = True) -> tuple[nn.Module, int]:
+        ...     model = ...
+        ...     return model, 512  # (model, num_features)
     """
 
-    def decorator(fn: Callable[..., nn.Module]) -> Callable[..., nn.Module]:
+    def decorator(fn: Callable[..., tuple[nn.Module, int]]) -> Callable[..., tuple[nn.Module, int]]:
         if name in _BACKBONE_REGISTRY:
             raise ValueError(
                 f"Backbone '{name}' is already registered. Use a unique name or de-register the existing entry first."

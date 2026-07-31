@@ -523,9 +523,15 @@ class ModelCard:
         gates, persists the card to the registry, then updates the stage.
         The stage is only updated after a successful persist.
 
+        Gate semantics match :meth:`promote_variant`: a key ending in ``"_max"``
+        (e.g. ``"bench/p95_ms_max"``) passes when the metric named by the key
+        without the suffix is ``<=`` the threshold; every other key passes when
+        its metric is ``>=`` the threshold.
+
         Args:
             to_stage: Target stage.
-            require: ``{metric: minimum_value}`` thresholds.
+            require: ``{metric_or_metric_max: threshold}`` gates — lower-bound
+                by default, upper-bound for ``"_max"``-suffixed keys.
             dry_run: Validate without applying changes.
 
         Returns:

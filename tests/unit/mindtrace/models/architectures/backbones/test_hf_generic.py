@@ -132,6 +132,18 @@ class TestForward:
         assert torch.equal(result, pooled)
         assert model.last_kwargs["pixel_values"].device.type == "cpu"
 
+    def test_flattens_conv_style_pooler_output(self):
+        # CNN-style HF models (ResNet, RegNet) pool to (B, D, 1, 1); the backbone
+        # must flatten to (B, D) so a downstream Linear head does not crash.
+        pooled = torch.randn(2, 2048, 1, 1)
+        outputs = SimpleNamespace(pooler_output=pooled, last_hidden_state=None)
+        backbone = _make_backbone(FakeHFModel(SimpleNamespace(hidden_size=2048), forward_return=outputs))
+
+        result = backbone.forward(torch.randn(2, 3, 8, 8))
+
+        assert result.shape == (2, 2048)
+        assert torch.equal(result, pooled.flatten(1))
+
     def test_uses_cls_token_for_three_dimensional_hidden_state(self):
         hidden = torch.randn(2, 5, 32)
         outputs = SimpleNamespace(pooler_output=None, last_hidden_state=hidden)
