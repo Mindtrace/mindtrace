@@ -35,7 +35,14 @@ from mindtrace.models.optimization.errors import (
     UnsupportedModelError,
 )
 from mindtrace.models.optimization.bench import Benchmark, BenchmarkReport
-from mindtrace.models.optimization.compile import CompiledArtifact, compile_model, register_compiler
+from mindtrace.models.optimization.compile import (
+    CompiledArtifact,
+    compile_model,
+    load_manifest,
+    register_compiler,
+    verify_manifest,
+    write_manifest,
+)
 from mindtrace.models.optimization.export import (
     NumericalInstabilityError,
     assert_finite,
@@ -166,6 +173,9 @@ __all__ = [
     "get_target",
     "list_targets",
     "compile_model",
+    "write_manifest",
+    "load_manifest",
+    "verify_manifest",
     "CompiledArtifact",
     "register_compiler",
 ]

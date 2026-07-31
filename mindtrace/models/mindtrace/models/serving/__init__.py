@@ -28,7 +28,7 @@ from mindtrace.models.serving.compile_agent import (
     TargetInfo,
     TargetsOutput,
 )
-from mindtrace.models.serving.edge import EdgeModelService, probe_runtimes
+from mindtrace.models.serving.edge import EdgeModelService, probe_runtimes, select_providers
 from mindtrace.models.serving.inprocess import InProcessPredictor
 from mindtrace.models.serving.openvino_service import OpenVINOModelService
 from mindtrace.models.serving.queue import InferenceQueue
@@ -54,6 +54,7 @@ __all__ = [
     "PredictRequest",
     "PredictResponse",
     "probe_runtimes",
+    "select_providers",
     "resolve_device",
     # Tiled inference for large frames
     "TileDetection",
