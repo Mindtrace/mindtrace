@@ -60,8 +60,8 @@ class EvaluationRunner(Mindtrace):
     Args:
         model: PyTorch ``nn.Module``.  Moved to *device* automatically on
             construction.
-        task: One of ``"classification"``, ``"detection"``, or
-            ``"segmentation"``.
+        task: One of ``"classification"``, ``"detection"``,
+            ``"segmentation"``, or ``"regression"``.
         num_classes: Number of output classes.
         loader: Optional default evaluation data loader.  Stored and used
             by :meth:`evaluate` and as a fallback by :meth:`run` when the
@@ -195,9 +195,11 @@ class EvaluationRunner(Mindtrace):
 
             * **classification**: ``accuracy``, ``precision``, ``recall``,
               ``f1``, ``classification_report``.
-            * **detection**: ``mAP@50``, ``mAP@75``, ``mAP@50:95``.
+            * **detection**: ``mAP@50``, ``mAP@75``, ``mAP@50:95``,
+              ``AP_per_class``.
             * **segmentation**: ``mIoU``, ``mean_dice``, ``pixel_accuracy``,
               ``iou_per_class``, ``dice_per_class``.
+            * **regression**: ``mae``, ``mse``, ``rmse``, ``r2``.
         """
         # Fall back to default loader when None is passed
         if loader is None:
