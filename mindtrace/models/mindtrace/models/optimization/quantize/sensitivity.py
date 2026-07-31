@@ -346,7 +346,11 @@ class MixedPrecisionSearch(Mindtrace):
         )
         baseline = float(eval_fn(onnx_path))
 
-        with tempfile.TemporaryDirectory(prefix="mindtrace-mixed-") as tmp:
+        # Stage the (potentially large) preprocessed ONNX under the config-managed
+        # TEMP_DIR rather than the system /tmp, matching StaticQuantizer.run.
+        temp_base = Path(self.config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"])
+        temp_base.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="mindtrace-mixed-", dir=str(temp_base)) as tmp:
             workdir = Path(tmp)
             preprocessed = preprocess_for_quantization(onnx_path, workdir)
 
