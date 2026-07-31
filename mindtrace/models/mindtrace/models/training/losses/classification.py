@@ -227,8 +227,12 @@ class SupConLoss(nn.Module):
             Scalar mean loss over all anchors that have at least one positive.
 
         Raises:
-            ValueError: If *features* and *labels* have mismatched batch sizes,
-                or if no anchor has a positive pair in the batch.
+            ValueError: If *features* and *labels* have mismatched batch sizes.
+
+        Note:
+            When no anchor has a positive pair in the batch (all labels unique),
+            a graph-connected zero is returned so ``.backward()`` still works when
+            this is the sole loss.
         """
         n = features.size(0)
         if labels.size(0) != n:
@@ -264,8 +268,10 @@ class SupConLoss(nn.Module):
         has_positives = num_positives > 0
 
         if not has_positives.any():
-            # No valid anchor–positive pairs in the batch — return zero loss
-            return features.new_zeros(1).squeeze()
+            # No valid anchor–positive pairs in the batch — return a graph-connected
+            # zero (features.sum() * 0.0) so backward() works when this is the sole loss;
+            # a bare new_zeros() has no grad_fn and would crash loss.backward().
+            return features.sum() * 0.0
 
         mean_log_prob_pos = (pos_mask * log_prob).sum(dim=1)
         mean_log_prob_pos = mean_log_prob_pos[has_positives] / num_positives[has_positives]

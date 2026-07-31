@@ -95,6 +95,17 @@ class TestSupConLoss:
         assert loss.shape == torch.Size([])
         assert loss.item() == pytest.approx(0.0)
 
+    def test_no_positive_pairs_zero_loss_still_backpropagates(self):
+        # When it is the sole loss and no anchor has a positive, the zero must be
+        # graph-connected so .backward() works instead of raising "does not require grad".
+        criterion = SupConLoss()
+        features = F.normalize(torch.eye(3, requires_grad=True), dim=1)
+        labels = torch.tensor([0, 1, 2])  # all unique -> no positive pairs
+
+        loss = criterion(features, labels)
+        assert loss.requires_grad
+        loss.backward()  # must not raise
+
     def test_identical_positive_pairs_produce_finite_positive_loss(self):
         criterion = SupConLoss(temperature=0.07, base_temperature=0.07)
         features = F.normalize(
