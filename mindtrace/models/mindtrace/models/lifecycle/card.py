@@ -273,7 +273,18 @@ class ModelCard:
             return False
         try:
             return self.registry.has_object(self.name, self.version)
-        except Exception:
+        except Exception as exc:
+            # The registry is duck-typed, so a probe can fail for many reasons
+            # (backend offline, auth, transient IO). Fall back to the locally
+            # tracked save state, but log so the failure is not silent.
+            logger.debug(
+                "ModelCard: registry.has_object('%s', '%s') failed (%s); "
+                "falling back to local save state (%s).",
+                self.name,
+                self.version,
+                exc,
+                self._model_saved,
+            )
             return self._model_saved
 
     # ------------------------------------------------------------------

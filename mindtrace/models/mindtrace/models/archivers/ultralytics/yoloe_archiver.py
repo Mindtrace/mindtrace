@@ -22,6 +22,7 @@ class YoloEArchiver(Archiver):
         super().__init__(uri=uri, **kwargs)
 
     def save(self, model: YOLOE):
+        os.makedirs(self.uri, exist_ok=True)
         model.save(os.path.join(self.uri, "model.pt"))
         self.logger.debug(f"Saved YOLOE model to {self.uri}")
 

@@ -732,9 +732,18 @@ class OptimizationRunner(Mindtrace):
 
         Raises:
             ValueError: If inference is required but no ``eval_loader`` is
-                available.
+                available, or if the task is ``"detection"`` (whose outputs are
+                boxes/scores/labels, not ``(B, num_classes)`` logits, so
+                ``num_classes`` cannot be inferred and must be passed
+                explicitly).
         """
         if self.num_classes is None:
+            if self.task == "detection":
+                raise ValueError(
+                    "num_classes must be provided explicitly for detection: it cannot be inferred "
+                    "from model output (detection heads emit boxes/scores/labels, not "
+                    "(B, num_classes) logits)."
+                )
             if self.eval_loader is None:
                 raise ValueError("num_classes could not be inferred: provide num_classes or an eval_loader.")
             inputs, _ = self._first_batch(self.eval_loader)

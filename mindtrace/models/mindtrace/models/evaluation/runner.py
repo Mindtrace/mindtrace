@@ -38,9 +38,12 @@ from mindtrace.models.evaluation.metrics.segmentation import (
 
 _SUPPORTED_TASKS = frozenset({"classification", "detection", "regression", "segmentation"})
 
-_ZERO_METRICS: dict[str, dict[str, float]] = {
+# Zero-metric fallbacks returned for empty loaders. Each entry must carry the
+# SAME keys as the corresponding populated result, so callers can index the
+# result shape unconditionally (e.g. detection's "AP_per_class").
+_ZERO_METRICS: dict[str, dict[str, Any]] = {
     "classification": {"accuracy": 0.0, "precision": 0.0, "recall": 0.0, "f1": 0.0},
-    "detection": {"mAP@50": 0.0, "mAP@75": 0.0, "mAP@50:95": 0.0},
+    "detection": {"mAP@50": 0.0, "mAP@75": 0.0, "mAP@50:95": 0.0, "AP_per_class": {}},
     "segmentation": {"mIoU": 0.0, "mean_dice": 0.0, "pixel_accuracy": 0.0, "iou_per_class": [], "dice_per_class": []},
     "regression": {"mae": 0.0, "mse": 0.0, "rmse": 0.0, "r2": 0.0},
 }
