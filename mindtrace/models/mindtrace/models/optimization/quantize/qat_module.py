@@ -180,9 +180,16 @@ class QuantizedLinear(nn.Module):
         # QuantizeLinear/DequantizeLinear nodes carrying the learned scales — a real
         # QDQ int8 graph that TensorRT/ORT compile into int8 kernels.
         w_deq = self.weight_int8.to(self.weight_scale.dtype) * self.weight_scale.unsqueeze(1)
-        w = torch.fake_quantize_per_channel_affine(
-            w_deq, self.weight_scale, self.weight_zp, 0, self.scheme.weight_qmin, self.scheme.weight_qmax
-        )
+        if self.scheme.weight_per_channel:
+            w = torch.fake_quantize_per_channel_affine(
+                w_deq, self.weight_scale, self.weight_zp, 0, self.scheme.weight_qmin, self.scheme.weight_qmax
+            )
+        else:
+            # Per-tensor scale has numel 1 — fake_quantize_per_channel_affine(axis=0) would
+            # reject it (it requires scale.numel() == out_features), so use the per-tensor op.
+            w = torch.fake_quantize_per_tensor_affine(
+                w_deq, float(self.weight_scale), 0, self.scheme.weight_qmin, self.scheme.weight_qmax
+            )
         if self.scheme.act_qmax:
             x = torch.fake_quantize_per_tensor_affine(
                 x, float(self.act_scale), 0, self.scheme.act_qmin, self.scheme.act_qmax

@@ -105,6 +105,26 @@ class TestSchemePreservation:
         after = model(x).detach()
         assert torch.allclose(before, after, atol=1e-5)
 
+    @pytest.mark.parametrize("activation_bits", [8, 0])
+    def test_per_tensor_weight_scheme_preserved(self, activation_bits):
+        # Per-tensor weight scales have numel 1, so the deployed QuantizedLinear must NOT
+        # route through fake_quantize_per_channel_affine(axis=0) (which requires
+        # numel == out_features and would crash). Both granularities must convert and
+        # reproduce the prepared eval numerics bit-for-bit.
+        torch.manual_seed(4)
+        model = prepare_qat(MLP(), QuantScheme(weight_per_channel=False, activation_bits=activation_bits))
+        x = torch.randn(8, 16)
+        _calibrate(model, x)
+        model.eval()
+        before = model(x).detach()
+
+        convert_qat(model)
+        assert _count(model, QuantizedLinear) == 2
+        qlin = next(m for m in model.modules() if isinstance(m, QuantizedLinear))
+        assert qlin.weight_scale.numel() == 1  # per-tensor => single scale
+        after = model(x).detach()
+        assert torch.allclose(before, after, atol=1e-5), (before - after).abs().max()
+
 
 class TestDeployedForm:
     def test_weights_stored_as_int8(self):
