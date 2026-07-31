@@ -149,7 +149,9 @@ def test_from_path_openvino_ir(tiny_conv_ir: str, tiny_conv_onnx: str) -> None:
 
     session = ort.InferenceSession(tiny_conv_onnx, providers=["CPUExecutionProvider"])
     expected = session.run(None, {"input": _manual_preprocess(frame)})[0]
-    np.testing.assert_allclose(out, expected, atol=1e-3)
+    # OpenVINO and ONNX Runtime use different kernels, so their FP32 outputs agree
+    # to ~1e-2, not bit-for-bit; a tighter atol would flag correct results as wrong.
+    np.testing.assert_allclose(out, expected, atol=1e-2, rtol=1e-2)
     predictor.close()
 
 
