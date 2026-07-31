@@ -10,7 +10,6 @@ evaluation    Standard metrics and evaluation runner.
 lifecycle     Model stage management, ModelCard, and promotion logic.
 """
 
-# -- Serving -----------------------------------------------------------------
 # -- Architectures -----------------------------------------------------------
 from mindtrace.models.architectures import (
     BackboneInfo,
@@ -33,6 +32,7 @@ from mindtrace.models.architectures.backbones import (
     BackboneFeatures,
     BackboneProtocol,
 )
+# -- Serving -----------------------------------------------------------------
 from mindtrace.models.serving import (
     ClassificationResult,
     DetectionResult,
@@ -94,8 +94,10 @@ try:
         TorchvisionBackboneAdapter,
         build_backbone_adapter,
     )
+
+    _BACKBONE_ADAPTERS_AVAILABLE = True
 except ImportError:
-    pass
+    _BACKBONE_ADAPTERS_AVAILABLE = False
 
 # -- Evaluation --------------------------------------------------------------
 from mindtrace.models.evaluation import (
@@ -112,10 +114,12 @@ from mindtrace.models.evaluation import (
 
 # -- Lifecycle ---------------------------------------------------------------
 from mindtrace.models.lifecycle import (
+    VALID_DEMOTIONS,
     VALID_PROMOTIONS,
     EvalResult,
     ModelCard,
     ModelStage,
+    ModelVariant,
     PromotionError,
     PromotionResult,
 )
@@ -175,10 +179,7 @@ __all__ = [
     "BackboneInfo",
     "BackboneFeatures",
     "BackboneProtocol",
-    "build_backbone_adapter",
-    "TimmBackboneAdapter",
-    "TorchvisionBackboneAdapter",
-    "MindtraceBackboneAdapter",
+    # backbone adapters are appended below only when their optional deps import
     "ModelWrapper",
     "CrossAttentionMultiTaskHead",
     "LinearHead",
@@ -201,10 +202,12 @@ __all__ = [
     # lifecycle
     "ModelStage",
     "ModelCard",
+    "ModelVariant",
     "EvalResult",
     "PromotionResult",
     "PromotionError",
     "VALID_PROMOTIONS",
+    "VALID_DEMOTIONS",
     # pipeline
     "AutoSegmenter",
     "AutoSegmenterInput",
@@ -224,6 +227,16 @@ __all__ = [
     # pipeline pool
     "PipelinePool",
 ]
+
+# Backbone adapters are only bound when their optional deps (timm/torchvision)
+# import, so advertise them in __all__ only then — keeping `import *` sound.
+if _BACKBONE_ADAPTERS_AVAILABLE:
+    __all__ += [
+        "build_backbone_adapter",
+        "TimmBackboneAdapter",
+        "TorchvisionBackboneAdapter",
+        "MindtraceBackboneAdapter",
+    ]
 
 # -- Pipeline (core inference orchestration) --------------------------------
 # -- Archivers (ML-specific, self-register with Registry at import time) ------

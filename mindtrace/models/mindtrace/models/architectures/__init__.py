@@ -18,7 +18,7 @@ Head classes::
         CrossAttentionMultiTaskHead,           # cross-attention multi-task head
         LinearHead, MLPHead, MultiLabelHead,   # classification
         LinearSegHead, FPNSegHead,              # segmentation
-        DetectionHead,                          # detection
+        DetectionHead, QueryDetectionHead,      # detection
     )
 
 High-level factory::
@@ -81,4 +81,6 @@ __all__ = [
     # Detection heads
     "DetectionHead",
     "QueryDetectionHead",
+    # Multi-task head
+    "CrossAttentionMultiTaskHead",
 ]

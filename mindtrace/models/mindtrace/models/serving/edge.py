@@ -46,6 +46,8 @@ _PROVIDER_BY_RUNTIME: dict[str, str] = {
 }
 
 #: Default runtime preference order: fastest accelerator first, CPU last.
+__all__ = ["DEFAULT_PREFER", "EdgeModelService", "probe_runtimes", "select_providers"]
+
 DEFAULT_PREFER: list[str] = ["tensorrt", "cuda", "openvino", "cpu"]
 
 
