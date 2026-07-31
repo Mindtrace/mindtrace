@@ -136,8 +136,12 @@ class TestFiniteGuard:
             return x * float("nan")
 
         report = Benchmark(
-            runtime="callable", artifact=nan_call, input_shape=(1, 4),
-            warmup=0, iterations=2, validate_finite=False,
+            runtime="callable",
+            artifact=nan_call,
+            input_shape=(1, 4),
+            warmup=0,
+            iterations=2,
+            validate_finite=False,
         ).run()
         assert report.iterations == 2  # completes without raising
 
@@ -171,10 +175,17 @@ class TestProviderFidelity:
     def test_onnxruntime_report_carries_fidelity_meta(self, tmp_path: Path) -> None:
         pytest.importorskip("onnxruntime")
         onnx_path = tmp_path / "tiny.onnx"
-        torch.onnx.export(TinyCNN().eval(), (torch.rand(1, 1, 8, 8),), str(onnx_path),
-                          input_names=["input"], output_names=["output"], dynamo=False)
-        report = Benchmark(runtime="onnxruntime", artifact=str(onnx_path),
-                           input_shape=(1, 1, 8, 8), warmup=1, iterations=3).run()
+        torch.onnx.export(
+            TinyCNN().eval(),
+            (torch.rand(1, 1, 8, 8),),
+            str(onnx_path),
+            input_names=["input"],
+            output_names=["output"],
+            dynamo=False,
+        )
+        report = Benchmark(
+            runtime="onnxruntime", artifact=str(onnx_path), input_shape=(1, 1, 8, 8), warmup=1, iterations=3
+        ).run()
         assert "provider_fell_back" in report.meta
         assert "CPUExecutionProvider" in report.meta["active_providers"]
         assert report.meta["provider_fell_back"] is False  # CPU was requested and registered

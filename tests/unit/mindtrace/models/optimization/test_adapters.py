@@ -37,11 +37,16 @@ class _FakeAdapter:
 
     def build(self, spec, work_dir):
         if spec.runtime == "tensorrt":
-            return Variant(f"{spec.runtime}-{spec.precision}", spec.runtime, spec.precision, supported=False, note="nope")
+            return Variant(
+                f"{spec.runtime}-{spec.precision}", spec.runtime, spec.precision, supported=False, note="nope"
+            )
         return Variant(f"{spec.runtime}-{spec.precision}", spec.runtime, spec.precision, "art", 0.5)
 
     def evaluate(self, variant, data):
-        return {"mAP50-95": 0.80 if variant.runtime == "torch" else 0.75, "latency_ms": 2.0 if variant.runtime == "torch" else 1.0}
+        return {
+            "mAP50-95": 0.80 if variant.runtime == "torch" else 0.75,
+            "latency_ms": 2.0 if variant.runtime == "torch" else 1.0,
+        }
 
 
 def test_profile_returns_uniform_schema_with_delta_and_speedup():
@@ -50,8 +55,8 @@ def test_profile_returns_uniform_schema_with_delta_and_speedup():
 
     onnx = next(r for r in rows if r["runtime"] == "onnxruntime")
     assert onnx["mAP50-95"] == 0.75
-    assert onnx["delta"] == -0.05        # vs 0.80 baseline
-    assert onnx["speedup"] == 2.0        # 2.0 ms baseline / 1.0 ms
+    assert onnx["delta"] == -0.05  # vs 0.80 baseline
+    assert onnx["speedup"] == 2.0  # 2.0 ms baseline / 1.0 ms
     assert onnx["status"] == "ok"
 
     trt = next(r for r in rows if r["runtime"] == "tensorrt")
@@ -60,7 +65,9 @@ def test_profile_returns_uniform_schema_with_delta_and_speedup():
 
 def test_detection_head_nodes_finds_output_adjacent(tmp_path):
     model = nn.Sequential(nn.Conv2d(3, 4, 3, padding=1), nn.Conv2d(4, 2, 1))
-    onnx_path = export_onnx(model, tmp_path / "m.onnx", static_shape=(1, 3, 8, 8), opset=17, check=False, simplify=False)
+    onnx_path = export_onnx(
+        model, tmp_path / "m.onnx", static_shape=(1, 3, 8, 8), opset=17, check=False, simplify=False
+    )
     nodes = detection_head_nodes(onnx_path, depth=2)
     assert isinstance(nodes, list) and len(nodes) >= 1
 
@@ -78,9 +85,7 @@ def test_torch_module_adapter_classification_end_to_end(tmp_path):
 
     from mindtrace.models.optimization import load_model, profile
 
-    model = torch.nn.Sequential(
-        nn.Conv2d(3, 4, 3, padding=1), nn.AdaptiveAvgPool2d(1), nn.Flatten(), nn.Linear(4, 3)
-    )
+    model = torch.nn.Sequential(nn.Conv2d(3, 4, 3, padding=1), nn.AdaptiveAvgPool2d(1), nn.Flatten(), nn.Linear(4, 3))
     loader = DataLoader(TensorDataset(torch.rand(8, 3, 16, 16), torch.randint(0, 3, (8,))), batch_size=4)
     adapter = load_model(model, task="classification", num_classes=3, input_size=16)
 

@@ -448,7 +448,10 @@ class Benchmark(Mindtrace):
                 "Requested execution provider '%s' did not activate (registered: %s). "
                 "Latency reflects the fallback provider '%s', NOT '%s'; check the runtime's "
                 "library/version match (e.g. TensorRT ABI vs installed CUDA).",
-                primary, active, effective, primary,
+                primary,
+                active,
+                effective,
+                primary,
             )
         self._provider_fidelity = {
             "requested_providers": requested_names,

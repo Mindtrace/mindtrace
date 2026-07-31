@@ -1068,7 +1068,7 @@ class TestSchedulerInterval:
         trainer = Trainer(simple_model, loss_fn, optimizer, scheduler=sched, scheduler_interval="epoch")
         trainer.fit(_make_loader(n_batches=3), epochs=2)
         # 2 epochs -> 2 steps, regardless of the 3 batches/epoch.
-        assert optimizer.param_groups[0]["lr"] == pytest.approx(base * (0.1 ** 2))
+        assert optimizer.param_groups[0]["lr"] == pytest.approx(base * (0.1**2))
 
     def test_step_interval_steps_every_batch(self, simple_model, loss_fn, optimizer):
         sched = StepLR(optimizer, step_size=1, gamma=0.1)
@@ -1076,7 +1076,7 @@ class TestSchedulerInterval:
         trainer = Trainer(simple_model, loss_fn, optimizer, scheduler=sched, scheduler_interval="step")
         trainer.fit(_make_loader(n_batches=3), epochs=2)
         # 2 epochs * 3 batches = 6 optimizer steps -> 6 scheduler steps (the default).
-        assert optimizer.param_groups[0]["lr"] == pytest.approx(base * (0.1 ** 6))
+        assert optimizer.param_groups[0]["lr"] == pytest.approx(base * (0.1**6))
 
     def test_default_interval_is_step(self, simple_model, loss_fn, optimizer):
         trainer = Trainer(simple_model, loss_fn, optimizer)

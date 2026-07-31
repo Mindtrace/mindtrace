@@ -131,9 +131,7 @@ class QueryDetectionHead(nn.Module):
         self.blocks = nn.ModuleList([DecoderBlock(dim, num_heads, ffn_mult) for _ in range(layers)])
         self.norm = nn.LayerNorm(dim)
         self.class_head = nn.Linear(dim, num_classes + 1)
-        self.box_head = nn.Sequential(
-            nn.Linear(dim, dim), nn.ReLU(), nn.Linear(dim, dim), nn.ReLU(), nn.Linear(dim, 4)
-        )
+        self.box_head = nn.Sequential(nn.Linear(dim, dim), nn.ReLU(), nn.Linear(dim, dim), nn.ReLU(), nn.Linear(dim, 4))
 
     def forward(self, tokens: Tensor) -> dict[str, Tensor]:
         """Decode object queries against patch tokens.
