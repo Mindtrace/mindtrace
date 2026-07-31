@@ -213,7 +213,9 @@ def export_onnx(
             export_kwargs["dynamo"] = use_dynamo
         elif use_dynamo:
             raise ValueError("dynamo requires a torch build whose torch.onnx.export supports the 'dynamo' argument.")
-        logger.debug("Exporting to ONNX at %s (opset=%d, dynamic_batch=%s, dynamo=%s)", path, opset, dynamic_batch, use_dynamo)
+        logger.debug(
+            "Exporting to ONNX at %s (opset=%d, dynamic_batch=%s, dynamo=%s)", path, opset, dynamic_batch, use_dynamo
+        )
         torch.onnx.export(model, (example_input,), str(path), **export_kwargs)
         # The dynamo exporter optimizes the graph itself; onnxsim on its output is
         # redundant and occasionally regresses it, so only simplify the legacy path.

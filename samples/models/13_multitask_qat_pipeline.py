@@ -74,7 +74,7 @@ FEATURES, NUM_CLASSES = 16, 4
 # different rules and the model would never generalize.)
 _wg = torch.Generator().manual_seed(1)
 W_CLS = torch.randn(FEATURES, NUM_CLASSES, generator=_wg)
-W_REG = torch.randn(FEATURES, generator=_wg) / (FEATURES ** 0.5)  # -> reg ~ unit variance
+W_REG = torch.randn(FEATURES, generator=_wg) / (FEATURES**0.5)  # -> reg ~ unit variance
 
 
 class MultiTaskData(Dataset):
@@ -105,10 +105,12 @@ class TwoHead(nn.Module):
 
 
 # The coupled loss composed from mindtrace: cross-entropy on head 0, MSE on head 1.
-multitask_loss = MultiTaskLoss({
-    "cls": TaskSpec(build_loss("cross_entropy"), output=0, target="cls"),
-    "reg": TaskSpec(build_loss("mse"), output=1, target="reg", weight=0.5),
-})
+multitask_loss = MultiTaskLoss(
+    {
+        "cls": TaskSpec(build_loss("cross_entropy"), output=0, target="cls"),
+        "reg": TaskSpec(build_loss("mse"), output=1, target="reg", weight=0.5),
+    }
+)
 
 
 def accuracy(outputs, targets):
@@ -142,10 +144,12 @@ def onnx_accuracy(session: "ort.InferenceSession") -> float:
 # ── 1. Multi-task training (Trainer: coupled loss + per-task metrics) ───────
 print("\n[1] Multi-task training — Trainer(metrics=..., scheduler_interval='epoch')")
 model = TwoHead()
-opt = build_optimizer("adamw", model, lr=5e-3)                 # mindtrace factory
-sched = build_scheduler("cosine", opt, T_max=25)               # mindtrace factory
+opt = build_optimizer("adamw", model, lr=5e-3)  # mindtrace factory
+sched = build_scheduler("cosine", opt, T_max=25)  # mindtrace factory
 trainer = Trainer(
-    model, multitask_loss, opt,
+    model,
+    multitask_loss,
+    opt,
     metrics=METRICS,
     scheduler=sched,
     scheduler_interval="epoch",  # cosine over epochs, not per batch
@@ -158,7 +162,9 @@ print("\n[2] QAT — prepare_qat -> Trainer retrain -> convert_qat (scheme-prese
 prepare_qat(model, QuantScheme.int8())
 qat_opt = build_optimizer("adamw", model, lr=1e-3)
 qat_history = Trainer(model, multitask_loss, qat_opt, metrics=METRICS).fit(train_loader, val_loader, epochs=6)
-print(f"    QAT (fake-quant): val/accuracy={qat_history['val/accuracy'][-1]:.3f}  val/mae={qat_history['val/mae'][-1]:.3f}")
+print(
+    f"    QAT (fake-quant): val/accuracy={qat_history['val/accuracy'][-1]:.3f}  val/mae={qat_history['val/mae'][-1]:.3f}"
+)
 convert_qat(model)  # -> INT8 storage, frozen scales, same eval numerics
 model.cpu().eval()  # export/serve on CPU
 
@@ -172,11 +178,17 @@ for layer in manifest["quantized_layers"]:
 with TemporaryDirectory() as tmp:
     onnx_path = Path(tmp) / "model_int8_qdq.onnx"
     export_quantized_onnx(
-        model, onnx_path, static_shape=(1, FEATURES), dynamic_batch=True,
-        input_names=("input",), output_names=("logits", "reg"),
+        model,
+        onnx_path,
+        static_shape=(1, FEATURES),
+        dynamic_batch=True,
+        input_names=("input",),
+        output_names=("logits", "reg"),
     )
     ops = {n.op_type for n in onnx.load(str(onnx_path)).graph.node}
-    print(f"\n[4] QDQ export — QuantizeLinear={('QuantizeLinear' in ops)}  DequantizeLinear={('DequantizeLinear' in ops)}")
+    print(
+        f"\n[4] QDQ export — QuantizeLinear={('QuantizeLinear' in ops)}  DequantizeLinear={('DequantizeLinear' in ops)}"
+    )
     session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
     print(f"    INT8 ONNX accuracy under ONNX Runtime: {onnx_accuracy(session):.3f}  (matches the QAT torch model)")
 
@@ -192,11 +204,16 @@ with TemporaryDirectory() as tmp:
         artifact = compile_model(onnx_path, target, output_dir=Path(tmp) / "compiled")
         print(f"    compiled: {Path(artifact.path).name}")
         report = Benchmark(
-            runtime="onnxruntime", artifact=str(onnx_path),
-            input_shape=(1, FEATURES), warmup=5, iterations=50,
+            runtime="onnxruntime",
+            artifact=str(onnx_path),
+            input_shape=(1, FEATURES),
+            warmup=5,
+            iterations=50,
         ).run()
-        print(f"    p50={report.p50_ms:.3f} ms  provider={report.meta['effective_provider']}"
-              f"  fell_back={report.meta['provider_fell_back']}")
+        print(
+            f"    p50={report.p50_ms:.3f} ms  provider={report.meta['effective_provider']}"
+            f"  fell_back={report.meta['provider_fell_back']}"
+        )
     except Exception as exc:  # noqa: BLE001 — compilation targets vary by machine
         print(f"    compile/benchmark skipped on this machine: {type(exc).__name__}: {exc}")
 

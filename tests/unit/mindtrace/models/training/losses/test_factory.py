@@ -13,15 +13,18 @@ from mindtrace.models.training.losses.factory import MultiTaskLoss, TaskSpec, bu
 
 
 class TestBuildLoss:
-    @pytest.mark.parametrize("name, cls", [
-        ("cross_entropy", nn.CrossEntropyLoss),
-        ("ce", nn.CrossEntropyLoss),
-        ("mse", nn.MSELoss),
-        ("l1", nn.L1Loss),
-        ("mae", nn.L1Loss),
-        ("huber", nn.HuberLoss),
-        ("bce_with_logits", nn.BCEWithLogitsLoss),
-    ])
+    @pytest.mark.parametrize(
+        "name, cls",
+        [
+            ("cross_entropy", nn.CrossEntropyLoss),
+            ("ce", nn.CrossEntropyLoss),
+            ("mse", nn.MSELoss),
+            ("l1", nn.L1Loss),
+            ("mae", nn.L1Loss),
+            ("huber", nn.HuberLoss),
+            ("bce_with_logits", nn.BCEWithLogitsLoss),
+        ],
+    )
     def test_torch_losses_by_name(self, name, cls):
         assert isinstance(build_loss(name), cls)
 
@@ -43,10 +46,12 @@ class TestBuildLoss:
 
 class TestMultiTaskLoss:
     def _make(self):
-        return MultiTaskLoss({
-            "cls": TaskSpec(build_loss("cross_entropy"), output=0, target="cls"),
-            "reg": TaskSpec(build_loss("mse"), output=1, target="reg", weight=0.5),
-        })
+        return MultiTaskLoss(
+            {
+                "cls": TaskSpec(build_loss("cross_entropy"), output=0, target="cls"),
+                "reg": TaskSpec(build_loss("mse"), output=1, target="reg", weight=0.5),
+            }
+        )
 
     def test_routes_each_loss_to_its_head_and_target(self):
         loss = self._make()

@@ -67,10 +67,12 @@ class CrossAttentionMultiTaskHead(nn.Module):
         self.token_norm = nn.LayerNorm(dim)
         self.queries = nn.Parameter(torch.randn(1, len(tasks), dim) * 0.02)
         self.blocks = nn.ModuleList([DecoderBlock(dim, num_heads, ffn_mult) for _ in range(layers)])
-        self.heads = nn.ModuleDict({
-            name: nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, dim), nn.GELU(), nn.Linear(dim, out_dim))
-            for name, out_dim in tasks.items()
-        })
+        self.heads = nn.ModuleDict(
+            {
+                name: nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, dim), nn.GELU(), nn.Linear(dim, out_dim))
+                for name, out_dim in tasks.items()
+            }
+        )
 
     def forward(self, tokens: torch.Tensor) -> dict[str, torch.Tensor]:
         context = self.token_norm(tokens)

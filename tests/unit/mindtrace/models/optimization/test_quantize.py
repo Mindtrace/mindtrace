@@ -168,9 +168,7 @@ class TestQuantizeDynamic:
 
         calls = []
         real = ptq.preprocess_for_quantization
-        monkeypatch.setattr(
-            ptq, "preprocess_for_quantization", lambda p, w: calls.append(p) or real(p, w)
-        )
+        monkeypatch.setattr(ptq, "preprocess_for_quantization", lambda p, w: calls.append(p) or real(p, w))
 
         out = quantize_dynamic(cnn_onnx, tmp_path / "pre.onnx")
 

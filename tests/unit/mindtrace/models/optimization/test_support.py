@@ -92,7 +92,8 @@ class TestRecommend:
 def test_assert_tensorrt_compilable_flags_hostile_ops(tmp_path):
     node = helper.make_node("NonZero", ["x"], ["y"])
     graph = helper.make_graph(
-        [node], "g",
+        [node],
+        "g",
         [helper.make_tensor_value_info("x", TensorProto.FLOAT, [1, 4])],
         [helper.make_tensor_value_info("y", TensorProto.INT64, [2, None])],
     )

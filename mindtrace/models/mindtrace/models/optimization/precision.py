@@ -20,9 +20,14 @@ logger = get_logger(__name__)
 __all__ = ["to_precision"]
 
 _DTYPES = {
-    "fp16": torch.float16, "float16": torch.float16, "half": torch.float16,
-    "bf16": torch.bfloat16, "bfloat16": torch.bfloat16,
-    "fp32": torch.float32, "float32": torch.float32, "float": torch.float32,
+    "fp16": torch.float16,
+    "float16": torch.float16,
+    "half": torch.float16,
+    "bf16": torch.bfloat16,
+    "bfloat16": torch.bfloat16,
+    "fp32": torch.float32,
+    "float32": torch.float32,
+    "float": torch.float32,
 }
 
 
