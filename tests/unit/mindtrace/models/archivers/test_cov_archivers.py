@@ -301,3 +301,24 @@ def test_onnx_save_load_roundtrip(tmp_path):
     mock_save.assert_called_once()
     assert loaded is sentinel
     mock_load.assert_called_once_with(os.path.join(str(tmp_path), "model.onnx"))
+
+
+def test_register_ml_archivers_tolerates_missing_optional_deps(monkeypatch):
+    """Each archiver family is imported under a try/except ImportError guard, so a
+    missing optional dep (transformers/onnx/openvino/tensorrt/timm/ultralytics)
+    degrades gracefully instead of breaking package import."""
+    import builtins
+
+    from mindtrace.models.archivers import register_ml_archivers
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        # Force every archiver-submodule import to fail, exercising the guards.
+        if name.startswith("mindtrace.models.archivers.") and name != "mindtrace.models.archivers":
+            raise ImportError(f"simulated missing dependency for {name}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    # Must not raise — every guard swallows the simulated ImportError.
+    register_ml_archivers()
