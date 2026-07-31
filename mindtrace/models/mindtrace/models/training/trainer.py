@@ -93,10 +93,15 @@ class Trainer(Mindtrace):
             optimizer: Optimizer that updates ``model`` parameters.
             metrics: Optional ``{name: fn}`` where each ``fn(outputs, targets) ->
                 float`` computes a validation metric per batch (e.g. accuracy, MAE).
-                Metrics are sample-weighted, averaged over the validation set, and
-                reported in ``history`` as ``val/<name>``. This is what makes
-                multi-task training first-class: a model returning ``(logits,
-                score)`` can report both ``val/category_acc`` and ``val/mae``.
+                ``outputs`` and ``targets`` are detached and moved to CPU before the
+                call, so numpy-based metrics (like those in
+                :mod:`mindtrace.models.evaluation`) work even when training on GPU;
+                the return is coerced with ``float(...)``, so a Python number or a
+                0-dim tensor are both fine. Metrics are sample-weighted, averaged
+                over the validation set, and reported in ``history`` as
+                ``val/<name>``. This is what makes multi-task training first-class:
+                a model returning ``(logits, score)`` can report both
+                ``val/category_acc`` and ``val/mae``.
             train_loader: Optional default training data loader.  Stored and
                 used by :meth:`train` and as a fallback by :meth:`fit` when
                 the *train_loader* argument is ``None``.
@@ -132,10 +137,8 @@ class Trainer(Mindtrace):
                 ignored when the model does not expose that method.
             ddp: Wrap the model in
                 :class:`~torch.nn.parallel.DistributedDataParallel` for
-                multi-GPU training.  Uses ``mindtrace.cluster.distributed``
-                when available; falls back to native PyTorch DDP.  Has no
-                effect when no distributed process group is initialised or
-                when world size is 1.
+                multi-GPU training.  Has no effect when no distributed process
+                group is initialised or when world size is 1.
             teacher: Optional frozen teacher model for knowledge distillation.
                 When set, it is moved to the trainer device, put in eval mode,
                 and its outputs are computed under ``torch.no_grad()`` and
@@ -216,32 +219,27 @@ class Trainer(Mindtrace):
                     "gradient_checkpointing_enable() method — ignored."
                 )
 
-        # DDP wrapping — prefer mindtrace.cluster, fall back to native torch
+        # DDP wrapping — native torch DistributedDataParallel.
         if ddp:
             try:
-                from mindtrace.cluster.distributed import wrap_ddp as _wrap_ddp  # noqa: PLC0415
+                import torch.distributed as _dist  # noqa: PLC0415
 
-                self.model = _wrap_ddp(self.model)
+                if _dist.is_initialized() and _dist.get_world_size() > 1:
+                    from torch.nn.parallel import DistributedDataParallel as _DDP  # noqa: PLC0415
+
+                    _device_ids = (
+                        [self.device.index]
+                        if self.device.type == "cuda" and self.device.index is not None
+                        else None
+                    )
+                    self.model = _DDP(self.model, device_ids=_device_ids)
+                    self.logger.info("Trainer: wrapped model in DistributedDataParallel.")
+                else:
+                    self.logger.debug(
+                        "Trainer: ddp=True but no distributed process group active — running single-process."
+                    )
             except ImportError:
-                try:
-                    import torch.distributed as _dist  # noqa: PLC0415
-
-                    if _dist.is_initialized() and _dist.get_world_size() > 1:
-                        from torch.nn.parallel import DistributedDataParallel as _DDP  # noqa: PLC0415
-
-                        _device_ids = (
-                            [self.device.index]
-                            if self.device.type == "cuda" and self.device.index is not None
-                            else None
-                        )
-                        self.model = _DDP(self.model, device_ids=_device_ids)
-                        self.logger.info("Trainer: wrapped model in DistributedDataParallel.")
-                    else:
-                        self.logger.debug(
-                            "Trainer: ddp=True but no distributed process group active — running single-process."
-                        )
-                except ImportError:
-                    self.logger.debug("Trainer: ddp=True but torch.distributed unavailable.")
+                self.logger.debug("Trainer: ddp=True but torch.distributed unavailable.")
 
         self.logger.info(
             "Trainer initialised — device=%s, amp=%s, grad_accum=%d, grad_ckpt=%s, ddp=%s",
@@ -439,20 +437,14 @@ class Trainer(Mindtrace):
         # Average loss across DDP workers so the reported value is consistent
         if self._ddp:
             try:
-                from mindtrace.cluster.distributed import all_reduce_mean as _arm  # noqa: PLC0415
+                import torch.distributed as _dist  # noqa: PLC0415
 
-                _t = torch.tensor(avg_loss, device=self.device)
-                avg_loss = float(_arm(_t).item())
+                if _dist.is_initialized() and _dist.get_world_size() > 1:
+                    _t = torch.tensor(avg_loss, device=self.device)
+                    _dist.all_reduce(_t, op=_dist.ReduceOp.SUM)
+                    avg_loss = float((_t / _dist.get_world_size()).item())
             except ImportError:
-                try:
-                    import torch.distributed as _dist  # noqa: PLC0415
-
-                    if _dist.is_initialized() and _dist.get_world_size() > 1:
-                        _t = torch.tensor(avg_loss, device=self.device)
-                        _dist.all_reduce(_t, op=_dist.ReduceOp.SUM)
-                        avg_loss = float((_t / _dist.get_world_size()).item())
-                except ImportError:
-                    pass
+                pass
 
         return {"train/loss": avg_loss}
 
@@ -524,8 +516,13 @@ class Trainer(Mindtrace):
                 if self.metrics:
                     batch_size = self._batch_size(targets)
                     total_samples += batch_size
+                    # Metric fns (e.g. mindtrace.models.evaluation) are numpy-based:
+                    # they call np.asarray(...), which raises on CUDA tensors. Detach
+                    # to CPU first so metrics work regardless of the training device.
+                    cpu_outputs = self._detach_cpu(outputs)
+                    cpu_targets = self._detach_cpu(targets)
                     for name, fn in self.metrics.items():
-                        metric_sums[name] += float(fn(outputs, targets)) * batch_size
+                        metric_sums[name] += float(fn(cpu_outputs, cpu_targets)) * batch_size
 
         avg_loss = total_loss / max(num_batches, 1)
         result = {"val/loss": avg_loss}
@@ -604,6 +601,23 @@ class Trainer(Mindtrace):
             return type(data)(moved)
 
         # Fallback: return unchanged (e.g. custom types)
+        return data
+
+    @staticmethod
+    def _detach_cpu(data: Any) -> Any:
+        """Detach tensors and move them to CPU for numpy-based metric functions.
+
+        Mirrors :meth:`_to_device` in structure handling (tensor / dict / list /
+        tuple), returning the same layout with every tensor detached and moved
+        to CPU.  Non-tensor leaves are returned unchanged.
+        """
+        if isinstance(data, torch.Tensor):
+            return data.detach().cpu()
+        if isinstance(data, dict):
+            return {k: Trainer._detach_cpu(v) for k, v in data.items()}
+        if isinstance(data, (list, tuple)):
+            moved = [Trainer._detach_cpu(v) for v in data]
+            return type(data)(moved)
         return data
 
     def _compute_loss(self, inputs: Any, targets: Any) -> tuple[torch.Tensor, Any]:

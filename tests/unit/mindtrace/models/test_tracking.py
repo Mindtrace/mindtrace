@@ -707,7 +707,9 @@ class TestRegistryBridge:
         model = MagicMock()
 
         key = bridge.save(model, name="yolov8", version="v3.0")
-        registry.save.assert_called_once_with("yolov8:v3.0", model)
+        # name and version must reach the registry as distinct arguments so it
+        # can version the model — not collapsed into the name.
+        registry.save.assert_called_once_with("yolov8", model, version="v3.0")
         assert key == "yolov8:v3.0"
 
     def test_save_key_format(self):
