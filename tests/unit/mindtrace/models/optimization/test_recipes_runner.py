@@ -51,8 +51,8 @@ from mindtrace.models.optimization import (  # noqa: E402
     Prune,
     Quantize,
 )
-from mindtrace.models.optimization.quantize.qat_module import QuantizedLinear  # noqa: E402
 from mindtrace.models.optimization import runner as runner_module  # noqa: E402
+from mindtrace.models.optimization.quantize.qat_module import QuantizedLinear  # noqa: E402
 
 NUM_CLASSES = 4
 INPUT_SHAPE = (3, 8, 8)

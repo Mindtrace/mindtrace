@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import torch
 import torch.nn as nn
 
 from mindtrace.models.optimization import (
@@ -21,10 +20,16 @@ from mindtrace.models.optimization import (
 
 
 class TestHierarchy:
-    @pytest.mark.parametrize("err", [
-        InvalidSchemeError, CalibrationError, UnsupportedModelError,
-        UnsupportedOptimizationError, NumericalInstabilityError,
-    ])
+    @pytest.mark.parametrize(
+        "err",
+        [
+            InvalidSchemeError,
+            CalibrationError,
+            UnsupportedModelError,
+            UnsupportedOptimizationError,
+            NumericalInstabilityError,
+        ],
+    )
     def test_all_are_optimization_errors(self, err):
         assert issubclass(err, OptimizationError)
 
