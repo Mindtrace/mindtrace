@@ -317,7 +317,14 @@ class OptimizationRunner(Mindtrace):
         self.loss_fn = loss_fn
         self.optimizer_factory = optimizer_factory
         self.tracker = tracker
-        self.work_dir = Path(work_dir) if work_dir is not None else Path(tempfile.mkdtemp(prefix="mindtrace-opt-"))
+        if work_dir is not None:
+            self.work_dir = Path(work_dir)
+        else:
+            # Default under the configured temp directory rather than the OS root, so
+            # intermediate artifacts live where mindtrace manages temporary files.
+            temp_base = Path(self.config.MINDTRACE_DIR_PATHS.TEMP_DIR)
+            temp_base.mkdir(parents=True, exist_ok=True)
+            self.work_dir = Path(tempfile.mkdtemp(prefix="mindtrace-opt-", dir=str(temp_base)))
         self.work_dir.mkdir(parents=True, exist_ok=True)
         self.on_violation = on_violation
 
