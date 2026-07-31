@@ -278,8 +278,7 @@ class ModelCard:
             # (backend offline, auth, transient IO). Fall back to the locally
             # tracked save state, but log so the failure is not silent.
             logger.debug(
-                "ModelCard: registry.has_object('%s', '%s') failed (%s); "
-                "falling back to local save state (%s).",
+                "ModelCard: registry.has_object('%s', '%s') failed (%s); falling back to local save state (%s).",
                 self.name,
                 self.version,
                 exc,

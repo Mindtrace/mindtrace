@@ -26,7 +26,6 @@ import torch
 
 from mindtrace.models.optimization.compile import CompiledArtifact
 
-
 # ---------------------------------------------------------------------------
 # Fixtures (mirror the existing suite's minimal Service setup)
 # ---------------------------------------------------------------------------

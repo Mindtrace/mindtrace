@@ -18,4 +18,11 @@ from mindtrace.models.optimization.compile.base import (
 # Import backend modules for their registration side effects.
 from mindtrace.models.optimization.compile import executorch, openvino, ort, tensorrt  # noqa: F401  # isort: skip
 
-__all__ = ["CompiledArtifact", "compile_model", "register_compiler", "write_manifest", "load_manifest", "verify_manifest"]
+__all__ = [
+    "CompiledArtifact",
+    "compile_model",
+    "register_compiler",
+    "write_manifest",
+    "load_manifest",
+    "verify_manifest",
+]

@@ -12,7 +12,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import torch
 import torch.nn as nn
 
 from mindtrace.models.optimization import adapters as A
@@ -409,11 +408,13 @@ def test_profile_baseline_ok_skipped_and_unsupported_rows(tmp_path, monkeypatch)
     ok = Variant("onnxruntime-fp32", "onnxruntime", "fp32", "a.onnx", size_mb=2.0)
     skipped = Variant("openvino-fp32", "openvino", "fp32", supported=False, note="no ov")
     trt = Variant("tensorrt-fp16", "tensorrt", "fp16", "e.plan", size_mb=1.0)
-    model = StubModel({
-        ("onnxruntime", "fp32"): ok,
-        ("openvino", "fp32"): skipped,
-        ("tensorrt", "fp16"): trt,
-    })
+    model = StubModel(
+        {
+            ("onnxruntime", "fp32"): ok,
+            ("openvino", "fp32"): skipped,
+            ("tensorrt", "fp16"): trt,
+        }
+    )
 
     def fake_validate(technique, task, provider):
         if technique == "Compile to TensorRT":

@@ -304,8 +304,14 @@ def export_quantized_onnx(
             )
     model.eval()
     return export_onnx(
-        model, path, example_input=example_input, static_shape=static_shape,
-        opset=opset, exporter=exporter, check=False, **kwargs,
+        model,
+        path,
+        example_input=example_input,
+        static_shape=static_shape,
+        opset=opset,
+        exporter=exporter,
+        check=False,
+        **kwargs,
     )
 
 

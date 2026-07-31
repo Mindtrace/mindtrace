@@ -7,7 +7,6 @@ error paths, and ONNX metadata extraction + optional-dependency guards.
 
 import json
 import os
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest

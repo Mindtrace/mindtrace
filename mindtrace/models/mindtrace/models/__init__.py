@@ -13,15 +13,15 @@ lifecycle     Model stage management, ModelCard, and promotion logic.
 # -- Architectures -----------------------------------------------------------
 from mindtrace.models.architectures import (
     BackboneInfo,
-    DetectionHead,
-    QueryDetectionHead,
-    FPNSegHead,
     CrossAttentionMultiTaskHead,
+    DetectionHead,
+    FPNSegHead,
     LinearHead,
     LinearSegHead,
     MLPHead,
     ModelWrapper,
     MultiLabelHead,
+    QueryDetectionHead,
     build_backbone,
     build_model,
     build_model_from_hf,
@@ -32,6 +32,7 @@ from mindtrace.models.architectures.backbones import (
     BackboneFeatures,
     BackboneProtocol,
 )
+
 # -- Serving -----------------------------------------------------------------
 from mindtrace.models.serving import (
     ClassificationResult,
@@ -73,17 +74,17 @@ from mindtrace.models.training import (
 )
 from mindtrace.models.training.losses import (
     CIoULoss,
-    MultiTaskLoss,
-    TaskSpec,
-    build_loss,
     ComboLoss,
     DiceLoss,
     FocalLoss,
     GIoULoss,
     IoULoss,
     LabelSmoothingCrossEntropy,
+    MultiTaskLoss,
     SupConLoss,
+    TaskSpec,
     TverskyLoss,
+    build_loss,
 )
 
 # Adapters (guarded — heavy optional deps)

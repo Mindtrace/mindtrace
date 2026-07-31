@@ -212,9 +212,7 @@ def test_from_registry_file_path_artifact(tiny_conv_onnx: str) -> None:
     predictor.close()
 
 
-def test_from_registry_cleans_temp_when_from_path_fails(
-    tiny_conv_onnx: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_from_registry_cleans_temp_when_from_path_fails(tiny_conv_onnx: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """If from_path raises after materialisation, the temp dir is cleaned (284-286)."""
     onnx = pytest.importorskip("onnx")
     from mindtrace.models.serving.inprocess import InProcessPredictor
@@ -268,9 +266,7 @@ def test_materialize_artifact_openvino_model(tmp_path: Path) -> None:
     assert (out_dir / "model.bin").exists()
 
 
-def test_materialize_artifact_openvino_when_onnx_missing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_materialize_artifact_openvino_when_onnx_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """onnx ImportError is swallowed; openvino.Model still materialises (300-301)."""
     ov = pytest.importorskip("openvino")
     from mindtrace.models.serving.inprocess import InProcessPredictor
@@ -303,9 +299,7 @@ def test_materialize_artifact_openvino_when_onnx_missing(
     assert result.exists()
 
 
-def test_materialize_artifact_unsupported_when_no_runtimes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_materialize_artifact_unsupported_when_no_runtimes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Both import guards swallowed -> unsupported artifact raises TypeError (300-311)."""
     from mindtrace.models.serving.inprocess import InProcessPredictor
 

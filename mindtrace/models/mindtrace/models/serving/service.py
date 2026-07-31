@@ -87,18 +87,14 @@ def registry_from_env(logger: Any) -> Any:
             logger.info("Created GCS-backed Registry: uri=%s", registry_uri)
             return registry
         except Exception:
-            logger.warning(
-                "Failed to create GCS Registry from MINDTRACE_REGISTRY_URI=%s", registry_uri, exc_info=True
-            )
+            logger.warning("Failed to create GCS Registry from MINDTRACE_REGISTRY_URI=%s", registry_uri, exc_info=True)
     elif registry_path:
         try:
             from mindtrace.registry import Registry
 
             return Registry(registry_path)
         except Exception:
-            logger.warning(
-                "Failed to create Registry from MINDTRACE_REGISTRY_PATH=%s", registry_path, exc_info=True
-            )
+            logger.warning("Failed to create Registry from MINDTRACE_REGISTRY_PATH=%s", registry_path, exc_info=True)
     return None
 
 
