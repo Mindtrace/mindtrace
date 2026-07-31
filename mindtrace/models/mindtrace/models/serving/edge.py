@@ -153,6 +153,15 @@ class EdgeModelService(OnnxModelService):
         **kwargs: Any,
     ) -> None:
         self.prefer: list[str] = list(prefer) if prefer is not None else list(DEFAULT_PREFER)
+
+        # Discovery mode (live_service=False) loads no model — don't probe runtimes
+        # or resolve providers, both of which import onnxruntime.
+        if not kwargs.get("live_service", True):
+            self.runtime_probes = {}
+            self.provider_chain = list(providers) if providers is not None else []
+            super().__init__(providers=self.provider_chain, **kwargs)
+            return
+
         self.runtime_probes: dict[str, bool] = probe_runtimes()
         if providers is None:
             providers = select_providers(self.prefer)

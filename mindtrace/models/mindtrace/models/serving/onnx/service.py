@@ -125,14 +125,19 @@ class OnnxModelService(ModelService):
         warmup: int = 0,
         **kwargs: Any,
     ) -> None:
+        # Discovery mode (live_service=False, used by generate_connection_manager)
+        # loads no model, so it must neither require a model source nor import
+        # onnxruntime to resolve providers.
+        live_service = kwargs.get("live_service", True)
+
         self.model_path: Path | None = Path(model_path) if model_path else None
-        self.providers: list[str] = providers or _default_providers()
+        self.providers: list[str] = providers or (_default_providers() if live_service else [])
         self.session_options: Any = session_options
         self.warmup: int = int(warmup)
         self.session: Any = None  # onnxruntime.InferenceSession
         self._onnx_metadata: dict = {}  # populated from ModelProto when using registry
 
-        if self.model_path is None and kwargs.get("registry") is None:
+        if live_service and self.model_path is None and kwargs.get("registry") is None:
             raise ValueError(
                 "Either 'model_path' or 'registry' must be provided so that load_model() can locate the ONNX model."
             )

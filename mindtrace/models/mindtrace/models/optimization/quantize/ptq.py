@@ -439,7 +439,11 @@ class StaticQuantizer(Mindtrace):
         quant_type = QuantType.QInt8 if self.precision == "int8" else QuantType.QUInt8
         calibrate_method = getattr(CalibrationMethod, _CALIBRATION_METHODS[self.calibration_method])
 
-        with tempfile.TemporaryDirectory(prefix="mindtrace-quant-") as tmp:
+        # Stage the (potentially large) preprocessed ONNX under the config-managed
+        # TEMP_DIR rather than the system /tmp, consistent with the mindtrace paradigm.
+        temp_base = Path(self.config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"])
+        temp_base.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="mindtrace-quant-", dir=str(temp_base)) as tmp:
             model_input = preprocess_for_quantization(onnx_path, Path(tmp))
             _ort_quantize_static(
                 str(model_input),
