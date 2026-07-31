@@ -131,7 +131,10 @@ class HuggingFaceBackbone(nn.Module):
         outputs = self._hf_model(pixel_values=pixel_values.to(dev))
 
         if getattr(outputs, "pooler_output", None) is not None:
-            return outputs.pooler_output
+            pooled = outputs.pooler_output
+            # CNN-style HF models (ResNet, RegNet, …) pool to (B, D, 1, 1); flatten
+            # the trailing spatial dims so the head receives a (B, D) vector.
+            return pooled.flatten(1) if pooled.ndim > 2 else pooled
 
         hidden = outputs.last_hidden_state
         if hidden.ndim == 3:

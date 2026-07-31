@@ -125,13 +125,13 @@ def average_precision(
 ) -> float:
     """Compute Average Precision (AP) using 101-point interpolation.
 
-    The predictions must already be sorted by descending confidence score
-    *before* calling this function when *pred_scores* and *pred_matched* were
-    accumulated across images.  Typically you sort by score outside and pass
-    the matched flags directly.
+    Predictions need not be pre-sorted: this function sorts by descending
+    confidence internally (``np.argsort(-pred_scores)``) and reorders
+    *pred_matched* to match, so callers may pass matched flags aligned to the
+    unsorted scores.
 
     Args:
-        pred_scores: (N,) confidence scores.  Used only for sorting.
+        pred_scores: (N,) confidence scores.  Used only for the internal sort.
         pred_matched: (N,) bool array.  ``True`` where the prediction was
             successfully matched to a ground-truth box.
         num_gt: Total number of ground-truth boxes (used as the denominator

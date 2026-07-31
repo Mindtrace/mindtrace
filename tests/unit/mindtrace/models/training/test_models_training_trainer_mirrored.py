@@ -182,3 +182,17 @@ class TestTrainerMirroredEpochs:
         assert "val/acc" in metrics
         assert seen["requires_grad"] is False
         assert seen["is_cpu"] is True
+
+    def test_dict_loss_fn_is_unwrapped(self, simple_model, optimizer):
+        # Set-prediction criteria (e.g. DetectionSetCriterion) return a dict of
+        # loss components keyed by "loss"; the trainer must unwrap it so the scalar
+        # can be divided/backward-ed/.item()-ed instead of crashing on the dict.
+        class DictLoss(nn.Module):
+            def forward(self, outputs, targets):
+                return {"loss": nn.functional.cross_entropy(outputs, targets), "loss_aux": 0.0}
+
+        trainer = _make_trainer(simple_model, DictLoss(), optimizer)
+        metrics = trainer._train_epoch(_make_loader(n_batches=2))
+
+        assert isinstance(metrics["train/loss"], float)
+        assert metrics["train/loss"] > 0.0

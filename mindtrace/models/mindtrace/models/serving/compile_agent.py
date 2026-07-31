@@ -30,7 +30,6 @@ MINDTRACE_REGISTRY_PATH
 from __future__ import annotations
 
 import importlib.util
-import os
 import shutil
 import tempfile
 from pathlib import Path

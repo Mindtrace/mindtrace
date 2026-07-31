@@ -630,19 +630,23 @@ class Trainer(Mindtrace):
         """Run the forward pass and return ``(loss, raw_output)``.
 
         When ``loss_fn`` is set the standard two-step pattern is used:
-        ``model(inputs)`` followed by ``loss_fn(outputs, targets)``.  When
-        ``loss_fn`` is ``None`` the model is called as
-        ``model(inputs, targets)`` and must return a dict with a ``"loss"``
-        key or a tuple whose first element is the loss tensor.
+        ``model(inputs)`` followed by ``loss_fn(outputs, targets)``.  A loss that
+        returns a dict (e.g. :class:`DetectionSetCriterion`) is unwrapped via its
+        ``"loss"`` key.  When ``loss_fn`` is ``None`` the model is called as
+        ``model(inputs, targets)`` and must return a dict with a ``"loss"`` key
+        or a tuple whose first element is the loss tensor.
         """
         if self.loss_fn is not None:
             outputs = self.model(inputs)
             if self.teacher is not None and self._loss_accepts_teacher_outputs:
                 with torch.no_grad():
                     teacher_outputs = self.teacher(inputs)
-                loss: torch.Tensor = self.loss_fn(outputs, targets, teacher_outputs=teacher_outputs)
+                loss_out = self.loss_fn(outputs, targets, teacher_outputs=teacher_outputs)
             else:
-                loss = self.loss_fn(outputs, targets)
+                loss_out = self.loss_fn(outputs, targets)
+            # Set-prediction criteria (e.g. DetectionSetCriterion) return a dict of
+            # loss components keyed by "loss"; scalar losses are returned as-is.
+            loss: torch.Tensor = loss_out["loss"] if isinstance(loss_out, dict) else loss_out
             return loss, outputs
 
         result = self.model(inputs, targets)
