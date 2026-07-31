@@ -465,14 +465,12 @@ def profile(model: OptimizableModel, specs: Any = DEFAULT_SPECS, *, data: Any = 
             try:
                 validate_optimization(technique, task=model.task, provider=model.provider)
             except UnsupportedOptimizationError as exc:
-                rows.append({"variant": f"{spec.runtime}-{spec.precision}", "runtime": spec.runtime,
-                             "precision": spec.precision, metric: None,
-                             "status": f"unsupported: {str(exc).splitlines()[0]}"})
+                rows.append(_skip_row(f"{spec.runtime}-{spec.precision}", spec.runtime, spec.precision, metric,
+                                      0.0, f"unsupported: {str(exc).splitlines()[0]}"))
                 continue
         v = model.build(spec, wd)
         if not v.supported:
-            rows.append({"variant": v.name, "runtime": v.runtime, "precision": v.precision,
-                         metric: None, "status": f"skipped: {v.note}"})
+            rows.append(_skip_row(v.name, v.runtime, v.precision, metric, v.size_mb, f"skipped: {v.note}"))
             continue
         ev = model.evaluate(v, data)
         rows.append(_row(v, ev, metric, base_metric, base_lat, "ok"))
@@ -495,6 +493,16 @@ def _row(v: Variant, ev: dict, metric: str, base_metric: float, base_lat: float,
         "latency_ms": lat, "size_mb": v.size_mb,
         "speedup": (round(base_lat / lat, 2) if lat and base_lat else None),
         "status": status,
+    }
+
+
+def _skip_row(name: str, runtime: str, precision: str, metric: str, size_mb: float, status: str) -> dict:
+    """Row for a skipped/unsupported variant — same key schema as :func:`_row`
+    (metric/delta/latency/speedup are ``None``) so every row is uniformly indexable."""
+    return {
+        "variant": name, "runtime": runtime, "precision": precision,
+        metric: None, "delta": None, "latency_ms": None, "size_mb": size_mb,
+        "speedup": None, "status": status,
     }
 
 
