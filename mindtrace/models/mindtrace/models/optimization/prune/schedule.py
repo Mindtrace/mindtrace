@@ -78,6 +78,8 @@ class PruningSchedule(Callback):
             ValueError: If any argument is out of range or *criterion* is
                 unknown.
         """
+        super().__init__()
+
         if not 0.0 <= final_sparsity < 1.0:
             raise ValueError(f"final_sparsity must be in [0, 1), got {final_sparsity}")
         if start_epoch < 0:
@@ -88,8 +90,6 @@ class PruningSchedule(Callback):
             raise ValueError(f"interval must be >= 1, got {interval}")
         if criterion not in _CRITERIA:
             raise ValueError(f"criterion must be one of {sorted(_CRITERIA)}, got '{criterion}'")
-
-        super().__init__()
 
         self.final_sparsity = final_sparsity
         self.start_epoch = start_epoch

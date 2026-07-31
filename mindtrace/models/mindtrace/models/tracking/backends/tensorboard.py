@@ -70,8 +70,6 @@ class TensorBoardTracker(Tracker):
             raise ImportError(_TB_INSTALL_MSG)
 
         if log_dir is None:
-            import os
-
             root = self.config["MINDTRACE_DIR_PATHS"]["ROOT"]
             log_dir = os.path.join(root, "tensorboard")
         self.log_dir: str = log_dir

@@ -84,8 +84,6 @@ class WandBTracker(Tracker):
             raise ImportError(_WANDB_INSTALL_MSG)
 
         # Point WandB data directory to mindtrace's managed cache
-        import os
-
         if "WANDB_DIR" not in os.environ:
             root = self.config["MINDTRACE_DIR_PATHS"]["ROOT"]
             wandb_dir = os.path.join(root, "wandb")
