@@ -248,7 +248,13 @@ class CompileAgentService(Service):
         super().__init__(**kwargs)
 
         self.registry: Any = registry if registry is not None else self._registry_from_env()
-        self.work_dir: Path = Path(work_dir) if work_dir else Path(tempfile.mkdtemp(prefix="compile-agent-"))
+        if work_dir:
+            self.work_dir = Path(work_dir)
+        else:
+            # Default under the configured temp directory (mindtrace-managed) rather than the OS root.
+            temp_base = Path(self.config.MINDTRACE_DIR_PATHS.TEMP_DIR)
+            temp_base.mkdir(parents=True, exist_ok=True)
+            self.work_dir = Path(tempfile.mkdtemp(prefix="compile-agent-", dir=str(temp_base)))
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
         self.add_endpoint(path="/compile", func=self.compile_job, schema=CompileJobTaskSchema)
