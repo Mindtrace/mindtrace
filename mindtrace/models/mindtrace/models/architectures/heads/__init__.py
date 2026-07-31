@@ -9,12 +9,12 @@ Heads are pure ``nn.Module`` subclasses with no side effects at import time.
 
 from __future__ import annotations
 
+from mindtrace.models.architectures.heads.attention import CrossAttentionMultiTaskHead, DecoderBlock
 from mindtrace.models.architectures.heads.classification import (
     LinearHead,
     MLPHead,
     MultiLabelHead,
 )
-from mindtrace.models.architectures.heads.attention import CrossAttentionMultiTaskHead, DecoderBlock
 from mindtrace.models.architectures.heads.detection import DetectionHead, QueryDetectionHead
 from mindtrace.models.architectures.heads.segmentation import (
     FPNSegHead,
