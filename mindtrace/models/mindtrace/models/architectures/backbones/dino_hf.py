@@ -743,8 +743,9 @@ def _make_hf_dino_factory(hf_model_name: str):
                 are randomly initialised (uses ``AutoModel.from_config``).
                 Defaults to ``True``.
             lora_config: Optional :class:`LoRAConfig` for LoRA fine-tuning.
-                Only valid with ``pretrained=True``; passing it with
-                ``pretrained=False`` raises :class:`ValueError`.
+                Applied for both ``pretrained=True`` and ``pretrained=False``
+                (the random-init path is useful for testing LoRA without a
+                weight download).
             device: Target device string.
             cache_dir: Optional HuggingFace cache directory.
 
@@ -752,16 +753,32 @@ def _make_hf_dino_factory(hf_model_name: str):
             Tuple of ``(backbone, embed_dim)``.
         """
         if not pretrained:
-            if lora_config is not None:
-                raise ValueError(
-                    "lora_config is not supported with pretrained=False: LoRA adapters are "
-                    "meant to fine-tune pretrained weights, and the random-init path would "
-                    "silently drop them. Use pretrained=True to apply LoRA, or omit lora_config."
-                )
             from transformers import AutoConfig, AutoModel  # noqa: PLC0415
 
             cfg = AutoConfig.from_pretrained(hf_model_name, cache_dir=cache_dir)
             model = AutoModel.from_config(cfg)
+
+            # Apply LoRA to the random-init model too, so LoRA can be exercised
+            # without downloading pretrained weights (e.g. in CI). Mirrors the
+            # application in HuggingFaceDINOBackbone.__init__.
+            lora_enabled = False
+            if lora_config is not None:
+                _require_peft()
+                from peft import LoraConfig as _PeftCfg  # noqa: PLC0415
+                from peft import get_peft_model  # noqa: PLC0415
+
+                target_mods = lora_config.get_target_modules(hf_model_name)
+                peft_cfg = _PeftCfg(
+                    r=lora_config.r,
+                    lora_alpha=lora_config.lora_alpha,
+                    target_modules=target_mods,
+                    lora_dropout=lora_config.lora_dropout,
+                    bias=lora_config.bias,
+                    task_type=None,
+                )
+                model = get_peft_model(model, peft_cfg)
+                lora_enabled = True
+
             # Build a lightweight wrapper to read embed_dim without full loading
             backbone = HuggingFaceDINOBackbone.__new__(HuggingFaceDINOBackbone)
             nn.Module.__init__(backbone)
@@ -772,7 +789,7 @@ def _make_hf_dino_factory(hf_model_name: str):
             backbone.hf_model_name = hf_model_name
             backbone._patch_size = getattr(cfg, "patch_size", 14)
             backbone._num_register_tokens = getattr(cfg, "num_register_tokens", 0)
-            backbone.lora_enabled = False
+            backbone.lora_enabled = lora_enabled
             backbone._device = device
             backbone.model.to(device)
         else:

@@ -179,9 +179,14 @@ print(f"  round-tripped card: name={card2.name}  version={card2.version}  stage=
 
 print("\n[7] Saving model to registry via RegistryBridge...")
 bridge = RegistryBridge(registry)
-key = bridge.save(model, name="beans-resnet18", version="v1")
+# Use a name distinct from the ModelCheckpoint/ModelCard above ("beans-resnet18");
+# the bridge forwards (name, version) to the registry, so reusing the same name
+# would collide with the version already stored under it.
+key = bridge.save(model, name="beans-resnet18-bridge", version="v1")
 print(f"  saved under key: {key!r}")
-loaded_model = registry.load(key)
+# The bridge saves name and version separately, so load by (name, version) rather
+# than by the returned display key.
+loaded_model = registry.load("beans-resnet18-bridge", version="v1")
 print(f"  loaded model type: {type(loaded_model).__name__}")
 
 # ── ONNX export snippet ────────────────────────────────────────────────────────

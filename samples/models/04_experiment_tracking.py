@@ -211,7 +211,9 @@ bridge = RegistryBridge(registry)
 model = _fresh_model()
 key = bridge.save(model, name="resnet18-bridge", version="v2")
 print(f"  Saved via bridge under key: {key!r}")
-loaded = registry.load(key)
+# The bridge forwards name and version separately to the registry, so load by
+# (name, version) rather than by the returned display key.
+loaded = registry.load("resnet18-bridge", version="v2")
 print(f"  Loaded from registry: {type(loaded).__name__}")
 
 # ── 6. tracker= in Trainer ────────────────────────────────────────────────────
