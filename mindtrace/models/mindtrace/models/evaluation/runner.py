@@ -24,9 +24,9 @@ except ImportError:  # pragma: no cover
 from mindtrace.models.evaluation.metrics.classification import (
     accuracy,
     classification_report,
+    precision_recall_f1,
 )
 from mindtrace.models.evaluation.metrics.detection import (
-    mean_average_precision,
     mean_average_precision_50_95,
 )
 from mindtrace.models.evaluation.metrics.regression import mae, mse, r2_score, rmse
@@ -292,8 +292,6 @@ class EvaluationRunner(Mindtrace):
         preds_arr = np.concatenate(all_preds, axis=0)
         targets_arr = np.concatenate(all_targets, axis=0)
 
-        from mindtrace.models.evaluation.metrics.classification import precision_recall_f1
-
         acc = accuracy(preds_arr, targets_arr)
         prec, rec, f1 = precision_recall_f1(preds_arr, targets_arr, self._num_classes, average="macro")
         report = classification_report(
@@ -368,14 +366,15 @@ class EvaluationRunner(Mindtrace):
             self.logger.warning("EvaluationRunner: loader was empty; returning zero metrics.")
             return dict(_ZERO_METRICS["detection"])
 
+        # mean_average_precision_50_95 already runs the IoU-0.50 pass internally and
+        # surfaces both mAP@50 and its per-class AP, so no separate 0.50 call is needed.
         coco_result = mean_average_precision_50_95(all_preds, all_targets, self._num_classes)
-        map50_result = mean_average_precision(all_preds, all_targets, self._num_classes, iou_threshold=0.5)
 
         results: dict[str, Any] = {
-            "mAP@50": map50_result["mAP"],
+            "mAP@50": coco_result["mAP@50"],
             "mAP@75": coco_result["mAP@75"],
             "mAP@50:95": coco_result["mAP@50:95"],
-            "AP_per_class": map50_result["AP_per_class"],
+            "AP_per_class": coco_result["AP_per_class"],
         }
 
         self.logger.info(

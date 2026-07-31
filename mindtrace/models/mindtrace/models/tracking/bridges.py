@@ -47,19 +47,6 @@ class UltralyticsTrackerBridge:
             is a no-op (metrics are still logged via Python logging).
     """
 
-    EPOCH_METRIC_KEYS: tuple[str, ...] = (
-        "train/box_loss",
-        "train/cls_loss",
-        "train/dfl_loss",
-        "metrics/precision(B)",
-        "metrics/recall(B)",
-        "metrics/mAP50(B)",
-        "metrics/mAP50-95(B)",
-        "val/box_loss",
-        "val/cls_loss",
-        "val/dfl_loss",
-    )
-
     def __init__(self, tracker: Any | None = None) -> None:
         self._tracker = tracker
         self._current_epoch: int = 0
@@ -81,13 +68,9 @@ class UltralyticsTrackerBridge:
             bridge._current_epoch = epoch
 
             raw_metrics: dict = getattr(ultralytics_trainer, "metrics", {})
+            # Forward every numeric metric Ultralytics reports (loss terms plus
+            # precision/recall/mAP), sanitizing keys MLflow would otherwise reject.
             loggable: dict[str, float] = {}
-            for key in bridge.EPOCH_METRIC_KEYS:
-                if key in raw_metrics:
-                    val = raw_metrics[key]
-                    if isinstance(val, (int, float)):
-                        loggable[_sanitize_metric_name(key)] = float(val)
-
             for key, val in raw_metrics.items():
                 sk = _sanitize_metric_name(key)
                 if sk not in loggable and isinstance(val, (int, float)):

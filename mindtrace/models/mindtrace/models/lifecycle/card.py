@@ -563,7 +563,8 @@ class ModelCard:
         if dry_run:
             return result
 
-        # Persist BEFORE updating stage -- if persist fails, stage stays unchanged.
+        # Update the stage, then persist so the stored record reflects it; if
+        # persist fails, revert the stage so in-memory state stays consistent.
         old_stage = self.stage
         self.stage = to_stage
         try:
@@ -626,7 +627,8 @@ class ModelCard:
         if reason:
             self.extra["demotion_reason"] = reason
 
-        # Persist BEFORE updating stage.
+        # Update the stage, then persist so the stored record reflects it; if
+        # persist fails, revert the stage so in-memory state stays consistent.
         old_stage = self.stage
         self.stage = to_stage
         try:

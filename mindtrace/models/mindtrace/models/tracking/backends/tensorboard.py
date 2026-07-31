@@ -39,7 +39,7 @@ class TensorBoardTracker(Tracker):
         log_dir: Base directory in which run sub-directories will be created.
             Each call to :meth:`start_run` creates
             ``<log_dir>/<run_name>/`` and opens a writer there.
-            Defaults to ``"runs"``.
+            Defaults to ``<MINDTRACE_DIR_PATHS.ROOT>/tensorboard``.
         **kwargs: Accepted for forward compatibility; not forwarded.
 
     Raises:

@@ -79,7 +79,6 @@ class TimmBackboneAdapter(BackboneProtocol):
         )
         self._model_name = model_name
         self._embed_dim: int = self._model.num_features
-        self._has_patch_tokens = hasattr(self._model, "patch_embed") and hasattr(self._model, "blocks")
         self._model.to(device)
 
     @property

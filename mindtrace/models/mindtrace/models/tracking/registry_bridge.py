@@ -85,7 +85,7 @@ class RegistryBridge:
         if not isinstance(registry, RegistryProtocol):
             raise TypeError(
                 f"registry must implement the RegistryProtocol (i.e. have a "
-                f"'save(key, model)' method). Got: {type(registry).__name__!r}."
+                f"'save(name, obj, *, version=...)' method). Got: {type(registry).__name__!r}."
             )
         self.registry = registry
         logger.debug("RegistryBridge initialised with registry: %s", type(registry).__name__)
