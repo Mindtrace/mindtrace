@@ -37,7 +37,7 @@ try:
     )
 
     _HF_GENERIC_AVAILABLE = True
-except Exception:
+except ImportError:
     _HFGenericBackbone = None  # type: ignore[assignment,misc]
     _HF_GENERIC_AVAILABLE = False
 from mindtrace.models.architectures.heads.classification import (
@@ -57,7 +57,7 @@ try:
     )
 
     _HF_DINO_AVAILABLE = True
-except Exception:
+except ImportError:
     _HFBackbone = None  # type: ignore[assignment,misc]
     _HF_DINO_AVAILABLE = False
 
@@ -220,7 +220,7 @@ def build_model(
     freeze_backbone: bool = False,
     dropout: float = 0.0,
     **backbone_kwargs: object,
-) -> ModelWrapper:
+) -> nn.Module:
     """Assemble a backbone + head model from registered components.
 
     Args:
@@ -251,8 +251,10 @@ def build_model(
             intercepted for the MLP head and *not* forwarded to the backbone.
 
     Returns:
-        A :class:`ModelWrapper` containing the assembled model, ready for
-        training or inference.
+        The assembled model, ready for training or inference.  Normally a
+        :class:`ModelWrapper`; when an HF DINO backbone is paired with a
+        segmentation head it is an :class:`HFDINOSegWrapper` (spatial patch-map
+        path).  Both are plain ``nn.Module`` s — call ``model(x)`` directly.
 
     Raises:
         KeyError: If *backbone* is not registered.
@@ -268,9 +270,12 @@ def build_model(
         raise ValueError(f"Unknown head type '{head}'. Supported types: {sorted(_HEAD_TYPES)}")
 
     # Extract head-specific kwargs before forwarding to backbone factory.
-    hidden_dim_cls: int = int(backbone_kwargs.pop("hidden_dim", 512))
+    # A user-supplied hidden_dim overrides both head families; otherwise each
+    # falls back to its documented default (MLP 512, FPN seg 256).
     num_layers: int = int(backbone_kwargs.pop("num_layers", 2))
-    hidden_dim_seg: int = hidden_dim_cls  # re-use same kwarg for seg heads
+    hidden_dim_arg = backbone_kwargs.pop("hidden_dim", None)
+    hidden_dim_cls: int = int(hidden_dim_arg) if hidden_dim_arg is not None else 512
+    hidden_dim_seg: int = int(hidden_dim_arg) if hidden_dim_arg is not None else 256
 
     # Build backbone.
     backbone_info: BackboneInfo = build_backbone(backbone, pretrained=pretrained, **backbone_kwargs)
