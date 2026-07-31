@@ -372,10 +372,10 @@ class OptimizationRunner(Mindtrace):
                 domain = "onnx"
                 implicit_export = True
 
-            if domain == "onnx" and step.op in ("prune", "finetune"):
+            if domain == "onnx" and step.op in ("prune", "finetune", "qat"):
                 raise ValueError(
                     f"Step {index} ('{step.op}') requires the torch domain, but the pipeline already "
-                    "exported to ONNX. Reorder the recipe so prune/finetune steps precede export."
+                    "exported to ONNX. Reorder the recipe so prune/finetune/qat steps precede export."
                 )
 
             # Snapshot state for a potential rollback of a lossy step.
@@ -531,10 +531,21 @@ class OptimizationRunner(Mindtrace):
         self._train_classification(epochs=step.epochs, lr=step.lr)
 
     def _train_classification(self, *, epochs: int, lr: float) -> None:
-        """Train the live torch model on the classification task (shared by finetune/QAT)."""
+        """Train the live torch model on a non-detection task (shared by finetune/QAT).
+
+        Used for classification, segmentation and regression. When no explicit
+        ``loss_fn`` was given, the default is task-appropriate: ``MSELoss`` for
+        regression (float targets), ``CrossEntropyLoss`` otherwise.
+        """
         from mindtrace.models.training import Trainer
 
-        loss_fn = self.loss_fn if self.loss_fn is not None else nn.CrossEntropyLoss()
+        if self.loss_fn is not None:
+            loss_fn: nn.Module = self.loss_fn
+        elif self.task == "regression":
+            # Regression has float targets; CrossEntropyLoss would crash / mis-train.
+            loss_fn = nn.MSELoss()
+        else:
+            loss_fn = nn.CrossEntropyLoss()
         if self.optimizer_factory is not None:
             optimizer = self.optimizer_factory(self.model, lr)
         else:

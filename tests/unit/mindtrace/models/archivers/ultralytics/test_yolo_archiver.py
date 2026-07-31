@@ -62,6 +62,26 @@ def test_yolo_archiver_load(yolo_archiver):
         assert result == mock_model_instance
 
 
+def test_yolo_archiver_load_reconstructs_yoloworld(yolo_archiver):
+    """A '-world' checkpoint must be rebuilt as YOLOWorld, not plain YOLO."""
+    pt_file = Path(yolo_archiver.uri) / "model-world.pt"
+    pt_file.write_bytes(b"dummy world model data")
+
+    with (
+        patch("mindtrace.models.archivers.ultralytics.yolo_archiver.YOLOWorld") as mock_world,
+        patch("mindtrace.models.archivers.ultralytics.yolo_archiver.YOLO") as mock_yolo,
+    ):
+        world_instance = MagicMock()
+        mock_world.return_value = world_instance
+
+        result = yolo_archiver.load(YOLOWorld)
+
+        # The subtype constructor is used; plain YOLO is not.
+        mock_world.assert_called_once_with(str(pt_file))
+        mock_yolo.assert_not_called()
+        assert result is world_instance
+
+
 def test_yolo_archiver_save_yoloworld(yolo_archiver):
     """Test save method with YOLOWorld model."""
     # Mock YOLOWorld model
@@ -71,6 +91,6 @@ def test_yolo_archiver_save_yoloworld(yolo_archiver):
     # Call save
     yolo_archiver.save(mock_model)
 
-    # Verify model.save was called with correct path
-    expected_path = os.path.join(yolo_archiver.uri, "model.pt")
+    # YOLOWorld is saved under a "-world" stem so the subtype is reconstructed on load.
+    expected_path = os.path.join(yolo_archiver.uri, "model-world.pt")
     mock_model.save.assert_called_once_with(expected_path)

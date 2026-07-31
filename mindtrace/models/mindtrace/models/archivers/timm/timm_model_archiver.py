@@ -104,9 +104,12 @@ class TimmModelArchiver(Archiver):
             elif isinstance(pool, str):
                 config["global_pool"] = pool
 
-        # Get in_chans if available
-        if hasattr(model, "num_features"):
-            config["num_features"] = model.num_features
+        # Capture in_chans (stem input channels) so non-RGB models (e.g. in_chans=1)
+        # rebuild with the correct stem conv and reload without a state_dict mismatch.
+        for module in model.modules():
+            if isinstance(module, torch.nn.Conv2d):
+                config["in_chans"] = module.in_channels
+                break
 
         # Check for drop rate
         if hasattr(model, "drop_rate"):
@@ -155,6 +158,8 @@ class TimmModelArchiver(Archiver):
             create_kwargs["global_pool"] = config["global_pool"]
         if "drop_rate" in config:
             create_kwargs["drop_rate"] = config["drop_rate"]
+        if "in_chans" in config:
+            create_kwargs["in_chans"] = config["in_chans"]
 
         # Create model
         model = timm.create_model(architecture, **create_kwargs)

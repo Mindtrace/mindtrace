@@ -470,16 +470,34 @@ class CompileAgentService(Service):
                 self.logger.warning("OpenVINO not importable; cannot store IR artifact '%s'.", artifact.path)
                 return ""
             model = ov.Core().read_model(str(artifact.path))
-            self.registry.save(output_key, model)
-            return output_key
+            try:
+                self.registry.save(output_key, model)
+                return output_key
+            except Exception:  # noqa: BLE001 — storage failure must not lose the on-disk artifact
+                self.logger.warning(
+                    "Failed to store OpenVINO IR '%s' in the registry; it remains at %s.",
+                    output_key,
+                    artifact.path,
+                    exc_info=True,
+                )
+                return ""
 
         if suffix == ".onnx":
             if not _ONNX_AVAILABLE:  # pragma: no cover - compiled .onnx implies onnx present
                 self.logger.warning("onnx not importable; cannot store ONNX artifact '%s'.", artifact.path)
                 return ""
             model = onnx.load(str(artifact.path))
-            self.registry.save(output_key, model)
-            return output_key
+            try:
+                self.registry.save(output_key, model)
+                return output_key
+            except Exception:  # noqa: BLE001 — storage failure must not lose the on-disk artifact
+                self.logger.warning(
+                    "Failed to store ONNX model '%s' in the registry; it remains at %s.",
+                    output_key,
+                    artifact.path,
+                    exc_info=True,
+                )
+                return ""
 
         if suffix in {".plan", ".engine"} or artifact.runtime == "tensorrt":
             try:

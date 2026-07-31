@@ -62,11 +62,13 @@ def test_timm_archiver_is_timm_model(timm_archiver):
 
 def test_timm_archiver_save(timm_archiver, temp_dir):
     """Test save method."""
-    # Create mock timm model with controlled attributes
-    mock_model = MagicMock(spec=["pretrained_cfg", "num_classes", "state_dict"])
+    # Create mock timm model with controlled attributes. A real timm model is an
+    # nn.Module, so expose modules() with a stem conv the archiver reads in_chans from.
+    mock_model = MagicMock(spec=["pretrained_cfg", "num_classes", "state_dict", "modules"])
     mock_model.pretrained_cfg = {"architecture": "resnet18"}
     mock_model.num_classes = 10
     mock_model.state_dict.return_value = {"layer1.weight": torch.zeros(1)}
+    mock_model.modules.return_value = [torch.nn.Conv2d(3, 64, kernel_size=7)]
 
     with patch("torch.save") as mock_torch_save:
         timm_archiver.save(mock_model)
@@ -79,6 +81,7 @@ def test_timm_archiver_save(timm_archiver, temp_dir):
             config = json.load(f)
         assert config["architecture"] == "resnet18"
         assert config["num_classes"] == 10
+        assert config["in_chans"] == 3  # captured from the stem conv
 
         # Verify state dict was saved
         mock_torch_save.assert_called_once()
@@ -89,9 +92,10 @@ def test_timm_archiver_save_creates_directory(temp_dir):
     nested_dir = os.path.join(temp_dir, "nested", "path")
     archiver = TimmModelArchiver(uri=nested_dir)
 
-    mock_model = MagicMock(spec=["pretrained_cfg", "state_dict"])
+    mock_model = MagicMock(spec=["pretrained_cfg", "state_dict", "modules"])
     mock_model.pretrained_cfg = {"architecture": "resnet18"}
     mock_model.state_dict.return_value = {}
+    mock_model.modules.return_value = [torch.nn.Conv2d(3, 64, kernel_size=7)]
 
     with patch("torch.save"):
         archiver.save(mock_model)

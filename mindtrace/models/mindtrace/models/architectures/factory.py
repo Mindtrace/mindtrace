@@ -286,6 +286,20 @@ def build_model(
         for param in backbone_info.model.parameters():
             param.requires_grad_(False)
 
+    # Segmentation heads consume a spatial (B, D, H, W) feature map, which only
+    # the HF DINO backbones expose via forward_spatial(). Every other backbone
+    # emits a pooled (B, D) vector that a Conv2d seg head cannot accept, so
+    # reject the pairing up front instead of returning a model that crashes at
+    # forward() (build_model_from_hf rejects the same combination).
+    is_hf = _HF_DINO_AVAILABLE and _HFBackbone is not None and isinstance(backbone_info.model, _HFBackbone)
+    if head in _SEG_HEAD_TYPES and not (is_hf and hasattr(backbone_info.model, "forward_spatial")):
+        raise ValueError(
+            f"Segmentation head '{head}' requires a backbone that emits a spatial feature map "
+            f"(forward_spatial), which currently only the HuggingFace DINO backbones provide. "
+            f"Backbone '{backbone}' emits a pooled vector — pair it with a classification head, "
+            f"or use an HF DINO backbone (e.g. 'dino_v3_small') for segmentation."
+        )
+
     # Build head.
     head_module: nn.Module
     if head == "linear_seg":
@@ -310,7 +324,7 @@ def build_model(
         )
 
     # HF DINO + segmentation head → spatial patch-token path with auto-upsample
-    is_hf = _HF_DINO_AVAILABLE and _HFBackbone is not None and isinstance(backbone_info.model, _HFBackbone)
+    # (the seg-vs-backbone compatibility guard above already ran).
     if is_hf and head in _SEG_HEAD_TYPES:
         return HFDINOSegWrapper(backbone_info=backbone_info, head=head_module)
 

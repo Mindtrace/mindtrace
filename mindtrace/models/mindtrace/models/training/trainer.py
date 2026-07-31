@@ -203,6 +203,12 @@ class Trainer(Mindtrace):
 
         self.model.to(self.device)
 
+        # Move a stateful loss (registered buffers/params, e.g. a class-weight
+        # buffer in DetectionSetCriterion) to the device too, or it stays on CPU
+        # and F.cross_entropy(logits[cuda], ..., weight=class_weight[cpu]) crashes.
+        if isinstance(self.loss_fn, nn.Module):
+            self.loss_fn.to(self.device)
+
         # Teacher model for knowledge distillation: frozen, on-device, eval mode
         if self.teacher is not None:
             self.teacher.to(self.device)

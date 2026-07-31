@@ -674,13 +674,15 @@ class TestBuildModel:
         out = model(x)
         assert out.shape == (BATCH, NUM_CLASSES)
 
-    def test_build_linear_seg(self) -> None:
-        model = build_model("resnet18", "linear_seg", num_classes=NUM_CLASSES, pretrained=False)
-        assert isinstance(model, (ModelWrapper, HFDINOSegWrapper))
+    def test_build_linear_seg_rejects_pooled_backbone(self) -> None:
+        # resnet emits a pooled (B, C) vector, not a spatial map, so a Conv2d seg
+        # head would crash at forward(); build_model must reject it up front.
+        with pytest.raises(ValueError, match="spatial feature map"):
+            build_model("resnet18", "linear_seg", num_classes=NUM_CLASSES, pretrained=False)
 
-    def test_build_fpn_seg(self) -> None:
-        model = build_model("resnet18", "fpn_seg", num_classes=NUM_CLASSES, pretrained=False)
-        assert isinstance(model, (ModelWrapper, HFDINOSegWrapper))
+    def test_build_fpn_seg_rejects_pooled_backbone(self) -> None:
+        with pytest.raises(ValueError, match="spatial feature map"):
+            build_model("resnet18", "fpn_seg", num_classes=NUM_CLASSES, pretrained=False)
 
     def test_unknown_head_raises_value_error(self) -> None:
         with pytest.raises(ValueError, match="Unknown head type"):
