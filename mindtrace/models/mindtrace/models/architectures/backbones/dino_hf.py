@@ -743,6 +743,8 @@ def _make_hf_dino_factory(hf_model_name: str):
                 are randomly initialised (uses ``AutoModel.from_config``).
                 Defaults to ``True``.
             lora_config: Optional :class:`LoRAConfig` for LoRA fine-tuning.
+                Only valid with ``pretrained=True``; passing it with
+                ``pretrained=False`` raises :class:`ValueError`.
             device: Target device string.
             cache_dir: Optional HuggingFace cache directory.
 
@@ -750,6 +752,12 @@ def _make_hf_dino_factory(hf_model_name: str):
             Tuple of ``(backbone, embed_dim)``.
         """
         if not pretrained:
+            if lora_config is not None:
+                raise ValueError(
+                    "lora_config is not supported with pretrained=False: LoRA adapters are "
+                    "meant to fine-tune pretrained weights, and the random-init path would "
+                    "silently drop them. Use pretrained=True to apply LoRA, or omit lora_config."
+                )
             from transformers import AutoConfig, AutoModel  # noqa: PLC0415
 
             cfg = AutoConfig.from_pretrained(hf_model_name, cache_dir=cache_dir)
