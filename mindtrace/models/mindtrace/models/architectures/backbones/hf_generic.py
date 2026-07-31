@@ -23,13 +23,10 @@ identifier at call time.
 
 from __future__ import annotations
 
-import logging
 from typing import Optional
 
 import torch
 import torch.nn as nn
-
-logger = logging.getLogger(__name__)
 
 try:
     from transformers import AutoModel  # noqa: F401
