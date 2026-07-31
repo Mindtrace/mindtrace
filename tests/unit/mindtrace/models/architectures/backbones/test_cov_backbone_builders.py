@@ -26,9 +26,7 @@ from mindtrace.models.architectures.backbones import build_backbone
 from mindtrace.models.architectures.backbones import registry as registry_mod
 
 _PKG = "mindtrace.models.architectures.backbones"
-_INIT_PATH = (
-    pathlib.Path(registry_mod.__file__).parent / "__init__.py"
-).resolve()
+_INIT_PATH = (pathlib.Path(registry_mod.__file__).parent / "__init__.py").resolve()
 
 
 # ---------------------------------------------------------------------------
@@ -116,8 +114,8 @@ class TestInitImportGuards:
     def test_all_optional_import_guards_execute(self):
         ns = _exec_init_with_blocked(
             [
-                f"{_PKG}.adapters",   # -> 45-47
-                f"{_PKG}.dino_hf",    # -> loop 65-66 AND top-level 76-78
+                f"{_PKG}.adapters",  # -> 45-47
+                f"{_PKG}.dino_hf",  # -> loop 65-66 AND top-level 76-78
                 f"{_PKG}.hf_generic",  # -> 87-89
             ]
         )

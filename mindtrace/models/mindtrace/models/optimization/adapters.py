@@ -140,8 +140,11 @@ class UltralyticsAdapter(Mindtrace):
 
                     exclude = detection_head_nodes(onnx_fp32) if self.task == "detection" else None
                     path = StaticQuantizer(precision="int8").run(
-                        onnx_fp32, self._onnx_calibration(), samples=100,
-                        nodes_to_exclude=exclude, output=str(work_dir / f"{name}.onnx"),
+                        onnx_fp32,
+                        self._onnx_calibration(),
+                        samples=100,
+                        nodes_to_exclude=exclude,
+                        output=str(work_dir / f"{name}.onnx"),
                     )
                 else:
                     path = onnx_fp32
@@ -229,9 +232,12 @@ class TorchvisionDetectionAdapter(Mindtrace):
             from mindtrace.models.optimization import export_onnx
 
             self._onnx_fp32 = export_onnx(
-                self._model, work_dir / "model.onnx",
+                self._model,
+                work_dir / "model.onnx",
                 example_input=torch.rand(1, 3, self.input_size, self.input_size),
-                opset=17, check=False, simplify=True,
+                opset=17,
+                check=False,
+                simplify=True,
             )
         return self._onnx_fp32
 
@@ -245,7 +251,9 @@ class TorchvisionDetectionAdapter(Mindtrace):
                 from mindtrace.models.optimization import StaticQuantizer
 
                 out = StaticQuantizer(precision="int8").run(
-                    onnx_fp32, self._calibration(work_dir), samples=100,
+                    onnx_fp32,
+                    self._calibration(work_dir),
+                    samples=100,
                     nodes_to_exclude=detection_head_nodes(onnx_fp32),  # smart default for detection
                     output=str(work_dir / "model-int8.onnx"),
                 )
@@ -290,7 +298,9 @@ class TorchvisionDetectionAdapter(Mindtrace):
         else:
             from mindtrace.models.optimization.runner import _DetectionOnnxAdapter
 
-            adapter = _DetectionOnnxAdapter(variant.artifact, providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+            adapter = _DetectionOnnxAdapter(
+                variant.artifact, providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
+            )
             for img, gt in samples:
                 t0 = time.perf_counter()
                 out = adapter([img])[0]
@@ -299,8 +309,11 @@ class TorchvisionDetectionAdapter(Mindtrace):
                 gts.append(gt)
         r = mean_average_precision_50_95(preds, gts, self.num_classes + 1)
         warm = times[3:] if len(times) > 6 else times
-        return {"mAP50-95": round(float(r["mAP@50:95"]), 4), "mAP50": round(float(r["mAP@50"]), 4),
-                "latency_ms": round(float(np.median(warm)) * 1000, 3)}
+        return {
+            "mAP50-95": round(float(r["mAP@50:95"]), 4),
+            "mAP50": round(float(r["mAP@50"]), 4),
+            "latency_ms": round(float(np.median(warm)) * 1000, 3),
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -329,7 +342,6 @@ class TorchModuleAdapter(Mindtrace):
     def build(self, spec: VariantSpec, work_dir: Path) -> Variant:
         name = f"{spec.runtime}-{spec.precision}"
         try:
-
             from mindtrace.models.optimization import compile_model, export_onnx, quantize_dynamic
             from mindtrace.models.optimization.quantize import StaticQuantizer  # noqa: F401
             from mindtrace.models.optimization.targets import TargetSpec
@@ -338,8 +350,12 @@ class TorchModuleAdapter(Mindtrace):
             # model to CUDA, so pin it back before tracing.
             self._model.to("cpu").eval()
             onnx_fp32 = export_onnx(
-                self._model, work_dir / "model.onnx",
-                static_shape=(1, 3, self.input_size, self.input_size), dynamic_batch=True, opset=17, check=False,
+                self._model,
+                work_dir / "model.onnx",
+                static_shape=(1, 3, self.input_size, self.input_size),
+                dynamic_batch=True,
+                opset=17,
+                check=False,
             )
             if spec.runtime == "onnxruntime" and spec.precision == "fp32":
                 return Variant(name, "onnxruntime", "fp32", str(onnx_fp32), _mb(onnx_fp32))
@@ -362,7 +378,9 @@ class TorchModuleAdapter(Mindtrace):
         from mindtrace.models.optimization.runner import OnnxModelAdapter
 
         model_like = self._model if variant.runtime == "torch" else OnnxModelAdapter(variant.artifact)
-        results = EvaluationRunner(model=model_like, task=self.task, num_classes=self.num_classes, device="cpu").run(data)
+        results = EvaluationRunner(model=model_like, task=self.task, num_classes=self.num_classes, device="cpu").run(
+            data
+        )
         return {
             PRIMARY_METRIC[self.task]: round(float(results[PRIMARY_METRIC[self.task]]), 4),
             "latency_ms": self._latency(variant),
@@ -383,7 +401,9 @@ class TorchModuleAdapter(Mindtrace):
                 report = Benchmark(runtime="torch", artifact=self._model, input_shape=shape, device="cuda").run()
             elif variant.runtime == "onnxruntime":
                 report = Benchmark(
-                    runtime="onnxruntime", artifact=variant.artifact, input_shape=shape,
+                    runtime="onnxruntime",
+                    artifact=variant.artifact,
+                    input_shape=shape,
                     providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
                 ).run()
             elif variant.runtime == "openvino":
@@ -399,9 +419,16 @@ class TorchModuleAdapter(Mindtrace):
 # ---------------------------------------------------------------------------
 # Factory + unified profile
 # ---------------------------------------------------------------------------
-def load_model(source: Any, *, task: str | None = None, num_classes: int | None = None,
-               input_size: int | None = None, data: str | None = None, provider: str | None = None,
-               **kw: Any) -> OptimizableModel:
+def load_model(
+    source: Any,
+    *,
+    task: str | None = None,
+    num_classes: int | None = None,
+    input_size: int | None = None,
+    data: str | None = None,
+    provider: str | None = None,
+    **kw: Any,
+) -> OptimizableModel:
     """Return the right :class:`OptimizableModel` adapter for *source*.
 
     - an Ultralytics model name/checkpoint (``yolov8n.pt``, any ``.pt`` YOLO can
@@ -433,12 +460,14 @@ def load_model(source: Any, *, task: str | None = None, num_classes: int | None 
         if isinstance(source, (str, Path)) and not Path(src).exists():
             model = build_detection_model(src, num_classes=num_classes or 1, **kw)
         return TorchvisionDetectionAdapter(model, num_classes=num_classes or 1, input_size=input_size or 800)
-    return TorchModuleAdapter(source, task=task or "classification", num_classes=num_classes or 1000,
-                              input_size=input_size or 224)
+    return TorchModuleAdapter(
+        source, task=task or "classification", num_classes=num_classes or 1000, input_size=input_size or 224
+    )
 
 
-def profile(model: OptimizableModel, specs: Any = DEFAULT_SPECS, *, data: Any = None,
-            work_dir: str | Path | None = None) -> list[dict]:
+def profile(
+    model: OptimizableModel, specs: Any = DEFAULT_SPECS, *, data: Any = None, work_dir: str | Path | None = None
+) -> list[dict]:
     """Build + evaluate every spec through one provider-agnostic path.
 
     Returns one row per variant with the same schema regardless of provider:
@@ -465,8 +494,16 @@ def profile(model: OptimizableModel, specs: Any = DEFAULT_SPECS, *, data: Any = 
             try:
                 validate_optimization(technique, task=model.task, provider=model.provider)
             except UnsupportedOptimizationError as exc:
-                rows.append(_skip_row(f"{spec.runtime}-{spec.precision}", spec.runtime, spec.precision, metric,
-                                      0.0, f"unsupported: {str(exc).splitlines()[0]}"))
+                rows.append(
+                    _skip_row(
+                        f"{spec.runtime}-{spec.precision}",
+                        spec.runtime,
+                        spec.precision,
+                        metric,
+                        0.0,
+                        f"unsupported: {str(exc).splitlines()[0]}",
+                    )
+                )
                 continue
         v = model.build(spec, wd)
         if not v.supported:
@@ -488,9 +525,13 @@ _RUNTIME_TECHNIQUE = {
 def _row(v: Variant, ev: dict, metric: str, base_metric: float, base_lat: float, status: str) -> dict:
     m, lat = ev.get(metric), ev.get("latency_ms", 0.0)
     return {
-        "variant": v.name, "runtime": v.runtime, "precision": v.precision,
-        metric: m, "delta": (round(m - base_metric, 4) if m is not None else None),
-        "latency_ms": lat, "size_mb": v.size_mb,
+        "variant": v.name,
+        "runtime": v.runtime,
+        "precision": v.precision,
+        metric: m,
+        "delta": (round(m - base_metric, 4) if m is not None else None),
+        "latency_ms": lat,
+        "size_mb": v.size_mb,
         "speedup": (round(base_lat / lat, 2) if lat and base_lat else None),
         "status": status,
     }
@@ -500,9 +541,15 @@ def _skip_row(name: str, runtime: str, precision: str, metric: str, size_mb: flo
     """Row for a skipped/unsupported variant — same key schema as :func:`_row`
     (metric/delta/latency/speedup are ``None``) so every row is uniformly indexable."""
     return {
-        "variant": name, "runtime": runtime, "precision": precision,
-        metric: None, "delta": None, "latency_ms": None, "size_mb": size_mb,
-        "speedup": None, "status": status,
+        "variant": name,
+        "runtime": runtime,
+        "precision": precision,
+        metric: None,
+        "delta": None,
+        "latency_ms": None,
+        "size_mb": size_mb,
+        "speedup": None,
+        "status": status,
     }
 
 
@@ -541,7 +588,14 @@ def _iter_val(source: Any, size: int, limit: int | None = None):
 
 
 __all__ = [
-    "OptimizableModel", "Variant", "VariantSpec", "DEFAULT_SPECS",
-    "UltralyticsAdapter", "TorchvisionDetectionAdapter", "TorchModuleAdapter",
-    "detection_head_nodes", "load_model", "profile",
+    "OptimizableModel",
+    "Variant",
+    "VariantSpec",
+    "DEFAULT_SPECS",
+    "UltralyticsAdapter",
+    "TorchvisionDetectionAdapter",
+    "TorchModuleAdapter",
+    "detection_head_nodes",
+    "load_model",
+    "profile",
 ]

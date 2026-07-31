@@ -234,9 +234,7 @@ class Trainer(Mindtrace):
                     from torch.nn.parallel import DistributedDataParallel as _DDP  # noqa: PLC0415
 
                     _device_ids = (
-                        [self.device.index]
-                        if self.device.type == "cuda" and self.device.index is not None
-                        else None
+                        [self.device.index] if self.device.type == "cuda" and self.device.index is not None else None
                     )
                     self.model = _DDP(self.model, device_ids=_device_ids)
                     self.logger.info("Trainer: wrapped model in DistributedDataParallel.")

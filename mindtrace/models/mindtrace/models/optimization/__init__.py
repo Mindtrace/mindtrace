@@ -28,12 +28,6 @@ from mindtrace.models.optimization.adapters import (
     load_model,
     profile,
 )
-from mindtrace.models.optimization.errors import (
-    CalibrationError,
-    InvalidSchemeError,
-    OptimizationError,
-    UnsupportedModelError,
-)
 from mindtrace.models.optimization.bench import Benchmark, BenchmarkReport
 from mindtrace.models.optimization.compile import (
     CompiledArtifact,
@@ -42,6 +36,12 @@ from mindtrace.models.optimization.compile import (
     register_compiler,
     verify_manifest,
     write_manifest,
+)
+from mindtrace.models.optimization.errors import (
+    CalibrationError,
+    InvalidSchemeError,
+    OptimizationError,
+    UnsupportedModelError,
 )
 from mindtrace.models.optimization.export import (
     NumericalInstabilityError,

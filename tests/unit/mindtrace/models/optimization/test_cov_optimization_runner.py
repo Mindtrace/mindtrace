@@ -30,12 +30,12 @@ import torch.nn as nn  # noqa: E402
 from torch.utils.data import DataLoader, TensorDataset  # noqa: E402
 
 from mindtrace.models.optimization import (  # noqa: E402
+    QAT,
     Export,
     Finetune,
     OptimizationRecipe,
     OptimizationRunner,
     Prune,
-    QAT,
     Quantize,
 )
 from mindtrace.models.optimization import runner as runner_module  # noqa: E402
@@ -151,9 +151,7 @@ def test_prune_after_export_raises(tmp_path):
 
 def test_torch_domain_rollback(tmp_path, monkeypatch):
     metrics = iter([0.9, 0.4])
-    monkeypatch.setattr(
-        runner_module.OptimizationRunner, "_measure_metric", lambda self, model_like: next(metrics)
-    )
+    monkeypatch.setattr(runner_module.OptimizationRunner, "_measure_metric", lambda self, model_like: next(metrics))
     result = OptimizationRunner(
         _linear_model(),
         OptimizationRecipe(steps=[Prune(method="magnitude", sparsity=0.2)]),
@@ -237,9 +235,7 @@ def test_magnitude_prune_and_torch_final_gates(tmp_path):
 
 
 def test_finetune_requires_train_loader(tmp_path):
-    runner = OptimizationRunner(
-        _linear_model(), OptimizationRecipe(steps=[Finetune()]), work_dir=tmp_path
-    )
+    runner = OptimizationRunner(_linear_model(), OptimizationRecipe(steps=[Finetune()]), work_dir=tmp_path)
     with pytest.raises(ValueError, match="finetune.*train_loader"):
         runner._finetune_step(Finetune())
 
@@ -356,17 +352,13 @@ def test_qat_detection_rejected(tmp_path):
 
 def test_quantize_dynamic_ignores_static_fields(tmp_path):
     """per_channel=False differs from the static-PTQ default, hitting the warning (649)."""
-    recipe = OptimizationRecipe(
-        steps=[Export(static_shape=(1, D)), Quantize(mode="dynamic", per_channel=False)]
-    )
+    recipe = OptimizationRecipe(steps=[Export(static_shape=(1, D)), Quantize(mode="dynamic", per_channel=False)])
     result = OptimizationRunner(_linear_model(), recipe, work_dir=tmp_path).run()
     assert result.artifact_path.exists()
 
 
 def test_static_quantize_requires_calibration(tmp_path):
-    runner = OptimizationRunner(
-        _linear_model(), OptimizationRecipe(steps=[Export()]), work_dir=tmp_path
-    )
+    runner = OptimizationRunner(_linear_model(), OptimizationRecipe(steps=[Export()]), work_dir=tmp_path)
     dummy = tmp_path / "in.onnx"
     dummy.write_bytes(b"x")
     with pytest.raises(ValueError, match="requires a calibration_loader"):
@@ -469,9 +461,7 @@ def test_resolve_num_classes_detection_raises(tmp_path):
 
 
 def test_resolve_num_classes_without_eval_loader_raises(tmp_path):
-    runner = OptimizationRunner(
-        _linear_model(), OptimizationRecipe(steps=[Export()]), work_dir=tmp_path
-    )
+    runner = OptimizationRunner(_linear_model(), OptimizationRecipe(steps=[Export()]), work_dir=tmp_path)
     with pytest.raises(ValueError, match="num_classes could not be inferred"):
         runner._resolve_num_classes()
 
@@ -566,9 +556,7 @@ class _RecordingTracker:
 
 def test_tracker_logs_metrics(tmp_path, monkeypatch):
     metrics = iter([0.9, 0.85])
-    monkeypatch.setattr(
-        runner_module.OptimizationRunner, "_measure_metric", lambda self, model_like: next(metrics)
-    )
+    monkeypatch.setattr(runner_module.OptimizationRunner, "_measure_metric", lambda self, model_like: next(metrics))
     tracker = _RecordingTracker()
     OptimizationRunner(
         _linear_model(),

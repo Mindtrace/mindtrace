@@ -146,8 +146,9 @@ class TestSelfDescribing:
         model = prepare_qat(MLP(), QuantScheme(weight_bits=8, activation_bits=8))
         man = quantization_manifest(model)
         assert man["count"] == 2 and man["converted"] is False
-        assert all(layer["kind"] == "FakeQuantLinear" and layer["weight_bits"] == 8
-                   for layer in man["quantized_layers"])
+        assert all(
+            layer["kind"] == "FakeQuantLinear" and layer["weight_bits"] == 8 for layer in man["quantized_layers"]
+        )
 
     def test_manifest_describes_converted_model(self):
         model = convert_qat(prepare_qat(MLP(), QuantScheme.int4_weight_only()))
@@ -200,7 +201,7 @@ class TestQDQExport:
         path = export_quantized_onnx(model, tmp_path / "qdq.onnx", static_shape=(1, 16), input_names=("input",))
         sess = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
         iname = sess.get_inputs()[0].name
-        onnx_out = np.concatenate([sess.run(None, {iname: x[i:i + 1].numpy()})[0] for i in range(4)])
+        onnx_out = np.concatenate([sess.run(None, {iname: x[i : i + 1].numpy()})[0] for i in range(4)])
 
         # The QDQ graph carries the same scales, so it reproduces the torch QAT numerics.
         assert np.allclose(torch_out, onnx_out, atol=1e-4)

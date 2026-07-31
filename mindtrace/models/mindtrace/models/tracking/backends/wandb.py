@@ -182,9 +182,7 @@ class WandBTracker(Tracker):
 
         tmp_path: str | None = None
         try:
-            with tempfile.NamedTemporaryFile(
-                suffix=".pt", delete=False, prefix=f"{name}_", dir=temp_base
-            ) as tmp:
+            with tempfile.NamedTemporaryFile(suffix=".pt", delete=False, prefix=f"{name}_", dir=temp_base) as tmp:
                 tmp_path = tmp.name
 
             torch.save(model.state_dict(), tmp_path)

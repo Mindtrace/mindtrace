@@ -52,7 +52,6 @@ from mindtrace.models.optimization.quantize.ptq import (  # noqa: E402
     preprocess_for_quantization,
 )
 
-
 # ===========================================================================
 # benchmark.py module-level helpers
 # ===========================================================================
@@ -134,8 +133,7 @@ class TestBenchmarkValidation:
     def test_onnxruntime_missing_dependency_raises(self, monkeypatch) -> None:
         # Line 419: guard fires when ORT is flagged unavailable.
         monkeypatch.setattr(bench, "_ORT_AVAILABLE", False)
-        b = Benchmark(runtime="onnxruntime", artifact="whatever.onnx", input_shape=(1, 3, 4, 4),
-                      warmup=0, iterations=1)
+        b = Benchmark(runtime="onnxruntime", artifact="whatever.onnx", input_shape=(1, 3, 4, 4), warmup=0, iterations=1)
         with pytest.raises(ImportError, match="onnxruntime"):
             b.run()
 
@@ -221,8 +219,7 @@ class TestOpenVinoRunner:
         monkeypatch.setattr(bench, "_OV_AVAILABLE", False)
         artifact = tmp_path / "model.onnx"
         artifact.write_bytes(b"0" * 16)
-        b = Benchmark(runtime="openvino", artifact=str(artifact), input_shape=(1, 3, 4, 4),
-                      warmup=0, iterations=1)
+        b = Benchmark(runtime="openvino", artifact=str(artifact), input_shape=(1, 3, 4, 4), warmup=0, iterations=1)
         with pytest.raises(ImportError, match="openvino"):
             b.run()
 
