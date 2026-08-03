@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from mindtrace.core import TaskSchema, utcnow_iso
 from mindtrace.jobs.core.orchestrator import Orchestrator
 from mindtrace.jobs.local.client import LocalClient
+from mindtrace.jobs.types.batch import BatchPublishResult
 from mindtrace.jobs.types.job_specs import ExecutionStatus, Job, JobSchema
 
 
@@ -45,6 +46,7 @@ def mock_backend():
     """Provide a mock backend for testing."""
     backend = MagicMock()
     backend.publish.return_value = "test-job-id"
+    backend.publish_batch.return_value = BatchPublishResult(job_ids=["batch-job-id"])
     backend.clean_queue.return_value = {"status": "success"}
     backend.delete_queue.return_value = {"status": "success"}
     backend.count_queue_messages.return_value = 5
@@ -150,7 +152,7 @@ class TestOrchestratorPublish:
         """Test publishing an invalid job type."""
         invalid_job = {"invalid": "job"}
 
-        with pytest.raises(ValueError, match="Invalid job type: <class 'dict'>, expected Job or TaskSchema."):
+        with pytest.raises(ValueError, match="Invalid job type: <class 'dict'>, expected Job or BaseModel."):
             orchestrator.publish("test-queue", invalid_job)
 
     def test_publish_backend_error(self, orchestrator, sample_job, mock_backend):
@@ -159,6 +161,56 @@ class TestOrchestratorPublish:
 
         with pytest.raises(Exception, match="Backend error"):
             orchestrator.publish("test-queue", sample_job)
+
+    def test_publish_batch_jobs_delegates_once(self, orchestrator, sample_job, mock_backend):
+        jobs = [sample_job, sample_job.model_copy(update={"id": str(uuid4())})]
+        expected = BatchPublishResult(job_ids=["job-1", "job-2"])
+        mock_backend.publish_batch.return_value = expected
+
+        result = orchestrator.publish_batch("test-queue", jobs, priority=10)
+
+        assert result is expected
+        mock_backend.publish_batch.assert_called_once_with("test-queue", jobs, priority=10)
+
+    def test_publish_batch_propagates_backend_setup_error(self, orchestrator, sample_job, mock_backend):
+        mock_backend.publish_batch.side_effect = ConnectionError("broker unavailable")
+
+        with pytest.raises(ConnectionError, match="broker unavailable"):
+            orchestrator.publish_batch("test-queue", [sample_job])
+
+    def test_publish_batch_converts_registered_task_models(self, orchestrator, sample_task_schema, mock_backend):
+        schema = MockJobSchema()
+        orchestrator.register(schema)
+        converted_jobs = [MagicMock(), MagicMock()]
+        mock_backend.publish_batch.return_value = BatchPublishResult(job_ids=["job-1", "job-2"])
+
+        with patch("mindtrace.jobs.core.orchestrator.job_from_schema", side_effect=converted_jobs) as convert:
+            result = orchestrator.publish_batch("test-schema", [sample_task_schema, sample_task_schema])
+
+        assert result.job_ids == ["job-1", "job-2"]
+        assert convert.call_count == 2
+        mock_backend.publish_batch.assert_called_once_with("test-schema", converted_jobs)
+
+    def test_publish_batch_validates_every_job_before_backend_call(self, orchestrator, sample_job, mock_backend):
+        with pytest.raises(ValueError, match="Invalid job at index 1"):
+            orchestrator.publish_batch("test-queue", [sample_job, {"invalid": "job"}])
+
+        mock_backend.publish_batch.assert_not_called()
+
+    def test_publish_batch_missing_schema_publishes_nothing(self, orchestrator, sample_task_schema, mock_backend):
+        with pytest.raises(ValueError, match="Invalid job at index 0: Schema 'test-schema' not found"):
+            orchestrator.publish_batch("test-schema", [sample_task_schema])
+
+        mock_backend.publish_batch.assert_not_called()
+
+    def test_publish_batch_empty_delegates_empty_batch(self, orchestrator, mock_backend):
+        expected = BatchPublishResult.for_batch_size(0)
+        mock_backend.publish_batch.return_value = expected
+
+        result = orchestrator.publish_batch("test-queue", [])
+
+        assert result is expected
+        mock_backend.publish_batch.assert_called_once_with("test-queue", [])
 
 
 class TestOrchestratorQueueManagement:
