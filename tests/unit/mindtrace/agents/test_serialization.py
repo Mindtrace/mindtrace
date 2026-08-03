@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import threading
 from datetime import datetime, timezone
 
 from mindtrace.agents._serialization import stringify_tool_result
@@ -69,7 +70,8 @@ class TestStringifyToolResult:
         result = stringify_tool_result(ScanVolume(scan_count=5, latest_scan_ts=ts))
         decoded = json.loads(result)
         assert decoded["scan_count"] == 5
-        assert decoded["latest_scan_ts"] == str(ts)
+        # ISO 8601 ("...T03:19:42+00:00"), not str(datetime)'s space separator
+        assert decoded["latest_scan_ts"] == ts.isoformat()
 
     def test_pydantic_model_result_is_json_encoded(self):
         from pydantic import BaseModel
@@ -80,3 +82,44 @@ class TestStringifyToolResult:
 
         result = stringify_tool_result(ScanVolume(scan_count=5, has_scans=True))
         assert json.loads(result) == {"scan_count": 5, "has_scans": True}
+
+    def test_datetime_uses_iso_format(self):
+        ts = datetime(2026, 7, 22, 3, 19, 42, tzinfo=timezone.utc)
+        assert json.loads(stringify_tool_result({"ts": ts})) == {"ts": "2026-07-22T03:19:42+00:00"}
+
+
+class TestStringifyToolResultNeverRaises:
+    """Callers run this inside the ``try`` that turns tool exceptions into
+    ``"Error: ..."`` content, so a serialization failure would be reported to
+    the model as a *tool* failure — for a tool call that actually succeeded.
+    Every value must degrade to ``str()`` instead of raising."""
+
+    def test_circular_reference_falls_back_to_str(self):
+        value: dict = {}
+        value["self"] = value  # json.dumps raises ValueError, not TypeError
+        assert stringify_tool_result(value) == str(value)
+
+    def test_dataclass_with_non_copyable_field_falls_back_to_str(self):
+        # dataclasses.asdict() deepcopies field values; a lock can't be pickled
+        @dataclasses.dataclass
+        class Handle:
+            name: str
+            lock: object
+
+        value = Handle(name="scanner-1", lock=threading.Lock())
+        assert stringify_tool_result(value) == str(value)
+
+    def test_non_callable_model_dump_attribute_falls_back_to_str(self):
+        class NotAModel:
+            model_dump = "not callable"
+
+        value = NotAModel()
+        assert stringify_tool_result(value) == str(value)
+
+    def test_raising_model_dump_falls_back_to_str(self):
+        class Exploding:
+            def model_dump(self, **kwargs):
+                raise RuntimeError("boom")
+
+        value = Exploding()
+        assert stringify_tool_result(value) == str(value)

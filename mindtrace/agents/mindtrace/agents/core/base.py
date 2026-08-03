@@ -332,7 +332,9 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
                     content = f"Error: {exc}"
 
                 yield ToolResultEvent(
-                    tool_call_id=tool_call.tool_call_id, content=content, tool_name=tool_call.tool_name,
+                    tool_call_id=tool_call.tool_call_id,
+                    content=content,
+                    tool_call_name=tool_call.tool_name,
                 )
                 messages.append(
                     ModelMessage(
