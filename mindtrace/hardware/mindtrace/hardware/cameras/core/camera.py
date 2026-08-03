@@ -164,7 +164,8 @@ class Camera(Mindtrace):
 
         Args:
             **settings: Supported keys include exposure, gain, roi=(x, y, w, h), trigger_mode, pixel_format,
-                white_balance, image_enhancement.
+                white_balance, image_enhancement, gamma_enable, black_level, color_transformation,
+                light_source_preset, balance_ratios, contrast, sharpness, saturation.
 
         Raises:
             CameraConfigurationError: If a provided value is invalid for the backend.

@@ -912,6 +912,47 @@ class CameraManagerService(Service):
             except Exception:
                 inter_packet_delay = None
 
+            # Color-correction settings (backend/model-dependent)
+            try:
+                gamma_enable = await camera_proxy.get_gamma_enable()
+            except Exception:
+                gamma_enable = None
+
+            try:
+                black_level = await camera_proxy.get_black_level()
+            except Exception:
+                black_level = None
+
+            try:
+                color_transformation = await camera_proxy.get_color_transformation()
+            except Exception:
+                color_transformation = None
+
+            try:
+                light_source_preset = await camera_proxy.get_light_source_preset()
+            except Exception:
+                light_source_preset = None
+
+            try:
+                balance_ratios = await camera_proxy.get_balance_ratios()
+            except Exception:
+                balance_ratios = None
+
+            try:
+                contrast = await camera_proxy.get_contrast()
+            except Exception:
+                contrast = None
+
+            try:
+                sharpness = await camera_proxy.get_sharpness()
+            except Exception:
+                sharpness = None
+
+            try:
+                saturation = await camera_proxy.get_saturation()
+            except Exception:
+                saturation = None
+
             config = CameraConfiguration(
                 exposure_time=exposure_time,
                 gain=gain,
@@ -924,6 +965,14 @@ class CameraManagerService(Service):
                 bandwidth_limit=bandwidth_limit,
                 packet_size=packet_size,
                 inter_packet_delay=inter_packet_delay,
+                gamma_enable=gamma_enable,
+                black_level=black_level,
+                color_transformation=color_transformation,
+                light_source_preset=light_source_preset,
+                balance_ratios=balance_ratios,
+                contrast=contrast,
+                sharpness=sharpness,
+                saturation=saturation,
             )
 
             return CameraConfigurationResponse(

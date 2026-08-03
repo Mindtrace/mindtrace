@@ -16,6 +16,7 @@ from mindtrace.hardware.core.exceptions import (
     CameraConnectionError,
     CameraInitializationError,
     CameraNotFoundError,
+    HardwareOperationError,
     SDKNotAvailableError,
 )
 
@@ -55,6 +56,37 @@ class MockGxFeature:
         pass
 
 
+class MockGxEnumFeature(MockGxFeature):
+    """gxipy enum feature whose get() returns a (value, description) tuple."""
+
+    DESCRIPTIONS = {
+        0: "OFF",
+        1: "CUSTOM",
+        2: "DAYLIGHT_6500K",
+        3: "DAYLIGHT_5000K",
+        4: "COOL_WHITE_FLUORESCENCE",
+        5: "INCA",
+    }
+
+    def get(self):
+        return self._value, self.DESCRIPTIONS.get(self._value, "OFF")
+
+
+class MockGxBalanceRatioFeature(MockGxFeature):
+    """gxipy balance ratio with per-channel storage driven by the selector."""
+
+    def __init__(self, selector: MockGxFeature):
+        super().__init__(1.0, 0.0, 10.0)
+        self._selector = selector
+        self._values = {0: 1.0, 1: 1.0, 2: 1.0}
+
+    def get(self):
+        return self._values[self._selector._value]
+
+    def set(self, value):
+        self._values[self._selector._value] = value
+
+
 class MockDataStream:
     """Mock gxipy data stream."""
 
@@ -82,6 +114,18 @@ class MockDahengDevice:
         self.AcquisitionMode = MockGxFeature(0)
         self.PixelFormat = MockGxFeature("BGR8")
         self.BalanceWhiteAuto = MockGxFeature(0)
+        self.GammaEnable = MockGxFeature(False)
+        self.GammaMode = MockGxFeature(1)
+        self.ColorTransformationEnable = MockGxFeature(False)
+        self.LightSourcePreset = MockGxEnumFeature(0)
+        self.BalanceRatioSelector = MockGxFeature(0)
+        self.BalanceRatio = MockGxBalanceRatioFeature(self.BalanceRatioSelector)
+        self.BlackLevel = MockGxFeature(4.0, 0.0, 255.0)
+        self.ContrastParam = MockGxFeature(0, -50, 100)
+        self.Sharpness = MockGxFeature(0.0, 0.0, 3.0)
+        self.SharpnessMode = MockGxFeature(0)
+        self.Saturation = MockGxFeature(64, 0, 128)
+        self.SaturationMode = MockGxFeature(0)
         self.OffsetX = MockGxFeature(0, 0, width)
         self.OffsetY = MockGxFeature(0, 0, height)
         self.Width = MockGxFeature(width, 1, width)
@@ -459,6 +503,133 @@ class TestDahengConfiguration:
         """Test setting negative capture timeout."""
         with pytest.raises(ValueError):
             await initialized_daheng.set_capture_timeout(-1)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Color Correction Tests
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestDahengColorCorrection:
+    """Test DahengCameraBackend color-correction controls."""
+
+    @pytest.mark.asyncio
+    async def test_gamma_enable_set_and_get(self, initialized_daheng):
+        """Test enabling gamma selects the sRGB curve and round-trips."""
+        await initialized_daheng.set_gamma_enable(True)
+        assert initialized_daheng.camera.GammaEnable._value is True
+        assert initialized_daheng.camera.GammaMode._value == 0
+        assert await initialized_daheng.get_gamma_enable() is True
+
+        await initialized_daheng.set_gamma_enable(False)
+        assert await initialized_daheng.get_gamma_enable() is False
+
+    @pytest.mark.asyncio
+    async def test_black_level_set_and_get(self, initialized_daheng):
+        """Test black level control."""
+        await initialized_daheng.set_black_level(8.0)
+        assert await initialized_daheng.get_black_level() == 8.0
+
+    @pytest.mark.asyncio
+    async def test_contrast_set_and_get(self, initialized_daheng):
+        """Test contrast control."""
+        await initialized_daheng.set_contrast(25)
+        assert await initialized_daheng.get_contrast() == 25
+
+    @pytest.mark.asyncio
+    async def test_sharpness_enables_mode_and_sets_value(self, initialized_daheng):
+        """Test sharpness control turns sharpness mode on."""
+        await initialized_daheng.set_sharpness(2.5)
+        assert initialized_daheng.camera.SharpnessMode._value == 1
+        assert await initialized_daheng.get_sharpness() == 2.5
+
+    @pytest.mark.asyncio
+    async def test_saturation_set_and_get(self, initialized_daheng):
+        """Test saturation control turns saturation mode on."""
+        await initialized_daheng.set_saturation(100)
+        assert initialized_daheng.camera.SaturationMode._value == 1
+        assert await initialized_daheng.get_saturation() == 100
+
+    @pytest.mark.asyncio
+    async def test_setter_raises_when_feature_not_implemented(self, initialized_daheng):
+        """Test setters raise HardwareOperationError when the camera lacks the node."""
+        initialized_daheng.camera.GammaEnable._implemented = False
+        with pytest.raises(HardwareOperationError, match="not supported"):
+            await initialized_daheng.set_gamma_enable(True)
+
+    @pytest.mark.asyncio
+    async def test_getter_returns_none_when_feature_not_implemented(self, initialized_daheng):
+        """Test getters return None (not a fabricated default) when unsupported."""
+        initialized_daheng.camera.GammaEnable._implemented = False
+        assert await initialized_daheng.get_gamma_enable() is None
+        initialized_daheng.camera.BalanceRatio._implemented = False
+        assert await initialized_daheng.get_balance_ratios() is None
+
+    @pytest.mark.asyncio
+    async def test_invalid_light_source_preset_raises(self, initialized_daheng):
+        """Test unknown presets raise instead of silently mapping to OFF."""
+        with pytest.raises(CameraConfigurationError, match="Invalid light source preset"):
+            await initialized_daheng.set_light_source_preset("DAYLIGHT_650K")
+
+    @pytest.mark.asyncio
+    async def test_light_source_preset_round_trip(self, initialized_daheng):
+        """Test preset set/get round-trips through the enum feature."""
+        await initialized_daheng.set_light_source_preset("DAYLIGHT_5000K")
+        assert await initialized_daheng.get_light_source_preset() == "DAYLIGHT_5000K"
+
+    @pytest.mark.asyncio
+    async def test_balance_ratios_unsupported_raises(self, initialized_daheng):
+        """Test balance ratio setter raises when the camera lacks the nodes."""
+        initialized_daheng.camera.BalanceRatioSelector._implemented = False
+        with pytest.raises(HardwareOperationError, match="not supported"):
+            await initialized_daheng.set_balance_ratios(red=1.2)
+
+    @pytest.mark.asyncio
+    async def test_color_defaults_can_be_disabled(self, mock_gxipy):
+        """Test color_defaults=False leaves camera color state untouched on connect."""
+        from mindtrace.hardware.cameras.backends.daheng.daheng_camera_backend import DahengCameraBackend
+
+        camera = DahengCameraBackend("DH000001", color_defaults=False)
+        await camera.initialize()
+        try:
+            assert camera.camera.GammaEnable._value is False  # factory state preserved
+            assert camera.camera.BlackLevel._value == 4.0
+        finally:
+            await camera.close()
+
+    @pytest.mark.asyncio
+    async def test_config_export_import_round_trips_color_settings(self, initialized_daheng, tmp_path):
+        """Test the new color keys survive an export/import cycle."""
+        await initialized_daheng.set_gamma_enable(True)
+        await initialized_daheng.set_black_level(6.0)
+        await initialized_daheng.set_balance_ratios(red=1.2, green=1.0, blue=1.4)
+        await initialized_daheng.set_light_source_preset("DAYLIGHT_5000K")
+
+        config_path = str(tmp_path / "cam.json")
+        await initialized_daheng.export_config(config_path)
+
+        # Perturb, then restore from the exported file.
+        await initialized_daheng.set_black_level(0.0)
+        await initialized_daheng.set_gamma_enable(False)
+        await initialized_daheng.import_config(config_path)
+
+        assert await initialized_daheng.get_gamma_enable() is True
+        assert await initialized_daheng.get_black_level() == 6.0
+        assert await initialized_daheng.get_balance_ratios() == {"red": 1.2, "green": 1.0, "blue": 1.4}
+        assert await initialized_daheng.get_light_source_preset() == "DAYLIGHT_5000K"
+
+    @pytest.mark.asyncio
+    async def test_color_method_requires_initialization(self, daheng_camera):
+        """Test color methods raise when the camera is not initialized."""
+        with pytest.raises(CameraConnectionError):
+            await daheng_camera.set_gamma_enable(True)
+
+    @pytest.mark.asyncio
+    async def test_configure_camera_applies_color_defaults(self, initialized_daheng):
+        """Test connect applies sRGB gamma and zero black level defaults."""
+        assert initialized_daheng.camera.GammaEnable._value is True
+        assert initialized_daheng.camera.GammaMode._value == 0
+        assert initialized_daheng.camera.BlackLevel._value == 0.0
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

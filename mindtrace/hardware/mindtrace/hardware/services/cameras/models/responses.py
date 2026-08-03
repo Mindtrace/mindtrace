@@ -140,6 +140,14 @@ class CameraConfiguration(BaseModel):
     packet_size: Optional[int] = None
     inter_packet_delay: Optional[float] = None
     optical_power: Optional[float] = None
+    gamma_enable: Optional[bool] = None
+    black_level: Optional[float] = None
+    color_transformation: Optional[bool] = None
+    light_source_preset: Optional[str] = None
+    balance_ratios: Optional[Dict[str, float]] = None
+    contrast: Optional[float] = None
+    sharpness: Optional[float] = None
+    saturation: Optional[float] = None
 
 
 # Liquid Lens
