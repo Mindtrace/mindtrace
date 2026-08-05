@@ -38,7 +38,7 @@ jobs:
 
       - name: Build documentation
         run: |
-          python -m mkdocs build --clean --site-dir site
+          uv run python -m mkdocs build --clean --site-dir site
 
       - name: Set up Node
         uses: actions/setup-node@v4
