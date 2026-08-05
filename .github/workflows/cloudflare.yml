@@ -38,12 +38,12 @@ jobs:
 
       - name: Build documentation
         run: |
-          mkdocs build --clean --site-dir site
+          python -m mkdocs build --clean --site-dir site
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Install Wrangler
         run: npm install -g wrangler
