@@ -545,6 +545,7 @@ class TestCameraManagerServiceBusinessLogic:
         mock_camera.get_exposure_range.return_value = [100.0, 5000.0]
         mock_camera.is_exposure_control_supported.return_value = False
         mock_camera.get_gain_range.side_effect = RuntimeError("no gain")
+        mock_camera.get_gamma_range.side_effect = RuntimeError("no gamma")
         mock_camera.get_available_pixel_formats.return_value = ["Mono8", "BGR8"]
         mock_camera.get_available_white_balance_modes.side_effect = RuntimeError("no wb")
         mock_camera.get_trigger_modes.return_value = ["continuous", "trigger"]
@@ -562,6 +563,7 @@ class TestCameraManagerServiceBusinessLogic:
         assert response.success is True
         assert response.data.exposure_range is None
         assert response.data.gain_range is None
+        assert response.data.gamma_range is None
         assert response.data.pixel_formats == ["Mono8", "BGR8"]
         assert response.data.white_balance_modes is None
         assert response.data.trigger_modes == ["continuous", "trigger"]
@@ -581,6 +583,7 @@ class TestCameraManagerServiceBusinessLogic:
         mock_camera.get_roi.return_value = {"x": 1, "y": 2, "width": 640, "height": 480}
         mock_camera.get_exposure.return_value = 1500
         mock_camera.get_gain.side_effect = RuntimeError("no gain")
+        mock_camera.get_gamma.return_value = 0.8
         mock_camera.get_trigger_mode.return_value = "continuous"
         mock_camera.get_pixel_format.side_effect = RuntimeError("no pixel format")
         mock_camera.get_white_balance.return_value = "auto"
@@ -596,6 +599,7 @@ class TestCameraManagerServiceBusinessLogic:
         assert response.data.roi == (1, 2, 640, 480)
         assert response.data.exposure_time == 1500
         assert response.data.gain is None
+        assert response.data.gamma == 0.8
         assert response.data.trigger_mode == "continuous"
         assert response.data.pixel_format is None
         assert response.data.white_balance == "auto"

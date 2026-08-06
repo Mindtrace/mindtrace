@@ -110,6 +110,7 @@ class CameraCapabilities(BaseModel):
 
     exposure_range: Optional[Tuple[float, float]] = None
     gain_range: Optional[Tuple[float, float]] = None
+    gamma_range: Optional[Tuple[float, float]] = None
     pixel_formats: Optional[List[str]] = None
     white_balance_modes: Optional[List[str]] = None
     trigger_modes: Optional[List[str]] = None
@@ -131,6 +132,7 @@ class CameraConfiguration(BaseModel):
 
     exposure_time: Optional[float] = None
     gain: Optional[float] = None
+    gamma: Optional[float] = None
     roi: Optional[Tuple[int, int, int, int]] = None
     trigger_mode: Optional[str] = None
     pixel_format: Optional[str] = None

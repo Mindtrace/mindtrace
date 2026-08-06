@@ -163,7 +163,7 @@ class Camera(Mindtrace):
         """Configure multiple camera settings atomically.
 
         Args:
-            **settings: Supported keys include exposure, gain, roi=(x, y, w, h), trigger_mode, pixel_format,
+            **settings: Supported keys include exposure, gain, gamma, roi=(x, y, w, h), trigger_mode, pixel_format,
                 white_balance, image_enhancement.
 
         Raises:
@@ -226,6 +226,33 @@ class Camera(Mindtrace):
             A tuple of (min_gain, max_gain).
         """
         return self._submit(self._backend.get_gain_range())
+
+    def set_gamma(self, gamma: Union[int, float]):
+        """Set the camera gamma correction value.
+
+        Args:
+            gamma: Gamma value to apply (1.0 is a linear response).
+
+        Raises:
+            CameraConfigurationError: If gamma setting fails.
+        """
+        self._submit(self._backend.set_gamma(gamma))
+
+    def get_gamma(self) -> float:
+        """Get the current camera gamma.
+
+        Returns:
+            The current gamma as a float.
+        """
+        return self._submit(self._backend.get_gamma())
+
+    def get_gamma_range(self) -> Tuple[float, float]:
+        """Get the valid gamma range.
+
+        Returns:
+            A tuple of (min_gamma, max_gamma).
+        """
+        return self._submit(self._backend.get_gamma_range())
 
     def set_roi(self, x: int, y: int, width: int, height: int):
         """Set the Region of Interest (ROI).

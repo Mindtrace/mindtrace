@@ -302,7 +302,7 @@ class AsyncCamera(Mindtrace):
         """Configure multiple camera settings atomically.
 
         Args:
-            **settings: Supported keys include exposure, gain, roi=(x, y, w, h), trigger_mode,
+            **settings: Supported keys include exposure, gain, gamma, roi=(x, y, w, h), trigger_mode,
                 pixel_format, white_balance, image_enhancement, capture_timeout, optical_power.
 
         Raises:
@@ -318,6 +318,8 @@ class AsyncCamera(Mindtrace):
                 await self._backend.set_exposure(settings["exposure"])
             if "gain" in settings:
                 await self._backend.set_gain(settings["gain"])
+            if "gamma" in settings:
+                await self._backend.set_gamma(settings["gamma"])
             if "roi" in settings:
                 x, y, w, h = settings["roi"]
                 await self._backend.set_ROI(x, y, w, h)
@@ -390,6 +392,32 @@ class AsyncCamera(Mindtrace):
             A tuple of (min_gain, max_gain).
         """
         range_list = await self._backend.get_gain_range()
+        return range_list[0], range_list[1]
+
+    async def set_gamma(self, gamma: Union[int, float]):
+        """Set the camera gamma correction value.
+
+        Args:
+            gamma: Gamma value to apply (1.0 is a linear response).
+        """
+        await self._backend.set_gamma(gamma)
+        return True
+
+    async def get_gamma(self) -> float:
+        """Get the current camera gamma.
+
+        Returns:
+            The current gamma as a float.
+        """
+        return await self._backend.get_gamma()
+
+    async def get_gamma_range(self) -> Tuple[float, float]:
+        """Get the valid gamma range.
+
+        Returns:
+            A tuple of (min_gamma, max_gamma).
+        """
+        range_list = await self._backend.get_gamma_range()
         return range_list[0], range_list[1]
 
     async def set_capture_timeout(self, timeout_ms: int):
@@ -779,6 +807,7 @@ class AsyncCamera(Mindtrace):
                 - 'height_range': Height range query
                 - 'liquid_lens': Liquid lens presence
                 - 'optical_power': Optical power control
+                - 'gamma': Gamma correction control
 
         Returns:
             True if feature is supported and functional, False otherwise.
@@ -793,6 +822,7 @@ class AsyncCamera(Mindtrace):
             "trigger_modes": self.get_trigger_modes,
             "liquid_lens": self.get_lens_status,
             "optical_power": self.get_optical_power_range,
+            "gamma": self.get_gamma_range,
         }
 
         check_method = feature_checks.get(feature)

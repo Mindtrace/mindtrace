@@ -711,6 +711,7 @@ class CameraManagerService(Service):
             (
                 exposure_range,
                 gain_range,
+                gamma_range,
                 pixel_formats,
                 white_balance_modes,
                 trigger_modes,
@@ -724,6 +725,7 @@ class CameraManagerService(Service):
             ) = await asyncio.gather(
                 _exposure_range_with_support_check(),
                 _safe(camera_proxy.get_gain_range()),
+                _safe(camera_proxy.get_gamma_range()),
                 _safe(camera_proxy.get_available_pixel_formats()),
                 _safe(camera_proxy.get_available_white_balance_modes()),
                 _safe(camera_proxy.get_trigger_modes()),
@@ -739,6 +741,7 @@ class CameraManagerService(Service):
             capabilities = CameraCapabilities(
                 exposure_range=exposure_range,
                 gain_range=gain_range,
+                gamma_range=gamma_range,
                 pixel_formats=pixel_formats,
                 white_balance_modes=white_balance_modes,
                 trigger_modes=trigger_modes,
@@ -873,6 +876,11 @@ class CameraManagerService(Service):
                 gain = None
 
             try:
+                gamma = await camera_proxy.get_gamma()
+            except Exception:
+                gamma = None
+
+            try:
                 trigger_mode = await camera_proxy.get_trigger_mode()
             except Exception:
                 trigger_mode = None
@@ -915,6 +923,7 @@ class CameraManagerService(Service):
             config = CameraConfiguration(
                 exposure_time=exposure_time,
                 gain=gain,
+                gamma=gamma,
                 roi=roi_tuple,
                 trigger_mode=trigger_mode,
                 pixel_format=pixel_format,
