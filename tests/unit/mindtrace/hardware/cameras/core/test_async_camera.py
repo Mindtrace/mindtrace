@@ -693,6 +693,32 @@ async def test_async_camera_get_gain_range():
 
 
 @pytest.mark.asyncio
+async def test_async_camera_gamma_round_trip():
+    """Test AsyncCamera gamma proxies and the configure() gamma key."""
+    manager = AsyncCameraManager(include_mocks=True)
+
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name)
+
+        gamma_range = await cam.get_gamma_range()
+        assert isinstance(gamma_range, tuple)
+        assert len(gamma_range) == 2
+        assert gamma_range == (0.25, 2.0)
+
+        assert await cam.set_gamma(1.5) is True
+        assert await cam.get_gamma() == 1.5
+
+        # configure() must route the key to the backend rather than dropping it
+        await cam.configure(gamma=0.75)
+        assert await cam.get_gamma() == 0.75
+
+        assert await cam.supports_feature("gamma") is True
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_async_camera_capture_with_save_path():
     """Test AsyncCamera capture with save_path functionality."""
     manager = AsyncCameraManager(include_mocks=True)

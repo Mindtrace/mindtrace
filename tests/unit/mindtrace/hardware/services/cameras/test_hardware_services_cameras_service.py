@@ -609,6 +609,48 @@ class TestCameraManagerServiceBusinessLogic:
         assert response.data.inter_packet_delay == 100
 
     @pytest.mark.asyncio
+    async def test_get_camera_capabilities_reports_gamma_range(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+        mock_manager.active_cameras = ["MockBasler:Camera1"]
+        mock_camera = AsyncMock()
+        mock_camera.get_exposure_range.return_value = [100.0, 5000.0]
+        mock_camera.is_exposure_control_supported.return_value = True
+        mock_camera.get_gain_range.return_value = [1.0, 16.0]
+        mock_camera.get_gamma_range.return_value = [0.25, 2.0]
+        mock_camera.get_available_pixel_formats.return_value = ["Mono8", "BGR8"]
+        mock_camera.get_available_white_balance_modes.return_value = ["off", "auto"]
+        mock_camera.get_trigger_modes.return_value = ["continuous", "trigger"]
+        mock_camera.get_width_range.return_value = [320, 1920]
+        mock_camera.get_height_range.return_value = [240, 1080]
+        mock_camera.get_bandwidth_limit_range.return_value = [1.0, 1000.0]
+        mock_camera.get_packet_size_range.return_value = [576, 9000]
+        mock_camera.get_inter_packet_delay_range.return_value = [0, 65535]
+        mock_camera.get_optical_power_range.return_value = [-1.0, 10.0]
+        mock_camera.get_lens_status.return_value = {"connected": True}
+        mock_manager.open = AsyncMock(return_value=mock_camera)
+
+        response = await service.get_camera_capabilities(CameraQueryRequest(camera="MockBasler:Camera1"))
+
+        assert response.success is True
+        assert response.data.gain_range == (1.0, 16.0)
+        assert response.data.gamma_range == (0.25, 2.0)
+
+    @pytest.mark.asyncio
+    async def test_configure_camera_forwards_gamma(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+        mock_manager.active_cameras = ["MockBasler:Camera1"]
+        mock_camera = AsyncMock()
+        mock_camera.configure.return_value = True
+        mock_manager.open = AsyncMock(return_value=mock_camera)
+
+        response = await service.configure_camera(
+            CameraConfigureRequest(camera="MockBasler:Camera1", properties={"gamma": 0.6})
+        )
+
+        assert response.success is True
+        mock_camera.configure.assert_awaited_once_with(gamma=0.6)
+
+    @pytest.mark.asyncio
     async def test_import_and_export_camera_config_delegate_to_proxy(self, service_with_mock_manager):
         service, mock_manager = service_with_mock_manager
         mock_manager.active_cameras = ["MockBasler:Camera1"]

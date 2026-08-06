@@ -71,6 +71,7 @@ async def temp_config_file():
             "timestamp": 1234567890.123,
             "exposure_time": 15000.0,
             "gain": 2.5,
+            "gamma": 0.75,
             "trigger_mode": "continuous",
             "white_balance": "auto",
             "width": 1920,
@@ -123,12 +124,38 @@ async def test_basler_specific_features(mock_basler_camera):
 
 
 @pytest.mark.asyncio
+async def test_gamma_defaults_and_round_trip(mock_basler_camera):
+    camera = mock_basler_camera
+    await camera.initialize()
+
+    assert await camera.get_gamma() == 1.0
+    gamma_range = await camera.get_gamma_range()
+    assert isinstance(gamma_range, list) and gamma_range == [0.25, 2.0]
+
+    await camera.set_gamma(1.6)
+    assert await camera.get_gamma() == 1.6
+
+
+@pytest.mark.asyncio
+async def test_set_gamma_out_of_range(mock_basler_camera):
+    camera = mock_basler_camera
+    await camera.initialize()
+
+    with pytest.raises(CameraConfigurationError, match="Gamma .* out of range"):
+        await camera.set_gamma(5.0)
+
+    with pytest.raises(CameraConfigurationError, match="Gamma .* out of range"):
+        await camera.set_gamma(0.1)
+
+
+@pytest.mark.asyncio
 async def test_configuration_compatibility(mock_basler_camera, temp_config_file):
     camera = mock_basler_camera
     await camera.initialize()
     await camera.import_config(temp_config_file)
     assert await camera.get_exposure() == 15000.0
     assert await camera.get_gain() == 2.5
+    assert await camera.get_gamma() == 0.75
 
 
 @pytest.mark.asyncio
@@ -137,6 +164,7 @@ async def test_common_format_export(mock_basler_camera):
     await camera.initialize()
     await camera.set_exposure(30000)
     await camera.set_gain(4.0)
+    await camera.set_gamma(1.25)
     await camera.set_triggermode("trigger")
     camera.set_image_quality_enhancement(True)
 
@@ -149,6 +177,7 @@ async def test_common_format_export(mock_basler_camera):
             config = json.load(f)
         assert config["exposure_time"] == 30000
         assert config["gain"] == 4.0
+        assert config["gamma"] == 1.25
         assert config["trigger_mode"] == "trigger"
         assert config["image_enhancement"] is True
     finally:
@@ -270,6 +299,49 @@ class TestMockBaslerImageGeneration:
                 pass
 
     @pytest.mark.asyncio
+    async def test_gamma_applies_to_fixture_image(self):
+        """Gamma must be visible on the fixture path, which bypasses the synthetic generator."""
+        fixture = np.zeros((12, 10, 3), dtype=np.uint8)
+        fixture[:, :] = (10, 20, 30)  # BGR
+
+        fd, fixture_path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+
+        try:
+            from PIL import Image
+
+            # Pillow expects RGB; our fixtures are BGR to match backend output.
+            Image.fromarray(fixture[..., ::-1]).save(fixture_path)
+
+            camera = MockBaslerCameraBackend(
+                "fixture_gamma_cam",
+                mock_image_paths=[fixture_path],
+                img_quality_enhancement=False,
+                synthetic_overlay_text=False,
+                fast_mode=True,
+            )
+            await camera.initialize()
+
+            cy = camera.roi["height"] // 2
+            cx = camera.roi["width"] // 2
+
+            neutral = await camera.capture()
+            assert tuple(int(v) for v in neutral[cy, cx]) == (10, 20, 30)
+
+            await camera.set_gamma(2.0)
+            corrected = await camera.capture()
+
+            expected = np.clip(np.power(np.array([10, 20, 30]) / 255.0, 0.5) * 255.0, 0, 255).astype(np.uint8)
+            assert tuple(int(v) for v in corrected[cy, cx]) == tuple(int(v) for v in expected)
+
+            await camera.close()
+        finally:
+            try:
+                os.unlink(fixture_path)
+            except Exception:
+                pass
+
+    @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
@@ -378,6 +450,30 @@ class TestMockBaslerImageGeneration:
 
         # Check that gain affects image statistics
         assert stats3 != stats4, f"Gain should affect image: low_gain={stats3}, high_gain={stats4}"
+
+        await camera.close()
+
+    @pytest.mark.asyncio
+    async def test_gamma_effects_on_image(self):
+        """Test that gamma settings brighten the generated image."""
+        camera = MockBaslerCameraBackend(
+            "test_cam",
+            synthetic_pattern="gradient",
+            synthetic_overlay_text=False,
+            img_quality_enhancement=False,
+            fast_mode=True,
+        )
+        await camera.initialize()
+
+        await camera.set_gamma(1.0)  # Linear response
+        image1 = await camera.capture()
+
+        await camera.set_gamma(2.0)  # Brightens midtones
+        image2 = await camera.capture()
+
+        assert image2.mean() > image1.mean(), (
+            f"Gamma should brighten the image: linear={image1.mean()}, gamma_2={image2.mean()}"
+        )
 
         await camera.close()
 

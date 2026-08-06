@@ -1507,6 +1507,122 @@ class TestOpenCVCameraBackendGain:
         await cam.close()
 
 
+class TestOpenCVCameraBackendGamma:
+    """Test suite for gamma-related methods."""
+
+    @pytest.mark.asyncio
+    async def test_gamma_set_get_round_trip(self, fake_cv):
+        """Test setting and reading back gamma on a driver that honours the property."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        await cam.set_gamma(0.8)
+        assert await cam.get_gamma() == pytest.approx(0.8)
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_get_gamma_range(self, fake_cv):
+        """Test the advertised gamma range."""
+        cam = OpenCVCameraBackend("0")
+        assert await cam.get_gamma_range() == [0.25, 2.0]
+
+    @pytest.mark.asyncio
+    async def test_set_gamma_out_of_range(self, fake_cv):
+        """Test set_gamma rejects values outside the supported range."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        with pytest.raises(CameraConfigurationError, match="out of range"):
+            await cam.set_gamma(5.0)
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_set_gamma_not_connected(self, fake_cv):
+        """Test set_gamma when camera is not connected."""
+        cam = OpenCVCameraBackend("0")
+        cam.initialized = False
+
+        with pytest.raises(CameraConnectionError, match="not available for gamma setting"):
+            await cam.set_gamma(1.5)
+
+    @pytest.mark.asyncio
+    async def test_set_gamma_rejected_by_driver(self, fake_cv, monkeypatch):
+        """Test that a driver rejecting CAP_PROP_GAMMA is reported as unsupported."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        original_run_blocking = cam._run_blocking
+        import cv2
+
+        async def failing_set_run_blocking(func, *args, **kwargs):
+            if func == cam.cap.set and args and args[0] == cv2.CAP_PROP_GAMMA:
+                return False
+            return await original_run_blocking(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_run_blocking", failing_set_run_blocking, raising=False)
+
+        with pytest.raises(CameraConfigurationError, match="Gamma not supported"):
+            await cam.set_gamma(1.5)
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_set_gamma_silently_ignored_by_driver(self, fake_cv, monkeypatch):
+        """Test that a silently ignored set (readback mismatch) is reported as unsupported.
+
+        Many USB webcams accept the property write and then keep their own value.
+        """
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        original_run_blocking = cam._run_blocking
+        import cv2
+
+        async def ignoring_run_blocking(func, *args, **kwargs):
+            if func == cam.cap.get and args and args[0] == cv2.CAP_PROP_GAMMA:
+                return 1.0
+            return await original_run_blocking(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_run_blocking", ignoring_run_blocking, raising=False)
+
+        with pytest.raises(CameraConfigurationError, match="Gamma not supported"):
+            await cam.set_gamma(1.5)
+
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_get_gamma_early_return_not_initialized(self, fake_cv):
+        """Test get_gamma returns linear gamma when camera is not initialized."""
+        cam = OpenCVCameraBackend("0")
+        cam.initialized = False
+
+        assert await cam.get_gamma() == 1.0
+
+    @pytest.mark.asyncio
+    async def test_get_gamma_exception(self, fake_cv, monkeypatch):
+        """Test get_gamma exception handling."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        original_run_blocking = cam._run_blocking
+
+        async def failing_run_blocking(func, *args, **kwargs):
+            import cv2
+
+            if func == cam.cap.get and args and args[0] == cv2.CAP_PROP_GAMMA:
+                raise RuntimeError("Get failed")
+            return await original_run_blocking(func, *args, **kwargs)
+
+        monkeypatch.setattr(cam, "_run_blocking", failing_run_blocking, raising=False)
+
+        # Should return the linear default on exception
+        assert await cam.get_gamma() == 1.0
+
+        await cam.close()
+
+
 class TestOpenCVCameraBackendROI:
     """Test suite for ROI-related methods."""
 

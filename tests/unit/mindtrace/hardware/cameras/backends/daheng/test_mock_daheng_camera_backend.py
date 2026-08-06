@@ -274,6 +274,110 @@ class TestMockDahengGain:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Gamma Tests
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestMockDahengGamma:
+    """Test mock Daheng gamma control."""
+
+    @pytest.mark.asyncio
+    async def test_get_gamma(self, initialized_camera):
+        """Test getting gamma value."""
+        gamma = await initialized_camera.get_gamma()
+        assert gamma == 1.0
+
+    @pytest.mark.asyncio
+    async def test_set_gamma(self, initialized_camera):
+        """Test setting gamma value."""
+        await initialized_camera.set_gamma(1.5)
+        gamma = await initialized_camera.get_gamma()
+        assert gamma == 1.5
+
+    @pytest.mark.asyncio
+    async def test_set_gamma_out_of_range(self, initialized_camera):
+        """Test setting gamma out of range."""
+        with pytest.raises(CameraConfigurationError):
+            await initialized_camera.set_gamma(3.0)
+
+        with pytest.raises(CameraConfigurationError):
+            await initialized_camera.set_gamma(0.1)
+
+    @pytest.mark.asyncio
+    async def test_get_gamma_range(self, initialized_camera):
+        """Test getting gamma range."""
+        gamma_range = await initialized_camera.get_gamma_range()
+        assert len(gamma_range) == 2
+        assert gamma_range[0] == 0.25
+        assert gamma_range[1] == 2.0
+
+    @pytest.mark.asyncio
+    async def test_gamma_brightens_captured_image(self):
+        """Test that gamma visibly changes the captured synthetic image."""
+        camera = MockDahengCameraBackend(
+            "gamma_cam",
+            synthetic_pattern="gradient",
+            synthetic_overlay_text=False,
+            img_quality_enhancement=False,
+            fast_mode=True,
+        )
+        await camera.initialize()
+
+        try:
+            linear = await camera.capture()
+
+            await camera.set_gamma(2.0)
+            corrected = await camera.capture()
+
+            assert corrected.mean() > linear.mean()
+        finally:
+            await camera.close()
+
+    @pytest.mark.asyncio
+    async def test_gamma_applies_to_fixture_image(self):
+        """Gamma must be visible on the fixture path, which bypasses the synthetic generator."""
+        fixture = np.zeros((12, 10, 3), dtype=np.uint8)
+        fixture[:, :] = (40, 50, 60)  # BGR
+
+        fd, fixture_path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+
+        try:
+            from PIL import Image
+
+            # Pillow expects RGB; our fixtures are BGR to match backend output.
+            Image.fromarray(fixture[..., ::-1]).save(fixture_path)
+
+            camera = MockDahengCameraBackend(
+                "fixture_gamma_cam",
+                mock_image_paths=[fixture_path],
+                img_quality_enhancement=False,
+                synthetic_overlay_text=False,
+                fast_mode=True,
+            )
+            await camera.initialize()
+
+            cy = camera.roi["height"] // 2
+            cx = camera.roi["width"] // 2
+
+            neutral = await camera.capture()
+            assert tuple(int(v) for v in neutral[cy, cx]) == (40, 50, 60)
+
+            await camera.set_gamma(2.0)
+            corrected = await camera.capture()
+
+            expected = np.clip(np.power(np.array([40, 50, 60]) / 255.0, 0.5) * 255.0, 0, 255).astype(np.uint8)
+            assert tuple(int(v) for v in corrected[cy, cx]) == tuple(int(v) for v in expected)
+
+            await camera.close()
+        finally:
+            try:
+                os.unlink(fixture_path)
+            except Exception:
+                pass
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Trigger Mode Tests
 # ═══════════════════════════════════════════════════════════════════════════════
 

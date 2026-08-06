@@ -536,6 +536,37 @@ class TestCameraBackendDefaultImplementations:
 
     @pytest.mark.asyncio
     @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
+    async def test_gamma_methods_log_warnings(self, mock_get_config, caplog):
+        """Test that gamma methods log warnings and raise NotImplementedError by default."""
+        mock_config_obj = MagicMock()
+        mock_config_obj.cameras.image_quality_enhancement = True
+        mock_config_obj.cameras.retrieve_retry_count = 3
+        mock_get_config.return_value.get_config.return_value = mock_config_obj
+
+        backend = MinimalConcreteBackend()
+
+        # Temporarily lower handler levels to capture warnings
+        original_levels, original_propagate, original_logger_level = enable_log_capture(backend)
+
+        with caplog.at_level(logging.WARNING):
+            # Gamma is an optional feature - the base class signals "not supported"
+            with pytest.raises(NotImplementedError):
+                await CameraBackend.set_gamma(backend, 1.5)
+            with pytest.raises(NotImplementedError):
+                await CameraBackend.get_gamma(backend)
+            with pytest.raises(NotImplementedError):
+                await CameraBackend.get_gamma_range(backend)
+
+        # Restore original handler levels
+        restore_log_settings(backend, original_levels, original_propagate, original_logger_level)
+
+        log_messages = [record.message for record in caplog.records]
+        assert any("set_gamma not implemented" in msg for msg in log_messages)
+        assert any("get_gamma not implemented" in msg for msg in log_messages)
+        assert any("get_gamma_range not implemented" in msg for msg in log_messages)
+
+    @pytest.mark.asyncio
+    @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
     async def test_white_balance_methods_log_warnings(self, mock_get_config, caplog):
         """Test white balance methods log warnings and return expected values."""
         mock_config_obj = MagicMock()
