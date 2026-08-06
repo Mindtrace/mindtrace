@@ -1919,14 +1919,16 @@ class BaslerCameraBackend(CameraBackend):
         """Check whether the Gamma node exists and is writable.
 
         Returns:
-            True if the camera exposes a writable Gamma node.
+            True if the camera exposes a writable Gamma node. Models without the
+            node raise on attribute access rather than returning None, so any
+            failure here is treated as "not available".
         """
-        node = getattr(self.camera, "Gamma", None)
-        if node is None:
-            return False
-        if genicam is None:  # pragma: no cover - pypylon always provides genicam when present
-            return True
         try:
+            node = getattr(self.camera, "Gamma", None)
+            if node is None:
+                return False
+            if genicam is None:  # pragma: no cover - pypylon always provides genicam when present
+                return True
             return node.GetAccessMode() in [genicam.RW, genicam.WO]
         except Exception:
             return False
@@ -1939,17 +1941,14 @@ class BaslerCameraBackend(CameraBackend):
         ``User`` and gamma is enabled. Newer models expose ``Gamma`` directly, in
         which case both nodes are absent and this is a no-op.
         """
-        if hasattr(self.camera, "GammaSelector"):
+        for node_name, value in (("GammaSelector", "User"), ("GammaEnable", True)):
             try:
-                await self._run_blocking(self.camera.GammaSelector.SetValue, "User", timeout=self._op_timeout_s)
+                node = getattr(self.camera, node_name, None)
+                if node is None:
+                    continue
+                await self._run_blocking(node.SetValue, value, timeout=self._op_timeout_s)
             except Exception as e:
-                self.logger.debug(f"Could not set GammaSelector for camera '{self.camera_name}': {e}")
-
-        if hasattr(self.camera, "GammaEnable"):
-            try:
-                await self._run_blocking(self.camera.GammaEnable.SetValue, True, timeout=self._op_timeout_s)
-            except Exception as e:
-                self.logger.debug(f"Could not enable GammaEnable for camera '{self.camera_name}': {e}")
+                self.logger.debug(f"Could not set '{node_name}' for camera '{self.camera_name}': {e}")
 
     async def set_gamma(self, gamma: Union[int, float]):
         """Set the camera's gamma correction value.
