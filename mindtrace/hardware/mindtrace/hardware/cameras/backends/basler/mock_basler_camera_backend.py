@@ -58,6 +58,7 @@ class MockBaslerCameraBackend(CameraBackend):
         retrieve_retry_count: Number of capture retry attempts
         exposure_time: Current exposure time in microseconds
         gain: Current gain value
+        gamma: Current gamma correction value
         roi: Current region of interest settings
         white_balance_mode: Current white balance mode
         image_counter: Counter for generating unique images
@@ -134,6 +135,7 @@ class MockBaslerCameraBackend(CameraBackend):
         # Mock camera state
         self.exposure_time = 20000.0
         self.gain = 1.0
+        self.gamma = 1.0
         self.roi = {"x": 0, "y": 0, "width": 1920, "height": 1080}
         self.white_balance_mode = "off"
         self.triggermode = self.camera_config.cameras.trigger_mode
@@ -484,6 +486,8 @@ class MockBaslerCameraBackend(CameraBackend):
                     self.exposure_time = float(config_data["exposure_time"])
                 if "gain" in config_data:
                     self.gain = float(config_data["gain"])
+                if "gamma" in config_data:
+                    self.gamma = float(config_data["gamma"])
                 if "trigger_mode" in config_data:
                     self.triggermode = config_data["trigger_mode"]
                 if "white_balance" in config_data:
@@ -523,6 +527,7 @@ class MockBaslerCameraBackend(CameraBackend):
                 "timestamp": time.time(),
                 "exposure_time": self.exposure_time,
                 "gain": self.gain,
+                "gamma": self.gamma,
                 "trigger_mode": self.triggermode,
                 "white_balance": self.white_balance_mode,
                 "width": self.roi["width"],
@@ -643,6 +648,50 @@ class MockBaslerCameraBackend(CameraBackend):
         # Simulate async operation
         await self._sleep(0.001)
         return self.gain
+
+    async def set_gamma(self, gamma: Union[int, float]):
+        """Set camera gamma.
+
+        Args:
+            gamma: Gamma value (1.0 is a linear response)
+
+        Raises:
+            CameraConfigurationError: If gamma value is out of range
+        """
+        try:
+            # Simulate async operation
+            await self._sleep(0.001)
+
+            if gamma < 0.25 or gamma > 2.0:
+                raise CameraConfigurationError(f"Gamma {gamma} out of range [0.25, 2.0]")
+
+            self.gamma = float(gamma)
+            self.logger.debug(f"Gamma set to {gamma} for mock camera '{self.camera_name}'")
+        except CameraConfigurationError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to set gamma for mock camera '{self.camera_name}': {str(e)}")
+            raise CameraConfigurationError(f"Failed to set gamma for mock camera '{self.camera_name}': {str(e)}")
+
+    async def get_gamma_range(self) -> List[Union[int, float]]:
+        """Get the supported gamma range.
+
+        Returns:
+            List with [min_gamma, max_gamma]
+        """
+        # Simulate async operation
+        await self._sleep(0.001)
+        return [0.25, 2.0]
+
+    async def get_gamma(self) -> float:
+        """Get current camera gamma.
+
+        Returns:
+            Current gamma value
+        """
+        # Simulate async operation
+        await self._sleep(0.001)
+        return self.gamma
 
     async def get_wb(self) -> str:
         """Get current white balance mode.
@@ -873,6 +922,28 @@ class MockBaslerCameraBackend(CameraBackend):
             return cv2.resize(base, (width, height), interpolation=cv2.INTER_AREA)
         return base.copy()
 
+    def _apply_gamma(self, image: np.ndarray) -> np.ndarray:
+        """Apply the configured gamma correction to an image.
+
+        Applied to both synthetic and fixture frames so the effect is visible
+        regardless of which image source the mock camera is serving.
+
+        Args:
+            image: Input BGR uint8 image
+
+        Returns:
+            Gamma-corrected BGR uint8 image (unchanged for unity gamma)
+        """
+        if self.gamma == 1.0:
+            return image
+
+        try:
+            corrected = np.power(image.astype(np.float32) / 255.0, 1.0 / self.gamma) * 255.0
+            return np.clip(corrected, 0, 255).astype(np.uint8)
+        except Exception as e:
+            self.logger.error(f"Failed to apply gamma for mock camera '{self.camera_name}': {str(e)}")
+            return image
+
     def _generate_synthetic_image(self) -> np.ndarray:
         """Generate synthetic test image using vectorized operations for performance.
 
@@ -884,7 +955,7 @@ class MockBaslerCameraBackend(CameraBackend):
         try:
             fixture = self._get_fixture_image(width=width, height=height)
             if fixture is not None:
-                return fixture
+                return self._apply_gamma(fixture)
 
             # Use vectorized operations for much better performance
             x_coords = np.arange(width)
@@ -938,6 +1009,9 @@ class MockBaslerCameraBackend(CameraBackend):
                 noise = np.random.randint(-noise_level, noise_level + 1, image.shape, dtype=np.int16)
                 image = np.clip(image.astype(np.int16) + noise, 0, 255).astype(np.uint8)
 
+            # Apply gamma correction
+            image = self._apply_gamma(image)
+
             # Add text overlay (optional)
             if self.synthetic_overlay_text:
                 timestamp = time.strftime("%H:%M:%S")
@@ -982,8 +1056,17 @@ class MockBaslerCameraBackend(CameraBackend):
                 )
                 cv2.putText(
                     image,
-                    f"ROI: {width}x{height}",
+                    f"Gamma: {self.gamma:.2f}",
                     (50, 210),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    font_scale,
+                    (255, 255, 255),
+                    thickness,
+                )
+                cv2.putText(
+                    image,
+                    f"ROI: {width}x{height}",
+                    (50, 250),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     font_scale,
                     (255, 255, 255),

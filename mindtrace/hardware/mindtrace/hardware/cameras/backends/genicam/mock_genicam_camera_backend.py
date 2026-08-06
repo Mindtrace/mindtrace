@@ -59,6 +59,7 @@ class MockGenICamCameraBackend(CameraBackend):
         retrieve_retry_count: Number of capture retry attempts
         exposure_time: Current exposure time in microseconds
         gain: Current gain value
+        gamma: Current gamma correction value
         roi: Current region of interest settings
         vendor: Simulated camera vendor
         model: Simulated camera model
@@ -149,6 +150,7 @@ class MockGenICamCameraBackend(CameraBackend):
         # Camera state
         self.exposure_time = 50000.0  # 50ms
         self.gain = 2.0
+        self.gamma = 1.0
         self.roi = {"x": 0, "y": 0, "width": self.synthetic_width, "height": self.synthetic_height}
         self.pixel_format = "RGB8"
         self.image_counter = 0
@@ -459,6 +461,12 @@ class MockGenICamCameraBackend(CameraBackend):
                     radius = np.random.randint(20, 100)
                     cv2.circle(image, (x, y), radius, (255, 255, 255), -1)
 
+            # Apply gamma correction
+            if self.gamma != 1.0:
+                image = np.clip(np.power(image.astype(np.float32) / 255.0, 1.0 / self.gamma) * 255.0, 0, 255).astype(
+                    np.uint8
+                )
+
             # Add text overlay if enabled
             if self.synthetic_overlay_text:
                 # Add camera info text
@@ -473,6 +481,7 @@ class MockGenICamCameraBackend(CameraBackend):
                     f"Frame: {self.image_counter + 1}",
                     f"Exp: {self.exposure_time:.0f}μs",
                     f"Gain: {self.gain:.1f}",
+                    f"Gamma: {self.gamma:.2f}",
                     f"Mode: {self.triggermode}",
                 ]
 
@@ -564,6 +573,34 @@ class MockGenICamCameraBackend(CameraBackend):
         await asyncio.sleep(0.05)  # Simulate setting delay
 
         self.logger.debug(f"Mock camera gain set to {self.gain}")
+
+    async def get_gamma_range(self) -> List[Union[int, float]]:
+        """Get simulated camera gamma range."""
+        return [0.25, 2.0]
+
+    async def get_gamma(self) -> float:
+        """Get current simulated camera gamma."""
+        if not self.initialized:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        return self.gamma
+
+    async def set_gamma(self, gamma: Union[int, float]):
+        """Set simulated camera gamma."""
+        if not self.initialized:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        min_gamma, max_gamma = await self.get_gamma_range()
+
+        if gamma < min_gamma or gamma > max_gamma:
+            raise CameraConfigurationError(
+                f"Gamma {gamma} outside valid range [{min_gamma}, {max_gamma}] for camera '{self.camera_name}'"
+            )
+
+        self.gamma = float(gamma)
+        await asyncio.sleep(0.05)  # Simulate setting delay
+
+        self.logger.debug(f"Mock camera gamma set to {self.gamma}")
 
     async def set_ROI(self, x: int, y: int, width: int, height: int):
         """Set simulated Region of Interest."""
