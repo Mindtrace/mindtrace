@@ -666,6 +666,91 @@ class DahengCameraBackend(CameraBackend):
         except Exception as e:
             raise CameraConfigurationError(f"Failed to set gain for camera '{self.camera_name}': {e}") from e
 
+    async def get_gamma(self) -> float:
+        """Get current camera gamma value.
+
+        Returns:
+            Current gamma value, or 1.0 (linear) if the camera has no Gamma feature
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        try:
+
+            def _get():
+                cam = self.camera
+                gamma = getattr(cam, "Gamma", None)
+                if gamma is not None and gamma.is_implemented():
+                    return gamma.get()
+                return 1.0
+
+            return await self._run_blocking(_get)
+        except Exception as e:
+            raise HardwareOperationError(f"Failed to get gamma for camera '{self.camera_name}': {e}") from e
+
+    async def get_gamma_range(self) -> List[Union[int, float]]:
+        """Get the supported gamma range.
+
+        Returns:
+            List with [min_gamma, max_gamma]
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        try:
+
+            def _get_range():
+                cam = self.camera
+                gamma = getattr(cam, "Gamma", None)
+                if gamma is not None and gamma.is_implemented():
+                    return [gamma.get_min(), gamma.get_max()]
+                return [0.25, 2.0]
+
+            return await self._run_blocking(_get_range)
+        except Exception as e:
+            self.logger.warning(f"Gamma range not available for camera '{self.camera_name}': {str(e)}")
+            return [0.25, 2.0]
+
+    async def set_gamma(self, gamma: Union[int, float]):
+        """Set camera gamma.
+
+        Args:
+            gamma: Gamma value (1.0 is a linear response)
+
+        Raises:
+            CameraConfigurationError: If the camera has no Gamma feature or setting fails
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        try:
+
+            def _set():
+                cam = self.camera
+                gamma_node = getattr(cam, "Gamma", None)
+                if gamma_node is None or not gamma_node.is_implemented():
+                    raise CameraConfigurationError("Gamma feature is not implemented on this camera")
+
+                # Switch to user gamma mode first (older models gate the Gamma node behind it)
+                gamma_mode = getattr(cam, "GammaMode", None)
+                gamma_mode_entry = getattr(gx, "GxGammaModeEntry", None)
+                if gamma_mode is not None and gamma_mode_entry is not None and gamma_mode.is_implemented():
+                    gamma_mode.set(gamma_mode_entry.USER)
+
+                # Enable gamma correction if the camera exposes a separate switch
+                gamma_enable = getattr(cam, "GammaEnable", None)
+                if gamma_enable is not None and gamma_enable.is_implemented():
+                    gamma_enable.set(True)
+
+                gamma_node.set(float(gamma))
+
+            await self._run_blocking(_set)
+            self.logger.debug(f"Gamma set to {gamma} for camera '{self.camera_name}'")
+        except CameraConfigurationError:
+            raise
+        except Exception as e:
+            raise CameraConfigurationError(f"Failed to set gamma for camera '{self.camera_name}': {e}") from e
+
     async def get_triggermode(self) -> str:
         """Get current trigger mode.
 
@@ -1257,6 +1342,8 @@ class DahengCameraBackend(CameraBackend):
                 await self.set_exposure(config_data["exposure_time"])
             if "gain" in config_data:
                 await self.set_gain(config_data["gain"])
+            if "gamma" in config_data:
+                await self.set_gamma(config_data["gamma"])
             if "trigger_mode" in config_data:
                 await self.set_triggermode(config_data["trigger_mode"])
             if "white_balance" in config_data:
@@ -1283,6 +1370,7 @@ class DahengCameraBackend(CameraBackend):
                 "timestamp": time.time(),
                 "exposure_time": await self.get_exposure(),
                 "gain": await self.get_gain(),
+                "gamma": await self.get_gamma(),
                 "trigger_mode": self.triggermode,
                 "white_balance": await self.get_wb(),
                 "pixel_format": await self.get_current_pixel_format(),

@@ -169,6 +169,7 @@ class GenICamCameraBackend(CameraBackend):
             "use_integer_exposure": False,
             "exposure_node_name": "ExposureTime",
             "gain_node_name": "Gain",
+            "gamma_node_name": "Gamma",
         }
         self.triggermode = self.camera_config.cameras.trigger_mode
 
@@ -1392,6 +1393,57 @@ class GenICamCameraBackend(CameraBackend):
         except Exception as e:
             raise HardwareOperationError(f"Failed to set gain for camera '{self.camera_name}': {str(e)}")
 
+    async def get_gamma_range(self) -> List[Union[int, float]]:
+        """Get camera gamma range."""
+        try:
+            node_name = self.vendor_quirks.get("gamma_node_name", "Gamma")
+
+            def _get_gamma_range():
+                node_map = self.image_acquirer.remote_device.node_map
+                node = getattr(node_map, node_name, None)
+                if node is not None:
+                    return [node.min, node.max]
+                return [0.25, 2.0]  # Default range
+
+            return await self._run_blocking(_get_gamma_range, timeout=self._op_timeout_s)
+        except Exception:
+            return [0.25, 2.0]  # Default range
+
+    async def get_gamma(self) -> float:
+        """Get current camera gamma."""
+        try:
+            node_name = self.vendor_quirks.get("gamma_node_name", "Gamma")
+            gamma = await self._get_node_value(node_name, ["Gamma", "GammaRaw"])
+            return float(gamma)
+        except Exception:
+            return 1.0  # Default gamma (linear)
+
+    async def set_gamma(self, gamma: Union[int, float]):
+        """Set camera gamma.
+
+        Cameras that gate the ``Gamma`` node behind ``GammaSelector``/``GammaEnable``
+        are switched to user gamma first; those nodes are absent on cameras that
+        expose ``Gamma`` directly, which is not an error.
+        """
+        try:
+            min_gamma, max_gamma = await self.get_gamma_range()
+
+            if gamma < min_gamma or gamma > max_gamma:
+                raise CameraConfigurationError(
+                    f"Gamma {gamma} outside valid range [{min_gamma}, {max_gamma}] for camera '{self.camera_name}'"
+                )
+
+            for enable_node, enable_value in (("GammaSelector", "User"), ("GammaEnable", True)):
+                try:
+                    await self._set_node_value(enable_node, enable_value)
+                except Exception as e:
+                    self.logger.debug(f"Could not set '{enable_node}' for camera '{self.camera_name}': {e}")
+
+            node_name = self.vendor_quirks.get("gamma_node_name", "Gamma")
+            await self._set_node_value(node_name, gamma, ["Gamma", "GammaRaw"])
+        except Exception as e:
+            raise HardwareOperationError(f"Failed to set gamma for camera '{self.camera_name}': {str(e)}")
+
     async def get_wb(self) -> str:
         """Get current white balance mode using GenICam nodes.
 
@@ -1578,6 +1630,9 @@ class GenICamCameraBackend(CameraBackend):
             if "gain" in config:
                 await self.set_gain(config["gain"])
 
+            if "gamma" in config:
+                await self.set_gamma(config["gamma"])
+
             if "triggermode" in config:
                 await self.set_triggermode(config["triggermode"])
 
@@ -1626,11 +1681,13 @@ class GenICamCameraBackend(CameraBackend):
                 "exported_timestamp": time.time(),
                 "exposure_time": await self.get_exposure(),
                 "gain": await self.get_gain(),
+                "gamma": await self.get_gamma(),
                 "triggermode": await self.get_triggermode(),
                 "white_balance": await self.get_wb(),
                 "roi": await self.get_ROI(),
                 "exposure_range": await self.get_exposure_range(),
                 "gain_range": await self.get_gain_range(),
+                "gamma_range": await self.get_gamma_range(),
                 "white_balance_range": await self.get_wb_range(),
             }
 

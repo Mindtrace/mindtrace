@@ -359,6 +359,33 @@ class CameraBackend(MindtraceABC):
         self.logger.error(f"get_gain_range not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_gain_range not supported by {self.__class__.__name__}")
 
+    async def set_gamma(self, gamma: Union[int, float]):
+        """Set the camera gamma correction value.
+
+        Args:
+            gamma: Gamma value to apply. A value of 1.0 is a linear (identity) response.
+        """
+        self.logger.error(f"set_gamma not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"set_gamma not supported by {self.__class__.__name__}")
+
+    async def get_gamma(self) -> float:
+        """Get the current camera gamma correction value.
+
+        Returns:
+            Current gamma value.
+        """
+        self.logger.error(f"get_gamma not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"get_gamma not supported by {self.__class__.__name__}")
+
+    async def get_gamma_range(self) -> List[Union[int, float]]:
+        """Get the supported gamma range.
+
+        Returns:
+            List containing [min_gamma, max_gamma].
+        """
+        self.logger.error(f"get_gamma_range not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"get_gamma_range not supported by {self.__class__.__name__}")
+
     async def set_ROI(self, x: int, y: int, width: int, height: int):
         self.logger.error(f"set_ROI not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_ROI not supported by {self.__class__.__name__}")
