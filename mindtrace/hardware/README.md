@@ -152,7 +152,7 @@ from mindtrace.hardware.cameras.core.camera import Camera
 # Simple synchronous usage
 camera = Camera(name="OpenCV:opencv_camera_0")
 image = camera.capture()
-camera.configure(exposure=15000, gain=2.0)
+camera.configure(exposure=15000, gain=2.0, gamma=0.8)
 camera.close()
 ```
 
