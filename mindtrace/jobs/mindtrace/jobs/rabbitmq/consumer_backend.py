@@ -72,15 +72,19 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             self._close_active_resources()
             self.logger.info(f"Stopped consuming messages from queues: {queues}.")
 
-    def _consume_finite_messages(self, channel, num_messages: int, queues: list[str], block: bool = True) -> None:
-        """Consume at most ``num_messages`` deliveries across all queues."""
+    def _consume_finite_messages(self, channel, num_messages: int, queues: list[str], block: bool = True) -> int:
+        """Consume at most ``num_messages`` deliveries across all queues.
+
+        Returns:
+            The number of deliveries settled by the processing/acknowledgement path.
+        """
         self.logger.info(f"Consuming up to {num_messages} messages from queues: {queues}.")
-        attempted = 0
+        settled = 0
         failed_queues: set[str] = set()
-        while attempted < num_messages and not self.stopped:
+        while settled < num_messages and not self.stopped:
             found_message = False
             for queue in queues:
-                if attempted >= num_messages or self.stopped:
+                if settled >= num_messages or self.stopped:
                     break
                 if queue in failed_queues:
                     continue
@@ -89,16 +93,17 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                     if delivery is None:
                         continue
                     found_message = True
-                    attempted += 1
-                    self.logger.debug(f"Received message from queue '{queue}': processing {attempted}/{num_messages}")
+                    self.logger.debug(f"Received message from queue '{queue}': processing {settled + 1}/{num_messages}")
                     self._process_delivery(channel, delivery)
+                    settled += 1
                 except Exception as exc:
                     self.logger.error(f"Error during finite consumption from {queue}: {exc}\n{traceback.format_exc()}")
                     failed_queues.add(queue)
             if len(failed_queues) == len(queues):
-                return
+                return settled
             if not found_message and not block:
-                return
+                return settled
+        return settled
 
     def _consume_infinite_messages(self, channel, queues: list[str]) -> None:
         """Consume messages until graceful shutdown is requested."""
@@ -180,7 +185,10 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                 pending = sum(self.connection.count_queue_messages(queue) for queue in queues)
                 if pending == 0:
                     break
-                self._consume_finite_messages(channel, pending, queues, block=False)
+                settled = self._consume_finite_messages(channel, pending, queues, block=False)
+                if settled == 0:
+                    self.logger.error(f"Drain stalled with {pending} messages pending; aborting.")
+                    break
         except KeyboardInterrupt:
             self.logger.info("Consumption interrupted by user.")
         finally:

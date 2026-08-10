@@ -80,8 +80,9 @@ def test_finite_consume_stops_before_polling_next_queue(backend):
     backend.receive_message = MagicMock(return_value=delivery())
     backend.process_message = MagicMock(return_value=True)
 
-    backend._consume_finite_messages(channel, 1, ["q1", "q2"], block=False)
+    settled = backend._consume_finite_messages(channel, 1, ["q1", "q2"], block=False)
 
+    assert settled == 1
     backend.receive_message.assert_called_once_with(channel, "q1", block=False)
 
 
@@ -116,20 +117,33 @@ def test_finite_consume_continues_other_queues_after_error(backend):
     backend.receive_message = MagicMock(side_effect=receive_message)
     backend.process_message = MagicMock(return_value=True)
 
-    backend._consume_finite_messages(channel, 2, ["q1", "q2"], block=False)
+    settled = backend._consume_finite_messages(channel, 2, ["q1", "q2"], block=False)
 
+    assert settled == 2
     attempted_queues = [call.args[1] for call in backend.receive_message.call_args_list]
     assert attempted_queues == ["q1", "q2", "q2"]
     assert backend.process_message.call_count == 2
     assert channel.basic_ack.call_count == 2
 
 
+def test_finite_consume_counts_rejected_delivery_as_settled(backend):
+    channel = MagicMock()
+    backend.receive_message = MagicMock(return_value=delivery(delivery_tag=42))
+    backend.process_message = MagicMock(return_value=False)
+
+    settled = backend._consume_finite_messages(channel, 1, ["q"], block=False)
+
+    assert settled == 1
+    channel.basic_nack.assert_called_once_with(delivery_tag=42, requeue=False)
+
+
 def test_finite_consume_exits_after_all_queues_fail(backend):
     channel = MagicMock()
     backend.receive_message = MagicMock(side_effect=RuntimeError("unavailable"))
 
-    backend._consume_finite_messages(channel, 2, ["q1", "q2"], block=True)
+    settled = backend._consume_finite_messages(channel, 2, ["q1", "q2"], block=True)
 
+    assert settled == 0
     attempted_queues = [call.args[1] for call in backend.receive_message.call_args_list]
     assert attempted_queues == ["q1", "q2"]
     backend.logger.error.assert_called()
@@ -470,6 +484,29 @@ def test_consume_until_empty_reuses_one_connection_for_full_drain(backend):
     backend.connection.close.assert_called_once_with()
     channel.close.assert_called_once_with()
     assert backend.receive_message.call_count == 2
+
+
+def test_consume_until_empty_aborts_when_drain_makes_no_progress(backend):
+    channel = MagicMock(is_open=True)
+    backend.connection.get_channel.return_value = channel
+    backend.connection.close = MagicMock()
+    backend.receive_message = MagicMock(side_effect=RuntimeError("consuming channel closed"))
+    count_calls = 0
+
+    def count_pending(queue):
+        nonlocal count_calls
+        count_calls += 1
+        if count_calls > 1:
+            backend.stop()
+        return 3
+
+    backend.connection.count_queue_messages = MagicMock(side_effect=count_pending)
+
+    backend.consume_until_empty(queues="q", block=False)
+
+    backend.connection.count_queue_messages.assert_called_once_with("q")
+    backend.receive_message.assert_called_once_with(channel, "q", block=False)
+    assert any("Drain stalled with 3 messages pending" in call.args[0] for call in backend.logger.error.call_args_list)
 
 
 def test_stop_finishes_current_delivery_before_exiting(backend):

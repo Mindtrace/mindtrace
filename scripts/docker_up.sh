@@ -31,6 +31,25 @@ until nc -z localhost 6380; do
     sleep 1
 done
 
+echo "Waiting for RabbitMQ to be ready..."
+until $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml exec -T rabbitmq rabbitmq-diagnostics -q ping > /dev/null 2>&1; do
+    sleep 1
+done
+
+echo "Waiting for RabbitMQ host connection to be ready..."
+until python - <<'PY' > /dev/null 2>&1
+import pika
+
+credentials = pika.PlainCredentials("user", "password")
+parameters = pika.ConnectionParameters(host="localhost", port=5673, credentials=credentials, heartbeat=0)
+connection = pika.BlockingConnection(parameters)
+connection.close()
+PY
+do
+    sleep 1
+done
+echo "RabbitMQ is ready."
+
 echo "Flushing Redis test database..."
 $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml exec -T redis redis-cli -p 6380 FLUSHALL > /dev/null
 
