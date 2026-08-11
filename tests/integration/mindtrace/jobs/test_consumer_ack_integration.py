@@ -142,6 +142,27 @@ def test_blocking_consume_polls_later_queue_when_first_queue_is_empty():
 
 
 @pytest.mark.rabbitmq
+def test_finite_consume_continues_same_queue_after_poison_delivery():
+    client = rabbitmq_client()
+    orchestrator = Orchestrator(backend=client)
+    queue = unique_queue("consumer-poison")
+    orchestrator.register(JobSchema(name=queue, input_schema=SampleJobInput, output_schema=SampleJobOutput))
+    client.channel.basic_publish(exchange="default", routing_key=queue, body=b"not-json")
+    orchestrator.publish(queue, create_test_job("valid-after-poison", queue))
+    consumer = SampleConsumer(queue)
+    consumer.connect_to_orchestrator(orchestrator, queue)
+
+    try:
+        consumer.consume(num_messages=2, queues=queue, block=False)
+
+        assert [job["name"] for job in consumer.processed_jobs] == ["valid-after-poison"]
+        assert client.count_queue_messages(queue) == 0
+    finally:
+        consumer.close()
+        client.delete_queue(queue)
+
+
+@pytest.mark.rabbitmq
 def test_requeue_policy_retries_once_then_dead_letters():
     source = unique_queue("consumer-requeue")
     dead_letter_queue = f"{source}-dlq"

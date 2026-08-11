@@ -19,6 +19,13 @@ class RabbitMQDelivery:
     redelivered: bool
 
 
+class _SettledNoMessage:
+    """Marker for a delivery settled before it produced a processable message."""
+
+
+_SETTLED_NO_MESSAGE = _SettledNoMessage()
+
+
 class RabbitMQConsumerBackend(ConsumerBackendBase):
     """RabbitMQ consumer with explicit acknowledgement and shutdown semantics."""
 
@@ -92,6 +99,9 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                     if delivery is None:
                         continue
                     found_message = True
+                    if delivery is _SETTLED_NO_MESSAGE:
+                        settled += 1
+                        continue
                     self.logger.debug(f"Received message from queue '{queue}': processing {settled + 1}/{num_messages}")
                     self._process_delivery(channel, delivery)
                     settled += 1
@@ -117,6 +127,8 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                     delivery = self.receive_message(channel, queue, block=False)
                     if delivery is not None:
                         idle = False
+                        if delivery is _SETTLED_NO_MESSAGE:
+                            continue
                         processed += 1
                         self.logger.debug(f"Received message from queue '{queue}': processing message {processed}")
                         self._process_delivery(channel, delivery)
@@ -199,7 +211,9 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         if not self.stopped:
             self.logger.info(f"Finished draining queues: {queues}. All queues empty.")
 
-    def receive_message(self, channel, queue_name: str, *, block: bool = False) -> RabbitMQDelivery | None:
+    def receive_message(
+        self, channel, queue_name: str, *, block: bool = False
+    ) -> RabbitMQDelivery | _SettledNoMessage | None:
         """Retrieve one delivery, waiting indefinitely when ``block`` is true."""
         try:
             while not self.stopped:
@@ -208,9 +222,10 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                     self.logger.info(f"Received message from queue '{queue_name}'.")
                     try:
                         message = json.loads(body.decode("utf-8"))
-                    except (UnicodeDecodeError, json.JSONDecodeError):
+                    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                         self._reject_delivery(channel, method.delivery_tag, redelivered=method.redelivered)
-                        raise
+                        self.logger.error(f"Rejected malformed RabbitMQ delivery from queue '{queue_name}': {exc}")
+                        return _SETTLED_NO_MESSAGE
                     return RabbitMQDelivery(
                         message=message,
                         delivery_tag=method.delivery_tag,

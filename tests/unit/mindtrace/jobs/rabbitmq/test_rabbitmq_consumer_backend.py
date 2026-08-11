@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from mindtrace.jobs import ConsumerFailurePolicy
-from mindtrace.jobs.rabbitmq.consumer_backend import RabbitMQConsumerBackend, RabbitMQDelivery
+from mindtrace.jobs.rabbitmq.consumer_backend import _SETTLED_NO_MESSAGE, RabbitMQConsumerBackend, RabbitMQDelivery
 
 
 def delivery(message=None, delivery_tag=1, redelivered=False):
@@ -135,6 +135,20 @@ def test_finite_consume_counts_rejected_delivery_as_settled(backend):
 
     assert settled == 1
     channel.basic_nack.assert_called_once_with(delivery_tag=42, requeue=False)
+
+
+def test_finite_consume_counts_malformed_delivery_as_settled_without_failing_queue(backend):
+    channel = MagicMock()
+    backend.receive_message = MagicMock(side_effect=[_SETTLED_NO_MESSAGE, delivery(delivery_tag=42)])
+    backend.process_message = MagicMock(return_value=True)
+
+    settled = backend._consume_finite_messages(channel, 2, ["q"], block=False)
+
+    assert settled == 2
+    assert backend.receive_message.call_count == 2
+    backend.process_message.assert_called_once_with({"id": 1})
+    channel.basic_ack.assert_called_once_with(delivery_tag=42)
+    assert not any("Error during finite consumption" in call.args[0] for call in backend.logger.error.call_args_list)
 
 
 def test_finite_consume_exits_after_all_queues_fail(backend):
@@ -287,13 +301,14 @@ def test_receive_message_exception(backend):
 
 def test_receive_message_dead_letters_invalid_json(backend):
     channel = MagicMock()
-    method = MagicMock(delivery_tag=42)
+    method = MagicMock(delivery_tag=42, redelivered=False)
     channel.basic_get.return_value = (method, MagicMock(), b"not-json")
 
-    with pytest.raises(RuntimeError):
-        backend.receive_message(channel, "q")
+    result = backend.receive_message(channel, "q")
 
+    assert result is _SETTLED_NO_MESSAGE
     channel.basic_nack.assert_called_once_with(delivery_tag=42, requeue=False)
+    backend.logger.error.assert_called_once()
 
 
 @pytest.mark.parametrize(
@@ -311,9 +326,9 @@ def test_invalid_json_rejection_honors_ack_policy(backend, auto_ack, policy, exp
     backend.auto_ack = auto_ack
     backend.failure_policy = policy
 
-    with pytest.raises(RuntimeError):
-        backend.receive_message(channel, "q")
+    result = backend.receive_message(channel, "q")
 
+    assert result is _SETTLED_NO_MESSAGE
     if expected_action is None:
         channel.basic_ack.assert_not_called()
         channel.basic_nack.assert_not_called()
@@ -384,9 +399,9 @@ def test_redelivered_invalid_json_is_dead_lettered_after_one_retry(backend):
     channel.basic_get.return_value = (method, MagicMock(), b"not-json")
     backend.failure_policy = ConsumerFailurePolicy.REQUEUE
 
-    with pytest.raises(RuntimeError):
-        backend.receive_message(channel, "q")
+    result = backend.receive_message(channel, "q")
 
+    assert result is _SETTLED_NO_MESSAGE
     channel.basic_nack.assert_called_once_with(delivery_tag=42, requeue=False)
 
 
@@ -508,6 +523,19 @@ def test_consume_until_empty_aborts_when_drain_makes_no_progress(backend):
     backend.connection.count_queue_messages.assert_called_once_with("q")
     backend.receive_message.assert_called_once_with(channel, "q", block=False)
     assert any("Drain stalled with 3 messages pending" in call.args[0] for call in backend.logger.error.call_args_list)
+
+
+def test_consume_until_empty_treats_malformed_delivery_as_progress(backend):
+    channel = MagicMock(is_open=True)
+    backend.connection.get_channel.return_value = channel
+    backend.connection.count_queue_messages = MagicMock(side_effect=[1, 0])
+    backend.connection.close = MagicMock()
+    backend.receive_message = MagicMock(return_value=_SETTLED_NO_MESSAGE)
+
+    backend.consume_until_empty(queues="q", block=False)
+
+    backend.receive_message.assert_called_once_with(channel, "q", block=False)
+    assert not any("Drain stalled" in call.args[0] for call in backend.logger.error.call_args_list)
 
 
 def test_stop_finishes_current_delivery_before_exiting(backend):
