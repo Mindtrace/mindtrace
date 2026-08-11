@@ -702,6 +702,13 @@ class TestHardwareConfigManagerEnvironmentVariables:
             config = config_mgr.get_config()
             assert config.paths.config_dir == "/custom/config"
 
+    def test_load_camera_restore_saved_config_on_open(self):
+        """Test loading camera restore_saved_config_on_open from env."""
+        with patch.dict(os.environ, {"MINDTRACE_HW_CAMERA_RESTORE_SAVED_CONFIG_ON_OPEN": "false"}):
+            config_mgr = HardwareConfigManager(config_file="/nonexistent.json")
+            config = config_mgr.get_config()
+            assert config.cameras.restore_saved_config_on_open is False
+
     def test_load_network_camera_ip_range(self):
         """Test loading network camera IP range from env."""
         with patch.dict(os.environ, {"MINDTRACE_HW_NETWORK_CAMERA_IP_RANGE": "192.168.1.0/24"}):

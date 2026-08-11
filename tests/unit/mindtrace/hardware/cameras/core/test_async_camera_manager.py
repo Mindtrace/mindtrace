@@ -72,9 +72,9 @@ async def test_open_restores_saved_config_before_connection_test(monkeypatch, tm
 
 
 @pytest.mark.asyncio
-async def test_open_skips_saved_config_when_restore_saved_config_false(tmp_path):
-    """Saved defaults can be skipped when reopening a camera."""
-    manager = AsyncCameraManager(include_mocks=True)
+async def test_open_skips_restore_when_disabled_at_manager_level(tmp_path):
+    """Manager-level policy can disable auto-restore on open."""
+    manager = AsyncCameraManager(include_mocks=True, restore_saved_config_on_open=False)
     manager._camera_config_dir = str(tmp_path)
     name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
     config_path = manager.get_camera_config_path(name)
@@ -83,10 +83,9 @@ async def test_open_skips_saved_config_when_restore_saved_config_false(tmp_path)
         camera = await manager.open(name, test_connection=False)
         assert await camera.configure(exposure=15000) is True
         await camera.save_config(config_path)
-        assert await camera.configure(exposure=25000) is True
         await manager.close(name)
 
-        reopened = await manager.open(name, test_connection=False, restore_saved_config=False)
+        reopened = await manager.open(name, test_connection=False)
         assert await reopened.get_exposure() == 20000
     finally:
         await manager.close(None)
@@ -119,13 +118,13 @@ async def test_open_registers_camera_only_after_restore_and_connection_test(monk
     monkeypatch.setattr(MockBaslerCameraBackend, "check_connection", check_connection_with_tracking)
 
     try:
-        camera = await manager.open(name, test_connection=False, restore_saved_config=False)
+        camera = await manager.open(name, test_connection=False)
         assert await camera.configure(exposure=15000) is True
         await camera.save_config(manager.get_camera_config_path(name))
         await manager.close(name)
 
         await manager.open(name, test_connection=True)
-        assert registered_during_restore == [False]
+        assert registered_during_restore == [False, False]
         assert registered_during_connection_test == [False]
         assert name in manager.active_cameras
     finally:
@@ -150,7 +149,7 @@ async def test_open_connection_failure_does_not_register_camera(monkeypatch):
     monkeypatch.setattr(MockBaslerCameraBackend, "capture", failing_capture)
 
     with pytest.raises(CameraConnectionError):
-        await manager.open(name, test_connection=True, restore_saved_config=False)
+        await manager.open(name, test_connection=True)
 
     assert name not in manager.active_cameras
 

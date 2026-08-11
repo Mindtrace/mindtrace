@@ -210,6 +210,7 @@ Configure via environment variables or `HardwareConfig`:
 - `MINDTRACE_HW_CAMERA_MAX_CONSECUTIVE_FAILURES` (default: 5)
 - `MINDTRACE_HW_CAMERA_REINITIALIZATION_COOLDOWN` (default: 30s)
 - `MINDTRACE_HW_CAMERA_CONFIG_DIR` (default: `~/.config/mindtrace/cameras`)
+- `MINDTRACE_HW_CAMERA_RESTORE_SAVED_CONFIG_ON_OPEN` (default: true)
 
 ### Camera backends
 

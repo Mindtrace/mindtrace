@@ -26,14 +26,23 @@ class CameraManager(Mindtrace):
         - Use `close_all_cameras()` or `shutdown()` to stop the background loop and release resources.
     """
 
-    def __init__(self, include_mocks: bool = False, max_concurrent_captures: int | None = None, **kwargs):
+    def __init__(
+        self,
+        include_mocks: bool = False,
+        max_concurrent_captures: int | None = None,
+        restore_saved_config_on_open: bool | None = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self._shutting_down = False
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
         self._manager = self._call_in_loop(
-            AsyncCameraManager, include_mocks=include_mocks, max_concurrent_captures=max_concurrent_captures
+            AsyncCameraManager,
+            include_mocks=include_mocks,
+            max_concurrent_captures=max_concurrent_captures,
+            restore_saved_config_on_open=restore_saved_config_on_open,
         )
         self.logger.info("CameraManager (sync) initialized with background event loop")
 
@@ -57,7 +66,6 @@ class CameraManager(Mindtrace):
         self,
         names: Optional[Union[str, List[str]]] = None,
         test_connection: bool = True,
-        restore_saved_config: bool = True,
         **kwargs,
     ) -> Union["Camera", Dict[str, "Camera"]]:
         """Open one or more cameras.
@@ -66,7 +74,6 @@ class CameraManager(Mindtrace):
             names: Camera name (e.g., "Backend:device") or a list of names. If None, opens the first available camera
                 (prefers OpenCV).
             test_connection: If True, perform a lightweight connection test after opening.
-            restore_saved_config: If True, restore a previously saved configuration before testing the connection.
             **kwargs: Optional backend-specific configuration to apply during open.
 
         Returns:
@@ -86,7 +93,6 @@ class CameraManager(Mindtrace):
             self._manager.open(
                 names,
                 test_connection=test_connection,
-                restore_saved_config=restore_saved_config,
                 **kwargs,
             )
         )

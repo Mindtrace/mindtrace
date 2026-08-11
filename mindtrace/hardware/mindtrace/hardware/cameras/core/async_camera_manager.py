@@ -66,7 +66,13 @@ class AsyncCameraManager(Mindtrace):
         "daheng": {"checked": False, "available": False, "class": None},
     }
 
-    def __init__(self, include_mocks: bool = False, max_concurrent_captures: int | None = None, **kwargs):
+    def __init__(
+        self,
+        include_mocks: bool = False,
+        max_concurrent_captures: int | None = None,
+        restore_saved_config_on_open: bool | None = None,
+        **kwargs,
+    ):
         """Initialize camera manager.
 
         Args:
@@ -74,6 +80,8 @@ class AsyncCameraManager(Mindtrace):
             max_concurrent_captures: Maximum number of concurrent captures across all cameras
                                     (important for network bandwidth management, especially for GigE cameras).
                                     If None, uses value from configuration system.
+            restore_saved_config_on_open: Whether to restore persisted camera configs on open.
+                If None, uses value from hardware configuration.
         """
         super().__init__(**kwargs)
 
@@ -114,6 +122,10 @@ class AsyncCameraManager(Mindtrace):
         if not camera_config_dir:
             camera_config_dir = str(Path(self._hardware_config.paths.config_dir).expanduser() / "cameras")
         self._camera_config_dir = camera_config_dir
+
+        if restore_saved_config_on_open is None:
+            restore_saved_config_on_open = self._hardware_config.cameras.restore_saved_config_on_open
+        self._restore_saved_config_on_open = restore_saved_config_on_open
 
         self.logger.info(
             f"AsyncCameraManager initialized. Available backends: {self._discovered_backends}, "
@@ -406,7 +418,6 @@ class AsyncCameraManager(Mindtrace):
         self,
         names: Optional[Union[str, List[str]]] = None,
         test_connection: bool = True,
-        restore_saved_config: bool = True,
         **kwargs,
     ) -> Union[AsyncCamera, Dict[str, AsyncCamera]]:
         """Open one or more cameras with optional connection testing.
@@ -414,8 +425,6 @@ class AsyncCameraManager(Mindtrace):
         Args:
             names: Camera name or list of names in the form "Backend:device_name". If None, opens the first available camera (preferring OpenCV).
             test_connection: Whether to test camera connection(s) after opening.
-            restore_saved_config: Whether to restore a previously saved configuration
-                from ``MINDTRACE_HW_CAMERA_CONFIG_DIR`` before testing the connection.
             **kwargs: Backend constructor parameters forwarded to the camera backend.
 
         Returns:
@@ -458,7 +467,7 @@ class AsyncCameraManager(Mindtrace):
                 raise CameraInitializationError(f"Failed to initialize camera '{camera_name}': {e}")
 
             proxy = AsyncCamera(camera, camera_name)
-            if restore_saved_config:
+            if self._restore_saved_config_on_open:
                 await self._auto_import_config(camera_name, proxy)
 
             if test_connection:
@@ -497,7 +506,6 @@ class AsyncCameraManager(Mindtrace):
                 proxy = await self.open(
                     camera_name,
                     test_connection=test_connection,
-                    restore_saved_config=restore_saved_config,
                     **kwargs,
                 )
                 opened[camera_name] = proxy
