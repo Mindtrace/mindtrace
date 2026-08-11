@@ -90,6 +90,68 @@ async def test_open_skips_saved_config_when_restore_saved_config_false(tmp_path)
 
 
 @pytest.mark.asyncio
+async def test_open_registers_camera_only_after_restore_and_connection_test(monkeypatch, tmp_path):
+    """_cameras should only contain fully initialized cameras."""
+    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    registered_during_restore: list[bool] = []
+    registered_during_connection_test: list[bool] = []
+
+    original_import = manager._auto_import_config
+
+    async def track_import(camera_name: str, camera):
+        registered_during_restore.append(camera_name in manager._cameras)
+        await original_import(camera_name, camera)
+
+    monkeypatch.setattr(manager, "_auto_import_config", track_import)
+
+    async def check_connection_with_tracking(self):
+        registered_during_connection_test.append(name in manager._cameras)
+        return True
+
+    monkeypatch.setattr(MockBaslerCameraBackend, "check_connection", check_connection_with_tracking)
+
+    try:
+        await manager.open(name, test_connection=False, restore_saved_config=False)
+        assert (await manager.batch_configure({name: {"exposure": 15000}}))[name] is True
+        await manager.close(name)
+
+        await manager.open(name, test_connection=True)
+        assert registered_during_restore == [False]
+        assert registered_during_connection_test == [False]
+        assert name in manager.active_cameras
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_open_connection_failure_does_not_register_camera(monkeypatch):
+    """A failed connection test must not leave a half-open camera in _cameras."""
+    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    async def failing_check_connection(self):
+        return False
+
+    async def failing_capture(self):
+        return None
+
+    monkeypatch.setattr(MockBaslerCameraBackend, "check_connection", failing_check_connection)
+    monkeypatch.setattr(MockBaslerCameraBackend, "capture", failing_capture)
+
+    with pytest.raises(CameraConnectionError):
+        await manager.open(name, test_connection=True, restore_saved_config=False)
+
+    assert name not in manager.active_cameras
+
+
+@pytest.mark.asyncio
 async def test_batch_capture_with_mock_backend(monkeypatch):
     """Test batch capture with controlled mock cameras instead of discovery-dependent."""
     manager = AsyncCameraManager(include_mocks=True, max_concurrent_captures=2)

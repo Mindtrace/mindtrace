@@ -457,14 +457,9 @@ class AsyncCameraManager(Mindtrace):
                 self.logger.error(f"Failed to initialize camera '{camera_name}': {e}")
                 raise CameraInitializationError(f"Failed to initialize camera '{camera_name}': {e}")
 
-            # Register the proxy before restoring so _auto_import_config can
-            # resolve it. Persisted configs represent explicitly committed
-            # defaults (written by batch_configure), and must be applied before
-            # the connection test exercises the camera.
             proxy = AsyncCamera(camera, camera_name)
-            self._cameras[camera_name] = proxy
             if restore_saved_config:
-                await self._auto_import_config(camera_name)
+                await self._auto_import_config(camera_name, proxy)
 
             if test_connection:
                 self.logger.info(f"Testing connection for camera '{camera_name}'...")
@@ -480,11 +475,11 @@ class AsyncCameraManager(Mindtrace):
                     self.logger.info(f"Camera '{camera_name}' passed connection test")
                 except Exception as e:
                     await camera.close()
-                    self._cameras.pop(camera_name, None)
                     if isinstance(e, CameraConnectionError):
                         raise
                     raise CameraConnectionError(f"Camera '{camera_name}' connection test failed: {e}")
 
+            self._cameras[camera_name] = proxy
             self.logger.info(f"Camera '{camera_name}' initialized successfully")
 
             return proxy
@@ -685,12 +680,9 @@ class AsyncCameraManager(Mindtrace):
         safe_name = camera_name.replace(":", "_").replace("/", "_")
         return str(Path(self._camera_config_dir) / f"{safe_name}.json")
 
-    async def _auto_export_config(self, camera_name: str) -> None:
+    async def _auto_export_config(self, camera_name: str, camera: AsyncCamera) -> None:
         """Export camera config after successful init for later restoration."""
         try:
-            if camera_name not in self._cameras:
-                return
-            camera = self._cameras[camera_name]
             config_path = self._get_camera_config_path(camera_name)
             Path(config_path).parent.mkdir(parents=True, exist_ok=True)
             await camera.save_config(config_path)
@@ -698,16 +690,13 @@ class AsyncCameraManager(Mindtrace):
         except Exception as e:
             self.logger.warning(f"Failed to auto-export config for '{camera_name}': {e}")
 
-    async def _auto_import_config(self, camera_name: str) -> None:
+    async def _auto_import_config(self, camera_name: str, camera: AsyncCamera) -> None:
         """Restore camera config from previously saved file."""
         try:
             config_path = self._get_camera_config_path(camera_name)
             if not Path(config_path).exists():
                 self.logger.debug(f"No saved config for '{camera_name}'")
                 return
-            if camera_name not in self._cameras:
-                return
-            camera = self._cameras[camera_name]
             await camera.load_config(config_path)
             self.logger.info(f"Auto-imported config for '{camera_name}' from {config_path}")
         except Exception as e:
@@ -741,7 +730,7 @@ class AsyncCameraManager(Mindtrace):
         try:
             await self.open(camera_name, test_connection=True)
             # Re-export to keep the saved file fresh
-            await self._auto_export_config(camera_name)
+            await self._auto_export_config(camera_name, self._cameras[camera_name])
             self._failure_counts[camera_name] = 0
             self.logger.info(f"Reinit successful for '{camera_name}'")
         except Exception as e:
@@ -816,7 +805,7 @@ class AsyncCameraManager(Mindtrace):
         # Export config for cameras that were successfully configured
         for camera_name, success in results.items():
             if success:
-                await self._auto_export_config(camera_name)
+                await self._auto_export_config(camera_name, self._cameras[camera_name])
 
         return results
 
