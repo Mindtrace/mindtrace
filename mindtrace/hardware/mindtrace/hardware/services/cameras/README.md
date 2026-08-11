@@ -67,6 +67,7 @@ uv run python -m mindtrace.hardware.services.cameras.launcher --include-mocks
 - `POST /cameras/configuration` - Get current camera configuration
 - `POST /cameras/config/import` - Import configuration from file
 - `POST /cameras/config/export` - Export configuration to file
+- `POST /cameras/config/reset` - Delete persisted configuration file
 
 ### Image Capture
 
@@ -281,11 +282,10 @@ For GigE cameras sharing a single NIC, the `batch_size` per group must account f
 `/cameras/configure` and `/cameras/configure/batch` apply runtime settings only;
 they do not write to `MINDTRACE_HW_CAMERA_CONFIG_DIR`. Persist settings with
 `/cameras/config/export` (omit `config_path` to use the default per-camera file
-under `MINDTRACE_HW_CAMERA_CONFIG_DIR`), then opening a camera restores that
-file before testing the connection when `MINDTRACE_HW_CAMERA_RESTORE_SAVED_CONFIG_ON_OPEN`
-is enabled (default). Disable auto-restore deployment-wide by setting that
-environment variable to `false`, or pass `restore_saved_config_on_open=False` to
-`AsyncCameraManager`.
+under `MINDTRACE_HW_CAMERA_CONFIG_DIR`). Opening a camera restores that file
+before testing the connection when `MINDTRACE_HW_CAMERA_RESTORE_SAVED_CONFIG_ON_OPEN`
+is enabled (default). To open without loading a saved profile, call
+`/cameras/config/reset` first, then close and reopen the camera.
 
 The camera manager tracks consecutive capture failures per camera. When a camera exceeds the failure threshold, it automatically:
 

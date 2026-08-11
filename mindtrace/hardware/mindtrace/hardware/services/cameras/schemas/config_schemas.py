@@ -10,6 +10,7 @@ from mindtrace.hardware.services.cameras.models import (
     CameraQueryRequest,
     ConfigFileExportRequest,
     ConfigFileImportRequest,
+    ConfigFileResetRequest,
     ConfigFileResponse,
 )
 
@@ -34,10 +35,15 @@ ExportCameraConfigSchema = TaskSchema(
     name="export_camera_config", input_schema=ConfigFileExportRequest, output_schema=ConfigFileResponse
 )
 
+ResetCameraConfigSchema = TaskSchema(
+    name="reset_camera_config", input_schema=ConfigFileResetRequest, output_schema=ConfigFileResponse
+)
+
 __all__ = [
     "ConfigureCameraSchema",
     "ConfigureCamerasBatchSchema",
     "GetCameraConfigurationSchema",
     "ImportCameraConfigSchema",
     "ExportCameraConfigSchema",
+    "ResetCameraConfigSchema",
 ]

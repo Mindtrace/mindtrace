@@ -377,7 +377,7 @@ class ConfigFileOperationResult(BaseModel):
     """Configuration file operation result."""
 
     file_path: str
-    operation: str  # "import" or "export"
+    operation: str  # "import", "export", or "reset"
     success: bool
     properties_count: Optional[int] = None
 

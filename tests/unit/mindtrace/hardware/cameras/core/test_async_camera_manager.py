@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -69,6 +70,40 @@ async def test_open_restores_saved_config_before_connection_test(monkeypatch, tm
         assert await reopened.get_exposure() == 15000
     finally:
         await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_reset_saved_config_then_open_uses_backend_defaults(tmp_path):
+    """Reset clears the saved profile so the next open uses backend defaults."""
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    config_path = manager.get_camera_config_path(name)
+
+    try:
+        camera = await manager.open(name, test_connection=False)
+        assert await camera.configure(exposure=15000) is True
+        await camera.save_config(config_path)
+        assert await camera.configure(exposure=25000) is True
+        await manager.close(name)
+
+        assert manager.reset_saved_config(name) is True
+        assert not Path(config_path).exists()
+
+        reopened = await manager.open(name, test_connection=False)
+        assert await reopened.get_exposure() == 20000
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_reset_saved_config_is_idempotent_when_file_missing(tmp_path):
+    """Reset succeeds when no saved configuration file exists."""
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    assert manager.reset_saved_config(name) is False
 
 
 @pytest.mark.asyncio

@@ -27,6 +27,7 @@ from mindtrace.hardware.services.cameras.models import (
     CaptureImageRequest,
     ConfigFileExportRequest,
     ConfigFileImportRequest,
+    ConfigFileResetRequest,
     ConfigureCaptureGroupsRequest,
 )
 from mindtrace.services.core.connection_manager import ConnectionManager
@@ -279,6 +280,21 @@ class CameraManagerConnectionManager(ConnectionManager):
         """
         request = ConfigFileExportRequest(camera=camera, config_path=config_path)
         response = await self.post("/cameras/config/export", request.model_dump(), http_timeout=120.0)
+        return response["data"]
+
+    async def reset_camera_config(self, camera: str, config_path: Optional[str] = None) -> Dict[str, Any]:
+        """Delete a camera's persisted configuration file.
+
+        Args:
+            camera: Camera name
+            config_path: Path to configuration file. When omitted, uses
+                MINDTRACE_HW_CAMERA_CONFIG_DIR with a per-camera filename.
+
+        Returns:
+            Reset operation result
+        """
+        request = ConfigFileResetRequest(camera=camera, config_path=config_path)
+        response = await self.post("/cameras/config/reset", request.model_dump())
         return response["data"]
 
     # Image Capture Operations

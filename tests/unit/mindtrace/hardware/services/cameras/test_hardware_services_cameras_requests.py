@@ -20,6 +20,7 @@ from mindtrace.hardware.services.cameras.models.requests import (
     CaptureImageRequest,
     ConfigFileExportRequest,
     ConfigFileImportRequest,
+    ConfigFileResetRequest,
     ConfigureCaptureGroupsRequest,
     ExposureRequest,
     GainRequest,
@@ -155,6 +156,22 @@ class TestConfigFileExportRequest:
     def test_config_file_export_request_default_path(self):
         """Test ConfigFileExportRequest without config_path uses default."""
         request = ConfigFileExportRequest(camera="Basler:device1")
+        assert request.camera == "Basler:device1"
+        assert request.config_path is None
+
+
+class TestConfigFileResetRequest:
+    """Tests for ConfigFileResetRequest model."""
+
+    def test_config_file_reset_request(self):
+        """Test ConfigFileResetRequest with camera and config_path."""
+        request = ConfigFileResetRequest(camera="Basler:device1", config_path="/path/to/config.json")
+        assert request.camera == "Basler:device1"
+        assert request.config_path == "/path/to/config.json"
+
+    def test_config_file_reset_request_default_path(self):
+        """Test ConfigFileResetRequest without config_path uses default."""
+        request = ConfigFileResetRequest(camera="Basler:device1")
         assert request.camera == "Basler:device1"
         assert request.config_path is None
 

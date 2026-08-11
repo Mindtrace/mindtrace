@@ -116,6 +116,19 @@ class ConfigFileExportRequest(BaseModel):
     )
 
 
+class ConfigFileResetRequest(BaseModel):
+    """Request model for deleting a camera's persisted configuration file."""
+
+    camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
+    config_path: Optional[str] = Field(
+        None,
+        description=(
+            "Path to the configuration file to delete. When omitted, uses "
+            "MINDTRACE_HW_CAMERA_CONFIG_DIR with a per-camera filename."
+        ),
+    )
+
+
 # Image Capture Operations
 class CaptureImageRequest(BaseModel):
     """Request model for single image capture."""

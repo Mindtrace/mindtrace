@@ -36,6 +36,7 @@ from mindtrace.hardware.services.cameras.models.requests import (
     CaptureImageRequest,
     ConfigFileExportRequest,
     ConfigFileImportRequest,
+    ConfigFileResetRequest,
     HomographyCalibrateCheckerboardRequest,
     HomographyCalibrateCorrespondencesRequest,
     HomographyCalibrateMultiViewRequest,
@@ -650,6 +651,34 @@ class TestCameraManagerServiceBusinessLogic:
         assert export_response.data.file_path == "/default/MockBasler_Camera1.json"
 
     @pytest.mark.asyncio
+    async def test_reset_camera_config_deletes_saved_file(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+        mock_manager.get_camera_config_path = Mock(return_value="/default/MockBasler_Camera1.json")
+        mock_manager.reset_saved_config = Mock(return_value=True)
+
+        response = await service.reset_camera_config(ConfigFileResetRequest(camera="MockBasler:Camera1"))
+
+        mock_manager.reset_saved_config.assert_called_once_with(
+            "MockBasler:Camera1", config_path="/default/MockBasler_Camera1.json"
+        )
+        assert response.success is True
+        assert response.data.operation == "reset"
+        assert response.data.success is True
+        assert "Deleted saved configuration" in response.message
+
+    @pytest.mark.asyncio
+    async def test_reset_camera_config_when_file_missing(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+        mock_manager.get_camera_config_path = Mock(return_value="/default/MockBasler_Camera1.json")
+        mock_manager.reset_saved_config = Mock(return_value=False)
+
+        response = await service.reset_camera_config(ConfigFileResetRequest(camera="MockBasler:Camera1"))
+
+        assert response.success is True
+        assert response.data.success is False
+        assert "No saved configuration found" in response.message
+
+    @pytest.mark.asyncio
     async def test_configure_camera_failure_handling(self, service_with_mock_manager):
         """Test configure camera handles configuration failures correctly."""
         service, mock_manager = service_with_mock_manager
@@ -871,7 +900,7 @@ class TestCameraManagerServiceCaptureAndHomography:
         CameraManagerService._register_endpoints(service)
 
         endpoint_paths = [entry.args[0] for entry in service.add_endpoint.call_args_list]
-        assert service.add_endpoint.call_count == 47
+        assert service.add_endpoint.call_count == 48
         assert "health" in endpoint_paths
         assert "cameras/capture" in endpoint_paths
         assert "cameras/stream/start" in endpoint_paths

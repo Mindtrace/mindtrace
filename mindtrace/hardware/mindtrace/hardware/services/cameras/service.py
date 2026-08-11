@@ -70,6 +70,7 @@ from mindtrace.hardware.services.cameras.models import (
     ConfigFileExportRequest,
     ConfigFileImportRequest,
     ConfigFileOperationResult,
+    ConfigFileResetRequest,
     ConfigFileResponse,
     ConfigureCaptureGroupsRequest,
     DictResponse,
@@ -265,6 +266,9 @@ class CameraManagerService(Service):
         )
         self.add_endpoint(
             "cameras/config/export", self.export_camera_config, ALL_SCHEMAS["export_camera_config"], as_tool=True
+        )
+        self.add_endpoint(
+            "cameras/config/reset", self.reset_camera_config, ALL_SCHEMAS["reset_camera_config"], as_tool=True
         )
 
         # Image Capture
@@ -991,6 +995,28 @@ class CameraManagerService(Service):
             )
         except Exception as e:
             self.logger.error(f"Failed to export config for camera '{request.camera}': {e}")
+            raise
+
+    async def reset_camera_config(self, request: ConfigFileResetRequest) -> ConfigFileResponse:
+        """Delete a camera's persisted configuration file."""
+        try:
+            manager = await self._get_camera_manager()
+            config_path = self._resolve_camera_config_path(manager, request.camera, request.config_path)
+            deleted = manager.reset_saved_config(request.camera, config_path=config_path)
+
+            result = ConfigFileOperationResult(file_path=config_path, operation="reset", success=deleted)
+
+            return ConfigFileResponse(
+                success=True,
+                message=(
+                    f"Deleted saved configuration for camera '{request.camera}'"
+                    if deleted
+                    else f"No saved configuration found for camera '{request.camera}'"
+                ),
+                data=result,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to reset config for camera '{request.camera}': {e}")
             raise
 
     # Wire encoding map for output_format → (PIL save format, default save kwargs).
