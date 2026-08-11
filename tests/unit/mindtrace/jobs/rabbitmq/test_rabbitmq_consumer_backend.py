@@ -222,12 +222,13 @@ def test_receive_message_block_exits_after_stop_request(backend):
 
     mock_channel.basic_get.side_effect = stop_while_polling
     backend.logger = MagicMock()
-    with patch("mindtrace.jobs.rabbitmq.consumer_backend.time.sleep") as mock_sleep:
-        result = backend.receive_message(mock_channel, "q", block=True)
+    backend._stop_event.wait = MagicMock()
+
+    result = backend.receive_message(mock_channel, "q", block=True)
 
     assert result is None
     mock_channel.basic_get.assert_called_once_with(queue="q", auto_ack=backend.auto_ack)
-    mock_sleep.assert_called_once_with(0.1)
+    backend._stop_event.wait.assert_called_once_with(0.1)
 
 
 def test_receive_message_non_block(backend):
@@ -537,8 +538,47 @@ def test_stop_finishes_current_delivery_before_checking_next_queue(backend):
 
     backend._consume_infinite_messages(channel, ["q1", "q2"])
 
-    backend.receive_message.assert_called_once_with(channel, "q1", block=True)
+    backend.receive_message.assert_called_once_with(channel, "q1", block=False)
     channel.basic_ack.assert_called_once_with(delivery_tag=42)
+
+
+def test_infinite_consume_polls_later_queues_when_first_queue_is_empty(backend):
+    channel = MagicMock()
+
+    def receive_message(channel, queue, *, block):
+        if queue == "q1":
+            return None
+        return delivery(delivery_tag=42)
+
+    def process_and_stop(message):
+        backend.stop()
+        return True
+
+    backend.receive_message = MagicMock(side_effect=receive_message)
+    backend.process_message = MagicMock(side_effect=process_and_stop)
+
+    backend._consume_infinite_messages(channel, ["q1", "q2"])
+
+    assert [call.args[1] for call in backend.receive_message.call_args_list] == ["q1", "q2"]
+    assert all(call.kwargs["block"] is False for call in backend.receive_message.call_args_list)
+    backend.process_message.assert_called_once_with({"id": 1})
+    channel.basic_ack.assert_called_once_with(delivery_tag=42)
+
+
+def test_infinite_consume_waits_on_stop_event_when_all_queues_idle(backend):
+    channel = MagicMock()
+    backend.receive_message = MagicMock(return_value=None)
+
+    def stop_after_idle_wait(timeout):
+        backend.stop()
+        return False
+
+    backend._stop_event.wait = MagicMock(side_effect=stop_after_idle_wait)
+
+    backend._consume_infinite_messages(channel, ["q1", "q2"])
+
+    assert [call.args[1] for call in backend.receive_message.call_args_list] == ["q1", "q2"]
+    backend._stop_event.wait.assert_called_once_with(0.1)
 
 
 def test_receive_message_returns_none_when_already_stopped(backend):

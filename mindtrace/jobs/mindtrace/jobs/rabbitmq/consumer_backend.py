@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import time
 import traceback
 from dataclasses import dataclass
 
@@ -110,12 +109,14 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         self.logger.info(f"Started consuming messages indefinitely from queues: {queues}.")
         processed = 0
         while not self.stopped:
+            idle = True
             for queue in queues:
                 if self.stopped:
                     break
                 try:
-                    delivery = self.receive_message(channel, queue, block=True)
+                    delivery = self.receive_message(channel, queue, block=False)
                     if delivery is not None:
+                        idle = False
                         processed += 1
                         self.logger.debug(f"Received message from queue '{queue}': processing message {processed}")
                         self._process_delivery(channel, delivery)
@@ -123,6 +124,8 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                     self.logger.error(
                         f"Error during infinite consumption from {queue}: {exc}\n{traceback.format_exc()}"
                     )
+            if idle and not self.stopped:
+                self._stop_event.wait(0.1)
 
     def _process_delivery(self, channel, delivery: RabbitMQDelivery) -> bool:
         success = self.process_message(delivery.message)
@@ -216,7 +219,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                 if not block:
                     self.logger.debug(f"No message available in queue '{queue_name}'.")
                     return None
-                time.sleep(0.1)
+                self._stop_event.wait(0.1)
             return None
         except Exception as exc:
             self.logger.error(f"Error receiving message from queue '{queue_name}': {exc}")
