@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from mindtrace.core import TaskSchema
+from mindtrace.datalake.card import DatasetCard
 from mindtrace.datalake.pagination_types import (
     CursorPage,
     DatasetViewPage,
@@ -709,6 +710,7 @@ class CreateDatasetVersionInput(BaseModel):
     description: str | None = None
     source_dataset_version_id: str | None = None
     metadata: dict[str, Any] | None = None
+    card: DatasetCard | None = None
     created_by: str | None = None
 
 

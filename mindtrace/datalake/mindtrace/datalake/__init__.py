@@ -22,6 +22,7 @@ from .async_datalake import (
     SlowOperationWarning,
     SlowOpsPolicy,
 )
+from .card import AnnotationField, DatasetCard, DatasetSource, SplitInfo
 from .data_vault import AsyncDataVault, DataVault, VaultDataset
 from .data_vault_backends import (
     AsyncDataVaultBackend,
@@ -95,6 +96,7 @@ from .upload_client import DatalakeDirectUploadClient
 
 __all__ = [
     "Annotation",
+    "AnnotationField",
     "AnnotationVariants",
     "annotation_from_record",
     "BboxAnnotation",
@@ -127,6 +129,7 @@ __all__ = [
     "SlowOperationDisabledError",
     "SlowOperationWarning",
     "SlowOpsPolicy",
+    "SplitInfo",
     "DataVault",
     "DataVaultBackend",
     "DatalakeServiceAsyncDataVaultBackend",
@@ -140,6 +143,8 @@ __all__ = [
     "AsyncDatalake",
     "Collection",
     "CollectionItem",
+    "DatasetCard",
+    "DatasetSource",
     "DatasetSyncBundle",
     "DatasetSyncCommitResult",
     "DatasetSyncImportPlan",

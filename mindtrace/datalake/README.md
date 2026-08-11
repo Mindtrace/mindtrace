@@ -114,7 +114,35 @@ The datalake is evolving from earlier internal versions toward a fuller **V3** c
 - **StorageRef**, **Asset**
 - **Annotation** schema/set/record model
 - **Datum**, **DatasetVersion**
+- **DatasetCard** (optional structured documentation attached to a dataset version)
 - **DatasetBuilder** (helper for constructing new versions — not the same as a persisted version record)
+
+### Dataset cards
+
+`DatasetVersion.description` is the short summary for listings and quick display. `DatasetVersion.metadata`
+remains the place for lightweight operational metadata and query keys. `DatasetVersion.card` is an optional
+`DatasetCard` for richer human-facing documentation that should travel with the immutable dataset version.
+
+```python
+from mindtrace.datalake import DatasetCard, SplitInfo
+
+card = DatasetCard(
+    summary="Binary image classification dataset.",
+    task="classification",
+    modalities=["image"],
+    splits={"train": SplitInfo(count=1200), "val": SplitInfo(count=200)},
+    intended_uses=["Train and validate image classifiers"],
+    limitations=["Small validation split"],
+    markdown="## Notes\n\nImported from the reviewed production subset.",
+)
+
+datalake.create_dataset_version(
+    dataset_name="demo-images",
+    version="1.0.0",
+    manifest=datum_ids,
+    card=card,
+)
+```
 
 ### Entity relationships (conceptual)
 
