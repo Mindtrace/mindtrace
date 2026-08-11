@@ -48,6 +48,24 @@ def test_init_does_not_connect(consumer_frontend):
             mock_connect.assert_not_called()
 
 
+@pytest.mark.parametrize("failure_policy", [ConsumerFailurePolicy.DEAD_LETTER, ConsumerFailurePolicy.REQUEUE])
+def test_auto_ack_rejects_settle_failure_policies(consumer_frontend, failure_policy):
+    with pytest.raises(ValueError, match="auto_ack=True acknowledges deliveries before processing"):
+        RabbitMQConsumerBackend("q", consumer_frontend, auto_ack=True, failure_policy=failure_policy)
+
+
+def test_auto_ack_accepts_discard_failure_policy(consumer_frontend):
+    backend = RabbitMQConsumerBackend(
+        "q",
+        consumer_frontend,
+        auto_ack=True,
+        failure_policy=ConsumerFailurePolicy.DISCARD,
+    )
+
+    assert backend.auto_ack is True
+    assert backend.failure_policy is ConsumerFailurePolicy.DISCARD
+
+
 def test_consume_finite_messages(backend):
     backend.receive_message = MagicMock(side_effect=[delivery(), None])
     backend.process_message = MagicMock(return_value=True)
@@ -314,7 +332,7 @@ def test_receive_message_dead_letters_invalid_json(backend):
 @pytest.mark.parametrize(
     ("auto_ack", "policy", "expected_action"),
     [
-        (True, ConsumerFailurePolicy.DEAD_LETTER, None),
+        (True, ConsumerFailurePolicy.DISCARD, None),
         (False, ConsumerFailurePolicy.REQUEUE, ("nack", True)),
         (False, ConsumerFailurePolicy.DISCARD, ("ack", None)),
     ],
@@ -419,6 +437,7 @@ def test_successful_delivery_acknowledged_after_processing(backend):
 def test_auto_ack_does_not_acknowledge_after_processing(backend):
     channel = MagicMock()
     backend.auto_ack = True
+    backend.failure_policy = ConsumerFailurePolicy.DISCARD
     backend.process_message = MagicMock(return_value=True)
 
     backend._process_delivery(channel, delivery(delivery_tag=42))

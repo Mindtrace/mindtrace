@@ -163,6 +163,39 @@ def test_finite_consume_continues_same_queue_after_poison_delivery():
 
 
 @pytest.mark.rabbitmq
+@pytest.mark.parametrize("failure_policy", [ConsumerFailurePolicy.DEAD_LETTER, ConsumerFailurePolicy.REQUEUE])
+def test_rabbitmq_auto_ack_requires_discard_failure_policy(failure_policy):
+    client = rabbitmq_client()
+    orchestrator = Orchestrator(backend=client)
+    consumer = SampleConsumer("auto-ack-policy")
+
+    with pytest.raises(ValueError, match="auto_ack=True acknowledges deliveries before processing"):
+        consumer.connect_to_orchestrator(
+            orchestrator,
+            "auto-ack-policy",
+            auto_ack=True,
+            failure_policy=failure_policy,
+        )
+
+
+@pytest.mark.rabbitmq
+def test_rabbitmq_auto_ack_accepts_discard_failure_policy():
+    client = rabbitmq_client()
+    orchestrator = Orchestrator(backend=client)
+    consumer = SampleConsumer("auto-ack-policy")
+
+    consumer.connect_to_orchestrator(
+        orchestrator,
+        "auto-ack-policy",
+        auto_ack=True,
+        failure_policy=ConsumerFailurePolicy.DISCARD,
+    )
+
+    assert consumer.consumer_backend.auto_ack is True
+    assert consumer.consumer_backend.failure_policy is ConsumerFailurePolicy.DISCARD
+
+
+@pytest.mark.rabbitmq
 def test_requeue_policy_retries_once_then_dead_letters():
     source = unique_queue("consumer-requeue")
     dead_letter_queue = f"{source}-dlq"

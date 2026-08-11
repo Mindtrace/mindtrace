@@ -220,6 +220,11 @@ consumer.connect_to_orchestrator(
 )
 ```
 
+RabbitMQ `auto_ack=True` acknowledges deliveries before `run()` executes, so
+it is only valid with `failure_policy=ConsumerFailurePolicy.DISCARD`.
+Combining auto-acknowledgement with `REQUEUE` or `DEAD_LETTER` raises
+`ValueError` during consumer backend configuration.
+
 Local and Redis consumers support only `DISCARD`. Connecting either backend
 with `REQUEUE` or `DEAD_LETTER` raises `NotImplementedError`; those policies
 require backend-specific retry or dead-letter storage that they do not yet

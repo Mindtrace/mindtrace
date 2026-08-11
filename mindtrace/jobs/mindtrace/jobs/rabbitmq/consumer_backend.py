@@ -26,6 +26,18 @@ class _SettledNoMessage:
 _SETTLED_NO_MESSAGE = _SettledNoMessage()
 
 
+def _validate_auto_ack_failure_policy(
+    auto_ack: bool, failure_policy: ConsumerFailurePolicy | str
+) -> ConsumerFailurePolicy:
+    policy = ConsumerFailurePolicy(failure_policy)
+    if auto_ack and policy is not ConsumerFailurePolicy.DISCARD:
+        raise ValueError(
+            "RabbitMQ auto_ack=True acknowledges deliveries before processing; "
+            "use failure_policy='discard' or disable auto_ack."
+        )
+    return policy
+
+
 class RabbitMQConsumerBackend(ConsumerBackendBase):
     """RabbitMQ consumer with explicit acknowledgement and shutdown semantics."""
 
@@ -45,7 +57,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         super().__init__(queue_name, consumer_frontend)
         self.prefetch_count = prefetch_count
         self.auto_ack = auto_ack
-        self.failure_policy = ConsumerFailurePolicy(failure_policy)
+        self.failure_policy = _validate_auto_ack_failure_policy(auto_ack, failure_policy)
         self.durable = durable
         self.queues = [queue_name] if queue_name else []
         self.connection = RabbitMQConnection(host=host, port=port, username=username, password=password)
