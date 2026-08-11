@@ -422,6 +422,13 @@ class AsyncCameraManager(Mindtrace):
     ) -> Union[AsyncCamera, Dict[str, AsyncCamera]]:
         """Open one or more cameras with optional connection testing.
 
+        When ``restore_saved_config_on_open`` is enabled (default), a saved profile
+        is loaded after backend construction. Profile import restores imaging and
+        per-camera GigE settings only. Manager-owned performance settings
+        (``timeout_ms``, ``retrieve_retry_count``) come from explicit ``**kwargs``,
+        then the manager's current values, then hardware config — never from the
+        saved profile file.
+
         Args:
             names: Camera name or list of names in the form "Backend:device_name". If None, opens the first available camera (preferring OpenCV).
             test_connection: Whether to test camera connection(s) after opening.

@@ -492,10 +492,6 @@ class MockBaslerCameraBackend(CameraBackend):
                     self.img_quality_enhancement = config_data["image_enhancement"]
                 if "roi" in config_data:
                     self.roi = config_data["roi"]
-                if "retrieve_retry_count" in config_data:
-                    self.retrieve_retry_count = config_data["retrieve_retry_count"]
-                if "timeout_ms" in config_data:
-                    self.timeout_ms = config_data["timeout_ms"]
                 if "pixel_format" in config_data:
                     self.default_pixel_format = config_data["pixel_format"]
 
@@ -530,9 +526,6 @@ class MockBaslerCameraBackend(CameraBackend):
                 "roi": self.roi,
                 "pixel_format": self.default_pixel_format,
                 "image_enhancement": self.img_quality_enhancement,
-                "retrieve_retry_count": self.retrieve_retry_count,
-                "timeout_ms": self.timeout_ms,
-                "buffer_count": self.buffer_count,
             }
 
             # Ensure directory exists

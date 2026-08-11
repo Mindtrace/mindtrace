@@ -1140,8 +1140,6 @@ class OpenCVCameraBackend(CameraBackend):
                 "white_balance_blue_u": await self._run_blocking(self.cap.get, cv2.CAP_PROP_WHITE_BALANCE_BLUE_U),
                 "white_balance_red_v": await self._run_blocking(self.cap.get, cv2.CAP_PROP_WHITE_BALANCE_RED_V),
                 "image_enhancement": self.img_quality_enhancement,
-                "retrieve_retry_count": self.retrieve_retry_count,
-                "timeout_ms": self.timeout_ms,
                 "pixel_format": "RGB8",  # OpenCV converted output
                 "trigger_mode": "continuous",  # OpenCV default
                 "roi": {
@@ -1264,16 +1262,6 @@ class OpenCVCameraBackend(CameraBackend):
             enhancement_key = "image_enhancement" if "image_enhancement" in settings else "img_quality_enhancement"
             if enhancement_key in settings:
                 self.img_quality_enhancement = settings[enhancement_key]
-                success_count += 1
-                total_settings += 1
-
-            if "retrieve_retry_count" in settings:
-                self.retrieve_retry_count = settings["retrieve_retry_count"]
-                success_count += 1
-                total_settings += 1
-
-            if "timeout_ms" in settings:
-                self.timeout_ms = settings["timeout_ms"]
                 success_count += 1
                 total_settings += 1
 

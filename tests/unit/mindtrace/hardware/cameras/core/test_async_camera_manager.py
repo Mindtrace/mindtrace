@@ -73,6 +73,53 @@ async def test_open_restores_saved_config_before_connection_test(monkeypatch, tm
 
 
 @pytest.mark.asyncio
+async def test_open_restore_preserves_manager_performance_settings(tmp_path):
+    """Saved profiles must not overwrite manager-owned timeout and retry settings."""
+    import json
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    config_path = manager.get_camera_config_path(name)
+
+    # Legacy profile with stale manager-owned keys plus a real imaging default.
+    config_path_obj = Path(config_path)
+    config_path_obj.parent.mkdir(parents=True, exist_ok=True)
+    with open(config_path_obj, "w") as f:
+        json.dump(
+            {
+                "exposure_time": 15000,
+                "timeout_ms": 2000,
+                "retrieve_retry_count": 1,
+                "buffer_count": 10,
+            },
+            f,
+        )
+
+    manager.timeout_ms = 9000
+    manager.retrieve_retry_count = 7
+
+    try:
+        reopened = await manager.open(name, test_connection=False)
+        assert await reopened.get_exposure() == 15000
+        assert reopened._backend.timeout_ms == 9000
+        assert reopened._backend.retrieve_retry_count == 7
+
+        await manager.close(name)
+
+        explicit = await manager.open(
+            name,
+            test_connection=False,
+            timeout_ms=12345,
+            retrieve_retry_count=4,
+        )
+        assert explicit._backend.timeout_ms == 12345
+        assert explicit._backend.retrieve_retry_count == 4
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_reset_saved_config_then_open_uses_backend_defaults(tmp_path):
     """Reset clears the saved profile so the next open uses backend defaults."""
     manager = AsyncCameraManager(include_mocks=True)

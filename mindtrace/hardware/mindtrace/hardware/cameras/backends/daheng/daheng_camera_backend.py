@@ -1287,8 +1287,6 @@ class DahengCameraBackend(CameraBackend):
                 "white_balance": await self.get_wb(),
                 "pixel_format": await self.get_current_pixel_format(),
                 "image_enhancement": self.img_quality_enhancement,
-                "retrieve_retry_count": self.retrieve_retry_count,
-                "timeout_ms": self.timeout_ms,
             }
 
             os.makedirs(os.path.dirname(config_path), exist_ok=True)

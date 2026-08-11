@@ -687,9 +687,6 @@ class MockGenICamCameraBackend(CameraBackend):
                 "roi": self.roi.copy(),
                 "pixel_format": self.pixel_format,
                 "image_enhancement": self.img_quality_enhancement,
-                "retrieve_retry_count": self.retrieve_retry_count,
-                "timeout_ms": self.timeout_ms,
-                "buffer_count": self.buffer_count,
             }
 
             with open(config_path, "w") as f:
