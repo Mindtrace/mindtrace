@@ -47,7 +47,7 @@ async def test_open_restores_saved_config_before_connection_test(monkeypatch, tm
     manager = AsyncCameraManager(include_mocks=True)
     manager._camera_config_dir = str(tmp_path)
     name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
-    config_path = manager._get_camera_config_path(name)
+    config_path = manager.get_camera_config_path(name)
 
     try:
         camera = await manager.open(name, test_connection=False)
@@ -77,7 +77,7 @@ async def test_open_skips_saved_config_when_restore_saved_config_false(tmp_path)
     manager = AsyncCameraManager(include_mocks=True)
     manager._camera_config_dir = str(tmp_path)
     name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
-    config_path = manager._get_camera_config_path(name)
+    config_path = manager.get_camera_config_path(name)
 
     try:
         camera = await manager.open(name, test_connection=False)
@@ -121,7 +121,7 @@ async def test_open_registers_camera_only_after_restore_and_connection_test(monk
     try:
         camera = await manager.open(name, test_connection=False, restore_saved_config=False)
         assert await camera.configure(exposure=15000) is True
-        await camera.save_config(manager._get_camera_config_path(name))
+        await camera.save_config(manager.get_camera_config_path(name))
         await manager.close(name)
 
         await manager.open(name, test_connection=True)

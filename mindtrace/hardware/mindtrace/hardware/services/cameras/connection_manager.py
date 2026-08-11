@@ -251,12 +251,13 @@ class CameraManagerConnectionManager(ConnectionManager):
         response = await self.post("/cameras/configuration", request.model_dump())
         return response["data"]
 
-    async def import_camera_config(self, camera: str, config_path: str) -> Dict[str, Any]:
+    async def import_camera_config(self, camera: str, config_path: Optional[str] = None) -> Dict[str, Any]:
         """Import camera configuration from file.
 
         Args:
             camera: Camera name
-            config_path: Path to configuration file
+            config_path: Path to configuration file. When omitted, uses
+                MINDTRACE_HW_CAMERA_CONFIG_DIR with a per-camera filename.
 
         Returns:
             Import operation result
@@ -265,12 +266,13 @@ class CameraManagerConnectionManager(ConnectionManager):
         response = await self.post("/cameras/config/import", request.model_dump())
         return response["data"]
 
-    async def export_camera_config(self, camera: str, config_path: str) -> Dict[str, Any]:
+    async def export_camera_config(self, camera: str, config_path: Optional[str] = None) -> Dict[str, Any]:
         """Export camera configuration to file.
 
         Args:
             camera: Camera name
-            config_path: Path to save configuration file
+            config_path: Path to save configuration file. When omitted, uses
+                MINDTRACE_HW_CAMERA_CONFIG_DIR with a per-camera filename.
 
         Returns:
             Export operation result

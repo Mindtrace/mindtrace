@@ -280,8 +280,9 @@ For GigE cameras sharing a single NIC, the `batch_size` per group must account f
 
 `/cameras/configure` and `/cameras/configure/batch` apply runtime settings only;
 they do not write to `MINDTRACE_HW_CAMERA_CONFIG_DIR`. Persist settings with
-`/cameras/config/export` (or `AsyncCamera.save_config()`), then opening a
-camera restores that file before testing the connection. Pass
+`/cameras/config/export` (omit `config_path` to use the default per-camera file
+under `MINDTRACE_HW_CAMERA_CONFIG_DIR`), then opening a camera restores that
+file before testing the connection. Pass
 `restore_saved_config=False` to `AsyncCameraManager.open()` to skip restore.
 
 The camera manager tracks consecutive capture failures per camera. When a camera exceeds the failure threshold, it automatically:

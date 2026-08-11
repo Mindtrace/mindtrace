@@ -675,15 +675,15 @@ class AsyncCameraManager(Mindtrace):
     #  Auto-Reconnection / Failure Tracking                               #
     # ------------------------------------------------------------------ #
 
-    def _get_camera_config_path(self, camera_name: str) -> str:
-        """Return filesystem path for a camera's preserved config."""
+    def get_camera_config_path(self, camera_name: str) -> str:
+        """Return filesystem path for a camera's preserved config under ``camera_config_dir``."""
         safe_name = camera_name.replace(":", "_").replace("/", "_")
         return str(Path(self._camera_config_dir) / f"{safe_name}.json")
 
     async def _auto_export_config(self, camera_name: str, camera: AsyncCamera) -> None:
         """Export camera config after successful init for later restoration."""
         try:
-            config_path = self._get_camera_config_path(camera_name)
+            config_path = self.get_camera_config_path(camera_name)
             Path(config_path).parent.mkdir(parents=True, exist_ok=True)
             await camera.save_config(config_path)
             self.logger.debug(f"Auto-exported config for '{camera_name}' to {config_path}")
@@ -693,7 +693,7 @@ class AsyncCameraManager(Mindtrace):
     async def _auto_import_config(self, camera_name: str, camera: AsyncCamera) -> None:
         """Restore camera config from previously saved file."""
         try:
-            config_path = self._get_camera_config_path(camera_name)
+            config_path = self.get_camera_config_path(camera_name)
             if not Path(config_path).exists():
                 self.logger.debug(f"No saved config for '{camera_name}'")
                 return

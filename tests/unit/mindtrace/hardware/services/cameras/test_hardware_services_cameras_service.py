@@ -628,6 +628,28 @@ class TestCameraManagerServiceBusinessLogic:
         assert export_response.data.success is False
 
     @pytest.mark.asyncio
+    async def test_import_and_export_camera_config_use_default_path_when_omitted(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+        mock_manager.active_cameras = ["MockBasler:Camera1"]
+        mock_manager.get_camera_config_path = Mock(return_value="/default/MockBasler_Camera1.json")
+        mock_camera = AsyncMock()
+        mock_camera.load_config.return_value = True
+        mock_camera.save_config.return_value = True
+        mock_manager.open = AsyncMock(return_value=mock_camera)
+
+        import_response = await service.import_camera_config(
+            ConfigFileImportRequest(camera="MockBasler:Camera1")
+        )
+        export_response = await service.export_camera_config(
+            ConfigFileExportRequest(camera="MockBasler:Camera1")
+        )
+
+        mock_camera.load_config.assert_awaited_once_with("/default/MockBasler_Camera1.json")
+        mock_camera.save_config.assert_awaited_once_with("/default/MockBasler_Camera1.json")
+        assert import_response.data.file_path == "/default/MockBasler_Camera1.json"
+        assert export_response.data.file_path == "/default/MockBasler_Camera1.json"
+
+    @pytest.mark.asyncio
     async def test_configure_camera_failure_handling(self, service_with_mock_manager):
         """Test configure camera handles configuration failures correctly."""
         service, mock_manager = service_with_mock_manager

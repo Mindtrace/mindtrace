@@ -136,6 +136,12 @@ class TestConfigFileImportRequest:
         assert request.camera == "Basler:device1"
         assert request.config_path == "/path/to/config.json"
 
+    def test_config_file_import_request_default_path(self):
+        """Test ConfigFileImportRequest without config_path uses default."""
+        request = ConfigFileImportRequest(camera="Basler:device1")
+        assert request.camera == "Basler:device1"
+        assert request.config_path is None
+
 
 class TestConfigFileExportRequest:
     """Tests for ConfigFileExportRequest model."""
@@ -145,6 +151,12 @@ class TestConfigFileExportRequest:
         request = ConfigFileExportRequest(camera="Basler:device1", config_path="/path/to/config.json")
         assert request.camera == "Basler:device1"
         assert request.config_path == "/path/to/config.json"
+
+    def test_config_file_export_request_default_path(self):
+        """Test ConfigFileExportRequest without config_path uses default."""
+        request = ConfigFileExportRequest(camera="Basler:device1")
+        assert request.camera == "Basler:device1"
+        assert request.config_path is None
 
 
 class TestCaptureImageRequest:
