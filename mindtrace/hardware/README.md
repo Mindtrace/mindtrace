@@ -506,14 +506,33 @@ async def plc_operations():
     await manager.register_plc("Line1", "192.168.1.100", plc_type="logix")
     await manager.connect_plc("Line1")
 
-    # Read/write operations
-    values = await manager.read_tags("Line1", ["Motor_Speed", "Status"])
-    await manager.write_tag("Line1", "Command", True)
+    # Read/write operations return one TagResult per tag
+    results = await manager.read_tag("Line1", ["Motor_Speed", "Status"])
+    if results["Motor_Speed"].ok:
+        speed = results["Motor_Speed"].value
+    else:
+        kind = results["Motor_Speed"].error.kind  # missing_tag / type_mismatch / encode / transport
+
+    await manager.write_tag("Line1", [("Command", True)])
 
     await manager.cleanup()
 
 asyncio.run(plc_operations())
 ```
+
+### Transport behaviour
+
+Reads and writes are serialized on separate channels (a read driver and a write
+driver per PLC), each recovering on its own:
+
+- Transport-class failures retry up to `MINDTRACE_HW_PLC_RETRY_COUNT` times,
+  reconnecting only that channel between attempts, then raise
+  `PLCCommunicationError` with `attempts=N`.
+- The delay between attempts is a flat `MINDTRACE_HW_PLC_RETRY_DELAY`; a failed
+  reconnect is logged, not fatal. No circuit breaker, no escalating backoff.
+- Malformed requests (`PLCTagReadError` / `PLCTagWriteError`) are never retried.
+- Per-tag failures are never retried or laundered — they come back as
+  `TagResult.error`.
 
 ### Service Layer
 

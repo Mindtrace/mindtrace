@@ -22,7 +22,7 @@ Usage:
 
     # Use exactly like real PLC
     await plc.connect()
-    tags = await plc.read_tag(["Motor1_Speed", "Conveyor_Status"])
+    results = await plc.read_tag(["Motor1_Speed", "Conveyor_Status"])
     await plc.write_tag([("Pump1_Command", True)])
     await plc.disconnect()
 """
@@ -31,7 +31,8 @@ import asyncio
 import os
 import random
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from types import SimpleNamespace
+from typing import Any, Dict, List, Optional, Tuple
 
 from mindtrace.hardware.core.exceptions import (
     PLCCommunicationError,
@@ -44,6 +45,10 @@ from mindtrace.hardware.core.exceptions import (
     PLCTimeoutError,
 )
 from mindtrace.hardware.plcs.backends.base import BasePLC
+from mindtrace.hardware.plcs.types import TagError, TagErrorKind, TagResult
+
+# Type check only: the conversion result is discarded, a rejection is type_mismatch.
+_COERCERS = {"BOOL": bool, "DINT": int, "REAL": float}
 
 
 class MockAllenBradleyPLC(BasePLC):
@@ -106,7 +111,8 @@ class MockAllenBradleyPLC(BasePLC):
 
         self.plc_type = plc_type or "auto"
         self.driver_type = None
-        self._is_connected = False
+        # One flag per channel: reopening read must not report write as open.
+        self._channels_open: Dict[str, bool] = {"read": False, "write": False}
         self._tag_values: Dict[str, Any] = {}
         self._tag_types: Dict[str, str] = {}
         self._cache_ttl = 300  # 5 minutes
@@ -123,6 +129,20 @@ class MockAllenBradleyPLC(BasePLC):
         self._initialize_mock_data()
 
         self.logger.info(f"Mock Allen Bradley PLC initialized: plc_type={self.plc_type}, ip_address={self.ip_address}")
+
+    @property
+    def _is_connected(self) -> bool:
+        """Connected means BOTH simulated channels are open, as on the real backend."""
+        return all(self._channels_open.values())
+
+    @_is_connected.setter
+    def _is_connected(self, value: bool) -> None:
+        self._channels_open = {channel: bool(value) for channel in self._channels_open}
+
+    def _channel(self, channel: str) -> None:
+        """Raise unless ``channel`` is open, like the real backend's channel guards."""
+        if not self._channels_open[channel]:
+            raise PLCCommunicationError(f"Mock not connected to Allen Bradley PLC at {self.ip_address}")
 
     def _initialize_mock_data(self):
         """Initialize realistic mock tag data based on PLC type."""
@@ -309,68 +329,67 @@ class MockAllenBradleyPLC(BasePLC):
         await asyncio.sleep(0.1)
         return detected_type
 
-    async def connect(self) -> bool:
-        """
-        Simulate connection to the Allen Bradley PLC.
-
-        Returns:
-            True if connection successful, False otherwise
-        """
+    async def _connect(self) -> bool:
+        """Simulate opening the connection. Single attempt, raises on failure."""
         if self.fail_connect:
             raise PLCConnectionError("Simulated connection failure")
 
         self.logger.info(f"Mock connecting to Allen Bradley PLC at {self.ip_address}")
 
-        # Determine driver type
+        await self._resolve_driver_type()
+
+        await asyncio.sleep(0.05)  # Simulate connection delay
+
+        self._is_connected = True
+        self.plc = self._tag_namespace()
+        self.logger.info(f"Mock connected to Allen Bradley PLC using {self.driver_type}")
+        return True
+
+    async def _resolve_driver_type(self) -> None:
+        """Pin ``driver_type`` from ``plc_type``, auto-detecting once if needed."""
         if self.plc_type == "auto":
-            detected_type = await self._detect_plc_type()
-            self.plc_type = detected_type
+            self.plc_type = await self._detect_plc_type()
 
-        for attempt in range(self.retry_count):
-            try:
-                # Simulate connection delay
-                await asyncio.sleep(0.05 * (attempt + 1))
+        if self.plc_type == "logix":
+            self.driver_type = "LogixDriver"
+        elif self.plc_type == "slc":
+            self.driver_type = "SLCDriver"
+        else:  # cip or fallback
+            self.driver_type = "CIPDriver"
 
-                # Set driver type based on PLC type
-                if self.plc_type == "logix":
-                    self.driver_type = "LogixDriver"
-                elif self.plc_type == "slc":
-                    self.driver_type = "SLCDriver"
-                else:  # cip or fallback
-                    self.driver_type = "CIPDriver"
+    def _tag_namespace(self) -> SimpleNamespace:
+        """Mirrors the real backend's ``plc`` read-driver alias, which downstream code
+        reads as ``plc.plc.tags``; only a Logix controller uploads a tag database."""
+        return SimpleNamespace(tags=self._tag_structure() if self.driver_type == "LogixDriver" else {})
 
-                # Simulate successful connection
-                self._is_connected = True
-                self.logger.info(f"Mock successfully connected to Allen Bradley PLC using {self.driver_type}")
-                return True
+    def _tag_structure(self) -> Dict[str, Dict[str, Any]]:
+        """pycomm3-shaped tag definitions for the simulated controller tags."""
+        return {name: {"tag_type": "atomic", "data_type": tag_type} for name, tag_type in self._tag_types.items()}
 
-            except Exception as e:
-                self.logger.warning(f"Mock connection attempt {attempt + 1} failed: {e}")
-                if attempt < self.retry_count - 1:
-                    await asyncio.sleep(self.retry_delay)
-                else:
-                    raise PLCConnectionError(
-                        f"Mock failed to connect to Allen Bradley PLC at {self.ip_address} after {self.retry_count} attempts"
-                    )
+    async def _reconnect_channel(self, channel: str) -> bool:
+        """Reopen ONE simulated channel; the other channel's state is untouched.
 
-        return False
-
-    async def disconnect(self) -> bool:
+        ``fail_connect`` still decides the outcome, which keeps the
+        failed-reconnect path testable.
         """
-        Simulate disconnection from the Allen Bradley PLC.
+        if self.fail_connect:
+            raise PLCConnectionError(f"Simulated {channel} channel reconnect failure")
 
-        Returns:
-            True if disconnection successful, False otherwise
-        """
-        try:
-            await asyncio.sleep(0.01)  # Simulate disconnect delay
-            self._is_connected = False
-            self.initialized = False
-            self.logger.info(f"Mock disconnected from Allen Bradley PLC at {self.ip_address}")
-            return True
-        except Exception as e:
-            self.logger.error(f"Mock disconnection error: {e}")
-            return False
+        await self._resolve_driver_type()
+        self._channels_open[channel] = True
+        if channel == "read":
+            self.plc = self._tag_namespace()
+        self.logger.info(f"Mock reopened the {channel} channel to Allen Bradley PLC at {self.ip_address}")
+        return True
+
+    async def _disconnect(self) -> bool:
+        """Simulate closing the connection."""
+        await asyncio.sleep(0.01)  # Simulate disconnect delay
+        self._is_connected = False
+        self.plc = None
+        self.initialized = False
+        self.logger.info(f"Mock disconnected from Allen Bradley PLC at {self.ip_address}")
+        return True
 
     async def is_connected(self) -> bool:
         """
@@ -381,16 +400,8 @@ class MockAllenBradleyPLC(BasePLC):
         """
         return self._is_connected
 
-    async def read_tag(self, tags: Union[str, List[str]]) -> Dict[str, Any]:
-        """
-        Simulate reading values from Allen Bradley PLC tags.
-
-        Args:
-            tags: Single tag name or list of tag names
-
-        Returns:
-            Dictionary mapping tag names to their values
-        """
+    async def _read_tags(self, addresses: List[str]) -> Dict[str, TagResult]:
+        """Simulate a batched read; unknown addresses come back as missing_tag."""
         if self.fail_read:
             raise PLCTagReadError("Simulated tag read failure")
 
@@ -398,121 +409,72 @@ class MockAllenBradleyPLC(BasePLC):
             await asyncio.sleep(10)  # Simulate timeout
             raise PLCTimeoutError("Simulated read timeout")
 
-        if not self._is_connected:
-            raise PLCCommunicationError(f"Mock not connected to Allen Bradley PLC at {self.ip_address}")
+        self._channel("read")
 
-        try:
-            if isinstance(tags, str):
-                tag_list = [tags]
-            else:
-                tag_list = tags
+        await asyncio.sleep(0.01 * len(addresses))  # Simulate read delay
 
-            # Simulate read delay
-            await asyncio.sleep(0.01 * len(tag_list))
+        results: Dict[str, TagResult] = {}
+        for address in addresses:
+            if address not in self._tag_values:
+                results[address] = TagResult(
+                    error=TagError(
+                        kind=TagErrorKind.missing_tag,
+                        message=f"Tag '{address}' does not exist on mock {self.driver_type}",
+                    )
+                )
+                continue
+            results[address] = TagResult(value=self._simulated_value(address))
+        return results
 
-            # Prepare results
-            tag_values = {}
+    def _simulated_value(self, address: str) -> Any:
+        """Stored value, with +/-2% drift on sensor-like tags to mimic live data."""
+        value = self._tag_values[address]
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            if any(keyword in address.lower() for keyword in ["temp", "pressure", "speed", "level"]):
+                drifted = value + value * 0.02 * (random.random() - 0.5)
+                value = int(drifted) if isinstance(value, int) else drifted
+                self._tag_values[address] = value
+        return value
 
-            for tag_name in tag_list:
-                if tag_name in self._tag_values:
-                    value = self._tag_values[tag_name]
-
-                    # Add some realistic variation to certain tags
-                    if isinstance(value, (int, float)) and any(
-                        keyword in tag_name.lower() for keyword in ["temp", "pressure", "speed", "level"]
-                    ):
-                        # Add ±2% random variation to simulate real sensor data
-                        variation = value * 0.02 * (random.random() - 0.5)
-                        value = value + variation
-                        if isinstance(self._tag_values[tag_name], int):
-                            value = int(value)
-                        # Update stored value for consistency
-                        self._tag_values[tag_name] = value
-
-                    tag_values[tag_name] = value
-                else:
-                    # Tag not found - different behavior per driver type
-                    if self.driver_type == "LogixDriver":
-                        self.logger.warning(f"Mock tag '{tag_name}' not found in Logix PLC")
-                        tag_values[tag_name] = None
-                    elif self.driver_type == "SLCDriver":
-                        # SLC might return 0 for non-existent addresses
-                        self.logger.warning(f"Mock SLC address '{tag_name}' not configured, returning 0")
-                        tag_values[tag_name] = 0
-                    else:  # CIP
-                        self.logger.warning(f"Mock CIP object '{tag_name}' not available")
-                        tag_values[tag_name] = None
-
-            return tag_values
-
-        except Exception as e:
-            self.logger.error(f"Mock failed to read tags: {e}")
-            raise PLCTagReadError(f"Mock failed to read tags from Allen Bradley PLC: {e}")
-
-    async def write_tag(self, tags: Union[Tuple[str, Any], List[Tuple[str, Any]]]) -> Dict[str, bool]:
-        """
-        Simulate writing values to Allen Bradley PLC tags.
-
-        Args:
-            tags: Single (tag_name, value) tuple or list of tuples
-
-        Returns:
-            Dictionary mapping tag names to write success status
-        """
+    async def _write_tags(self, writes: List[Tuple[str, Any]]) -> Dict[str, TagResult]:
+        """Simulate a batched write; unknown addresses come back as missing_tag."""
         if self.fail_write:
             raise PLCTagWriteError("Simulated tag write failure")
 
-        if not self._is_connected:
-            raise PLCCommunicationError(f"Mock not connected to Allen Bradley PLC at {self.ip_address}")
+        self._channel("write")
 
-        try:
-            if isinstance(tags, tuple):
-                tag_list = [tags]
-            else:
-                tag_list = tags
+        await asyncio.sleep(0.01 * len(writes))  # Simulate write delay
 
-            # Simulate write delay
-            await asyncio.sleep(0.01 * len(tag_list))
+        results: Dict[str, TagResult] = {}
+        for address, value in writes:
+            if address not in self._tag_values:
+                results[address] = TagResult(
+                    error=TagError(
+                        kind=TagErrorKind.missing_tag,
+                        message=f"Tag '{address}' does not exist on mock {self.driver_type}",
+                    )
+                )
+                continue
 
-            # Prepare results
-            write_status = {}
+            expected_type = self._tag_types.get(address, "UNKNOWN")
+            try:
+                # Type check only: the real backend returns the caller's value, so
+                # the mock must not substitute a coerced one.
+                _COERCERS.get(expected_type, lambda v: v)(value)
+            except (ValueError, TypeError) as e:
+                results[address] = TagResult(
+                    error=TagError(
+                        kind=TagErrorKind.type_mismatch,
+                        message=f"Value {value!r} is not compatible with tag type {expected_type}: {e}",
+                    )
+                )
+                continue
 
-            for tag_name, value in tag_list:
-                if tag_name in self._tag_values:
-                    # Validate value type based on tag type
-                    expected_type = self._tag_types.get(tag_name, "UNKNOWN")
+            self._tag_values[address] = value
+            results[address] = TagResult(value=value)
+        return results
 
-                    try:
-                        # Type validation and conversion
-                        if expected_type == "BOOL":
-                            value = bool(value)
-                        elif expected_type == "DINT":
-                            value = int(value)
-                        elif expected_type == "REAL":
-                            value = float(value)
-
-                        # Update stored value
-                        self._tag_values[tag_name] = value
-                        write_status[tag_name] = True
-
-                        self.logger.debug(f"Mock wrote {tag_name} = {value}")
-
-                    except (ValueError, TypeError) as e:
-                        self.logger.warning(f"Mock type conversion failed for {tag_name}: {e}")
-                        write_status[tag_name] = False
-
-                else:
-                    # Tag doesn't exist
-                    self.logger.warning(f"Mock tag '{tag_name}' not found for writing")
-                    write_status[tag_name] = False
-
-            return write_status
-
-        except Exception as e:
-            self.logger.error(f"Mock failed to write tags: {e}")
-            raise PLCTagWriteError(f"Mock failed to write tags to Allen Bradley PLC: {e}")
-
-    async def get_all_tags(self) -> List[str]:
+    async def _get_all_tags(self) -> List[str]:
         """
         Get list of all available mock tags.
 
@@ -525,8 +487,7 @@ class MockAllenBradleyPLC(BasePLC):
         if self._tags_cache is not None and current_time - self._cache_timestamp < self._cache_ttl:
             return self._tags_cache
 
-        if not self._is_connected:
-            raise PLCCommunicationError(f"Mock not connected to Allen Bradley PLC at {self.ip_address}")
+        self._channel("read")
 
         # Return available tags based on driver type
         try:
@@ -568,7 +529,7 @@ class MockAllenBradleyPLC(BasePLC):
             self.logger.error(f"Mock failed to get tags: {e}")
             raise PLCTagError(f"Mock failed to get tags from Allen Bradley PLC: {e}")
 
-    async def get_tag_info(self, tag_name: str) -> Dict[str, Any]:
+    async def _get_tag_info(self, tag_name: str) -> Dict[str, Any]:
         """
         Get detailed information about a mock tag.
 
@@ -578,8 +539,7 @@ class MockAllenBradleyPLC(BasePLC):
         Returns:
             Dictionary with tag information
         """
-        if not self._is_connected:
-            raise PLCCommunicationError(f"Mock not connected to Allen Bradley PLC at {self.ip_address}")
+        self._channel("read")
 
         try:
             if tag_name not in self._tag_values:
@@ -603,15 +563,14 @@ class MockAllenBradleyPLC(BasePLC):
             self.logger.error(f"Mock failed to get tag info: {e}")
             raise PLCTagError(f"Mock failed to get tag info from Allen Bradley PLC: {e}")
 
-    async def get_plc_info(self) -> Dict[str, Any]:
+    async def _get_plc_info(self) -> Dict[str, Any]:
         """
         Get detailed information about the mock PLC.
 
         Returns:
             Dictionary with PLC information
         """
-        if not self._is_connected:
-            raise PLCCommunicationError(f"Mock not connected to Allen Bradley PLC at {self.ip_address}")
+        self._channel("read")
 
         try:
             base_info = {
@@ -743,7 +702,7 @@ class MockAllenBradleyPLC(BasePLC):
                 "Multi-driver type support",
                 "Error simulation capabilities",
                 "Deterministic behavior for testing",
-                "Type validation and conversion",
+                "Type validation without silent coercion",
                 "Connection state management",
                 "Comprehensive logging",
             ],

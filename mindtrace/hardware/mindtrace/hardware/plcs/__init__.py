@@ -5,7 +5,11 @@ with support for discovery, registration, and batch operations.
 """
 
 from mindtrace.hardware.plcs.plc_manager import PLCManager
+from mindtrace.hardware.plcs.types import TagError, TagErrorKind, TagResult
 
 __all__ = [
     "PLCManager",
+    "TagError",
+    "TagErrorKind",
+    "TagResult",
 ]

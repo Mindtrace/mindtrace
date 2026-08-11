@@ -37,8 +37,12 @@ Usage:
         await manager.register_plc("PLC1", "AllenBradley", "192.168.1.100")
         await manager.connect_plc("PLC1")
 
-        # Read tags
-        values = await manager.read_tag("PLC1", ["Tag1", "Tag2"])
+        # Read tags; one TagResult per tag, a value or a classified error
+        results = await manager.read_tag("PLC1", ["Tag1", "Tag2"])
+        if results["Tag1"].ok:
+            value = results["Tag1"].value
+        else:
+            kind = results["Tag1"].error.kind
 
         # Write tags
         await manager.write_tag("PLC1", [("Tag1", 100), ("Tag2", 200)])
@@ -57,7 +61,7 @@ Usage:
             ("PLC1", ["Temperature", "Pressure"]),
             ("PLC2", ["Speed", "Position"])
         ]
-        values = await manager.read_tags_batch(read_requests)
+        results = await manager.read_tags_batch(read_requests)
 
 Configuration:
     All parameters are configurable via the hardware configuration system:
@@ -103,10 +107,9 @@ from mindtrace.hardware.core.exceptions import (
     PLCConnectionError,
     PLCNotFoundError,
     PLCTagError,
-    PLCTagReadError,
-    PLCTagWriteError,
 )
 from mindtrace.hardware.plcs.backends.base import BasePLC
+from mindtrace.hardware.plcs.types import TagResult
 
 
 class PLCManager(Mindtrace):
@@ -148,7 +151,7 @@ class PLCManager(Mindtrace):
             await manager.connect_plc("PLC1")
 
             # Read and write tags
-            values = await manager.read_tag("PLC1", ["Temperature", "Pressure"])
+            results = await manager.read_tag("PLC1", ["Temperature", "Pressure"])
             await manager.write_tag("PLC1", [("Setpoint", 75.0)])
 
         # Batch operations
@@ -458,51 +461,49 @@ class PLCManager(Mindtrace):
 
         return results
 
-    async def read_tag(self, plc_name: str, tags: Union[str, List[str]]) -> Dict[str, Any]:
+    async def read_tag(self, plc_name: str, tags: Union[str, List[str]]) -> Dict[str, TagResult]:
         """
         Read tags from a specific PLC.
+
+        Thin passthrough: retry and reconnect live in the backend, and its
+        exceptions propagate unwrapped.
 
         Args:
             plc_name: Name of the PLC
             tags: Single tag name or list of tag names
 
         Returns:
-            Dictionary mapping tag names to their values
+            Dictionary mapping tag names to their TagResult
         """
         if plc_name not in self.plcs:
             raise PLCNotFoundError(f"PLC '{plc_name}' not registered")
 
-        try:
-            plc = self.plcs[plc_name]
-            return await plc.read_tag_with_retry(tags)
+        return await self.plcs[plc_name].read_tag(tags)
 
-        except Exception as e:
-            self.logger.error(f"Failed to read tags from PLC '{plc_name}': {e}")
-            raise PLCTagReadError(f"Failed to read tags from PLC '{plc_name}': {e}")
-
-    async def write_tag(self, plc_name: str, tags: Union[Tuple[str, Any], List[Tuple[str, Any]]]) -> Dict[str, bool]:
+    async def write_tag(
+        self, plc_name: str, tags: Union[Tuple[str, Any], List[Tuple[str, Any]]]
+    ) -> Dict[str, TagResult]:
         """
         Write tags to a specific PLC.
+
+        Thin passthrough: retry and reconnect live in the backend, and its
+        exceptions propagate unwrapped.
 
         Args:
             plc_name: Name of the PLC
             tags: Single (tag_name, value) tuple or list of tuples
 
         Returns:
-            Dictionary mapping tag names to write success status
+            Dictionary mapping tag names to their TagResult
         """
         if plc_name not in self.plcs:
             raise PLCNotFoundError(f"PLC '{plc_name}' not registered")
 
-        try:
-            plc = self.plcs[plc_name]
-            return await plc.write_tag_with_retry(tags)
+        return await self.plcs[plc_name].write_tag(tags)
 
-        except Exception as e:
-            self.logger.error(f"Failed to write tags to PLC '{plc_name}': {e}")
-            raise PLCTagWriteError(f"Failed to write tags to PLC '{plc_name}': {e}")
-
-    async def read_tags_batch(self, requests: List[Tuple[str, Union[str, List[str]]]]) -> Dict[str, Dict[str, Any]]:
+    async def read_tags_batch(
+        self, requests: List[Tuple[str, Union[str, List[str]]]]
+    ) -> Dict[str, Union[Dict[str, TagResult], Dict[str, str]]]:
         """
         Read tags from multiple PLCs in batch.
 
@@ -510,7 +511,8 @@ class PLCManager(Mindtrace):
             requests: List of (plc_name, tags) tuples
 
         Returns:
-            Dictionary mapping PLC names to their tag read results
+            Dictionary mapping PLC names to their tag read results; a PLC whose
+            read raised yields {"error": ...} instead
         """
         self.logger.info(f"Executing batch read for {len(requests)} PLCs")
         results = {}
@@ -543,7 +545,7 @@ class PLCManager(Mindtrace):
 
     async def write_tags_batch(
         self, requests: List[Tuple[str, Union[Tuple[str, Any], List[Tuple[str, Any]]]]]
-    ) -> Dict[str, Dict[str, bool]]:
+    ) -> Dict[str, Union[Dict[str, TagResult], Dict[str, str]]]:
         """
         Write tags to multiple PLCs in batch.
 
@@ -551,7 +553,8 @@ class PLCManager(Mindtrace):
             requests: List of (plc_name, tags) tuples
 
         Returns:
-            Dictionary mapping PLC names to their tag write results
+            Dictionary mapping PLC names to their tag write results; a PLC whose
+            write raised yields {"error": ...} instead
         """
         self.logger.info(f"Executing batch write for {len(requests)} PLCs")
         results = {}
