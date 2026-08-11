@@ -278,12 +278,11 @@ For GigE cameras sharing a single NIC, the `batch_size` per group must account f
 
 ## Auto-Reconnection
 
-Successful `/cameras/configure/batch` calls persist each camera's configuration
-under `MINDTRACE_HW_CAMERA_CONFIG_DIR`. By default, opening a camera restores
-that configuration before testing the connection. Pass
-`restore_saved_config=False` to `AsyncCameraManager.open()` to skip the
-persisted defaults. Single-camera `/cameras/configure` calls remain transient,
-so live tuning does not replace the committed defaults.
+`/cameras/configure` and `/cameras/configure/batch` apply runtime settings only;
+they do not write to `MINDTRACE_HW_CAMERA_CONFIG_DIR`. Persist settings with
+`/cameras/config/export` (or `AsyncCamera.save_config()`), then opening a
+camera restores that file before testing the connection. Pass
+`restore_saved_config=False` to `AsyncCameraManager.open()` to skip restore.
 
 The camera manager tracks consecutive capture failures per camera. When a camera exceeds the failure threshold, it automatically:
 

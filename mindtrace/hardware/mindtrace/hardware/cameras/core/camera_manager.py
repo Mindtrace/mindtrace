@@ -66,7 +66,7 @@ class CameraManager(Mindtrace):
             names: Camera name (e.g., "Backend:device") or a list of names. If None, opens the first available camera
                 (prefers OpenCV).
             test_connection: If True, perform a lightweight connection test after opening.
-            restore_saved_config: If True, restore the persisted batch configuration before testing the connection.
+            restore_saved_config: If True, restore a previously saved configuration before testing the connection.
             **kwargs: Optional backend-specific configuration to apply during open.
 
         Returns:

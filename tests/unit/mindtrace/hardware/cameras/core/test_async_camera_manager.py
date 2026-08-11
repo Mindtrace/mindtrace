@@ -40,20 +40,21 @@ async def test_open_idempotent_and_close():
 
 
 @pytest.mark.asyncio
-async def test_open_restores_batch_config_before_connection_test(monkeypatch, tmp_path):
-    """Committed batch settings are restored; later single-camera tweaks are not."""
+async def test_open_restores_saved_config_before_connection_test(monkeypatch, tmp_path):
+    """Saved settings are restored on open; later runtime configure tweaks are not persisted."""
     from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
 
     manager = AsyncCameraManager(include_mocks=True)
     manager._camera_config_dir = str(tmp_path)
     name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    config_path = manager._get_camera_config_path(name)
 
     try:
         camera = await manager.open(name, test_connection=False)
-        assert (await manager.batch_configure({name: {"exposure": 15000}}))[name] is True
+        assert await camera.configure(exposure=15000) is True
+        await camera.save_config(config_path)
 
-        # Single-camera configure is intentionally transient and must not
-        # replace the defaults persisted by batch_configure.
+        # Runtime configure does not update the saved file.
         assert await camera.configure(exposure=25000) is True
         assert await camera.get_exposure() == 25000
         await manager.close(name)
@@ -72,14 +73,16 @@ async def test_open_restores_batch_config_before_connection_test(monkeypatch, tm
 
 @pytest.mark.asyncio
 async def test_open_skips_saved_config_when_restore_saved_config_false(tmp_path):
-    """Persisted batch defaults can be skipped when reopening a camera."""
+    """Saved defaults can be skipped when reopening a camera."""
     manager = AsyncCameraManager(include_mocks=True)
     manager._camera_config_dir = str(tmp_path)
     name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    config_path = manager._get_camera_config_path(name)
 
     try:
         camera = await manager.open(name, test_connection=False)
-        assert (await manager.batch_configure({name: {"exposure": 15000}}))[name] is True
+        assert await camera.configure(exposure=15000) is True
+        await camera.save_config(config_path)
         assert await camera.configure(exposure=25000) is True
         await manager.close(name)
 
@@ -116,8 +119,9 @@ async def test_open_registers_camera_only_after_restore_and_connection_test(monk
     monkeypatch.setattr(MockBaslerCameraBackend, "check_connection", check_connection_with_tracking)
 
     try:
-        await manager.open(name, test_connection=False, restore_saved_config=False)
-        assert (await manager.batch_configure({name: {"exposure": 15000}}))[name] is True
+        camera = await manager.open(name, test_connection=False, restore_saved_config=False)
+        assert await camera.configure(exposure=15000) is True
+        await camera.save_config(manager._get_camera_config_path(name))
         await manager.close(name)
 
         await manager.open(name, test_connection=True)

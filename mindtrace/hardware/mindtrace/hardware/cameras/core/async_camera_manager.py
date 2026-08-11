@@ -414,7 +414,7 @@ class AsyncCameraManager(Mindtrace):
         Args:
             names: Camera name or list of names in the form "Backend:device_name". If None, opens the first available camera (preferring OpenCV).
             test_connection: Whether to test camera connection(s) after opening.
-            restore_saved_config: Whether to restore the persisted batch configuration
+            restore_saved_config: Whether to restore a previously saved configuration
                 from ``MINDTRACE_HW_CAMERA_CONFIG_DIR`` before testing the connection.
             **kwargs: Backend constructor parameters forwarded to the camera backend.
 
@@ -801,11 +801,6 @@ class AsyncCameraManager(Mindtrace):
             else:
                 camera_name, success = result
                 results[camera_name] = success
-
-        # Export config for cameras that were successfully configured
-        for camera_name, success in results.items():
-            if success:
-                await self._auto_export_config(camera_name, self._cameras[camera_name])
 
         return results
 
