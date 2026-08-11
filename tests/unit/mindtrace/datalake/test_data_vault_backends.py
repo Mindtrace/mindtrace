@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from urllib3.util.url import parse_url
 
+from mindtrace.datalake import DatasetCard
 from mindtrace.datalake.data_vault import _normalize_async_backend, _normalize_sync_backend
 from mindtrace.datalake.data_vault_backends import (
     DatalakeServiceAsyncDataVaultBackend,
@@ -1078,7 +1079,8 @@ async def test_datalake_service_async_backend_dataset_methods():
 async def test_datalake_service_async_backend_snapshot_methods():
     collection = Collection(name="training", collection_id="collection_1")
     datum = Datum(datum_id="datum_1", asset_refs={"image": "asset_1"})
-    dataset_version = DatasetVersion(dataset_name="training", version="1.0.0")
+    card = DatasetCard(summary="Training snapshot", splits={"train": {"count": 1}})
+    dataset_version = DatasetVersion(dataset_name="training", version="1.0.0", card=card)
     resolved = ResolvedDatasetVersion(dataset_version=dataset_version, datums=[])
     cm = Mock()
     cm.acollections_update = AsyncMock(return_value=CollectionOutput(collection=collection))
@@ -1092,20 +1094,22 @@ async def test_datalake_service_async_backend_snapshot_methods():
 
     assert await backend.update_collection("collection_1", status="archived") == collection
     assert await backend.create_datum(asset_refs={"image": "asset_1"}, split="train") == datum
-    assert (
-        await backend.create_dataset_version(
-            dataset_name="training",
-            version="1.0.0",
-            manifest=["datum_1"],
-            description="snapshot",
-        )
-        == dataset_version
+    created = await backend.create_dataset_version(
+        dataset_name="training",
+        version="1.0.0",
+        manifest=["datum_1"],
+        description="snapshot",
+        card=card.to_dict(),
     )
+    assert created == dataset_version
+    assert created.card == card
     assert await backend.resolve_dataset_version("training", "1.0.0") == resolved
 
     assert isinstance(cm.acollections_update.await_args.args[0], UpdateCollectionInput)
     assert isinstance(cm.adatums_create.await_args.args[0], CreateDatumInput)
-    assert isinstance(cm.adataset_versions_create.await_args.args[0], CreateDatasetVersionInput)
+    create_input = cm.adataset_versions_create.await_args.args[0]
+    assert isinstance(create_input, CreateDatasetVersionInput)
+    assert create_input.card == card
     assert isinstance(cm.adataset_versions_resolve.await_args.args[0], GetDatasetVersionInput)
 
 

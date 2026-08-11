@@ -4,11 +4,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DatasetSource(BaseModel):
     """Minimal provenance reference for a dataset card."""
+
+    model_config = ConfigDict(extra="forbid")
 
     name: str
     version: str | None = None
@@ -20,12 +22,16 @@ class DatasetSource(BaseModel):
 class SplitInfo(BaseModel):
     """Summary of one dataset split."""
 
-    count: int
+    model_config = ConfigDict(extra="forbid")
+
+    count: int = Field(ge=0)
     description: str = ""
 
 
 class AnnotationField(BaseModel):
     """Summary of an annotation field documented by a dataset card."""
+
+    model_config = ConfigDict(extra="forbid")
 
     name: str
     kind: str = ""
@@ -35,6 +41,8 @@ class AnnotationField(BaseModel):
 
 class DatasetCard(BaseModel):
     """Structured documentation for an immutable Datalake dataset version."""
+
+    model_config = ConfigDict(extra="forbid")
 
     summary: str = ""
     task: str = ""

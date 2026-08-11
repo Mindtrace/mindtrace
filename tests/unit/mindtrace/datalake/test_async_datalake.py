@@ -1764,7 +1764,7 @@ class TestAsyncDatalakeUnit:
             },
         )
 
-        assert created.description == "Demo card"
+        assert created.description is None
         assert isinstance(created.card, DatasetCard)
         assert created.card.task == "classification"
         assert created.card.splits["train"].count == 1

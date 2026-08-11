@@ -2305,8 +2305,6 @@ class AsyncDatalake(Mindtrace):
         for datum_id in manifest:
             await self.get_datum(datum_id)
         card_obj = DatasetCard.model_validate(card) if isinstance(card, dict) else card
-        if description is None and card_obj is not None and card_obj.summary:
-            description = card_obj.summary
         dataset_version = self._build_document(
             DatasetVersion,
             dataset_name=dataset_name,
