@@ -169,9 +169,7 @@ class CameraManagerService(Service):
         self.logger.debug("Returning camera manager")
         return self._camera_manager
 
-    def _resolve_camera_config_path(
-        self, manager: AsyncCameraManager, camera: str, config_path: Optional[str]
-    ) -> str:
+    def _resolve_camera_config_path(self, manager: AsyncCameraManager, camera: str, config_path: Optional[str]) -> str:
         """Resolve config file path, defaulting to MINDTRACE_HW_CAMERA_CONFIG_DIR per camera."""
         if config_path is not None:
             return config_path
