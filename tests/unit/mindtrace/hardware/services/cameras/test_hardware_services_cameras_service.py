@@ -654,9 +654,7 @@ class TestCameraManagerServiceBusinessLogic:
 
         response = await service.reset_camera_config(ConfigFileResetRequest(camera="MockBasler:Camera1"))
 
-        mock_manager.reset_saved_config.assert_called_once_with(
-            "MockBasler:Camera1", config_path="/default/MockBasler_Camera1.json"
-        )
+        mock_manager.reset_saved_config.assert_called_once_with("MockBasler:Camera1")
         assert response.success is True
         assert response.data.operation == "reset"
         assert response.data.success is True

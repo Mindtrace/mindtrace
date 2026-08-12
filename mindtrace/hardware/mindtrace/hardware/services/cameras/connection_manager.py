@@ -282,18 +282,16 @@ class CameraManagerConnectionManager(ConnectionManager):
         response = await self.post("/cameras/config/export", request.model_dump(), http_timeout=120.0)
         return response["data"]
 
-    async def reset_camera_config(self, camera: str, config_path: Optional[str] = None) -> Dict[str, Any]:
+    async def reset_camera_config(self, camera: str) -> Dict[str, Any]:
         """Delete a camera's persisted configuration file.
 
         Args:
             camera: Camera name
-            config_path: Path to configuration file. When omitted, uses
-                MINDTRACE_HW_CAMERA_CONFIG_DIR with a per-camera filename.
 
         Returns:
             Reset operation result
         """
-        request = ConfigFileResetRequest(camera=camera, config_path=config_path)
+        request = ConfigFileResetRequest(camera=camera)
         response = await self.post("/cameras/config/reset", request.model_dump())
         return response["data"]
 

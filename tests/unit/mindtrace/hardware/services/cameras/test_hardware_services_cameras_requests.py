@@ -164,16 +164,9 @@ class TestConfigFileResetRequest:
     """Tests for ConfigFileResetRequest model."""
 
     def test_config_file_reset_request(self):
-        """Test ConfigFileResetRequest with camera and config_path."""
-        request = ConfigFileResetRequest(camera="Basler:device1", config_path="/path/to/config.json")
-        assert request.camera == "Basler:device1"
-        assert request.config_path == "/path/to/config.json"
-
-    def test_config_file_reset_request_default_path(self):
-        """Test ConfigFileResetRequest without config_path uses default."""
+        """Test ConfigFileResetRequest with camera name."""
         request = ConfigFileResetRequest(camera="Basler:device1")
         assert request.camera == "Basler:device1"
-        assert request.config_path is None
 
 
 class TestCaptureImageRequest:

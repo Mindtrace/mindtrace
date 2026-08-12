@@ -999,8 +999,8 @@ class CameraManagerService(Service):
         """Delete a camera's persisted configuration file."""
         try:
             manager = await self._get_camera_manager()
-            config_path = self._resolve_camera_config_path(manager, request.camera, request.config_path)
-            deleted = manager.reset_saved_config(request.camera, config_path=config_path)
+            config_path = manager.get_camera_config_path(request.camera)
+            deleted = manager.reset_saved_config(request.camera)
 
             result = ConfigFileOperationResult(file_path=config_path, operation="reset", success=deleted)
 

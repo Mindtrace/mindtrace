@@ -695,18 +695,16 @@ class AsyncCameraManager(Mindtrace):
         safe_name = camera_name.replace(":", "_").replace("/", "_")
         return str(Path(self._camera_config_dir) / f"{safe_name}.json")
 
-    def reset_saved_config(self, camera_name: str, config_path: Optional[str] = None) -> bool:
-        """Delete a camera's persisted configuration file.
+    def reset_saved_config(self, camera_name: str) -> bool:
+        """Delete a camera's persisted configuration file under ``camera_config_dir``.
 
         Args:
             camera_name: Camera name in the form ``Backend:device_name``.
-            config_path: Optional explicit path. When omitted, uses the default path
-                under ``camera_config_dir``.
 
         Returns:
             True if a file was deleted, False if no saved configuration existed.
         """
-        path = Path(config_path if config_path is not None else self.get_camera_config_path(camera_name))
+        path = Path(self.get_camera_config_path(camera_name))
         if not path.exists():
             self.logger.debug(f"No saved config to reset for '{camera_name}' at {path}")
             return False
