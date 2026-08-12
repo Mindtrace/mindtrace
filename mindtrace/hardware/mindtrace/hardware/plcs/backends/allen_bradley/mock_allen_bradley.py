@@ -123,6 +123,7 @@ class MockAllenBradleyPLC(BasePLC):
         self.fail_read = os.getenv("MOCK_AB_FAIL_READ", "false").lower() == "true"
         self.fail_write = os.getenv("MOCK_AB_FAIL_WRITE", "false").lower() == "true"
         self.simulate_timeout = os.getenv("MOCK_AB_TIMEOUT", "false").lower() == "true"
+        self.io_delay_s = float(os.getenv("MOCK_AB_IO_DELAY_S", "0.002"))
 
         # Initialize simulated tag data
         self._initialize_mock_data()
@@ -412,7 +413,9 @@ class MockAllenBradleyPLC(BasePLC):
 
         self._channel("read")
 
-        await asyncio.sleep(0.01 * len(addresses))  # Simulate read delay
+        # One batched exchange is one round trip: latency must not scale with
+        # batch size, or a big poll starves other readers of the channel lock.
+        await asyncio.sleep(self.io_delay_s)
 
         results: Dict[str, TagResult] = {}
         for address in addresses:
@@ -444,7 +447,7 @@ class MockAllenBradleyPLC(BasePLC):
 
         self._channel("write")
 
-        await asyncio.sleep(0.01 * len(writes))  # Simulate write delay
+        await asyncio.sleep(self.io_delay_s)  # one round trip, batch-size independent
 
         results: Dict[str, TagResult] = {}
         for address, value in writes:
