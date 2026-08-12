@@ -22,7 +22,7 @@ from .async_datalake import (
     SlowOperationWarning,
     SlowOpsPolicy,
 )
-from .card import AnnotationField, DatasetCard, DatasetSource, SplitInfo
+from .card import AnnotationField, DatasetCard, DatasetProvenance, DatasetSource, DatasetStatistic, SplitInfo
 from .data_vault import AsyncDataVault, DataVault, VaultDataset
 from .data_vault_backends import (
     AsyncDataVaultBackend,
@@ -144,7 +144,9 @@ __all__ = [
     "Collection",
     "CollectionItem",
     "DatasetCard",
+    "DatasetProvenance",
     "DatasetSource",
+    "DatasetStatistic",
     "DatasetSyncBundle",
     "DatasetSyncCommitResult",
     "DatasetSyncImportPlan",

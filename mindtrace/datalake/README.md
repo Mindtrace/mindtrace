@@ -124,13 +124,26 @@ remains the place for lightweight operational metadata and query keys. `DatasetV
 `DatasetCard` for richer human-facing documentation that should travel with the immutable dataset version.
 
 ```python
-from mindtrace.datalake import DatasetCard, SplitInfo
+from mindtrace.datalake import DatasetCard, DatasetProvenance, DatasetStatistic, SplitInfo
 
 card = DatasetCard(
     summary="Binary image classification dataset.",
     task="classification",
     modalities=["image"],
-    splits={"train": SplitInfo(count=1200), "val": SplitInfo(count=200)},
+    provenance=DatasetProvenance(
+        creation_method="Reviewed image importer",
+        included_subsets=["production"],
+        excluded_subsets=["repeated observations"],
+        split_strategy="Deterministic stratification by class",
+        split_seed=42,
+        split_key="source_path",
+    ),
+    splits={
+        "train": SplitInfo(count=1200, percentage=85.7),
+        "val": SplitInfo(count=200, percentage=14.3),
+    },
+    summary_statistics=[DatasetStatistic(name="total_items", value=1400, unit="items")],
+    evaluation_notes=["Evaluate rare classes separately"],
     intended_uses=["Train and validate image classifiers"],
     limitations=["Small validation split"],
     markdown="## Notes\n\nImported from the reviewed production subset.",

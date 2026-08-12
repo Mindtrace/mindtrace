@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
@@ -19,12 +19,41 @@ class DatasetSource(BaseModel):
     description: str = ""
 
 
+class DatasetStatistic(BaseModel):
+    """Named JSON-safe statistic that generic card renderers can display."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    value: JsonValue
+    unit: str = ""
+    description: str = ""
+
+
+class DatasetProvenance(BaseModel):
+    """Structured provenance and reproduction details for a dataset version."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    creation_method: str = ""
+    included_subsets: list[str] = Field(default_factory=list)
+    excluded_subsets: list[str] = Field(default_factory=list)
+    split_strategy: str = ""
+    split_seed: int | str | None = None
+    split_key: str = ""
+    reproduction_notes: list[str] = Field(default_factory=list)
+
+
 class SplitInfo(BaseModel):
-    """Summary of one dataset split."""
+    """Summary and selection details for one dataset split."""
 
     model_config = ConfigDict(extra="forbid")
 
     count: int = Field(ge=0)
+    percentage: float | None = Field(default=None, ge=0, le=100)
+    source_subsets: list[str] = Field(default_factory=list)
+    selection_criteria: str = ""
+    statistics: list[DatasetStatistic] = Field(default_factory=list)
     description: str = ""
 
 
@@ -44,12 +73,16 @@ class DatasetCard(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    schema_version: Literal[1] = 1
     summary: str = ""
     task: str = ""
     modalities: list[str] = Field(default_factory=list)
     sources: list[DatasetSource] = Field(default_factory=list)
+    provenance: DatasetProvenance | None = None
     splits: dict[str, SplitInfo] = Field(default_factory=dict)
     annotations: list[AnnotationField] = Field(default_factory=list)
+    summary_statistics: list[DatasetStatistic] = Field(default_factory=list)
+    evaluation_notes: list[str] = Field(default_factory=list)
     intended_uses: list[str] = Field(default_factory=list)
     out_of_scope_uses: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
