@@ -39,6 +39,18 @@ class TestLocalPriorityQueue:
         assert pq.pop() == "first"
         assert pq.pop() == "second"
 
+    def test_same_priority_preserves_fifo_for_non_comparable_items(self):
+        pq = LocalPriorityQueue()
+        first = {"name": "first"}
+        second = {"name": "second"}
+
+        pq.push(first, priority=5)
+        pq.push(second, priority=5)
+
+        assert pq.qsize() == 2
+        assert pq.pop() == first
+        assert pq.pop() == second
+
     def test_empty_priority_queue(self):
         """Test operations on empty priority queue."""
         pq = LocalPriorityQueue()

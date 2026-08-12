@@ -1,4 +1,4 @@
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock, call
 
 import pydantic
 import pytest
@@ -173,6 +173,53 @@ class TestLocalConsumerBackend:
 
         consumer.consumer_backend.orchestrator.receive_message.assert_called_once_with(
             "queue1", block=False, timeout=consumer.consumer_backend.poll_timeout
+        )
+
+    def test_blocking_consume_polls_all_queues_before_waiting(self, temp_local_client):
+        orchestrator = Orchestrator(backend=temp_local_client)
+        consumer = SimpleConsumer()
+        consumer.connect_to_orchestrator(orchestrator, "queue1")
+        backend = consumer.consumer_backend
+        backend.orchestrator.receive_message = MagicMock(
+            side_effect=lambda queue, **kwargs: None if queue == "queue1" else {"id": 2}
+        )
+        backend.process_message = MagicMock(return_value=True)
+        backend._stop_event.wait = MagicMock()
+
+        consumer.consume(num_messages=1, queues=["queue1", "queue2"], block=True)
+
+        backend.orchestrator.receive_message.assert_has_calls(
+            [
+                call("queue1", block=False, timeout=backend.poll_timeout),
+                call("queue2", block=False, timeout=backend.poll_timeout),
+            ]
+        )
+        backend.process_message.assert_called_once_with({"id": 2})
+        backend._stop_event.wait.assert_not_called()
+
+    def test_consume_until_empty_aborts_when_local_drain_makes_no_progress(self, temp_local_client):
+        orchestrator = Orchestrator(backend=temp_local_client)
+        consumer = SimpleConsumer()
+        consumer.connect_to_orchestrator(orchestrator, "queue1")
+        backend = consumer.consumer_backend
+        count_calls = 0
+
+        def count_pending(queue):
+            nonlocal count_calls
+            count_calls += 1
+            if count_calls > 2:
+                raise AssertionError("A stalled local drain must exit instead of starting another consume pass.")
+            return 1
+
+        backend.orchestrator.count_queue_messages = MagicMock(side_effect=count_pending)
+        backend.consume = MagicMock()
+        backend.logger = MagicMock()
+
+        backend.consume_until_empty(queues="queue1", block=False)
+
+        backend.consume.assert_called_once_with(num_messages=1, queues=["queue1"], block=False)
+        assert any(
+            "Drain stalled with 1 message pending" in item.args[0] for item in backend.logger.error.call_args_list
         )
 
     def test_stopped_entry_skips_local_consume(self, temp_local_client):

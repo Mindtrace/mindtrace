@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, call, patch
 
 import pytest
+from pika.exceptions import ConnectionClosedByBroker
 
 from mindtrace.jobs import ConsumerFailurePolicy
 from mindtrace.jobs.rabbitmq.consumer_backend import _SETTLED_NO_MESSAGE, RabbitMQConsumerBackend, RabbitMQDelivery
@@ -446,6 +447,54 @@ def test_infinite_consume_propagates_fatal_receive_failure(backend):
         backend._consume_infinite_messages(channel, ["q"])
 
     backend.receive_message.assert_called_once_with(channel, "q", block=False)
+
+
+def test_infinite_consume_propagates_broker_close_when_channel_state_is_stale(backend):
+    channel = MagicMock(is_open=True)
+    channel.basic_get.side_effect = [
+        ConnectionClosedByBroker(320, "connection forced"),
+        KeyboardInterrupt("stop repeated polling"),
+    ]
+
+    with pytest.raises(RuntimeError, match="connection forced") as exc_info:
+        backend._consume_infinite_messages(channel, ["q"], block=True)
+
+    assert isinstance(exc_info.value.__cause__, ConnectionClosedByBroker)
+
+
+def test_finite_consume_propagates_fatal_receive_failure_and_closes_resources(backend):
+    channel = MagicMock(is_open=False)
+    backend.connection.get_channel.return_value = channel
+    backend.connection.close = MagicMock()
+    backend.receive_message = MagicMock(side_effect=RuntimeError("consuming channel closed"))
+
+    with pytest.raises(RuntimeError, match="consuming channel closed"):
+        backend.consume(num_messages=1, queues="q", block=False)
+
+    backend.receive_message.assert_called_once_with(channel, "q", block=False)
+    backend.connection.close.assert_called_once_with()
+
+
+@pytest.mark.parametrize(
+    ("processed", "settlement_method"),
+    [
+        (True, "basic_ack"),
+        (False, "basic_nack"),
+    ],
+)
+def test_finite_consume_propagates_settlement_failure_and_closes_resources(backend, processed, settlement_method):
+    channel = MagicMock(is_open=True)
+    backend.connection.get_channel.return_value = channel
+    backend.connection.close = MagicMock()
+    backend.receive_message = MagicMock(return_value=delivery(delivery_tag=42))
+    backend.process_message = MagicMock(return_value=processed)
+    getattr(channel, settlement_method).side_effect = RuntimeError("delivery settlement failed")
+
+    with pytest.raises(RuntimeError, match="delivery settlement failed"):
+        backend.consume(num_messages=1, queues="q", block=False)
+
+    channel.close.assert_called_once_with()
+    backend.connection.close.assert_called_once_with()
 
 
 @pytest.mark.parametrize(

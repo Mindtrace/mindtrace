@@ -1,3 +1,4 @@
+import json
 from unittest.mock import MagicMock, patch
 
 import pydantic
@@ -219,6 +220,22 @@ def test_publish_adds_job_id_when_missing(client):
     fake_queue.push.return_value = None
     job_id = client.publish("q", msg, priority=1)
     assert isinstance(job_id, str) and len(job_id) > 0
+
+
+def test_publish_replaces_explicit_null_job_id(client):
+    client, mock_conn = client
+    fake_queue = MagicMock()
+    mock_conn.queues = {"q": fake_queue}
+
+    class DummyModel(pydantic.BaseModel):
+        foo: str
+        job_id: str | None = None
+
+    job_id = client.publish("q", DummyModel(foo="bar", job_id=None))
+
+    assert isinstance(job_id, str) and job_id
+    published = json.loads(fake_queue.push.call_args.kwargs["item"])
+    assert published["job_id"] == job_id
 
 
 def test_declare_queue_lock_acquire_failure(client):

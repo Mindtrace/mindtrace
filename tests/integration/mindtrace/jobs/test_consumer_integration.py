@@ -89,6 +89,25 @@ class TestConsumerIntegration:
 
         local_client.delete_queue(local_queue)
 
+    def test_local_nonblocking_consume_processes_ready_message(self, unique_queue_name):
+        local_client = LocalClient()
+        orchestrator = Orchestrator(backend=local_client)
+        queue_name = unique_queue_name("local-nonblocking-ready")
+        schema = JobSchema(name=queue_name, input_schema=SampleJobInput, output_schema=SampleJobOutput)
+        orchestrator.register(schema)
+
+        consumer = SampleConsumer(queue_name)
+        consumer.connect_to_orchestrator(orchestrator, queue_name)
+        orchestrator.publish(queue_name, create_test_job("ready-local-job", queue_name))
+
+        try:
+            consumer.consume(num_messages=1, queues=queue_name, block=False)
+
+            assert [job["name"] for job in consumer.processed_jobs] == ["ready-local-job"]
+            assert orchestrator.count_queue_messages(queue_name) == 0
+        finally:
+            local_client.delete_queue(queue_name)
+
     @pytest.mark.redis
     def test_consumer_with_redis_backend_via_backend_args(self):
         """Test consumer functionality with Redis backend."""
