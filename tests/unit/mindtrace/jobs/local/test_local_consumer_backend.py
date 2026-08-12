@@ -482,8 +482,8 @@ class TestLocalConsumerBackend:
         assert len(sleep_calls) >= 1
         assert 0.1 in sleep_calls
 
-    def test_consumer_exception_handling_with_blocking_sleep(self, temp_local_client):
-        """Test exception handling with blocking=True triggers sleep(1)."""
+    def test_consumer_exception_handling_waits_after_idle_sweep(self, temp_local_client):
+        """Test blocking consumption waits after an unsuccessful queue sweep."""
         orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
@@ -525,4 +525,4 @@ class TestLocalConsumerBackend:
             time.sleep = original_sleep
 
         assert len(sleep_calls) >= 1
-        assert 1 in sleep_calls
+        assert 0.1 in sleep_calls

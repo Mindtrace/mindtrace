@@ -49,16 +49,13 @@ class LocalConsumerBackend(ConsumerBackendBase):
                     if self.stopped or (num_messages > 0 and messages_attempted >= num_messages):
                         break
                     try:
-                        message = self.orchestrator.receive_message(queue, block=block, timeout=self.poll_timeout)
-                        if message:
+                        message = self.orchestrator.receive_message(queue, block=False, timeout=self.poll_timeout)
+                        if message is not None:
                             no_messages_found = False
                             messages_attempted += 1
                             self.process_message(message)
                     except Exception as e:
                         self.logger.debug(f"Error consuming from queue {queue}: {e}")
-                        if block is False:
-                            return
-                        time.sleep(1)
 
                 if no_messages_found and block is False:
                     return
@@ -77,8 +74,15 @@ class LocalConsumerBackend(ConsumerBackendBase):
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
-        while not self.stopped and any(self.orchestrator.count_queue_messages(q) > 0 for q in queues):
+        while not self.stopped:
+            pending = sum(self.orchestrator.count_queue_messages(queue) for queue in queues)
+            if pending == 0:
+                return
             self.consume(num_messages=1, queues=queues, block=block)
+            remaining = sum(self.orchestrator.count_queue_messages(queue) for queue in queues)
+            if remaining >= pending:
+                self.logger.error(f"Drain stalled with {remaining} message pending; aborting.")
+                return
 
     def process_message(self, message) -> bool:
         """Process a single message."""
