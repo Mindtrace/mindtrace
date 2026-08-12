@@ -53,7 +53,7 @@ def test_finite_consume_stops_before_polling_next_queue(backend):
 
     backend.consume(num_messages=1, queues=["q1", "q2"], block=False)
 
-    backend.receive_message.assert_called_once_with("q1", block=False, timeout=backend.poll_timeout)
+    backend.receive_message.assert_called_once_with("q1", block=False, timeout=None)
 
 
 def test_nonblocking_consume_checks_later_queue_before_returning(backend):
@@ -215,7 +215,7 @@ def test_consume_non_block_returns_immediately_when_no_message(backend):
     backend.logger = MagicMock()
     # Should return immediately due to not block and no message
     backend.consume(num_messages=0, queues=["q"], block=False)
-    backend.receive_message.assert_called_once_with("q", block=False, timeout=backend.poll_timeout)
+    backend.receive_message.assert_called_once_with("q", block=False, timeout=None)
 
 
 def test_consume_non_block_returns_on_exception(backend):
@@ -326,14 +326,15 @@ def test_consume_normalizes_string_queues_and_handles_keyboardinterrupt(backend)
     backend.logger.info.assert_called()
 
 
-def test_consume_exception_block_true_sleeps_once_then_interrupts(backend):
+def test_consume_exception_block_true_waits_once_then_interrupts(backend):
     backend, _ = backend
     backend.logger = MagicMock()
     backend.receive_message = MagicMock(side_effect=[Exception("fail"), KeyboardInterrupt])
-    with patch("time.sleep") as mock_sleep:
-        # Pass queues as a string to hit normalization as well
-        backend.consume(num_messages=1, queues="q", block=True)
-        mock_sleep.assert_called()
+    backend._stop_event.wait = MagicMock()
+
+    backend.consume(num_messages=1, queues="q", block=True)
+
+    backend._stop_event.wait.assert_called_once_with(backend.poll_timeout)
 
 
 def test_consume_until_empty_normalizes_string_queue(backend):

@@ -1,5 +1,4 @@
 import json
-import time
 from queue import Empty
 from typing import Optional
 
@@ -51,24 +50,25 @@ class RedisConsumerBackend(ConsumerBackendBase):
         messages_attempted = 0
         try:
             while not self.stopped and (num_messages == 0 or messages_attempted < num_messages):
+                found_message = False
                 for queue in queues:
                     if self.stopped or (num_messages > 0 and messages_attempted >= num_messages):
                         break
                     try:
-                        message = self.receive_message(queue, block=block, timeout=self.poll_timeout)
-                        if message:
+                        message = self.receive_message(queue, block=False, timeout=None)
+                        if message is not None:
+                            found_message = True
                             self.logger.debug(
                                 f"Received message from queue '{queue}': processing {messages_attempted + 1}"
                             )
                             messages_attempted += 1
                             self.process_message(message)
-                        elif not block:
-                            return
                     except Exception as e:
                         self.logger.debug(f"No message available in queue '{queue}' or error occurred: {e}")
-                        if not block:
-                            return
-                        time.sleep(1)
+                if not found_message and not self.stopped:
+                    if not block:
+                        return
+                    self._stop_event.wait(self.poll_timeout)
         except KeyboardInterrupt:
             self.logger.info("Consumption interrupted by user.")
         finally:
@@ -100,12 +100,26 @@ class RedisConsumerBackend(ConsumerBackendBase):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
 
-        while not self.stopped and any(self.connection.count_queue_messages(q) > 0 for q in queues):
+        drained = False
+        while not self.stopped:
+            pending = sum(self.connection.count_queue_messages(queue) for queue in queues)
+            if pending == 0:
+                drained = True
+                break
             self.consume(num_messages=1, queues=queues, block=block)
+            if self.stopped:
+                break
+            remaining = sum(self.connection.count_queue_messages(queue) for queue in queues)
+            if remaining == 0:
+                drained = True
+                break
+            if remaining >= pending:
+                self.logger.error(f"Drain stalled with {remaining} messages pending; aborting.")
+                break
 
         if self.stopped:
             self.logger.info(f"Stopped draining queues after shutdown request: {queues}.")
-        else:
+        elif drained:
             self.logger.info(f"Stopped consuming messages from queues: {queues} (queues empty).")
 
     def close(self):
