@@ -86,6 +86,7 @@ class AsyncCameraManager(Mindtrace):
         super().__init__(**kwargs)
 
         self._cameras: Dict[str, AsyncCamera] = {}
+        self._open_locks: Dict[str, asyncio.Lock] = {}
         self._include_mocks = include_mocks
         self.logger.debug(f"Initializing AsyncCameraManager (include_mocks={include_mocks})")
         self._discovered_backends = self._discover_all_backends()
@@ -456,49 +457,53 @@ class AsyncCameraManager(Mindtrace):
 
         if isinstance(names, str):
             camera_name = names
-            if camera_name in self._cameras:
-                # Idempotent: return existing proxy
-                self.logger.warning(f"Camera '{camera_name}' already open; returning existing instance")
-                return self._cameras[camera_name]
+            if camera_name not in self._open_locks:
+                self._open_locks[camera_name] = asyncio.Lock()
 
-            backend, device_name = self._parse_camera_name(camera_name)
-            self.logger.debug(f"Creating camera backend instance for '{camera_name}'")
-            camera = self._create_camera_instance(backend, device_name, **kwargs)
+            async with self._open_locks[camera_name]:
+                if camera_name in self._cameras:
+                    # Idempotent: return existing proxy
+                    self.logger.warning(f"Camera '{camera_name}' already open; returning existing instance")
+                    return self._cameras[camera_name]
 
-            try:
-                self.logger.debug(f"Setting up camera backend for '{camera_name}'")
-                await camera.setup_camera()
-                self.logger.debug(f"Camera backend setup completed for '{camera_name}'")
-            except Exception as e:
-                self.logger.error(f"Failed to initialize camera '{camera_name}': {e}")
-                raise CameraInitializationError(f"Failed to initialize camera '{camera_name}': {e}")
+                backend, device_name = self._parse_camera_name(camera_name)
+                self.logger.debug(f"Creating camera backend instance for '{camera_name}'")
+                camera = self._create_camera_instance(backend, device_name, **kwargs)
 
-            proxy = AsyncCamera(camera, camera_name)
-            if self._restore_saved_config_on_open:
-                await self._auto_import_config(camera_name, proxy)
-
-            if test_connection:
-                self.logger.info(f"Testing connection for camera '{camera_name}'...")
                 try:
-                    success = await camera.check_connection()
-                    if not success:
-                        test_image = await camera.capture()
-                        if test_image is None:
-                            await camera.close()
-                            raise CameraConnectionError(
-                                f"Camera '{camera_name}' failed connection test - could not capture test image"
-                            )
-                    self.logger.info(f"Camera '{camera_name}' passed connection test")
+                    self.logger.debug(f"Setting up camera backend for '{camera_name}'")
+                    await camera.setup_camera()
+                    self.logger.debug(f"Camera backend setup completed for '{camera_name}'")
                 except Exception as e:
-                    await camera.close()
-                    if isinstance(e, CameraConnectionError):
-                        raise
-                    raise CameraConnectionError(f"Camera '{camera_name}' connection test failed: {e}")
+                    self.logger.error(f"Failed to initialize camera '{camera_name}': {e}")
+                    raise CameraInitializationError(f"Failed to initialize camera '{camera_name}': {e}")
 
-            self._cameras[camera_name] = proxy
-            self.logger.info(f"Camera '{camera_name}' initialized successfully")
+                proxy = AsyncCamera(camera, camera_name)
+                if self._restore_saved_config_on_open:
+                    await self._auto_import_config(camera_name, proxy)
 
-            return proxy
+                if test_connection:
+                    self.logger.info(f"Testing connection for camera '{camera_name}'...")
+                    try:
+                        success = await camera.check_connection()
+                        if not success:
+                            test_image = await camera.capture()
+                            if test_image is None:
+                                await camera.close()
+                                raise CameraConnectionError(
+                                    f"Camera '{camera_name}' failed connection test - could not capture test image"
+                                )
+                        self.logger.info(f"Camera '{camera_name}' passed connection test")
+                    except Exception as e:
+                        await camera.close()
+                        if isinstance(e, CameraConnectionError):
+                            raise
+                        raise CameraConnectionError(f"Camera '{camera_name}' connection test failed: {e}")
+
+                self._cameras[camera_name] = proxy
+                self.logger.info(f"Camera '{camera_name}' initialized successfully")
+
+                return proxy
 
         # Multiple
         camera_names = names
