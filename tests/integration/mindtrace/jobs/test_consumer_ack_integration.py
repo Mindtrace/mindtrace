@@ -65,8 +65,8 @@ def test_consume_until_empty_aborts_when_consuming_channel_makes_no_progress():
     backend.logger = MagicMock()
     original_get_channel = backend.connection.get_channel
     original_count_queue_messages = backend.connection.count_queue_messages
-    dead_channel = MagicMock(is_open=False)
-    dead_channel.basic_get.side_effect = RuntimeError("consuming channel closed")
+    stalled_channel = MagicMock(is_open=True)
+    stalled_channel.basic_get.return_value = (None, None, None)
     first_channel = True
     count_calls = 0
 
@@ -74,7 +74,7 @@ def test_consume_until_empty_aborts_when_consuming_channel_makes_no_progress():
         nonlocal first_channel
         if first_channel:
             first_channel = False
-            return dead_channel
+            return stalled_channel
         return original_get_channel()
 
     def count_pending(queue_name):
@@ -91,7 +91,7 @@ def test_consume_until_empty_aborts_when_consuming_channel_makes_no_progress():
         consumer.consume_until_empty(queues=queue, block=False)
 
         backend.connection.count_queue_messages.assert_called_once_with(queue)
-        dead_channel.basic_get.assert_called_once_with(queue=queue, auto_ack=backend.auto_ack)
+        stalled_channel.basic_get.assert_called_once_with(queue=queue, auto_ack=backend.auto_ack)
         assert any(
             "Drain stalled with 3 messages pending" in call.args[0] for call in backend.logger.error.call_args_list
         )
