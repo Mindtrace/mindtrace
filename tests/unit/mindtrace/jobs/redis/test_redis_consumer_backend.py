@@ -56,6 +56,42 @@ def test_finite_consume_stops_before_polling_next_queue(backend):
     backend.receive_message.assert_called_once_with("q1", block=False, timeout=backend.poll_timeout)
 
 
+def test_nonblocking_consume_checks_later_queue_before_returning(backend):
+    backend, _ = backend
+
+    def receive_message(queue, *, block, timeout):
+        if queue == "q1":
+            return None
+        return {"id": 2}
+
+    backend.receive_message = MagicMock(side_effect=receive_message)
+    backend.process_message = MagicMock(return_value=True)
+
+    backend.consume(num_messages=1, queues=["q1", "q2"], block=False)
+
+    assert [call.args[0] for call in backend.receive_message.call_args_list] == ["q1", "q2"]
+    backend.process_message.assert_called_once_with({"id": 2})
+
+
+def test_blocking_consume_waits_after_idle_queue_sweep(backend):
+    backend, _ = backend
+    attempts = 0
+
+    def receive_message(queue, *, block, timeout):
+        nonlocal attempts
+        attempts += 1
+        if attempts > 1:
+            backend.stop()
+        return None
+
+    backend.receive_message = MagicMock(side_effect=receive_message)
+    backend._stop_event.wait = MagicMock()
+
+    backend.consume(num_messages=1, queues=["q"], block=True)
+
+    backend._stop_event.wait.assert_called_once()
+
+
 def test_stopped_entry_skips_redis_consume(backend):
     backend, _ = backend
     backend.receive_message = MagicMock(return_value={"id": 1})
