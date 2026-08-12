@@ -84,13 +84,18 @@ def test_consume_with_no_queues_returns_without_opening_channel(backend):
     backend.logger.warning.assert_called_once_with("No queues provided; nothing to consume.")
 
 
-def test_consume_until_empty_honors_prior_stop_request(backend):
+def test_stopped_entry_skips_rabbitmq_drain_setup(backend):
     backend.connection.count_queue_messages = MagicMock()
     backend.stop()
 
     backend.consume_until_empty(queues="q", block=False)
 
+    backend.connection.connect.assert_not_called()
+    backend.connection.get_channel.assert_not_called()
     backend.connection.count_queue_messages.assert_not_called()
+    backend.logger.info.assert_called_once_with(
+        "Consumption skipped because stop was requested; call reset() before consuming again."
+    )
 
 
 def test_finite_consume_stops_before_polling_next_queue(backend):
@@ -104,14 +109,18 @@ def test_finite_consume_stops_before_polling_next_queue(backend):
     backend.receive_message.assert_called_once_with(channel, "q1", block=False)
 
 
-def test_consume_does_not_clear_prior_stop_request(backend):
-    backend.receive_message = MagicMock(return_value=delivery())
-
+def test_stopped_entry_skips_rabbitmq_consume_setup(backend):
+    channel = backend.connection.get_channel.return_value
     backend.stop()
     backend.consume(num_messages=1, queues="q", block=False)
 
-    backend.receive_message.assert_not_called()
+    backend.connection.connect.assert_not_called()
+    backend.connection.get_channel.assert_not_called()
+    channel.basic_qos.assert_not_called()
     assert backend.stopped is True
+    backend.logger.info.assert_called_once_with(
+        "Consumption skipped because stop was requested; call reset() before consuming again."
+    )
 
 
 def test_consume_finite_messages_exception(backend):

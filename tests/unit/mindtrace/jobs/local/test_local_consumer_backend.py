@@ -175,6 +175,38 @@ class TestLocalConsumerBackend:
             "queue1", block=False, timeout=consumer.consumer_backend.poll_timeout
         )
 
+    def test_stopped_entry_skips_local_consume(self, temp_local_client):
+        orchestrator = Orchestrator(backend=temp_local_client)
+        consumer = SimpleConsumer()
+        consumer.connect_to_orchestrator(orchestrator, "queue1")
+        backend = consumer.consumer_backend
+        backend.logger = Mock()
+        backend.orchestrator.receive_message = Mock()
+        consumer.stop()
+
+        consumer.consume(num_messages=1, block=False)
+
+        backend.orchestrator.receive_message.assert_not_called()
+        backend.logger.info.assert_called_once_with(
+            "Consumption skipped because stop was requested; call reset() before consuming again."
+        )
+
+    def test_stopped_entry_skips_local_drain(self, temp_local_client):
+        orchestrator = Orchestrator(backend=temp_local_client)
+        consumer = SimpleConsumer()
+        consumer.connect_to_orchestrator(orchestrator, "queue1")
+        backend = consumer.consumer_backend
+        backend.logger = Mock()
+        backend.orchestrator.count_queue_messages = Mock()
+        consumer.stop()
+
+        consumer.consume_until_empty(block=False)
+
+        backend.orchestrator.count_queue_messages.assert_not_called()
+        backend.logger.info.assert_called_once_with(
+            "Consumption skipped because stop was requested; call reset() before consuming again."
+        )
+
     def test_stop_during_drain_remains_terminal_until_reset(self, temp_local_client):
         class StopAfterTwoConsumer(Consumer):
             def __init__(self):

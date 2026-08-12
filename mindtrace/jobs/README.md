@@ -233,7 +233,8 @@ provide.
 Calling `consumer.stop()` requests graceful shutdown. An in-flight job finishes
 and is acknowledged or rejected before the blocking consume loop exits. The
 stop request is terminal: later consume calls remain stopped until the caller
-explicitly invokes `consumer.reset()`.
+explicitly invokes `consumer.reset()`. Calls made while stopped return before
+backend setup and log that an explicit reset is required.
 RabbitMQ channels and connections close automatically whenever `consume()`
 returns; a later call reconnects.
 

@@ -35,6 +35,17 @@ class TestConsumerBackendBase:
 
         assert consumer.stopped is False
 
+    def test_stopped_entry_guard_logs_reset_requirement(self, mock_consumer):
+        consumer = mock_consumer("test-queue", Mock())
+        consumer.logger = Mock()
+        consumer.stop()
+
+        assert consumer._skip_if_stopped() is True
+
+        consumer.logger.info.assert_called_once_with(
+            "Consumption skipped because stop was requested; call reset() before consuming again."
+        )
+
     def test_close_is_terminal_and_idempotent(self, mock_consumer):
         consumer = mock_consumer("test-queue", Mock())
 

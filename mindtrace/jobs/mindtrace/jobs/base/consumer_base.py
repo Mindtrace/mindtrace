@@ -39,6 +39,13 @@ class ConsumerBackendBase(MindtraceABC):
         if self.closed:
             raise RuntimeError("Consumer backend is closed.")
 
+    def _skip_if_stopped(self) -> bool:
+        """Return whether consumption should be skipped after a stop request."""
+        if not self.stopped:
+            return False
+        self.logger.info("Consumption skipped because stop was requested; call reset() before consuming again.")
+        return True
+
     def stop(self) -> None:
         """Request terminal shutdown after the current delivery completes.
 

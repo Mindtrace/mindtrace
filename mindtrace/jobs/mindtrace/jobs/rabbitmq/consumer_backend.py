@@ -68,6 +68,8 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
     ) -> None:
         """Consume deliveries, waiting indefinitely when ``block`` is true."""
         self._ensure_open()
+        if self._skip_if_stopped():
+            return
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
@@ -194,15 +196,14 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
     def consume_until_empty(self, *, queues: str | list[str] | None = None, block: bool = True, **kwargs) -> None:
         """Drain currently available deliveries without waiting for new work."""
         self._ensure_open()
+        if self._skip_if_stopped():
+            return
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
         if not queues:
             self.logger.warning("No queues provided; nothing to consume.")
             return
-        if self.stopped:
-            return
-
         try:
             self.connection.connect()
             channel = self.connection.get_channel()

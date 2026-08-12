@@ -37,6 +37,8 @@ class RedisConsumerBackend(ConsumerBackendBase):
     ) -> None:
         """Consume messages from Redis queue(s)."""
         self._ensure_open()
+        if self._skip_if_stopped():
+            return
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
@@ -92,6 +94,8 @@ class RedisConsumerBackend(ConsumerBackendBase):
     def consume_until_empty(self, *, queues: str | list[str] | None = None, block: bool = True, **kwargs) -> None:
         """Consume messages from the queue(s) until empty."""
         self._ensure_open()
+        if self._skip_if_stopped():
+            return
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
