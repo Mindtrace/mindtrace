@@ -1079,7 +1079,7 @@ async def test_datalake_service_async_backend_dataset_methods():
 async def test_datalake_service_async_backend_snapshot_methods():
     collection = Collection(name="training", collection_id="collection_1")
     datum = Datum(datum_id="datum_1", asset_refs={"image": "asset_1"})
-    card = DatasetCard(summary="Training snapshot", splits={"train": {"count": 1}})
+    card = DatasetCard(task="classification", splits={"train": {"count": 1}})
     dataset_version = DatasetVersion(dataset_name="training", version="1.0.0", card=card)
     resolved = ResolvedDatasetVersion(dataset_version=dataset_version, datums=[])
     cm = Mock()

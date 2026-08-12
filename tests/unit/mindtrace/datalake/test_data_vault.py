@@ -2055,7 +2055,7 @@ async def test_async_data_vault_eager_dataset_methods_obey_slow_ops_policy_warn(
 
 
 def test_sync_data_vault_freeze_dataset_persists_snapshot():
-    card = DatasetCard(summary="Training snapshot")
+    card = DatasetCard(task="classification")
     collection = Collection(name="training", collection_id="collection_1")
     item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1", split="train")
     asset = Asset(
@@ -2124,7 +2124,7 @@ def test_sync_data_vault_freeze_dataset_persists_snapshot():
 
 @pytest.mark.asyncio
 async def test_async_data_vault_freeze_dataset_persists_snapshot():
-    card = DatasetCard(summary="Training snapshot")
+    card = DatasetCard(task="classification")
     collection = Collection(name="training", collection_id="collection_1")
     item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1", split="train")
     asset = Asset(
@@ -2185,7 +2185,7 @@ async def test_async_data_vault_freeze_dataset_persists_snapshot():
 
 
 def test_sync_data_vault_freeze_dataset_attaches_card_to_non_persisted_snapshot():
-    card = DatasetCard(summary="In-memory snapshot")
+    card = DatasetCard(task="classification")
     collection = Collection(name="training", collection_id="collection_1")
     datalake = Mock()
     datalake.list_collections = Mock(return_value=[collection])
@@ -2851,7 +2851,7 @@ async def test_async_data_vault_import_dataset_version_skips_empty_datums_and_no
 
 
 def test_sync_data_vault_freeze_dataset_returns_dataset_version_when_persisting():
-    card = DatasetCard(summary="Training snapshot")
+    card = DatasetCard(task="classification")
     resolved = ResolvedDatasetVersion(
         dataset_version=DatasetVersion(dataset_name="training", version="1.2.3"), datums=[]
     )
@@ -2866,7 +2866,7 @@ def test_sync_data_vault_freeze_dataset_returns_dataset_version_when_persisting(
 
 @pytest.mark.asyncio
 async def test_async_data_vault_freeze_dataset_returns_resolved_snapshot_when_not_persisting():
-    card = DatasetCard(summary="Training snapshot")
+    card = DatasetCard(task="classification")
     resolved = ResolvedDatasetVersion(
         dataset_version=DatasetVersion(dataset_name="training", version="1.2.3"), datums=[]
     )

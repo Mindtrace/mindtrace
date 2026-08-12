@@ -1758,7 +1758,6 @@ class TestAsyncDatalakeUnit:
             version="0.1.0",
             manifest=["datum_1"],
             card={
-                "summary": "Demo card",
                 "task": "classification",
                 "splits": {"train": {"count": 1}},
             },

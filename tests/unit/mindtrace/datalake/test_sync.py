@@ -102,7 +102,7 @@ def sync_objects():
         version="1.0.0",
         manifest=[datum.datum_id],
         metadata={"dataset": True},
-        card=DatasetCard(summary="Demo sync dataset", splits={"train": {"count": 1}}),
+        card=DatasetCard(task="classification", splits={"train": {"count": 1}}),
     )
     return SimpleNamespace(
         storage_ref=storage_ref,
