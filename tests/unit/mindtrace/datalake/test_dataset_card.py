@@ -68,3 +68,8 @@ def test_dataset_card_rejects_unknown_fields(payload):
 def test_split_info_rejects_negative_count():
     with pytest.raises(ValidationError):
         SplitInfo(count=-1)
+
+
+def test_dataset_card_rejects_non_json_extra_value():
+    with pytest.raises(ValidationError):
+        DatasetCard(extra={"unsupported": object()})

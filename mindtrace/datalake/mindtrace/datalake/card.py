@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 
 class DatasetSource(BaseModel):
@@ -54,7 +54,7 @@ class DatasetCard(BaseModel):
     out_of_scope_uses: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     markdown: str = ""
-    extra: dict[str, Any] = Field(default_factory=dict)
+    extra: dict[str, JsonValue] = Field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the card to a JSON-safe dictionary."""
