@@ -42,7 +42,6 @@ from mindtrace.hardware.core.exceptions import (
     PLCTagNotFoundError,
     PLCTagReadError,
     PLCTagWriteError,
-    PLCTimeoutError,
 )
 from mindtrace.hardware.plcs.backends.base import BasePLC
 from mindtrace.hardware.plcs.types import TagError, TagErrorKind, TagResult
@@ -406,8 +405,10 @@ class MockAllenBradleyPLC(BasePLC):
             raise PLCTagReadError("Simulated tag read failure")
 
         if self.simulate_timeout:
-            await asyncio.sleep(10)  # Simulate timeout
-            raise PLCTimeoutError("Simulated read timeout")
+            # A real AB timeout surfaces as CommError -> PLCCommunicationError
+            # (retryable); the simulation must land in the same contract class.
+            await asyncio.sleep(self.read_timeout)
+            raise PLCCommunicationError("Simulated read timeout")
 
         self._channel("read")
 

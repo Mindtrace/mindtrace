@@ -658,9 +658,9 @@ class TestTagErrorClassification:
             ("Error encoding value for tag", TagErrorKind.encode),
             ("Invalid data type for tag", TagErrorKind.type_mismatch),
             ("Tag type mismatch", TagErrorKind.type_mismatch),
+            # socket related
             ("Connection reset by peer", TagErrorKind.transport),
-            # "type" alone is not evidence of a tag type problem.
-            ("'NoneType' object has no attribute 'read'", TagErrorKind.transport),
+            ("'NoneType' object has no attribute 'read'", TagErrorKind.unknown),
         ],
     )
     def test_classify_tag_error(self, mock_pycomm3_available, message, expected_kind):
@@ -682,13 +682,14 @@ class TestTagErrorClassification:
         assert error.message == "Tag does not exist"
 
     def test_tag_to_result_missing_driver_result(self, mock_pycomm3_available):
-        """A missing driver result is a transport failure, not a None value."""
+        """A missing driver result is an error, not a None value — and not a
+        licence to bounce the session: nothing here says the exchange failed."""
         from mindtrace.hardware.plcs.types import tag_to_result
 
         result = tag_to_result(None)
 
         assert result.ok is False
-        assert result.error.kind is TagErrorKind.transport
+        assert result.error.kind is TagErrorKind.unknown
         assert result.error.message == "driver returned None"
 
     def test_tag_to_result_write_reports_the_written_value(self, mock_pycomm3_available):
@@ -904,7 +905,11 @@ class TestAllenBradleyPLCTagReading:
 
     @pytest.mark.asyncio
     async def test_read_tag_slc_with_error(self, mock_pycomm3_available, mock_slc_driver):
-        """A failing SLC address is a per-tag error; its neighbours still report values."""
+        """A failing SLC address is a per-tag verdict; its neighbours still report values.
+
+        The driver's text names no link trouble, so the address — not the channel —
+        is what failed, and the batch is returned rather than retried.
+        """
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             SLCDriver,
@@ -922,7 +927,7 @@ class TestAllenBradleyPLCTagReading:
         assert result["N7:0"] == TagResult(value=100)
         assert result["B3:0"].ok is False
         assert result["B3:0"].value is None
-        assert result["B3:0"].error.kind is TagErrorKind.transport
+        assert result["B3:0"].error.kind is TagErrorKind.unknown
         assert result["B3:0"].error.message == "Read failed"
 
     @pytest.mark.asyncio
@@ -1173,7 +1178,8 @@ class TestAllenBradleyPLCTagReading:
 
     @pytest.mark.asyncio
     async def test_read_tag_none_result(self, mock_pycomm3_available, mock_logix_driver):
-        """A driver that returns nothing is a transport failure, not a None value."""
+        """A driver that returns nothing is an error, not a None value — and an
+        unnameable one, so it stays a verdict on the address."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
@@ -1190,7 +1196,7 @@ class TestAllenBradleyPLCTagReading:
         assert "Motor1_Speed" in result
         assert result["Motor1_Speed"].ok is False
         assert result["Motor1_Speed"].value is None
-        assert result["Motor1_Speed"].error.kind is TagErrorKind.transport
+        assert result["Motor1_Speed"].error.kind is TagErrorKind.unknown
         assert result["Motor1_Speed"].error.message == "driver returned None"
 
     @pytest.mark.asyncio
@@ -1215,7 +1221,7 @@ class TestAllenBradleyPLCTagReading:
         assert "Assembly:20" in result
         assert result["Assembly:20"].ok is False
         assert result["Assembly:20"].value is None
-        assert result["Assembly:20"].error.kind is TagErrorKind.transport
+        assert result["Assembly:20"].error.kind is TagErrorKind.unknown
         assert result["Assembly:20"].error.message == "Read error"
 
     @pytest.mark.asyncio
@@ -1259,7 +1265,7 @@ class TestAllenBradleyPLCTagReading:
 
         assert "Identity" in result
         assert result["Identity"].ok is False
-        assert result["Identity"].error.kind is TagErrorKind.transport
+        assert result["Identity"].error.kind is TagErrorKind.unknown
         assert result["Identity"].error.message == "Identity read failed"
 
     @pytest.mark.asyncio
@@ -1280,7 +1286,7 @@ class TestAllenBradleyPLCTagReading:
 
         assert "Assembly:20" in result
         assert result["Assembly:20"].ok is False
-        assert result["Assembly:20"].error.kind is TagErrorKind.transport
+        assert result["Assembly:20"].error.kind is TagErrorKind.unknown
         assert result["Assembly:20"].error.message == "Assembly read failed"
 
     @pytest.mark.asyncio
@@ -1301,7 +1307,7 @@ class TestAllenBradleyPLCTagReading:
 
         assert "Module:0" in result
         assert result["Module:0"].ok is False
-        assert result["Module:0"].error.kind is TagErrorKind.transport
+        assert result["Module:0"].error.kind is TagErrorKind.unknown
         assert result["Module:0"].error.message == "Module read failed"
 
     @pytest.mark.asyncio
@@ -1322,7 +1328,7 @@ class TestAllenBradleyPLCTagReading:
 
         assert "Connection" in result
         assert result["Connection"].ok is False
-        assert result["Connection"].error.kind is TagErrorKind.transport
+        assert result["Connection"].error.kind is TagErrorKind.unknown
         assert result["Connection"].error.message == "Connection read failed"
 
     @pytest.mark.asyncio
@@ -1343,7 +1349,7 @@ class TestAllenBradleyPLCTagReading:
 
         assert "0x04:1:3" in result
         assert result["0x04:1:3"].ok is False
-        assert result["0x04:1:3"].error.kind is TagErrorKind.transport
+        assert result["0x04:1:3"].error.kind is TagErrorKind.unknown
         assert result["0x04:1:3"].error.message == "Generic read failed"
 
 
@@ -1516,7 +1522,11 @@ class TestAllenBradleyPLCTagWriting:
 
     @pytest.mark.asyncio
     async def test_write_tag_slc_with_error(self, mock_pycomm3_available, mock_slc_driver):
-        """A failing SLC address is a per-tag error; its neighbours still succeed."""
+        """A failing SLC address is a per-tag verdict; its neighbours still succeed.
+
+        The driver's text names no link trouble, so the address — not the channel —
+        is what failed, and the batch is returned rather than retried.
+        """
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             SLCDriver,
@@ -1534,7 +1544,7 @@ class TestAllenBradleyPLCTagWriting:
         assert result["N7:0"] == TagResult(value=100)
         assert result["B3:0"].ok is False
         assert result["B3:0"].value is None
-        assert result["B3:0"].error.kind is TagErrorKind.transport
+        assert result["B3:0"].error.kind is TagErrorKind.unknown
         assert result["B3:0"].error.message == "Write failed"
 
     @pytest.mark.asyncio
@@ -1649,7 +1659,7 @@ class TestAllenBradleyPLCTagWriting:
 
         assert result["Assembly:20"].ok is False
         assert result["Assembly:20"].value is None
-        assert result["Assembly:20"].error.kind is TagErrorKind.transport
+        assert result["Assembly:20"].error.kind is TagErrorKind.unknown
         assert result["Assembly:20"].error.message == "Write error"
 
     @pytest.mark.asyncio
@@ -1739,25 +1749,32 @@ class TestAllenBradleyPLCTagWriting:
         assert result["Motor1_Speed"].error.message == "Invalid data type for tag"
 
     @pytest.mark.asyncio
-    async def test_write_tag_result_with_error_attribute(self, mock_pycomm3_available, mock_cip_driver):
-        """Test writing tag when result has error attribute."""
+    async def test_write_tag_result_stamped_with_link_trouble_raises(self, mock_pycomm3_available, mock_cip_driver):
+        """A tag stamped with pycomm3's own link text is a channel failure, not a result.
+
+        The exchange carrying this write never happened, so the caller is told by a
+        raise — with the partial map attached for the log — rather than handed a
+        write it cannot tell apart from a completed one.
+        """
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             CIPDriver,
         )
 
         error_result = MagicMock()
-        error_result.error = "Write error"
+        error_result.error = "failed to receive reply"
         mock_cip_driver.generic_message.return_value = error_result
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip", retry_count=2, retry_delay=0.01)
         CIPDriver.return_value = mock_cip_driver
         await plc.connect()
 
-        result = await plc.write_tag([("Assembly:20", [1500, 0, 255, 0])])
+        with pytest.raises(PLCCommunicationError, match=r"attempts=2") as exc_info:
+            await plc.write_tag([("Assembly:20", [1500, 0, 255, 0])])
 
-        assert result["Assembly:20"].ok is False
-        assert result["Assembly:20"].error.kind is TagErrorKind.transport
+        assert exc_info.value.transport_addresses == ("Assembly:20",)
+        assert exc_info.value.results["Assembly:20"].error.kind is TagErrorKind.transport
+        assert mock_cip_driver.generic_message.call_count == 2
 
     @pytest.mark.asyncio
     async def test_write_tag_cip_assembly_exception(self, mock_pycomm3_available, mock_cip_driver):
@@ -1776,7 +1793,7 @@ class TestAllenBradleyPLCTagWriting:
         result = await plc.write_tag([("Assembly:20", [1500, 0, 255, 0])])
 
         assert result["Assembly:20"].ok is False
-        assert result["Assembly:20"].error.kind is TagErrorKind.transport
+        assert result["Assembly:20"].error.kind is TagErrorKind.unknown
         assert result["Assembly:20"].error.message == "Assembly write failed"
 
     @pytest.mark.asyncio
@@ -1796,7 +1813,7 @@ class TestAllenBradleyPLCTagWriting:
         result = await plc.write_tag([("Parameter:1", 1500.0)])
 
         assert result["Parameter:1"].ok is False
-        assert result["Parameter:1"].error.kind is TagErrorKind.transport
+        assert result["Parameter:1"].error.kind is TagErrorKind.unknown
         assert result["Parameter:1"].error.message == "Parameter write failed"
 
     @pytest.mark.asyncio
@@ -1816,7 +1833,7 @@ class TestAllenBradleyPLCTagWriting:
         result = await plc.write_tag([("0x04:1:3", [1500, 0, 255, 0])])
 
         assert result["0x04:1:3"].ok is False
-        assert result["0x04:1:3"].error.kind is TagErrorKind.transport
+        assert result["0x04:1:3"].error.kind is TagErrorKind.unknown
         assert result["0x04:1:3"].error.message == "Generic write failed"
 
 

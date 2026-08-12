@@ -20,7 +20,6 @@ from mindtrace.hardware.core.exceptions import (
     PLCTagNotFoundError,
     PLCTagReadError,
     PLCTagWriteError,
-    PLCTimeoutError,
 )
 from mindtrace.hardware.plcs import TagErrorKind
 
@@ -574,11 +573,13 @@ class TestMockAllenBradleyPLCTagReading:
 
     @pytest.mark.asyncio
     async def test_read_tag_with_timeout_flag(self, mock_plc):
-        """Test reading tag when simulate_timeout flag is set."""
+        """A simulated timeout is transport-class: retried, then raised typed."""
         await mock_plc.connect()
         mock_plc.simulate_timeout = True
+        mock_plc.read_timeout = 0.01
+        mock_plc.retry_count = 1
 
-        with pytest.raises(PLCTimeoutError):
+        with pytest.raises(PLCCommunicationError):
             await mock_plc.read_tag(["Motor1_Speed"])
 
     @pytest.mark.asyncio

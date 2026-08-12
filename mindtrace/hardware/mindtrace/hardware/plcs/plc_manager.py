@@ -85,11 +85,11 @@ Error Handling:
     - PLCTagError: Tag-related operation errors
     - PLCTagReadError: Tag read operation failures
     - PLCTagWriteError: Tag write operation failures
-    - HardwareOperationError: General hardware operation failures
 
-Thread Safety:
-    All PLC operations are thread-safe. Multiple PLCs can be operated
-    simultaneously from different threads without interference.
+Concurrency:
+    Operations on one PLC are serialized per channel (read/write) by asyncio
+    locks in the backend — safe for concurrent tasks on one event loop. PLC
+    instances are not thread-safe across event loops.
 
 Performance Notes:
     - PLC discovery may take several seconds depending on network size

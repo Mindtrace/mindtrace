@@ -531,8 +531,12 @@ driver per PLC), each recovering on its own:
 - The delay between attempts is a flat `MINDTRACE_HW_PLC_RETRY_DELAY`; a failed
   reconnect is logged, not fatal. No circuit breaker, no escalating backoff.
 - Malformed requests (`PLCTagReadError` / `PLCTagWriteError`) are never retried.
-- Per-tag failures are never retried or laundered — they come back as
-  `TagResult.error`.
+- A returned result map contains only **address verdicts** (`missing_tag` /
+  `type_mismatch` / `encode` / `unknown`) — stable answers a retry cannot
+  change, never retried, never laundered. Link trouble never appears in a
+  returned map: any transport-kind entry escalates into the retry loop and,
+  if it survives the budget, the raised `PLCCommunicationError` (partial map
+  attached as `.results`).
 
 ### Service Layer
 

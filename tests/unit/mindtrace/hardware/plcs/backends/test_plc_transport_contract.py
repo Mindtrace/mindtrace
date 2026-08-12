@@ -443,8 +443,19 @@ class TestErrorTaxonomy:
             ("Connection timed out", TagErrorKind.transport),
             # SERVICE_STATUS 0x07: the socket, not the address.
             ("Connection lost", TagErrorKind.transport),
+            # cip_driver's own CommError texts, stamped rather than raised.
+            ("failed to receive reply", TagErrorKind.transport),
+            # errno text for a socket that died under the driver, flattened onto the tag.
+            ("[Errno 104] Connection reset by peer", TagErrorKind.transport),
+            ("[Errno 32] Broken pipe", TagErrorKind.transport),
+            ("[Errno 103] Software caused connection abort", TagErrorKind.transport),
+            ("[Errno 111] Connection refused", TagErrorKind.transport),
+            # A controller refusal we have no name for is NOT evidence of a sick
+            # socket: transport is matched, never assumed, because guessing it
+            # would cost the whole call a reconnect cycle.
+            ("Attribute not settable", TagErrorKind.unknown),
             # A bare "type" substring is not evidence of a tag type problem.
-            ("'NoneType' object is not subscriptable", TagErrorKind.transport),
+            ("'NoneType' object is not subscriptable", TagErrorKind.unknown),
         ],
     )
     def test_classification_preserves_the_raw_message(self, message, expected):
@@ -528,7 +539,7 @@ class TestErrorTaxonomy:
         results = await plc.write_tag([("Tag1", 5)])
 
         assert results["Tag1"].ok is False
-        assert results["Tag1"].error.kind is TagErrorKind.transport
+        assert results["Tag1"].error.kind is TagErrorKind.unknown
 
     async def test_an_empty_batch_still_checks_the_channel(self):
         read_driver = FakeLogixDriver()
@@ -814,31 +825,62 @@ class TestChannelRecovery:
         assert plc.read_calls == 2
         assert plc.reconnects == []
 
-    async def test_a_batch_that_stays_wedged_is_returned_honestly(self):
-        """Per-tag results never turn into a raise, however many attempts failed."""
+    async def test_a_batch_that_stays_wedged_is_raised_not_returned(self):
+        """A transport error never reaches the caller as a result: the budget ends in a raise."""
         plc = ScriptedPLC(read_script=[{"Tag1": _transport_result()}], retry_count=3)
 
-        results = await plc.read_tag(["Tag1"])
+        with pytest.raises(PLCCommunicationError, match=r"attempts=3") as excinfo:
+            await plc.read_tag(["Tag1"])
 
-        assert results["Tag1"].error.kind is TagErrorKind.transport
+        # The partial map rides along for the log, out of the caller's way.
+        assert excinfo.value.transport_addresses == ("Tag1",)
+        assert excinfo.value.results["Tag1"].error.kind is TagErrorKind.transport
         assert plc.read_calls == 3
         # Free first retry: only the gap before attempt 3 buys a reconnect.
         assert plc.reconnects == ["read"]
 
-    async def test_a_partly_errored_batch_is_not_a_channel_failure(self):
+    async def test_one_transport_entry_condemns_the_whole_batch(self):
+        """A packet that never happened cannot be reported as a per-address verdict.
+
+        pycomm3 stamps a failed exchange on every tag that packet carried, so a
+        multi-packet batch can come back half real. Retrying is the only cure, and
+        a batch that stays half real is a channel failure: its transport entries
+        are transient (and, for writes, ambiguous — the request may have executed
+        with only the reply lost), so they must not be returned as if they were
+        stable address verdicts.
+        """
         plc = ScriptedPLC(
             read_script=[
                 {
                     "Tag1": _transport_result(),
                     "Ghost": TagResult(error=TagError(kind=TagErrorKind.missing_tag, message="no such tag")),
+                    "Tag2": TagResult(value=2),
+                }
+            ],
+            retry_count=2,
+        )
+
+        with pytest.raises(PLCCommunicationError):
+            await plc.read_tag(["Tag1", "Ghost", "Tag2"])
+
+        assert plc.read_calls == 2
+
+    async def test_a_batch_of_address_verdicts_is_returned_unretried(self):
+        """Verdicts are stable: retrying could only produce the same answer."""
+        plc = ScriptedPLC(
+            read_script=[
+                {
+                    "Ghost": TagResult(error=TagError(kind=TagErrorKind.missing_tag, message="no such tag")),
+                    "Odd": TagResult(error=TagError(kind=TagErrorKind.unknown, message="Attribute not settable")),
                 }
             ],
             retry_count=3,
         )
 
-        results = await plc.read_tag(["Tag1", "Ghost"])
+        results = await plc.read_tag(["Ghost", "Odd"])
 
         assert results["Ghost"].error.kind is TagErrorKind.missing_tag
+        assert results["Odd"].error.kind is TagErrorKind.unknown
         assert plc.read_calls == 1
         assert plc.reconnects == []
 

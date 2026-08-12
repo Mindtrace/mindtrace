@@ -1,18 +1,18 @@
 """Abstract base class for PLC backends.
 
-Transport contract, enforced here so every backend inherits it:
+Transport contract — every ``read_tag`` / ``write_tag`` outcome is one of:
 
-- Access is serialized on two channels, read and write. Public methods take the
-  lock; backends implement the underscore-prefixed bodies and run alone on their
-  channel.
-- Per-tag failures are reported as ``TagResult.error``, never as a sentinel value.
-- Whole-call failures raise typed exceptions from
-  ``mindtrace.hardware.core.exceptions``: ``PLCCommunicationError`` when
-  reconnecting the channel can plausibly fix it, ``PLCTagReadError`` /
-  ``PLCTagWriteError`` when it cannot (malformed request, programming error).
-- ``read_tag`` / ``write_tag`` retry transport-class failures up to
-  ``retry_count`` times, reconnecting THAT channel only between attempts. Nothing
-  else reconnects behind the caller's back.
+- ``{addr: value}``: it worked.
+- ``{addr: error}``: that ADDRESS is wrong — a stable verdict; retrying is pointless.
+- raises ``PLCCommunicationError``: the LINK is sick; already retried
+  ``retry_count`` times with a channel reconnect between attempts.
+- raises ``PLCTagError``: the REQUEST is wrong; never retried.
+
+Link trouble never appears in a returned map: pycomm3 stamps a failed packet
+exchange onto that packet's tags instead of raising, so any transport-kind entry
+is promoted here into the retry loop and, past the budget, into the raise (the
+partial map rides on ``.results``). Access is serialized per channel (read/write
+locks); the first retry on a still-connected session skips the reconnect.
 """
 
 import asyncio
@@ -25,12 +25,19 @@ from mindtrace.hardware.core.exceptions import PLCCommunicationError
 from mindtrace.hardware.plcs.types import TagErrorKind, TagResult
 
 
-def _is_wedged(results: Optional[Dict[str, TagResult]]) -> bool:
-    """True when EVERY tag in a non-empty batch failed at transport level: a sick
-    socket, not a batch of bad addresses."""
+def _transport_failures(results: Optional[Dict[str, TagResult]]) -> List[str]:
+    """Addresses whose error says the exchange failed, not that the address is wrong.
+
+    One is enough to condemn the call: pycomm3 stamps a failed packet onto every
+    tag it carried, and stamped entries escalate instead of being returned.
+    """
     if not results:
-        return False
-    return all(result.error is not None and result.error.kind is TagErrorKind.transport for result in results.values())
+        return []
+    return [
+        address
+        for address, result in results.items()
+        if result.error is not None and result.error.kind is TagErrorKind.transport
+    ]
 
 
 class BasePLC(MindtraceABC):
@@ -129,8 +136,9 @@ class BasePLC(MindtraceABC):
     async def read_tag(self, tags: Union[str, List[str]]) -> Dict[str, TagResult]:
         """Read tags on the read channel, recovering the channel if it fails.
 
-        Per-tag failures land in the results, keyed by address — a repeated address
-        collapses to its last result.
+        Address verdicts land in the results, keyed by address — a repeated address
+        collapses to its last result. Link trouble raises; see the module
+        docstring's table.
         """
         batch = [tags] if isinstance(tags, str) else list(tags)
         async with self._read_lock:
@@ -139,8 +147,9 @@ class BasePLC(MindtraceABC):
     async def write_tag(self, tags: Union[Tuple[str, Any], List[Tuple[str, Any]]]) -> Dict[str, TagResult]:
         """Write tags on the write channel, recovering the channel if it fails.
 
-        Per-tag failures land in the results, keyed by address — a repeated address
-        collapses to its last result, though every write is still issued.
+        Address verdicts land in the results, keyed by address — a repeated address
+        collapses to its last result, though every write is still issued. Link
+        trouble raises; see the module docstring's table.
         """
         batch = [tags] if isinstance(tags, tuple) else list(tags)
         async with self._write_lock:
@@ -153,27 +162,29 @@ class BasePLC(MindtraceABC):
     ) -> Dict[str, TagResult]:
         """Attempt ``operation`` up to ``retry_count`` times, resetting ``channel`` between tries.
 
-        A transport-class failure is a raised ``PLCCommunicationError`` or a batch
-        in which every tag failed at transport level; anything else propagates on
-        the first attempt. The caller holds this channel's lock, so recovery goes
-        through ``_reconnect_channel`` — never the public ``reconnect``, which
-        takes both locks and would deadlock here.
+        Transport-class = a raised ``PLCCommunicationError`` or a batch carrying
+        any transport-kind result; anything else propagates on attempt 1. The
+        caller holds this channel's lock, so recovery uses ``_reconnect_channel``
+        — never the public ``reconnect`` (both locks: deadlock).
         """
         attempts = max(1, int(self.retry_count or 1))
         last_error: Optional[PLCCommunicationError] = None
         results: Optional[Dict[str, TagResult]] = None
+        stamped: List[str] = []
 
         for attempt in range(1, attempts + 1):
             try:
                 results = await operation()
             except PLCCommunicationError as error:
-                last_error, results = error, None
+                last_error, results, stamped = error, None, []
             else:
                 last_error = None
-                if not _is_wedged(results):
+                stamped = _transport_failures(results)
+                if not stamped:
                     return results
                 self.logger.warning(
-                    f"{self.plc_name} {channel} channel returned {len(results)} results, all transport errors"
+                    f"{self.plc_name} {channel} channel stamped {len(stamped)}/{len(results)} "
+                    f"results with transport errors"
                 )
 
             if attempt == attempts:
@@ -181,8 +192,10 @@ class BasePLC(MindtraceABC):
 
             await asyncio.sleep(self.retry_delay)
 
-            # skip reconnect if the channel is still connected
-            if self.is_connected():
+            # The first retry on a session the driver still calls open is free:
+            # bouncing it would turn one hiccup into a torn-down socket. After
+            # that the session is lying, so reset it.
+            if attempt == 1 and await self.is_connected():
                 continue
 
             # A failed reconnect is logged, never fatal: the next attempt fails fast
@@ -202,7 +215,18 @@ class BasePLC(MindtraceABC):
             # constructors differ. Chained to the original driver cause.
             cause = last_error.__cause__ or last_error
             raise PLCCommunicationError(f"{last_error} (attempts={attempts})") from cause
-        # A wedged batch is still a batch: return the per-tag errors, never raise.
+        if stamped:
+            # Stamped entries are transient (and, for writes, ambiguous: the
+            # request may have executed with only the reply lost) — returning them
+            # would reintroduce retryable map errors. Raise, partial map attached.
+            message = (
+                f"{self.plc_name} {channel} channel failed on {len(stamped)}/{len(results or {})} tags: "
+                f"{(results or {})[stamped[0]].error.message} (attempts={attempts})"
+            )
+            error = PLCCommunicationError(message)
+            error.results = results  # type: ignore[attr-defined]
+            error.transport_addresses = tuple(stamped)  # type: ignore[attr-defined]
+            raise error
         return results if results is not None else {}
 
     @abstractmethod
