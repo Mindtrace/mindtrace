@@ -218,6 +218,19 @@ class TestLocalPriorityQueue:
         assert queue.empty()
         assert queue.qsize() == 0
 
+    def test_from_dict_accepts_legacy_items_without_sequence(self):
+        legacy_data = {
+            "items": [
+                {"item": {"name": "first"}, "priority": 5},
+                {"item": {"name": "second"}, "priority": 5},
+            ]
+        }
+
+        queue = LocalPriorityQueue.from_dict(legacy_data)
+
+        assert queue.pop() == {"name": "first"}
+        assert queue.pop() == {"name": "second"}
+
     def test_complex_objects_with_priority(self):
         """Test priority queue with complex objects."""
         pq = LocalPriorityQueue()
