@@ -85,7 +85,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             if num_messages > 0:
                 self._consume_finite_messages(channel, num_messages, queues, block=block)
             else:
-                self._consume_infinite_messages(channel, queues)
+                self._consume_infinite_messages(channel, queues, block=block)
         except KeyboardInterrupt:
             self.logger.info("Consumption interrupted by user.")
         finally:
@@ -109,7 +109,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                 if queue in failed_queues:
                     continue
                 try:
-                    delivery = self.receive_message(channel, queue, block=block)
+                    delivery = self.receive_message(channel, queue, block=False)
                     if delivery is None:
                         continue
                     found_message = True
@@ -124,12 +124,14 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                     failed_queues.add(queue)
             if len(failed_queues) == len(queues):
                 return settled
-            if not found_message and not block:
-                return settled
+            if not found_message:
+                if not block:
+                    return settled
+                self._stop_event.wait(0.1)
         return settled
 
-    def _consume_infinite_messages(self, channel, queues: list[str]) -> None:
-        """Consume messages until graceful shutdown is requested."""
+    def _consume_infinite_messages(self, channel, queues: list[str], *, block: bool = True) -> None:
+        """Consume available messages, waiting for new work only when requested."""
         self.logger.info(f"Started consuming messages indefinitely from queues: {queues}.")
         processed = 0
         while not self.stopped:
@@ -147,10 +149,14 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                         self.logger.debug(f"Received message from queue '{queue}': processing message {processed}")
                         self._process_delivery(channel, delivery)
                 except Exception as exc:
+                    if not getattr(channel, "is_open", False):
+                        raise
                     self.logger.error(
                         f"Error during infinite consumption from {queue}: {exc}\n{traceback.format_exc()}"
                     )
             if idle and not self.stopped:
+                if not block:
+                    return
                 self._stop_event.wait(0.1)
 
     def _process_delivery(self, channel, delivery: RabbitMQDelivery) -> bool:
