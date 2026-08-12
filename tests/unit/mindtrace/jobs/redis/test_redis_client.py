@@ -1,5 +1,5 @@
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pydantic
 import pytest
@@ -41,14 +41,44 @@ def test_declare_queue_already_exists(client):
 
 def test_delete_queue_success(client):
     client, mock_conn = client
-    mock_conn.queues = {"q": MagicMock()}
+    queue = MagicMock()
+    queue.key = "queue:q"
+    mock_conn.queues = {"q": queue}
     mock_conn.connection.lock.return_value.acquire.return_value = True
-    mock_conn.connection.pipeline.return_value.hdel.return_value = None
-    mock_conn.connection.pipeline.return_value.execute.return_value = None
-    mock_conn.connection.publish.return_value = 1
+    pipeline = mock_conn.connection.pipeline.return_value
+    pipeline.hdel.return_value = None
+    pipeline.execute.return_value = None
     result = client.delete_queue("q")
     assert result["status"] == "success"
-    mock_conn.connection.publish.assert_called()
+    event_data = json.dumps({"event": "delete", "queue": "q"})
+    assert pipeline.method_calls[:4] == [
+        call.hdel(mock_conn.METADATA_KEY, "q"),
+        call.delete("queue:q"),
+        call.publish(mock_conn.EVENTS_CHANNEL, event_data),
+        call.execute(),
+    ]
+    mock_conn.connection.publish.assert_not_called()
+
+
+def test_declare_queue_rechecks_central_metadata_under_distributed_lock(client):
+    client, mock_conn = client
+    mock_conn.queues = {}
+    lock = mock_conn.connection.lock.return_value
+    lock.acquire.return_value = True
+
+    def central_queue_type(*_args):
+        assert lock.acquire.called, "Central metadata must be checked only after acquiring the distributed lock."
+        return b"fifo"
+
+    mock_conn.connection.hget.side_effect = central_queue_type
+
+    with patch("mindtrace.jobs.redis.client.RedisPriorityQueue") as priority_queue:
+        with pytest.raises(ValueError, match="already declared as fifo"):
+            client.declare_queue("q", queue_type="priority")
+
+        priority_queue.assert_not_called()
+
+    mock_conn.connection.pipeline.return_value.hset.assert_not_called()
 
 
 def test_delete_queue_not_declared(client):

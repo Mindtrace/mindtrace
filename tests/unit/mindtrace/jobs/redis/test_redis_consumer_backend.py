@@ -117,6 +117,37 @@ def test_consume_until_empty(backend):
     backend.consume.assert_called_with(num_messages=1, queues=["q"], block=False)
 
 
+def test_consume_until_empty_uses_bounded_nonblocking_pass(backend):
+    backend, mock_conn = backend
+    backend.queues = ["q"]
+    mock_conn.count_queue_messages.side_effect = [1, 0]
+
+    def consume_one(*, num_messages, queues, block):
+        assert num_messages == 1
+        assert queues == ["q"]
+        assert block is False, "A drain pass must not wait for work that disappeared after the pending count."
+        return 1
+
+    backend.consume = MagicMock(side_effect=consume_one)
+
+    backend.consume_until_empty(block=True)
+
+    backend.consume.assert_called_once()
+
+
+def test_consume_until_empty_does_not_treat_concurrent_publish_as_no_progress(backend):
+    backend, mock_conn = backend
+    backend.queues = ["q"]
+    mock_conn.count_queue_messages.side_effect = [1, 1, 0]
+    backend.consume = MagicMock(return_value=1)
+    backend.logger = MagicMock()
+
+    backend.consume_until_empty(block=False)
+
+    assert backend.consume.call_count == 1
+    assert not any("Drain stalled" in item.args[0] for item in backend.logger.error.call_args_list)
+
+
 def test_stopped_entry_skips_redis_drain(backend):
     backend, mock_conn = backend
     backend.queues = ["q"]
@@ -200,6 +231,41 @@ def test_receive_message_empty(backend):
     assert backend.receive_message("q") is None
 
 
+def test_receive_message_propagates_redis_operational_failure(backend):
+    backend, mock_conn = backend
+    fake_queue = MagicMock()
+    fake_queue.pop.side_effect = RuntimeError("redis unavailable")
+    mock_conn.queues = {"q": fake_queue}
+    mock_conn._local_lock = MagicMock().__enter__.return_value
+
+    with pytest.raises(RuntimeError, match="redis unavailable"):
+        backend.receive_message("q")
+
+
+def test_blocking_consume_does_not_wait_after_removing_malformed_redis_payload(backend):
+    backend, mock_conn = backend
+    fake_queue = MagicMock()
+    fake_queue.pop.return_value = "not-json"
+    mock_conn.queues = {"q": fake_queue}
+    mock_conn._local_lock = MagicMock().__enter__.return_value
+    backend._stop_event.wait = MagicMock(side_effect=lambda _timeout: backend.stop())
+
+    backend.consume(num_messages=1, queues="q", block=True)
+
+    backend._stop_event.wait.assert_not_called()
+    fake_queue.pop.assert_called_once()
+
+
+def test_consume_rejects_negative_message_count(backend):
+    backend, _ = backend
+    backend.receive_message = MagicMock()
+
+    with pytest.raises(ValueError, match="num_messages must be non-negative"):
+        backend.consume(num_messages=-1, queues="q", block=False)
+
+    backend.receive_message.assert_not_called()
+
+
 def test_receive_message_queue_not_declared(backend):
     backend, mock_conn = backend
     mock_conn.queues = {}
@@ -218,13 +284,13 @@ def test_consume_non_block_returns_immediately_when_no_message(backend):
     backend.receive_message.assert_called_once_with("q", block=False, timeout=None)
 
 
-def test_consume_non_block_returns_on_exception(backend):
+def test_consume_non_block_propagates_operational_exception(backend):
     backend, _ = backend
     backend.queues = ["q"]
-    backend.receive_message = MagicMock(side_effect=Exception("fail"))
+    backend.receive_message = MagicMock(side_effect=RuntimeError("redis unavailable"))
     backend.logger = MagicMock()
-    backend.consume(num_messages=0, queues=["q"], block=False)
-    backend.logger.debug.assert_called()
+    with pytest.raises(RuntimeError, match="redis unavailable"):
+        backend.consume(num_messages=0, queues=["q"], block=False)
 
 
 def test_receive_message_uses_get_and_returns_dict(backend):
@@ -237,7 +303,7 @@ def test_receive_message_uses_get_and_returns_dict(backend):
     assert result == {"foo": "bar"}
 
 
-def test_receive_message_unsupported_queue_type_returns_none(backend):
+def test_receive_message_unsupported_queue_type_raises(backend):
     backend, mock_conn = backend
 
     # Queue instance without get/pop attributes
@@ -246,7 +312,8 @@ def test_receive_message_unsupported_queue_type_returns_none(backend):
 
     mock_conn.queues = {"q": Unsupported()}
     mock_conn._local_lock = MagicMock().__enter__.return_value
-    assert backend.receive_message("q") is None
+    with pytest.raises(RuntimeError, match="does not support receiving messages"):
+        backend.receive_message("q")
 
 
 def test_consume_until_empty_logs_info(backend):
@@ -285,7 +352,7 @@ def test_consume_no_queues_returns_immediately(backend):
     backend.consume(num_messages=1, block=False)
 
 
-def test_receive_message_general_exception_returns_none(backend):
+def test_receive_message_general_exception_propagates(backend):
     backend, mock_conn = backend
 
     class Bad:
@@ -294,7 +361,8 @@ def test_receive_message_general_exception_returns_none(backend):
 
     mock_conn.queues = {"q": Bad()}
     mock_conn._local_lock = MagicMock().__enter__.return_value
-    assert backend.receive_message("q") is None
+    with pytest.raises(RuntimeError, match="boom"):
+        backend.receive_message("q")
 
 
 def test_consume_logs_when_processing_and_increments(backend):
@@ -326,15 +394,16 @@ def test_consume_normalizes_string_queues_and_handles_keyboardinterrupt(backend)
     backend.logger.info.assert_called()
 
 
-def test_consume_exception_block_true_waits_once_then_interrupts(backend):
+def test_consume_exception_block_true_propagates_without_waiting(backend):
     backend, _ = backend
     backend.logger = MagicMock()
-    backend.receive_message = MagicMock(side_effect=[Exception("fail"), KeyboardInterrupt])
+    backend.receive_message = MagicMock(side_effect=RuntimeError("redis unavailable"))
     backend._stop_event.wait = MagicMock()
 
-    backend.consume(num_messages=1, queues="q", block=True)
+    with pytest.raises(RuntimeError, match="redis unavailable"):
+        backend.consume(num_messages=1, queues="q", block=True)
 
-    backend._stop_event.wait.assert_called_once_with(backend.poll_timeout)
+    backend._stop_event.wait.assert_not_called()
 
 
 def test_consume_until_empty_normalizes_string_queue(backend):

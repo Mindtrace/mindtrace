@@ -116,6 +116,27 @@ class TestOrchestratorQueueManagement:
             client.close()
 
     @pytest.mark.redis
+    def test_redis_clients_cannot_redeclare_same_queue_with_conflicting_types(self, unique_queue_name):
+        first = RedisClient(host="localhost", port=6380, db=0)
+        second = RedisClient(host="localhost", port=6380, db=0)
+        queue_name = unique_queue_name("redis-conflicting-types")
+
+        try:
+            first.declare_queue(queue_name, queue_type="fifo")
+            with second.connection._local_lock:
+                second.connection.queues.pop(queue_name, None)
+
+            with pytest.raises(ValueError, match="already declared as fifo"):
+                second.declare_queue(queue_name, queue_type="priority")
+
+            assert first.connection.connection.hget(first.connection.METADATA_KEY, queue_name) == b"fifo"
+        finally:
+            first.connection.connection.delete(f"queue:{queue_name}", f"priority_queue:{queue_name}")
+            first.connection.connection.hdel(first.connection.METADATA_KEY, queue_name)
+            first.close()
+            second.close()
+
+    @pytest.mark.redis
     def test_redis_priority_queue_preserves_duplicate_payloads(self, unique_queue_name):
         client = RedisClient(host="localhost", port=6380, db=0)
         queue_name = unique_queue_name("redis-priority-duplicates")

@@ -85,6 +85,14 @@ def test_consume_with_no_queues_returns_without_opening_channel(backend):
     backend.logger.warning.assert_called_once_with("No queues provided; nothing to consume.")
 
 
+def test_consume_rejects_negative_message_count_before_broker_setup(backend):
+    with pytest.raises(ValueError, match="num_messages must be non-negative"):
+        backend.consume(num_messages=-1, queues="q", block=False)
+
+    backend.connection.connect.assert_not_called()
+    backend.connection.get_channel.assert_not_called()
+
+
 def test_stopped_entry_skips_rabbitmq_drain_setup(backend):
     backend.connection.count_queue_messages = MagicMock()
     backend.stop()

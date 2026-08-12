@@ -1,3 +1,4 @@
+import json
 import time
 from unittest.mock import MagicMock
 
@@ -233,15 +234,15 @@ class TestLocalClient:
             client.receive_message("nonexistent-queue")
 
     def test_receive_message_json_decode_error(self, temp_local_client):
-        """Test receive_message handling of JSON decode errors."""
+        """A removed malformed message must be observable, not reported as an empty queue."""
         client = temp_local_client
         client.declare_queue("test-queue")
 
         queue_instance = client.queues["test-queue"]
         queue_instance.push("invalid json content")
 
-        result = client.receive_message("test-queue", block=True, timeout=0.01)
-        assert result is None
+        with pytest.raises(json.JSONDecodeError):
+            client.receive_message("test-queue", block=True, timeout=0.01)
 
     def test_clean_nonexistent_queue(self, temp_local_client):
         """Test cleaning a queue that doesn't exist."""

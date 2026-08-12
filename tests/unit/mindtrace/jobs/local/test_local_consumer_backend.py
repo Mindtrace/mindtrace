@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, Mock, call
+from unittest.mock import MagicMock, Mock, call, patch
 
 import pydantic
 import pytest
@@ -222,6 +222,100 @@ class TestLocalConsumerBackend:
             "Drain stalled with 1 message pending" in item.args[0] for item in backend.logger.error.call_args_list
         )
 
+    def test_consume_until_empty_uses_bounded_nonblocking_pass(self, temp_local_client):
+        orchestrator = Orchestrator(backend=temp_local_client)
+        consumer = SimpleConsumer()
+        consumer.connect_to_orchestrator(orchestrator, "queue1")
+        backend = consumer.consumer_backend
+        backend.orchestrator.count_queue_messages = MagicMock(side_effect=[1, 0])
+
+        def consume_one(*, num_messages, queues, block):
+            assert num_messages == 1
+            assert queues == ["queue1"]
+            assert block is False, "A drain pass must not wait for work that disappeared after the pending count."
+            return 1
+
+        backend.consume = MagicMock(side_effect=consume_one)
+
+        backend.consume_until_empty(queues="queue1", block=True)
+
+        backend.consume.assert_called_once()
+
+    def test_consume_until_empty_does_not_treat_concurrent_publish_as_no_progress(self, temp_local_client):
+        orchestrator = Orchestrator(backend=temp_local_client)
+        consumer = SimpleConsumer()
+        consumer.connect_to_orchestrator(orchestrator, "queue1")
+        backend = consumer.consumer_backend
+        backend.orchestrator.count_queue_messages = MagicMock(side_effect=[1, 1, 0])
+        backend.consume = MagicMock(return_value=1)
+        backend.logger = MagicMock()
+
+        backend.consume_until_empty(queues="queue1", block=False)
+
+        assert backend.consume.call_count == 1
+        assert not any("Drain stalled" in item.args[0] for item in backend.logger.error.call_args_list)
+
+    def test_consume_propagates_local_receive_failure(self, temp_local_client):
+        orchestrator = Orchestrator(backend=temp_local_client)
+        consumer = SimpleConsumer()
+        consumer.connect_to_orchestrator(orchestrator, "queue1")
+        backend = consumer.consumer_backend
+
+        class BrokenQueue:
+            def pop(self, *args, **kwargs):
+                raise RuntimeError("local storage unavailable")
+
+        backend.orchestrator.queues.load = MagicMock(return_value=BrokenQueue())
+
+        with pytest.raises(RuntimeError, match="local storage unavailable"):
+            consumer.consume(num_messages=1, queues="queue1", block=False)
+
+    def test_blocking_consume_does_not_wait_after_removing_malformed_local_payload(self, temp_local_client):
+        orchestrator = Orchestrator(backend=temp_local_client)
+        queue_name = "malformed-queue"
+        orchestrator.backend.declare_queue(queue_name)
+        queue = orchestrator.backend.queues[queue_name]
+        queue.push("not-json")
+        consumer = SimpleConsumer()
+        consumer.connect_to_orchestrator(orchestrator, queue_name)
+
+        with patch(
+            "mindtrace.jobs.local.consumer_backend.time.sleep",
+            side_effect=AssertionError("A removed malformed delivery must count as an attempted message."),
+        ) as sleep:
+            consumer.consume(num_messages=1, queues=queue_name, block=True)
+
+        sleep.assert_not_called()
+        assert orchestrator.backend.count_queue_messages(queue_name) == 0
+
+    def test_consume_with_empty_queue_list_returns_without_waiting(self, temp_local_client):
+        orchestrator = Orchestrator(backend=temp_local_client)
+        consumer = SimpleConsumer()
+        consumer.connect_to_orchestrator(orchestrator, "queue1")
+        backend = consumer.consumer_backend
+        backend.logger = MagicMock()
+
+        with patch(
+            "mindtrace.jobs.local.consumer_backend.time.sleep",
+            side_effect=AssertionError("An empty queue list must return immediately."),
+        ) as sleep:
+            consumer.consume(num_messages=1, queues=[], block=True)
+
+        sleep.assert_not_called()
+        backend.logger.warning.assert_called_once_with("No queues provided; nothing to consume.")
+
+    def test_consume_rejects_negative_message_count(self, temp_local_client):
+        orchestrator = Orchestrator(backend=temp_local_client)
+        consumer = SimpleConsumer()
+        consumer.connect_to_orchestrator(orchestrator, "queue1")
+        backend = consumer.consumer_backend
+        backend.orchestrator.receive_message = MagicMock()
+
+        with pytest.raises(ValueError, match="num_messages must be non-negative"):
+            consumer.consume(num_messages=-1, queues="queue1", block=False)
+
+        backend.orchestrator.receive_message.assert_not_called()
+
     def test_stopped_entry_skips_local_consume(self, temp_local_client):
         orchestrator = Orchestrator(backend=temp_local_client)
         consumer = SimpleConsumer()
@@ -327,7 +421,7 @@ class TestLocalConsumerBackend:
             consumer.consume(num_messages=1, block=False)
 
     def test_consumer_with_orchestrator_exception(self, temp_local_client):
-        """Test consumer handling orchestrator exceptions during message retrieval."""
+        """Operational retrieval errors must remain observable to the caller."""
         orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
@@ -335,17 +429,10 @@ class TestLocalConsumerBackend:
         consumer = SimpleConsumer()
         consumer.connect_to_orchestrator(orchestrator, queue_name)
 
-        original_receive = orchestrator.backend.receive_message
+        orchestrator.backend.receive_message = MagicMock(side_effect=RuntimeError("Simulated orchestrator error"))
 
-        def mock_receive(*args, **kwargs):
-            raise Exception("Simulated orchestrator error")
-
-        orchestrator.backend.receive_message = mock_receive
-
-        consumer.consume(num_messages=1, queues=queue_name, block=False)
-
-        orchestrator.backend.receive_message = original_receive
-        assert True
+        with pytest.raises(RuntimeError, match="Simulated orchestrator error"):
+            consumer.consume(num_messages=1, queues=queue_name, block=False)
 
     def test_consumer_blocking_with_timeout(self, temp_local_client):
         """Test consumer with blocking=True and timeout behavior."""
@@ -406,8 +493,8 @@ class TestLocalConsumerBackend:
         result = consumer.consumer_backend.process_message({"x": 1, "y": 0})
         assert result is False
 
-    def test_consumer_exception_handling_with_nonblock_return(self, temp_local_client):
-        """Test exception handling in consumer when not blocking."""
+    def test_consumer_nonblocking_propagates_operational_error(self, temp_local_client):
+        """Nonblocking mode must not make operational errors look like an empty queue."""
         orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
@@ -415,36 +502,19 @@ class TestLocalConsumerBackend:
         consumer = SimpleConsumer()
         consumer.connect_to_orchestrator(orchestrator, queue_name)
 
-        original_receive = orchestrator.backend.receive_message
         call_count = 0
-        returned_early = False
 
         def mock_receive_message(queue, **kwargs):
             nonlocal call_count
             call_count += 1
-            if call_count == 1:
-                raise Exception("Simulated orchestrator error")
-            else:
-                raise Exception("Should not reach this point")
-
-        original_consume = consumer.consume
-
-        def traced_consume(*args, **kwargs):
-            nonlocal returned_early
-            try:
-                return original_consume(*args, **kwargs)
-            except Exception:
-                pass
+            raise RuntimeError("Simulated orchestrator error")
 
         orchestrator.backend.receive_message = mock_receive_message
 
-        consumer.consume(
-            num_messages=10, queues=queue_name, block=False
-        )  # Try to consume many, but should return early
+        with pytest.raises(RuntimeError, match="Simulated orchestrator error"):
+            consumer.consume(num_messages=10, queues=queue_name, block=False)
 
         assert call_count == 1, f"Expected 1 call to receive_message, got {call_count}"
-
-        orchestrator.backend.receive_message = original_receive
 
     def test_consumer_blocking_sleep_when_no_messages(self, temp_local_client):
         """Test that blocking consumer sleeps when no messages found."""
@@ -482,8 +552,8 @@ class TestLocalConsumerBackend:
         assert len(sleep_calls) >= 1
         assert 0.1 in sleep_calls
 
-    def test_consumer_exception_handling_waits_after_idle_sweep(self, temp_local_client):
-        """Test blocking consumption waits after an unsuccessful queue sweep."""
+    def test_consumer_operational_error_does_not_wait_after_failed_sweep(self, temp_local_client):
+        """A failed queue operation is not an idle sweep and must propagate immediately."""
         orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
@@ -491,38 +561,10 @@ class TestLocalConsumerBackend:
         consumer = SimpleConsumer()
         consumer.connect_to_orchestrator(orchestrator, queue_name)
 
-        original_receive = orchestrator.backend.receive_message
-        call_count = 0
+        orchestrator.backend.receive_message = MagicMock(side_effect=RuntimeError("Simulated orchestrator error"))
 
-        def mock_receive_message(queue, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count <= 2:  # Raise exception on first two calls
-                raise Exception("Simulated orchestrator error")
-            else:
-                raise KeyboardInterrupt("Stop the test")
+        with patch("mindtrace.jobs.local.consumer_backend.time.sleep") as sleep:
+            with pytest.raises(RuntimeError, match="Simulated orchestrator error"):
+                consumer.consume(num_messages=1, queues=queue_name, block=True)
 
-        import time
-
-        original_sleep = time.sleep
-        sleep_calls = []
-
-        def mock_sleep(duration):
-            sleep_calls.append(duration)
-            if len(sleep_calls) >= 2:  # Stop after 2 sleep calls
-                raise KeyboardInterrupt("Break out of loop")
-            return original_sleep(0.001)  # Very short sleep for test speed
-
-        orchestrator.backend.receive_message = mock_receive_message
-        time.sleep = mock_sleep
-
-        try:
-            consumer.consume(num_messages=1, queues=queue_name, block=True)
-        except KeyboardInterrupt:
-            pass  # Expected to break out of the loop
-        finally:
-            orchestrator.backend.receive_message = original_receive
-            time.sleep = original_sleep
-
-        assert len(sleep_calls) >= 1
-        assert 0.1 in sleep_calls
+        sleep.assert_not_called()
