@@ -451,15 +451,23 @@ def test_infinite_consume_propagates_fatal_receive_failure(backend):
 
 def test_infinite_consume_propagates_broker_close_when_channel_state_is_stale(backend):
     channel = MagicMock(is_open=True)
-    channel.basic_get.side_effect = [
-        ConnectionClosedByBroker(320, "connection forced"),
-        KeyboardInterrupt("stop repeated polling"),
-    ]
+    attempts = 0
+
+    def close_connection_then_stop_repeated_polling(**_kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise ConnectionClosedByBroker(320, "connection forced")
+        backend.stop()
+        return None, None, None
+
+    channel.basic_get.side_effect = close_connection_then_stop_repeated_polling
 
     with pytest.raises(RuntimeError, match="connection forced") as exc_info:
         backend._consume_infinite_messages(channel, ["q"], block=True)
 
     assert isinstance(exc_info.value.__cause__, ConnectionClosedByBroker)
+    channel.basic_get.assert_called_once_with(queue="q", auto_ack=False)
 
 
 def test_finite_consume_propagates_fatal_receive_failure_and_closes_resources(backend):
