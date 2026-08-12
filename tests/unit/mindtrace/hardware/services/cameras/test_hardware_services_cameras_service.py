@@ -931,6 +931,8 @@ class TestCameraManagerServiceCaptureAndHomography:
             await service.export_camera_config(
                 ConfigFileExportRequest(camera="Basler:missing", config_path="/tmp/out.json")
             )
+        with pytest.raises(CameraNotFoundError):
+            await service.reset_camera_config(ConfigFileResetRequest(camera="Basler:missing"))
 
     @pytest.mark.asyncio
     async def test_capture_image_timeout_returns_failed_response(self, service_with_mock_manager):

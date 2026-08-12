@@ -999,6 +999,10 @@ class CameraManagerService(Service):
         """Delete a camera's persisted configuration file."""
         try:
             manager = await self._get_camera_manager()
+
+            if request.camera not in manager.active_cameras:
+                raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
+
             config_path = manager.get_camera_config_path(request.camera)
             deleted = manager.reset_saved_config(request.camera)
 
