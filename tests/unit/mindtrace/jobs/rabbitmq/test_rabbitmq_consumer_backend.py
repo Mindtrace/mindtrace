@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -469,6 +469,40 @@ def test_consume_closes_channel_and_connection(backend):
     channel.close.assert_called_once_with()
     backend.connection.close.assert_called_once_with()
     assert backend.closed is False
+
+
+def test_cleanup_failure_does_not_prevent_connection_close(backend):
+    channel = MagicMock(is_open=True)
+    channel.close.side_effect = RuntimeError("channel close failed")
+    backend._active_channel = channel
+    backend.connection.close = MagicMock()
+
+    backend._close_active_resources()
+
+    assert backend._active_channel is None
+    channel.close.assert_called_once_with()
+    backend.connection.close.assert_called_once_with()
+    backend.logger.warning.assert_called_once_with("Failed to close RabbitMQ consumer channel: channel close failed")
+
+
+def test_cleanup_failure_does_not_replace_operation_error(backend):
+    channel = MagicMock(is_open=True)
+    channel.basic_qos.side_effect = RuntimeError("qos failed")
+    channel.close.side_effect = RuntimeError("channel close failed")
+    backend.connection.get_channel.return_value = channel
+    backend.connection.close = MagicMock(side_effect=RuntimeError("connection close failed"))
+
+    with pytest.raises(RuntimeError, match="qos failed"):
+        backend.consume(num_messages=1, queues="q", block=False)
+
+    channel.close.assert_called_once_with()
+    backend.connection.close.assert_called_once_with()
+    backend.logger.warning.assert_has_calls(
+        [
+            call("Failed to close RabbitMQ consumer channel: channel close failed"),
+            call("Failed to close RabbitMQ consumer connection: connection close failed"),
+        ]
+    )
 
 
 def test_close_is_terminal_and_idempotent(backend):

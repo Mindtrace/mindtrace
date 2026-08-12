@@ -263,8 +263,12 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         """Release operation-owned resources without closing the backend."""
         channel = self._active_channel
         self._active_channel = None
-        try:
-            if channel is not None and getattr(channel, "is_open", False):
+        if channel is not None and getattr(channel, "is_open", False):
+            try:
                 channel.close()
-        finally:
+            except Exception as exc:
+                self.logger.warning(f"Failed to close RabbitMQ consumer channel: {exc}")
+        try:
             self.connection.close()
+        except Exception as exc:
+            self.logger.warning(f"Failed to close RabbitMQ consumer connection: {exc}")
