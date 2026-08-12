@@ -72,7 +72,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             return
         if isinstance(queues, str):
             queues = [queues]
-        queues = ifnone(queues, default=self.queues)
+        queues = list(dict.fromkeys(ifnone(queues, default=self.queues)))
         if not queues:
             self.logger.warning("No queues provided; nothing to consume.")
             return
@@ -98,6 +98,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         Returns:
             The number of deliveries settled by the processing/acknowledgement path.
         """
+        queues = list(dict.fromkeys(queues))
         self.logger.info(f"Consuming up to {num_messages} messages from queues: {queues}.")
         settled = 0
         failed_queues: set[str] = set()
@@ -206,10 +207,11 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             return
         if isinstance(queues, str):
             queues = [queues]
-        queues = ifnone(queues, default=self.queues)
+        queues = list(dict.fromkeys(ifnone(queues, default=self.queues)))
         if not queues:
             self.logger.warning("No queues provided; nothing to consume.")
             return
+        drained = False
         try:
             self.connection.connect()
             channel = self.connection.get_channel()
@@ -218,6 +220,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             while not self.stopped:
                 pending = sum(self.connection.count_queue_messages(queue) for queue in queues)
                 if pending == 0:
+                    drained = True
                     break
                 settled = self._consume_finite_messages(channel, pending, queues, block=False)
                 if settled == 0:
@@ -227,8 +230,10 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             self.logger.info("Consumption interrupted by user.")
         finally:
             self._close_active_resources()
-        if not self.stopped:
+        if drained:
             self.logger.info(f"Finished draining queues: {queues}. All queues empty.")
+        elif self.stopped:
+            self.logger.info(f"Stopped draining queues after shutdown request: {queues}.")
 
     def receive_message(
         self, channel, queue_name: str, *, block: bool = False
