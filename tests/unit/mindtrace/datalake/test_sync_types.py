@@ -1,5 +1,6 @@
 import pytest
 
+from mindtrace.datalake import DatasetCard, DatasetProvenance
 from mindtrace.datalake.sync_types import (
     DatasetSyncBundle,
     DatasetSyncCommitResult,
@@ -9,6 +10,26 @@ from mindtrace.datalake.sync_types import (
     ObjectPayloadDescriptor,
 )
 from mindtrace.datalake.types import AnnotationRecord, AnnotationSet, Asset, DatasetVersion, Datum, StorageRef
+
+
+def test_dataset_sync_bundle_json_roundtrip_preserves_typed_card():
+    card = DatasetCard(
+        task="classification",
+        provenance=DatasetProvenance(
+            creation_method="Reviewed importer",
+            split_strategy="Deterministic stratification",
+            split_seed=42,
+            split_key="source_path",
+        ),
+        splits={"train": {"count": 10, "percentage": 80}, "val": {"count": 2, "percentage": 20}},
+    )
+    bundle = DatasetSyncBundle(dataset_version=DatasetVersion(dataset_name="demo", version="1.0.0", card=card))
+
+    restored = DatasetSyncBundle.model_validate_json(bundle.model_dump_json())
+
+    assert isinstance(restored.dataset_version.card, DatasetCard)
+    assert restored.dataset_version.card == card
+    assert restored.dataset_version.card.provenance.split_key == "source_path"
 
 
 def test_sync_type_defaults_and_nested_models():
