@@ -89,9 +89,9 @@ def test_clean_queue_success(client):
     client, mock_conn = client
     fake_queue = MagicMock()
     fake_queue.key = "key"
+    fake_queue.qsize.return_value = 2
     mock_conn.queues = {"q": fake_queue}
     mock_conn.connection.lock.return_value.acquire.return_value = True
-    mock_conn.connection.llen.return_value = 2
     mock_conn.connection.delete.return_value = 1
     result = client.clean_queue("q")
     assert result["status"] == "success"
@@ -167,9 +167,9 @@ def test_clean_queue_lock_release_on_exception(client):
     client, mock_conn = client
     fake_queue = MagicMock()
     fake_queue.key = "key"
+    fake_queue.qsize.side_effect = Exception("fail")
     mock_conn.queues = {"q": fake_queue}
     mock_conn.connection.lock.return_value.acquire.return_value = True
-    mock_conn.connection.llen.side_effect = Exception("fail")
     lock = mock_conn.connection.lock.return_value
     with pytest.raises(Exception):
         client.clean_queue("q")
