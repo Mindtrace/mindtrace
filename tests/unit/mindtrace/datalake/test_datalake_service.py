@@ -1335,7 +1335,7 @@ SERVICE_CASES = [
             description="unit dataset",
             source_dataset_version_id=None,
             metadata={"source": "unit"},
-            card=DatasetCard(task="classification", splits={"train": {"count": 1}}),
+            card=DatasetCard(summary="Unit dataset card", task="classification", splits={"train": {"count": 1}}),
             created_by="tester",
         ),
         "datalake_method": "create_dataset_version",
@@ -1351,7 +1351,7 @@ SERVICE_CASES = [
             description="unit dataset",
             source_dataset_version_id=None,
             metadata={"source": "unit"},
-            card=DatasetCard(task="classification", splits={"train": {"count": 1}}),
+            card=DatasetCard(summary="Unit dataset card", task="classification", splits={"train": {"count": 1}}),
             created_by="tester",
         ).model_dump(),
     },
@@ -1939,7 +1939,7 @@ async def test_service_view_dataset_version_page_translates_invalid_cursor(servi
 
 @pytest.mark.asyncio
 async def test_service_export_dataset_version_uses_sync_manager(service, datalake_objects):
-    card = DatasetCard(task="classification", splits={"train": {"count": 1}})
+    card = DatasetCard(summary="Demo export card", task="classification", splits={"train": {"count": 1}})
     dataset_version = datalake_objects.dataset_version.model_copy(update={"card": card})
     bundle = DatasetSyncBundle(dataset_version=dataset_version)
     with patch.object(SERVICE_MODULE, "DatasetSyncManager") as manager_cls:
@@ -1953,6 +1953,7 @@ async def test_service_export_dataset_version_uses_sync_manager(service, datalak
     restored = DatasetSyncBundleOutput.model_validate_json(result.model_dump_json())
     assert isinstance(restored.bundle.dataset_version.card, DatasetCard)
     assert restored.bundle.dataset_version.card == card
+    assert restored.bundle.dataset_version.card.summary == "Demo export card"
     manager.export_dataset_version.assert_awaited_once_with("demo", "1.0")
 
 

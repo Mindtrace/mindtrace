@@ -18,6 +18,7 @@ from mindtrace.datalake.service_types import CreateDatasetVersionInput
 
 def test_dataset_card_to_dict_roundtrip():
     card = DatasetCard(
+        summary="Image classification dataset.",
         task="classification",
         modalities=["image"],
         sources=[DatasetSource(name="source-dataset", version="1.0.0", dataset_version_id="dataset_version_1")],
@@ -61,12 +62,12 @@ def test_dataset_card_to_dict_roundtrip():
 
 
 def test_dataset_card_save_and_load_json(tmp_path):
-    card = DatasetCard(task="classification", splits={"test": {"count": 3}})
+    card = DatasetCard(summary="Demo dataset", task="classification", splits={"test": {"count": 3}})
     path = tmp_path / "nested" / "card.json"
 
     card.save_json(path)
 
-    assert json.loads(path.read_text(encoding="utf-8"))["task"] == "classification"
+    assert json.loads(path.read_text(encoding="utf-8"))["summary"] == "Demo dataset"
     assert DatasetCard.load_json(path) == card
 
 
@@ -75,10 +76,11 @@ def test_create_dataset_version_input_accepts_card_dict():
         dataset_name="demo",
         version="0.1.0",
         manifest=[],
-        card={"task": "classification"},
+        card={"summary": "Demo dataset", "task": "classification"},
     )
 
     assert isinstance(payload.card, DatasetCard)
+    assert payload.card.summary == "Demo dataset"
     assert payload.card.task == "classification"
 
 

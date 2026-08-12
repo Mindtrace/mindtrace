@@ -74,6 +74,7 @@ class DatasetCard(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal[1] = 1
+    summary: str = ""
     task: str = ""
     modalities: list[str] = Field(default_factory=list)
     sources: list[DatasetSource] = Field(default_factory=list)

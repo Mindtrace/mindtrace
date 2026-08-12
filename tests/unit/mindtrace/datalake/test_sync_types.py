@@ -14,6 +14,7 @@ from mindtrace.datalake.types import AnnotationRecord, AnnotationSet, Asset, Dat
 
 def test_dataset_sync_bundle_json_roundtrip_preserves_typed_card():
     card = DatasetCard(
+        summary="Demo sync dataset",
         task="classification",
         provenance=DatasetProvenance(
             creation_method="Reviewed importer",
@@ -29,6 +30,7 @@ def test_dataset_sync_bundle_json_roundtrip_preserves_typed_card():
 
     assert isinstance(restored.dataset_version.card, DatasetCard)
     assert restored.dataset_version.card == card
+    assert restored.dataset_version.card.summary == "Demo sync dataset"
     assert restored.dataset_version.card.provenance.split_key == "source_path"
 
 

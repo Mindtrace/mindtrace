@@ -85,11 +85,12 @@ def test_dataset_version_accepts_optional_card():
     with_card = DatasetVersion(
         dataset_name="demo",
         version="0.2.0",
-        card={"task": "classification", "splits": {"train": {"count": 5}}},
+        card={"summary": "Demo dataset", "task": "classification", "splits": {"train": {"count": 5}}},
     )
 
     assert without_card.card is None
     assert isinstance(with_card.card, DatasetCard)
+    assert with_card.card.summary == "Demo dataset"
     assert with_card.card.task == "classification"
     assert with_card.card.splits["train"].count == 5
 

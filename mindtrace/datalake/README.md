@@ -119,15 +119,17 @@ The datalake is evolving from earlier internal versions toward a fuller **V3** c
 
 ### Dataset cards
 
-`DatasetVersion.description` is the short summary for listings and quick display. `DatasetVersion.metadata`
-remains the place for lightweight operational metadata and query keys. `DatasetVersion.card` is an optional
-`DatasetCard` for richer human-facing documentation that should travel with the immutable dataset version.
-Cards intentionally do not repeat the short summary; renderers should use `DatasetVersion.description` for it.
+`DatasetVersion.description` is the short summary stored with a version for listings and quick display.
+`DatasetVersion.metadata` remains the place for lightweight operational metadata and query keys.
+`DatasetVersion.card` is an optional, standalone `DatasetCard` for richer human-facing documentation that should
+travel with the immutable dataset version. `DatasetCard.summary` makes the card meaningful when serialized or
+displayed independently; it may intentionally duplicate `DatasetVersion.description`.
 
 ```python
 from mindtrace.datalake import DatasetCard, DatasetProvenance, DatasetStatistic, SplitInfo
 
 card = DatasetCard(
+    summary="Binary image classification dataset.",
     task="classification",
     modalities=["image"],
     provenance=DatasetProvenance(
