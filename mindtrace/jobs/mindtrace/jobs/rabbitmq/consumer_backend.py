@@ -4,6 +4,8 @@ import json
 import traceback
 from dataclasses import dataclass
 
+from pika.exceptions import AMQPConnectionError, ChannelClosed, ChannelWrongStateError
+
 from mindtrace.core import ifnone
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
@@ -24,6 +26,10 @@ class _SettledNoMessage:
 
 
 _SETTLED_NO_MESSAGE = _SettledNoMessage()
+
+
+class RabbitMQSettlementError(RuntimeError):
+    """Raised when RabbitMQ cannot confirm delivery settlement."""
 
 
 def _validate_auto_ack_failure_policy(
@@ -111,18 +117,21 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                     continue
                 try:
                     delivery = self.receive_message(channel, queue, block=False)
-                    if delivery is None:
-                        continue
-                    found_message = True
-                    if delivery is _SETTLED_NO_MESSAGE:
-                        settled += 1
-                        continue
-                    self.logger.debug(f"Received message from queue '{queue}': processing {settled + 1}/{num_messages}")
-                    self._process_delivery(channel, delivery)
-                    settled += 1
                 except Exception as exc:
+                    if self._is_fatal_broker_error(exc, channel):
+                        raise
                     self.logger.error(f"Error during finite consumption from {queue}: {exc}\n{traceback.format_exc()}")
                     failed_queues.add(queue)
+                    continue
+                if delivery is None:
+                    continue
+                found_message = True
+                if delivery is _SETTLED_NO_MESSAGE:
+                    settled += 1
+                    continue
+                self.logger.debug(f"Received message from queue '{queue}': processing {settled + 1}/{num_messages}")
+                self._process_delivery(channel, delivery)
+                settled += 1
             if len(failed_queues) == len(queues):
                 return settled
             if not found_message:
@@ -142,19 +151,20 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                     break
                 try:
                     delivery = self.receive_message(channel, queue, block=False)
-                    if delivery is not None:
-                        idle = False
-                        if delivery is _SETTLED_NO_MESSAGE:
-                            continue
-                        processed += 1
-                        self.logger.debug(f"Received message from queue '{queue}': processing message {processed}")
-                        self._process_delivery(channel, delivery)
                 except Exception as exc:
-                    if not getattr(channel, "is_open", False):
+                    if self._is_fatal_broker_error(exc, channel):
                         raise
                     self.logger.error(
                         f"Error during infinite consumption from {queue}: {exc}\n{traceback.format_exc()}"
                     )
+                    continue
+                if delivery is not None:
+                    idle = False
+                    if delivery is _SETTLED_NO_MESSAGE:
+                        continue
+                    processed += 1
+                    self.logger.debug(f"Received message from queue '{queue}': processing message {processed}")
+                    self._process_delivery(channel, delivery)
             if idle and not self.stopped:
                 if not block:
                     return
@@ -177,12 +187,29 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
     def _reject_delivery(self, channel, delivery_tag: int, *, redelivered: bool = False) -> None:
         if self.auto_ack:
             return
-        if self.failure_policy is ConsumerFailurePolicy.REQUEUE:
-            channel.basic_nack(delivery_tag=delivery_tag, requeue=not redelivered)
-        elif self.failure_policy is ConsumerFailurePolicy.DEAD_LETTER:
-            channel.basic_nack(delivery_tag=delivery_tag, requeue=False)
-        else:
-            channel.basic_ack(delivery_tag=delivery_tag)
+        try:
+            if self.failure_policy is ConsumerFailurePolicy.REQUEUE:
+                channel.basic_nack(delivery_tag=delivery_tag, requeue=not redelivered)
+            elif self.failure_policy is ConsumerFailurePolicy.DEAD_LETTER:
+                channel.basic_nack(delivery_tag=delivery_tag, requeue=False)
+            else:
+                channel.basic_ack(delivery_tag=delivery_tag)
+        except Exception as exc:
+            raise RabbitMQSettlementError(f"Failed to settle RabbitMQ delivery {delivery_tag}: {exc}") from exc
+
+    @staticmethod
+    def _is_fatal_broker_error(exc: BaseException, channel) -> bool:
+        if not getattr(channel, "is_open", False):
+            return True
+        current: BaseException | None = exc
+        seen: set[int] = set()
+        fatal_types = (AMQPConnectionError, ChannelClosed, ChannelWrongStateError, RabbitMQSettlementError)
+        while current is not None and id(current) not in seen:
+            if isinstance(current, fatal_types):
+                return True
+            seen.add(id(current))
+            current = current.__cause__ or current.__context__
+        return False
 
     def process_message(self, message) -> bool:
         """Process a single message and return its observable success status."""
