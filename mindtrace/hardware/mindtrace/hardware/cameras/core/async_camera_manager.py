@@ -714,16 +714,6 @@ class AsyncCameraManager(Mindtrace):
         self.logger.info(f"Deleted saved config for '{camera_name}' at {path}")
         return True
 
-    async def _auto_export_config(self, camera_name: str, camera: AsyncCamera) -> None:
-        """Export camera config after successful init for later restoration."""
-        try:
-            config_path = self.get_camera_config_path(camera_name)
-            Path(config_path).parent.mkdir(parents=True, exist_ok=True)
-            await camera.save_config(config_path)
-            self.logger.debug(f"Auto-exported config for '{camera_name}' to {config_path}")
-        except Exception as e:
-            self.logger.warning(f"Failed to auto-export config for '{camera_name}': {e}")
-
     async def _auto_import_config(self, camera_name: str, camera: AsyncCamera) -> None:
         """Restore camera config from previously saved file."""
         try:
@@ -763,8 +753,6 @@ class AsyncCameraManager(Mindtrace):
         # Re-open restores the persisted config before testing the connection.
         try:
             await self.open(camera_name, test_connection=True)
-            # Re-export to keep the saved file fresh
-            await self._auto_export_config(camera_name, self._cameras[camera_name])
             self._failure_counts[camera_name] = 0
             self.logger.info(f"Reinit successful for '{camera_name}'")
         except Exception as e:
