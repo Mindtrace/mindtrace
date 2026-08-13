@@ -9,7 +9,7 @@ dump_readiness_diagnostics() {
     $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml logs --no-color --tail=200 >&2 || true
 
     local rabbitmq_container_id
-    rabbitmq_container_id="$($DOCKER_COMPOSE_CMD -f tests/docker-compose.yml ps -q rabbitmq 2>/dev/null || true)"
+    rabbitmq_container_id="$($DOCKER_COMPOSE_CMD -f tests/docker-compose.yml ps -a -q rabbitmq 2>/dev/null || true)"
     if [ -n "$rabbitmq_container_id" ]; then
         echo "RabbitMQ container state:" >&2
         docker inspect --format '{{json .State}}' "$rabbitmq_container_id" >&2 || true
@@ -19,7 +19,17 @@ dump_readiness_diagnostics() {
 wait_until_ready() {
     local service_name="$1"
     shift
-    until "$@"; do
+
+    while true; do
+        "$@" && return 0
+        local readiness_status=$?
+
+        if (( readiness_status == 2 )); then
+            echo "${service_name} stopped before becoming ready." >&2
+            dump_readiness_diagnostics
+            return 1
+        fi
+
         if (( SECONDS >= READINESS_DEADLINE )); then
             echo "Timed out waiting for ${service_name} after ${SERVICE_READY_TIMEOUT_SECONDS} seconds." >&2
             dump_readiness_diagnostics
@@ -30,7 +40,15 @@ wait_until_ready() {
 }
 
 rabbitmq_container_ready() {
-    $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml exec -T rabbitmq rabbitmq-diagnostics -q ping > /dev/null 2>&1
+    local container_id
+    container_id="$($DOCKER_COMPOSE_CMD -f tests/docker-compose.yml ps -a -q rabbitmq 2>/dev/null)"
+
+    if [ -z "$container_id" ] || [ "$(docker inspect --format '{{.State.Running}}' "$container_id" 2>/dev/null)" != "true" ]; then
+        return 2
+    fi
+
+    $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml exec -T --user rabbitmq rabbitmq \
+        rabbitmq-diagnostics -q ping > /dev/null 2>&1
 }
 
 rabbitmq_host_ready() {
