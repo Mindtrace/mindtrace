@@ -34,8 +34,9 @@ from mindtrace.hardware.core.exceptions import (
 )
 from mindtrace.hardware.plcs.backends.allen_bradley import AllenBradleyPLC, MockAllenBradleyPLC
 from mindtrace.hardware.plcs.backends.allen_bradley import allen_bradley_plc as ab_module
+from mindtrace.hardware.plcs.backends.allen_bradley.error_text import classify_tag_error
 from mindtrace.hardware.plcs.backends.base import BasePLC
-from mindtrace.hardware.plcs.types import TagError, TagErrorKind, TagResult, classify_tag_error
+from mindtrace.hardware.plcs.types import TagError, TagErrorKind, TagResult
 
 
 class FakeDevice:
@@ -416,13 +417,29 @@ class TestErrorTaxonomy:
                 TagErrorKind.missing_tag,
             ),
             ("Symbol does not exist", TagErrorKind.missing_tag),
+            # 0xFF extended texts for a wrong address INTO a real tag — the
+            # array-index config mistakes (station index, step base) chiron makes.
+            ("General Error (see extended status) - Access beyond end of the object", TagErrorKind.missing_tag),
+            ("General Error (see extended status) - Address out of range", TagErrorKind.missing_tag),
+            ("General Error (see extended status) - Invalid symbol name", TagErrorKind.missing_tag),
+            ("Failed to build request path for tag", TagErrorKind.missing_tag),
+            ("Failed to create request path for tag", TagErrorKind.missing_tag),
             ("Error packing -128 as USINT", TagErrorKind.encode),
             ("Error encoding value for tag", TagErrorKind.encode),
             ("Error unpacking response", TagErrorKind.encode),
-            ("Invalid data type for tag", TagErrorKind.type_mismatch),
+            # Transient is checked before encode: a stamped parse failure whose
+            # cause was a value unpack is reply corruption, not a value problem.
+            ("Failed to parse reply - Error unpacking int from b''", TagErrorKind.transient),
             ("Wrong data type", TagErrorKind.type_mismatch),
+            ("Message unsupported data type", TagErrorKind.type_mismatch),
+            # Type patterns are verbatim texts, not fragments: an invented
+            # spelling no driver produces stays in the residue.
+            ("Invalid data type for tag", TagErrorKind.unknown),
             # Timeout-flavored CIP statuses are TRANSIENT: never a channel action.
-            ("Connection timed out", TagErrorKind.transient),
+            ("Connection failure (see extended status) - Connection timeout", TagErrorKind.transient),
+            # No stamped text spells it this way (socket timeouts RAISE); the
+            # residue verdict is the honest one.
+            ("Connection timed out", TagErrorKind.unknown),
             ("Insufficient resource", TagErrorKind.transient),
             ("Message timeout", TagErrorKind.transient),
             # SERVICE_STATUS 0x07 is session-dead: the AB backend promotes it to a
@@ -467,9 +484,9 @@ class TestErrorTaxonomy:
         assert results["Motor1_Speed"].error.kind is TagErrorKind.encode
 
     async def test_whole_call_data_error_is_transport_class(self):
-        """A raised DataError cannot occur on the audited Logix path (packing
-        errors are wrapped and stamped per-tag) - transport-class defense: if
-        one ever escapes, it is unaudited territory and the channel closes."""
+        """A raised DataError cannot occur on any audited path (packing errors
+        are wrapped and stamped per-tag, decodes are stamped) - transport-class
+        defense against driver version drift: if one ever escapes, close."""
         write_driver = FakeLogixDriver(write_error=DataError("Error packing -128 as USINT"))
         plc = _allen_bradley(FakeLogixDriver(), write_driver)
 
@@ -841,9 +858,9 @@ class TestCloseOnProof:
         assert read_driver.connected is False
 
     async def test_a_garbled_reply_closes_the_channel(self):
-        """Defensive pin: on the audited Logix path parse failures are STAMPED
-        (frame-atomic receive), so a RAISED reply-class error means an exchange
-        aborted somewhere unaudited - close rather than trust the stream."""
+        """Defensive pin: parse failures are STAMPED on every audited path
+        (frame-atomic receive), so a RAISED reply-class error can only come from
+        driver version drift - close rather than trust the stream."""
         read_driver = FakeLogixDriver(read_error=DataError("Error unpacking reply"))
         plc = _allen_bradley(read_driver, FakeLogixDriver())
 

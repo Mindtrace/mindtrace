@@ -635,8 +635,8 @@ class TestTagErrorClassification:
             ("Error packing -128 as USINT", TagErrorKind.encode),
             ("Error unpacking response", TagErrorKind.encode),
             ("Error encoding value for tag", TagErrorKind.encode),
-            ("Invalid data type for tag", TagErrorKind.type_mismatch),
-            ("Tag type mismatch", TagErrorKind.type_mismatch),
+            # 0xFF ext 0x2107, verbatim.
+            ("Tag type used in request does not match the target tag's data type", TagErrorKind.type_mismatch),
             # socket related
             # Socket deaths always RAISE; their texts are not stamp patterns.
             ("Connection reset by peer", TagErrorKind.unknown),
@@ -645,7 +645,7 @@ class TestTagErrorClassification:
     )
     def test_classify_tag_error(self, mock_pycomm3_available, message, expected_kind):
         """Driver error strings map onto the documented kinds, raw text preserved."""
-        from mindtrace.hardware.plcs.types import classify_tag_error
+        from mindtrace.hardware.plcs.backends.allen_bradley.error_text import classify_tag_error
 
         error = classify_tag_error(message)
 
@@ -654,7 +654,7 @@ class TestTagErrorClassification:
 
     def test_classify_tag_error_accepts_an_exception(self, mock_pycomm3_available):
         """A raised exception classifies on its string form."""
-        from mindtrace.hardware.plcs.types import classify_tag_error
+        from mindtrace.hardware.plcs.backends.allen_bradley.error_text import classify_tag_error
 
         error = classify_tag_error(ValueError("Tag does not exist"))
 
@@ -664,7 +664,7 @@ class TestTagErrorClassification:
     def test_tag_to_result_missing_driver_result(self, mock_pycomm3_available):
         """A missing driver result is an error, not a None value — and not a
         licence to bounce the session: nothing here says the exchange failed."""
-        from mindtrace.hardware.plcs.types import tag_to_result
+        from mindtrace.hardware.plcs.backends.allen_bradley.error_text import tag_to_result
 
         result = tag_to_result(None)
 
@@ -674,7 +674,7 @@ class TestTagErrorClassification:
 
     def test_tag_to_result_write_reports_the_written_value(self, mock_pycomm3_available):
         """Write results carry the value that was written, not the driver's echo."""
-        from mindtrace.hardware.plcs.types import tag_to_result
+        from mindtrace.hardware.plcs.backends.allen_bradley.error_text import tag_to_result
 
         tag = MagicMock()
         tag.error = None
@@ -1709,7 +1709,7 @@ class TestAllenBradleyPLCTagWriting:
         )
 
         failed_result = MagicMock()
-        failed_result.error = "Invalid data type for tag"
+        failed_result.error = "General Error (see extended status) - Wrong data type"
         mock_logix_driver.write.return_value = failed_result
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
@@ -1721,7 +1721,7 @@ class TestAllenBradleyPLCTagWriting:
         assert result["Motor1_Speed"].ok is False
         assert result["Motor1_Speed"].value_or(None) is None
         assert result["Motor1_Speed"].error.kind is TagErrorKind.type_mismatch
-        assert result["Motor1_Speed"].error.message == "Invalid data type for tag"
+        assert result["Motor1_Speed"].error.message == "General Error (see extended status) - Wrong data type"
 
     @pytest.mark.asyncio
     async def test_write_tag_result_stamped_with_link_trouble_raises(self, mock_pycomm3_available, mock_cip_driver):

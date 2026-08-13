@@ -23,8 +23,13 @@ from mindtrace.hardware.core.exceptions import (
     PLCTimeoutError,
     SDKNotAvailableError,
 )
+from mindtrace.hardware.plcs.backends.allen_bradley.error_text import (
+    classify_tag_error,
+    session_dead_addresses,
+    tag_to_result,
+)
 from mindtrace.hardware.plcs.backends.base import BasePLC
-from mindtrace.hardware.plcs.types import TagResult, classify_tag_error, session_dead_addresses, tag_to_result
+from mindtrace.hardware.plcs.types import TagResult
 
 try:
     from pycomm3 import CIPDriver, LogixDriver, SLCDriver
