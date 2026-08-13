@@ -4,7 +4,12 @@ import pytest
 from pika.exceptions import ConnectionClosedByBroker
 
 from mindtrace.jobs import ConsumerFailurePolicy
-from mindtrace.jobs.rabbitmq.consumer_backend import _SETTLED_NO_MESSAGE, RabbitMQConsumerBackend, RabbitMQDelivery
+from mindtrace.jobs.rabbitmq.consumer_backend import (
+    _SETTLED_NO_MESSAGE,
+    RabbitMQConsumerBackend,
+    RabbitMQDelivery,
+    RabbitMQSettlementError,
+)
 
 
 def delivery(message=None, delivery_tag=1, redelivered=False):
@@ -389,6 +394,21 @@ def test_receive_message_dead_letters_invalid_json(backend):
     backend.logger.error.assert_called_once()
 
 
+def test_malformed_delivery_settlement_failure_is_observable(backend):
+    channel = MagicMock()
+    method = MagicMock(delivery_tag=42, redelivered=False)
+    channel.basic_get.return_value = (method, MagicMock(), b"not-json")
+    channel.basic_nack.side_effect = RuntimeError("settlement unavailable")
+
+    with pytest.raises(RuntimeError, match="Error receiving message") as exc_info:
+        backend.receive_message(channel, "q")
+
+    settlement_error = exc_info.value.__cause__
+    assert isinstance(settlement_error, RabbitMQSettlementError)
+    assert isinstance(settlement_error.__cause__, RuntimeError)
+    channel.basic_nack.assert_called_once_with(delivery_tag=42, requeue=False)
+
+
 @pytest.mark.parametrize(
     ("auto_ack", "policy", "expected_action"),
     [
@@ -435,6 +455,24 @@ def test_consume_infinite_messages_exception_handling_with_continue(backend):
     error_call = backend.logger.error.call_args[0][0]
     assert "Error during infinite consumption" in error_call
     assert "Test exception" in error_call
+
+
+def test_infinite_consume_skips_settled_malformed_delivery_without_processing(backend):
+    channel = MagicMock()
+
+    def settle_and_stop(*_args, **_kwargs):
+        backend.stop()
+        return _SETTLED_NO_MESSAGE
+
+    backend.receive_message = MagicMock(side_effect=settle_and_stop)
+    backend.process_message = MagicMock()
+    backend._stop_event.wait = MagicMock()
+
+    processed = backend._consume_infinite_messages(channel, ["q"])
+
+    assert processed == 0
+    backend.process_message.assert_not_called()
+    backend._stop_event.wait.assert_not_called()
 
 
 def test_infinite_consume_propagates_fatal_receive_failure(backend):
@@ -737,6 +775,27 @@ def test_consume_until_empty_treats_malformed_delivery_as_progress(backend):
 
     backend.receive_message.assert_called_once_with(channel, "q", block=False)
     assert not any("Drain stalled" in call.args[0] for call in backend.logger.error.call_args_list)
+
+
+def test_consume_until_empty_reports_stop_requested_during_drain(backend):
+    channel = MagicMock(is_open=True)
+    backend.connection.get_channel.return_value = channel
+    backend.connection.count_queue_messages = MagicMock(return_value=1)
+    backend.connection.close = MagicMock()
+
+    def consume_and_stop(*_args, **_kwargs):
+        backend.stop()
+        return 1
+
+    backend._consume_finite_messages = MagicMock(side_effect=consume_and_stop)
+
+    backend.consume_until_empty(queues="q", block=False)
+
+    backend.connection.count_queue_messages.assert_called_once_with("q")
+    backend.logger.info.assert_any_call("Stopped draining queues after shutdown request: ['q'].")
+    assert not any("All queues empty" in call.args[0] for call in backend.logger.info.call_args_list)
+    channel.close.assert_called_once_with()
+    backend.connection.close.assert_called_once_with()
 
 
 def test_stop_finishes_current_delivery_before_exiting(backend):

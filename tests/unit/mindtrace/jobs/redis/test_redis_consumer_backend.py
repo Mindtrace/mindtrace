@@ -148,6 +148,39 @@ def test_consume_until_empty_does_not_treat_concurrent_publish_as_no_progress(ba
     assert not any("Drain stalled" in item.args[0] for item in backend.logger.error.call_args_list)
 
 
+def test_consume_until_empty_aborts_when_redis_drain_makes_no_progress(backend):
+    backend, mock_conn = backend
+    backend.queues = ["q"]
+    mock_conn.count_queue_messages.side_effect = [1, 1]
+    backend.consume = MagicMock(return_value=0)
+    backend.logger = MagicMock()
+
+    backend.consume_until_empty(block=False)
+
+    backend.consume.assert_called_once_with(num_messages=1, queues=["q"], block=False)
+    assert mock_conn.count_queue_messages.call_count == 2
+    backend.logger.error.assert_called_once_with("Drain stalled with 1 messages pending; aborting.")
+
+
+def test_consume_until_empty_reports_stop_requested_during_redis_drain(backend):
+    backend, mock_conn = backend
+    backend.queues = ["q"]
+    mock_conn.count_queue_messages.return_value = 1
+    backend.logger = MagicMock()
+
+    def consume_and_stop(**_kwargs):
+        backend.stop()
+        return 1
+
+    backend.consume = MagicMock(side_effect=consume_and_stop)
+
+    backend.consume_until_empty(block=False)
+
+    backend.consume.assert_called_once_with(num_messages=1, queues=["q"], block=False)
+    mock_conn.count_queue_messages.assert_called_once_with("q")
+    backend.logger.info.assert_called_once_with("Stopped draining queues after shutdown request: ['q'].")
+
+
 def test_stopped_entry_skips_redis_drain(backend):
     backend, mock_conn = backend
     backend.queues = ["q"]
