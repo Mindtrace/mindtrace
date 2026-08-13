@@ -303,7 +303,7 @@ class AsyncCamera(Mindtrace):
 
         Args:
             **settings: Supported keys include exposure, gain, roi=(x, y, w, h), trigger_mode,
-                pixel_format, white_balance, image_enhancement, capture_timeout, optical_power.
+                pixel_format, white_balance, image_enhancement, optical_power.
 
         Raises:
             CameraConfigurationError: If a provided value is invalid for the backend.
@@ -329,11 +329,6 @@ class AsyncCamera(Mindtrace):
                 await self._backend.set_auto_wb_once(settings["white_balance"])
             if "image_enhancement" in settings:
                 self._backend.set_image_quality_enhancement(settings["image_enhancement"])
-            # Handle both "capture_timeout" and "timeout_ms" for backwards compatibility
-            if "capture_timeout" in settings:
-                await self._backend.set_capture_timeout(settings["capture_timeout"])
-            elif "timeout_ms" in settings:
-                await self._backend.set_capture_timeout(settings["timeout_ms"])
             if "optical_power" in settings:
                 await self._backend.set_optical_power(settings["optical_power"])
             self.logger.debug(f"Configuration completed for camera '{self._full_name}'")

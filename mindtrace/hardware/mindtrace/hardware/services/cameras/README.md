@@ -319,7 +319,6 @@ Response includes `failure_counts`, `cameras_in_cooldown`, and `capture_groups_c
 
 Can be changed dynamically without reinitialization:
 
-- `timeout_ms` - Capture timeout in milliseconds
 - `exposure_time` - Exposure time in microseconds
 - `gain` - Camera gain value
 - `trigger_mode` - Trigger mode (continuous/trigger)
@@ -341,6 +340,15 @@ Available on cameras with a connected liquid lens:
 - `focus_source` - AF source: Auto, SourceL, SourceM, SourceS
 - `edge_detection` - Enable edge-detection focusing
 - `roi_offset_x`, `roi_offset_y` - Focus ROI offset
+
+### Manager-Owned (via `/cameras/performance/settings`)
+
+Applied by ``AsyncCameraManager`` to active and future cameras; not accepted by
+``/cameras/configure`` or saved camera profiles:
+
+- `timeout_ms` - Capture timeout in milliseconds
+- `retrieve_retry_count` - Capture retry attempts
+- `max_concurrent_captures` - Global concurrent capture limit
 
 ### Startup-Only Parameters
 
