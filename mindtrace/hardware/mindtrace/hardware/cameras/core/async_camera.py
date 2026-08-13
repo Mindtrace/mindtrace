@@ -525,18 +525,18 @@ class AsyncCamera(Mindtrace):
             await self._backend.export_config(path)
             return True
 
-    async def load_config(self, path: str) -> bool:
+    async def load_config(self, path: str) -> Tuple[int, int]:
         """Import camera configuration from a file via backend.
 
         Args:
             path: Configuration file path (backend-specific JSON).
 
         Returns:
-            bool: True if import succeeds, raises exception on failure.
+            Tuple of (applied_settings, total_settings) from the backend import.
+            Raises on hard import failures (missing file, invalid format, etc.).
         """
         async with self._lock:
-            await self._backend.import_config(path)
-            return True
+            return await self._backend.import_config(path)
 
     async def check_connection(self):
         """Check whether the backend connection is healthy."""

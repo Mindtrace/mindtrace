@@ -1261,6 +1261,7 @@ class OpenCVCameraBackend(CameraBackend):
                 f"Configuration imported from '{config_path}' for camera '{self.camera_name}': "
                 f"{success_count}/{total_settings} settings applied successfully"
             )
+            return success_count, total_settings
 
         except CameraConfigurationError:
             raise

@@ -610,7 +610,7 @@ class TestCameraManagerServiceBusinessLogic:
         service, mock_manager = service_with_mock_manager
         mock_manager.active_cameras = ["MockBasler:Camera1"]
         mock_camera = AsyncMock()
-        mock_camera.load_config.return_value = True
+        mock_camera.load_config.return_value = (1, 1)
         mock_camera.save_config.return_value = False
         mock_manager.open = AsyncMock(return_value=mock_camera)
 
@@ -634,7 +634,7 @@ class TestCameraManagerServiceBusinessLogic:
         mock_manager.active_cameras = ["MockBasler:Camera1"]
         mock_manager.get_camera_config_path = Mock(return_value="/default/MockBasler_Camera1.json")
         mock_camera = AsyncMock()
-        mock_camera.load_config.return_value = True
+        mock_camera.load_config.return_value = (1, 1)
         mock_camera.save_config.return_value = True
         mock_manager.open = AsyncMock(return_value=mock_camera)
 

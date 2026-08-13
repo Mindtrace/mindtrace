@@ -725,8 +725,14 @@ class AsyncCameraManager(Mindtrace):
             if not Path(config_path).exists():
                 self.logger.debug(f"No saved config for '{camera_name}'")
                 return
-            await camera.load_config(config_path)
-            self.logger.info(f"Auto-imported config for '{camera_name}' from {config_path}")
+            applied, total = await camera.load_config(config_path)
+            if total > 0 and applied < total:
+                self.logger.warning(
+                    f"Saved config for '{camera_name}' only partially applied "
+                    f"({applied}/{total} settings) from {config_path}"
+                )
+            else:
+                self.logger.info(f"Auto-imported config for '{camera_name}' from {config_path}")
         except Exception as e:
             self.logger.warning(f"Failed to auto-import config for '{camera_name}': {e}")
 

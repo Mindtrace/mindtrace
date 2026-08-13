@@ -1568,32 +1568,74 @@ class GenICamCameraBackend(CameraBackend):
 
             config = await asyncio.to_thread(_load_config)
 
+            applied = 0
+            total = 0
+
             # Apply configuration settings
             # Support both 'exposure_time' (new) and 'exposure' (legacy) for backward compatibility
             if "exposure_time" in config:
-                await self.set_exposure(config["exposure_time"])
+                total += 1
+                try:
+                    await self.set_exposure(config["exposure_time"])
+                    applied += 1
+                except Exception as e:
+                    self.logger.warning(f"Could not set exposure for camera '{self.camera_name}': {e}")
             elif "exposure" in config:
-                await self.set_exposure(config["exposure"])
+                total += 1
+                try:
+                    await self.set_exposure(config["exposure"])
+                    applied += 1
+                except Exception as e:
+                    self.logger.warning(f"Could not set exposure for camera '{self.camera_name}': {e}")
 
             if "gain" in config:
-                await self.set_gain(config["gain"])
+                total += 1
+                try:
+                    await self.set_gain(config["gain"])
+                    applied += 1
+                except Exception as e:
+                    self.logger.warning(f"Could not set gain for camera '{self.camera_name}': {e}")
 
             if "triggermode" in config:
-                await self.set_triggermode(config["triggermode"])
+                total += 1
+                try:
+                    await self.set_triggermode(config["triggermode"])
+                    applied += 1
+                except Exception as e:
+                    self.logger.warning(f"Could not set trigger mode for camera '{self.camera_name}': {e}")
 
             if "white_balance" in config:
-                await self.set_auto_wb_once(config["white_balance"])
+                total += 1
+                try:
+                    await self.set_auto_wb_once(config["white_balance"])
+                    applied += 1
+                except Exception as e:
+                    self.logger.warning(f"Could not set white balance for camera '{self.camera_name}': {e}")
 
             if "roi" in config and isinstance(config["roi"], dict):
                 roi = config["roi"]
                 if all(key in roi for key in ["x", "y", "width", "height"]):
-                    await self.set_ROI(roi["x"], roi["y"], roi["width"], roi["height"])
+                    total += 1
+                    try:
+                        await self.set_ROI(roi["x"], roi["y"], roi["width"], roi["height"])
+                        applied += 1
+                    except Exception as e:
+                        self.logger.warning(f"Could not set ROI for camera '{self.camera_name}': {e}")
 
             # Apply any vendor-specific GenICam settings
             if "genicam_nodes" in config and isinstance(config["genicam_nodes"], dict):
-                await self._apply_genicam_nodes(config["genicam_nodes"])
+                total += 1
+                try:
+                    await self._apply_genicam_nodes(config["genicam_nodes"])
+                    applied += 1
+                except Exception as e:
+                    self.logger.warning(f"Could not apply GenICam nodes for camera '{self.camera_name}': {e}")
 
-            self.logger.info(f"Configuration imported successfully for camera '{self.camera_name}'")
+            self.logger.info(
+                f"Configuration imported for camera '{self.camera_name}': "
+                f"{applied}/{total} settings applied successfully"
+            )
+            return applied, total
 
         except (CameraConnectionError, CameraConfigurationError):
             raise

@@ -1253,16 +1253,43 @@ class DahengCameraBackend(CameraBackend):
             with open(config_path, "r") as f:
                 config_data = json.load(f)
 
-            if "exposure_time" in config_data:
-                await self.set_exposure(config_data["exposure_time"])
-            if "gain" in config_data:
-                await self.set_gain(config_data["gain"])
-            if "trigger_mode" in config_data:
-                await self.set_triggermode(config_data["trigger_mode"])
-            if "white_balance" in config_data:
-                await self.set_auto_wb_once(config_data["white_balance"])
+            applied = 0
+            total = 0
 
-            self.logger.debug(f"Configuration imported from '{config_path}' for camera '{self.camera_name}'")
+            if "exposure_time" in config_data:
+                total += 1
+                try:
+                    await self.set_exposure(config_data["exposure_time"])
+                    applied += 1
+                except Exception as e:
+                    self.logger.warning(f"Could not set exposure for camera '{self.camera_name}': {e}")
+            if "gain" in config_data:
+                total += 1
+                try:
+                    await self.set_gain(config_data["gain"])
+                    applied += 1
+                except Exception as e:
+                    self.logger.warning(f"Could not set gain for camera '{self.camera_name}': {e}")
+            if "trigger_mode" in config_data:
+                total += 1
+                try:
+                    await self.set_triggermode(config_data["trigger_mode"])
+                    applied += 1
+                except Exception as e:
+                    self.logger.warning(f"Could not set trigger mode for camera '{self.camera_name}': {e}")
+            if "white_balance" in config_data:
+                total += 1
+                try:
+                    await self.set_auto_wb_once(config_data["white_balance"])
+                    applied += 1
+                except Exception as e:
+                    self.logger.warning(f"Could not set white balance for camera '{self.camera_name}': {e}")
+
+            self.logger.debug(
+                f"Configuration imported from '{config_path}' for camera '{self.camera_name}': "
+                f"{applied}/{total} settings applied successfully"
+            )
+            return applied, total
         except CameraConfigurationError:
             raise
         except Exception as e:

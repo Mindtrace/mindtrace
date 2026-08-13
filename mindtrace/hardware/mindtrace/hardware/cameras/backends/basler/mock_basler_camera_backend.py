@@ -480,25 +480,42 @@ class MockBaslerCameraBackend(CameraBackend):
                     config_data = json.load(f)
 
                 # Apply configuration settings using common format
+                applied = 0
+                total = 0
                 if "exposure_time" in config_data:
+                    total += 1
                     self.exposure_time = float(config_data["exposure_time"])
+                    applied += 1
                 if "gain" in config_data:
+                    total += 1
                     self.gain = float(config_data["gain"])
+                    applied += 1
                 if "trigger_mode" in config_data:
+                    total += 1
                     self.triggermode = config_data["trigger_mode"]
+                    applied += 1
                 if "white_balance" in config_data:
+                    total += 1
                     self.white_balance_mode = config_data["white_balance"]
+                    applied += 1
                 if "image_enhancement" in config_data:
+                    total += 1
                     self.img_quality_enhancement = config_data["image_enhancement"]
+                    applied += 1
                 if "roi" in config_data:
+                    total += 1
                     self.roi = config_data["roi"]
+                    applied += 1
                 if "pixel_format" in config_data:
+                    total += 1
                     self.default_pixel_format = config_data["pixel_format"]
+                    applied += 1
 
             except (json.JSONDecodeError, KeyError, ValueError) as e:
                 raise CameraConfigurationError(f"Invalid JSON configuration format: {e}")
 
             self.logger.debug(f"Configuration imported from '{config_path}' for mock camera '{self.camera_name}'")
+            return applied, total
         except CameraConfigurationError:
             raise
         except Exception as e:
