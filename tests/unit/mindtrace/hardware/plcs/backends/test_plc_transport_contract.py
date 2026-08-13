@@ -608,6 +608,49 @@ class TestPerTagNetsAreNarrow:
         assert len(read_driver.read_calls) == 2
 
 
+class TestTagResultHardening:
+    """The result type is impossible to misuse: no sentinels, no truthiness, no both."""
+
+    def test_a_value_and_an_error_cannot_coexist(self):
+        with pytest.raises(ValueError, match="never both"):
+            TagResult(value=5, error=TagError(kind=TagErrorKind.unknown, message="x"))
+
+    def test_an_empty_ok_result_is_legal(self):
+        result = TagResult()  # an empty CIP answer: ok, value None
+        assert result.ok is True
+        assert result.value is None
+
+    def test_value_raises_on_a_failed_result(self):
+        result = TagResult(error=TagError(kind=TagErrorKind.missing_tag, message="no such tag"))
+        with pytest.raises(ValueError, match="missing_tag: no such tag"):
+            result.value
+
+    def test_value_or_is_the_explicit_lossy_accessor(self):
+        failed = TagResult(error=TagError(kind=TagErrorKind.unknown, message="x"))
+        assert failed.value_or(0) == 0
+        assert TagResult(value=7).value_or(0) == 7
+
+    def test_truth_testing_raises(self):
+        with pytest.raises(TypeError, match="test .ok"):
+            bool(TagResult(value=False))
+
+    def test_results_are_immutable(self):
+        result = TagResult(value=1)
+        with pytest.raises(AttributeError):
+            result.error = None
+
+    def test_equality_and_repr_survive_the_rewrite(self):
+        assert TagResult(value=1) == TagResult(value=1)
+        assert TagResult(value=1) != TagResult(value=2)
+        assert repr(TagResult(value=1)) == "TagResult(value=1, error=None)"
+
+    def test_kind_formats_the_same_everywhere(self):
+        import json
+
+        for kind in TagErrorKind:
+            assert f"{kind}" == kind.value == json.loads(json.dumps(kind))
+
+
 class TestNoSentinels:
     async def test_a_failed_read_is_never_a_bare_value(self):
         plc = MockAllenBradleyPLC("TestPLC", "192.168.1.99", plc_type="logix")
@@ -620,7 +663,9 @@ class TestNoSentinels:
         assert missing.ok is False
         assert missing.error.kind is TagErrorKind.missing_tag
         # The value slot stays empty, and `ok` — not the value — is the verdict.
-        assert missing.value is None
+        with pytest.raises(ValueError, match="missing_tag"):
+            missing.value  # a failed result has no value - the sentinel door is closed
+        assert missing.value_or(None) is None
 
     async def test_a_failed_write_is_never_a_bare_false(self):
         plc = MockAllenBradleyPLC("TestPLC", "192.168.1.99", plc_type="logix")

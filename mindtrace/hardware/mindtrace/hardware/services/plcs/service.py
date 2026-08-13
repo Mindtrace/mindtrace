@@ -59,7 +59,7 @@ from mindtrace.services import Service
 
 
 def _read_values(results: Dict[str, TagResult]) -> Dict[str, Any]:
-    return {tag: result.value if result.ok else None for tag, result in results.items()}
+    return {tag: result.value_or(None) for tag, result in results.items()}
 
 
 def _write_flags(results: Dict[str, TagResult]) -> Dict[str, bool]:

@@ -485,7 +485,7 @@ class TestPLCManagerTagOperations:
 
         assert result["Tag1"].ok is True
         assert result["Missing"].ok is False
-        assert result["Missing"].value is None
+        assert result["Missing"].value_or(None) is None
         assert result["Missing"].error.kind is TagErrorKind.missing_tag
         assert result["Missing"].error.message == "no such tag"
 
@@ -558,7 +558,7 @@ class TestPLCManagerTagOperations:
 
         assert result["Tag1"].ok is True
         assert result["Tag2"].ok is False
-        assert result["Tag2"].value is None
+        assert result["Tag2"].value_or(None) is None
         assert result["Tag2"].error.kind is TagErrorKind.type_mismatch
 
     @pytest.mark.asyncio

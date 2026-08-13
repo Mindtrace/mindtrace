@@ -925,7 +925,7 @@ class TestAllenBradleyPLCTagReading:
 
         assert result["N7:0"] == TagResult(value=100)
         assert result["B3:0"].ok is False
-        assert result["B3:0"].value is None
+        assert result["B3:0"].value_or(None) is None
         assert result["B3:0"].error.kind is TagErrorKind.unknown
         assert result["B3:0"].error.message == "Read failed"
 
@@ -1192,7 +1192,7 @@ class TestAllenBradleyPLCTagReading:
 
         assert "Motor1_Speed" in result
         assert result["Motor1_Speed"].ok is False
-        assert result["Motor1_Speed"].value is None
+        assert result["Motor1_Speed"].value_or(None) is None
         assert result["Motor1_Speed"].error.kind is TagErrorKind.unknown
         assert result["Motor1_Speed"].error.message == "driver returned None"
 
@@ -1217,7 +1217,7 @@ class TestAllenBradleyPLCTagReading:
 
         assert "Assembly:20" in result
         assert result["Assembly:20"].ok is False
-        assert result["Assembly:20"].value is None
+        assert result["Assembly:20"].value_or(None) is None
         assert result["Assembly:20"].error.kind is TagErrorKind.unknown
         assert result["Assembly:20"].error.message == "Read error"
 
@@ -1539,7 +1539,7 @@ class TestAllenBradleyPLCTagWriting:
 
         assert result["N7:0"] == TagResult(value=100)
         assert result["B3:0"].ok is False
-        assert result["B3:0"].value is None
+        assert result["B3:0"].value_or(None) is None
         assert result["B3:0"].error.kind is TagErrorKind.unknown
         assert result["B3:0"].error.message == "Write failed"
 
@@ -1654,7 +1654,7 @@ class TestAllenBradleyPLCTagWriting:
         result = await plc.write_tag([("Assembly:20", [1500, 0, 255, 0])])
 
         assert result["Assembly:20"].ok is False
-        assert result["Assembly:20"].value is None
+        assert result["Assembly:20"].value_or(None) is None
         assert result["Assembly:20"].error.kind is TagErrorKind.unknown
         assert result["Assembly:20"].error.message == "Write error"
 
@@ -1739,7 +1739,7 @@ class TestAllenBradleyPLCTagWriting:
         result = await plc.write_tag([("Motor1_Speed", 1500.0)])
 
         assert result["Motor1_Speed"].ok is False
-        assert result["Motor1_Speed"].value is None
+        assert result["Motor1_Speed"].value_or(None) is None
         assert result["Motor1_Speed"].error.kind is TagErrorKind.type_mismatch
         assert result["Motor1_Speed"].error.message == "Invalid data type for tag"
 

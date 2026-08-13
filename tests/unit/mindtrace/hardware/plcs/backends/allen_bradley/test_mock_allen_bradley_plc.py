@@ -491,7 +491,7 @@ class TestMockAllenBradleyPLCTagReading:
 
         assert "NonExistentTag" in result
         assert result["NonExistentTag"].ok is False
-        assert result["NonExistentTag"].value is None
+        assert result["NonExistentTag"].value_or(None) is None
         assert result["NonExistentTag"].error.kind is TagErrorKind.missing_tag
         assert "NonExistentTag" in result["NonExistentTag"].error.message
 
@@ -507,7 +507,7 @@ class TestMockAllenBradleyPLCTagReading:
 
         assert "N99:999" in result
         assert result["N99:999"].ok is False
-        assert result["N99:999"].value is None
+        assert result["N99:999"].value_or(None) is None
         assert result["N99:999"].error.kind is TagErrorKind.missing_tag
 
     @pytest.mark.asyncio
@@ -522,7 +522,7 @@ class TestMockAllenBradleyPLCTagReading:
 
         assert "NonExistentCIP" in result
         assert result["NonExistentCIP"].ok is False
-        assert result["NonExistentCIP"].value is None
+        assert result["NonExistentCIP"].value_or(None) is None
         assert result["NonExistentCIP"].error.kind is TagErrorKind.missing_tag
 
     @pytest.mark.asyncio
@@ -681,7 +681,7 @@ class TestMockAllenBradleyPLCTagWriting:
         result = await mock_plc.write_tag([("Production_Count", "invalid")])
 
         assert result["Production_Count"].ok is False
-        assert result["Production_Count"].value is None
+        assert result["Production_Count"].value_or(None) is None
         assert result["Production_Count"].error.kind is TagErrorKind.type_mismatch
 
     @pytest.mark.asyncio
@@ -692,7 +692,7 @@ class TestMockAllenBradleyPLCTagWriting:
         result = await mock_plc.write_tag(("NonExistentTag", 123))
 
         assert result["NonExistentTag"].ok is False
-        assert result["NonExistentTag"].value is None
+        assert result["NonExistentTag"].value_or(None) is None
         assert result["NonExistentTag"].error.kind is TagErrorKind.missing_tag
 
     @pytest.mark.asyncio
