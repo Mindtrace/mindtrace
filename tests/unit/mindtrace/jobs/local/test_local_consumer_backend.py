@@ -212,7 +212,7 @@ class TestLocalConsumerBackend:
             return 1
 
         backend.orchestrator.count_queue_messages = MagicMock(side_effect=count_pending)
-        backend.consume = MagicMock()
+        backend.consume = MagicMock(return_value=0)
         backend.logger = MagicMock()
 
         backend.consume_until_empty(queues="queue1", block=False)

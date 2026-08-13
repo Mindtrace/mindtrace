@@ -33,11 +33,12 @@ class RedisConsumerBackend(ConsumerBackendBase):
 
     def consume(
         self, num_messages: int = 0, *, queues: str | list[str] | None = None, block: bool = True, **kwargs
-    ) -> None:
+    ) -> int:
         """Consume messages from Redis queue(s)."""
         self._ensure_open()
+        self._validate_num_messages(num_messages)
         if self._skip_if_stopped():
-            return
+            return 0
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
@@ -45,7 +46,7 @@ class RedisConsumerBackend(ConsumerBackendBase):
         # Guard against empty queue list to avoid infinite loop
         if not queues:
             self.logger.warning("No queues provided; nothing to consume.")
-            return
+            return 0
 
         messages_attempted = 0
         try:
@@ -56,23 +57,25 @@ class RedisConsumerBackend(ConsumerBackendBase):
                         break
                     try:
                         message = self.receive_message(queue, block=False, timeout=None)
-                        if message is not None:
-                            found_message = True
-                            self.logger.debug(
-                                f"Received message from queue '{queue}': processing {messages_attempted + 1}"
-                            )
-                            messages_attempted += 1
-                            self.process_message(message)
-                    except Exception as e:
-                        self.logger.debug(f"No message available in queue '{queue}' or error occurred: {e}")
+                    except json.JSONDecodeError as exc:
+                        found_message = True
+                        messages_attempted += 1
+                        self.logger.error(f"Discarded malformed message from queue {queue}: {exc}")
+                        continue
+                    if message is not None:
+                        found_message = True
+                        self.logger.debug(f"Received message from queue '{queue}': processing {messages_attempted + 1}")
+                        messages_attempted += 1
+                        self.process_message(message)
                 if not found_message and not self.stopped:
                     if not block:
-                        return
+                        return messages_attempted
                     self._stop_event.wait(self.poll_timeout)
         except KeyboardInterrupt:
             self.logger.info("Consumption interrupted by user.")
         finally:
             self.logger.info(f"Stopped consuming messages from queues: {queues}.")
+        return messages_attempted
 
     def process_message(self, message) -> bool:
         """Process a single message."""
@@ -106,14 +109,14 @@ class RedisConsumerBackend(ConsumerBackendBase):
             if pending == 0:
                 drained = True
                 break
-            self.consume(num_messages=1, queues=queues, block=block)
+            messages_attempted = self.consume(num_messages=1, queues=queues, block=False)
             if self.stopped:
                 break
             remaining = sum(self.connection.count_queue_messages(queue) for queue in queues)
             if remaining == 0:
                 drained = True
                 break
-            if remaining >= pending:
+            if messages_attempted == 0:
                 self.logger.error(f"Drain stalled with {remaining} messages pending; aborting.")
                 break
 
@@ -155,10 +158,7 @@ class RedisConsumerBackend(ConsumerBackendBase):
             elif hasattr(instance, "pop"):
                 raw_message = instance.pop(block=False, timeout=None)
             else:
-                raise Exception("Queue type does not support receiving messages.")
-            message_dict = json.loads(raw_message)
-            return message_dict
+                raise RuntimeError("Queue type does not support receiving messages.")
+            return json.loads(raw_message)
         except Empty:
-            return None
-        except Exception:
             return None

@@ -1,3 +1,4 @@
+import json
 import time
 from typing import TYPE_CHECKING
 
@@ -32,14 +33,18 @@ class LocalConsumerBackend(ConsumerBackendBase):
 
     def consume(
         self, num_messages: int = 0, *, queues: str | list[str] | None = None, block: bool = True, **kwargs
-    ) -> None:
+    ) -> int:
         """Consume messages from the local queue(s)."""
         self._ensure_open()
+        self._validate_num_messages(num_messages)
         if self._skip_if_stopped():
-            return
+            return 0
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
+        if not queues:
+            self.logger.warning("No queues provided; nothing to consume.")
+            return 0
         messages_attempted = 0
 
         try:
@@ -50,21 +55,25 @@ class LocalConsumerBackend(ConsumerBackendBase):
                         break
                     try:
                         message = self.orchestrator.receive_message(queue, block=False, timeout=self.poll_timeout)
-                        if message is not None:
-                            no_messages_found = False
-                            messages_attempted += 1
-                            self.process_message(message)
-                    except Exception as e:
-                        self.logger.debug(f"Error consuming from queue {queue}: {e}")
+                    except json.JSONDecodeError as exc:
+                        no_messages_found = False
+                        messages_attempted += 1
+                        self.logger.error(f"Discarded malformed message from queue {queue}: {exc}")
+                        continue
+                    if message is not None:
+                        no_messages_found = False
+                        messages_attempted += 1
+                        self.process_message(message)
 
                 if no_messages_found and block is False:
-                    return
+                    return messages_attempted
 
                 if no_messages_found and block is True:
                     time.sleep(0.1)
 
         except KeyboardInterrupt:
             self.logger.info("Consumption interrupted by user.")
+        return messages_attempted
 
     def consume_until_empty(self, *, queues: str | list[str] | None = None, block: bool = True, **kwargs) -> None:
         """Consume messages from the queue(s) until empty."""
@@ -78,9 +87,11 @@ class LocalConsumerBackend(ConsumerBackendBase):
             pending = sum(self.orchestrator.count_queue_messages(queue) for queue in queues)
             if pending == 0:
                 return
-            self.consume(num_messages=1, queues=queues, block=block)
+            messages_attempted = self.consume(num_messages=1, queues=queues, block=False)
             remaining = sum(self.orchestrator.count_queue_messages(queue) for queue in queues)
-            if remaining >= pending:
+            if remaining == 0:
+                return
+            if messages_attempted == 0:
                 self.logger.error(f"Drain stalled with {remaining} message pending; aborting.")
                 return
 

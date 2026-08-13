@@ -2,6 +2,7 @@ import json
 import threading
 import uuid
 from pathlib import Path
+from queue import Empty
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 import pydantic
@@ -133,15 +134,13 @@ class LocalClient(OrchestratorBackend):
         queue_instance: LocalJobQueue = self.queues.load(queue_name)
         try:
             raw_message = queue_instance.pop(block=block, timeout=timeout)
-            if raw_message is None:
-                self.logger.debug(f"Queue '{queue_name}' is empty.")
-                return None
-            message_dict = json.loads(raw_message)
-            self.queues.save(queue_name, queue_instance, on_conflict=OnConflict.OVERWRITE)
-            return message_dict
-        except Exception as e:
-            self.logger.warning(f"Error popping message from queue '{queue_name}': {e}")
+        except Empty:
             return None
+        if raw_message is None:
+            self.logger.debug(f"Queue '{queue_name}' is empty.")
+            return None
+        self.queues.save(queue_name, queue_instance, on_conflict=OnConflict.OVERWRITE)
+        return json.loads(raw_message)
 
     def clean_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Remove all messages from the specified queue."""

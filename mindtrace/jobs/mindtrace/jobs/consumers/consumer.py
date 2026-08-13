@@ -40,7 +40,7 @@ class Consumer(Mindtrace):
             backend_args["cls"], consumer_frontend=self, **backend_args["kwargs"], queue_name=queue_name
         )
 
-    def consume(self, num_messages: int = 0, queues: str | list[str] | None = None, block: bool = True) -> None:
+    def consume(self, num_messages: int = 0, queues: str | list[str] | None = None, block: bool = True) -> int:
         """Consume messages from the queue.
 
         Args:
@@ -48,11 +48,14 @@ class Consumer(Mindtrace):
             queues: Queue(s) to consume from. If None, uses the consumer's default queue.
             block: If True, wait indefinitely for requested messages until stopped or interrupted.
                 If False, return when no message is immediately available.
+
+        Returns:
+            The number of deliveries attempted.
         """
         if not self.consumer_backend:
             raise RuntimeError("Consumer not connected. Call connect() first.")
 
-        self.consumer_backend.consume(num_messages, queues=queues, block=block)
+        return self.consumer_backend.consume(num_messages, queues=queues, block=block)
 
     def consume_until_empty(self, queues: str | list[str] | None = None, block: bool = True) -> None:
         """Consume messages until all specified queues are empty.

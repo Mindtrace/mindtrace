@@ -71,32 +71,35 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
 
     def consume(
         self, num_messages: int = 0, *, queues: str | list[str] | None = None, block: bool = True, **kwargs
-    ) -> None:
+    ) -> int:
         """Consume deliveries, waiting indefinitely when ``block`` is true."""
         self._ensure_open()
+        self._validate_num_messages(num_messages)
         if self._skip_if_stopped():
-            return
+            return 0
         if isinstance(queues, str):
             queues = [queues]
         queues = list(dict.fromkeys(ifnone(queues, default=self.queues)))
         if not queues:
             self.logger.warning("No queues provided; nothing to consume.")
-            return
+            return 0
 
+        messages_attempted = 0
         try:
             self.connection.connect()
             channel = self.connection.get_channel()
             self._active_channel = channel
             channel.basic_qos(prefetch_count=self.prefetch_count)
             if num_messages > 0:
-                self._consume_finite_messages(channel, num_messages, queues, block=block)
+                messages_attempted = self._consume_finite_messages(channel, num_messages, queues, block=block)
             else:
-                self._consume_infinite_messages(channel, queues, block=block)
+                messages_attempted = self._consume_infinite_messages(channel, queues, block=block)
         except KeyboardInterrupt:
             self.logger.info("Consumption interrupted by user.")
         finally:
             self._close_active_resources()
             self.logger.info(f"Stopped consuming messages from queues: {queues}.")
+        return messages_attempted
 
     def _consume_finite_messages(self, channel, num_messages: int, queues: list[str], block: bool = True) -> int:
         """Consume at most ``num_messages`` deliveries across all queues.
@@ -140,7 +143,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                 self._stop_event.wait(0.1)
         return settled
 
-    def _consume_infinite_messages(self, channel, queues: list[str], *, block: bool = True) -> None:
+    def _consume_infinite_messages(self, channel, queues: list[str], *, block: bool = True) -> int:
         """Consume available messages, waiting for new work only when requested."""
         self.logger.info(f"Started consuming messages indefinitely from queues: {queues}.")
         processed = 0
@@ -167,8 +170,9 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                     self._process_delivery(channel, delivery)
             if idle and not self.stopped:
                 if not block:
-                    return
+                    return processed
                 self._stop_event.wait(0.1)
+        return processed
 
     def _process_delivery(self, channel, delivery: RabbitMQDelivery) -> bool:
         success = self.process_message(delivery.message)

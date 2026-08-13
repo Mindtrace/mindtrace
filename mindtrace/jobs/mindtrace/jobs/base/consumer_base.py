@@ -39,6 +39,11 @@ class ConsumerBackendBase(MindtraceABC):
         if self.closed:
             raise RuntimeError("Consumer backend is closed.")
 
+    def _validate_num_messages(self, num_messages: int) -> None:
+        """Reject invalid finite-consumption limits."""
+        if num_messages < 0:
+            raise ValueError("num_messages must be non-negative")
+
     def _skip_if_stopped(self) -> bool:
         """Return whether consumption should be skipped after a stop request."""
         if not self.stopped:
@@ -64,7 +69,7 @@ class ConsumerBackendBase(MindtraceABC):
         self._closed_event.set()
 
     @abstractmethod
-    def consume(self, num_messages: int = 0, **kwargs) -> None:
+    def consume(self, num_messages: int = 0, **kwargs) -> int:
         """Consume messages from the queue and process them."""
         raise NotImplementedError
 
