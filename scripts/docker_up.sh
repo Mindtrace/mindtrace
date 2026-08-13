@@ -3,12 +3,26 @@
 SERVICE_READY_TIMEOUT_SECONDS="${SERVICE_READY_TIMEOUT_SECONDS:-120}"
 READINESS_DEADLINE=$((SECONDS + SERVICE_READY_TIMEOUT_SECONDS))
 
+dump_readiness_diagnostics() {
+    echo "Docker service state at readiness timeout:" >&2
+    $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml ps -a >&2 || true
+    $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml logs --no-color --tail=200 >&2 || true
+
+    local rabbitmq_container_id
+    rabbitmq_container_id="$($DOCKER_COMPOSE_CMD -f tests/docker-compose.yml ps -q rabbitmq 2>/dev/null || true)"
+    if [ -n "$rabbitmq_container_id" ]; then
+        echo "RabbitMQ container state:" >&2
+        docker inspect --format '{{json .State}}' "$rabbitmq_container_id" >&2 || true
+    fi
+}
+
 wait_until_ready() {
     local service_name="$1"
     shift
     until "$@"; do
         if (( SECONDS >= READINESS_DEADLINE )); then
             echo "Timed out waiting for ${service_name} after ${SERVICE_READY_TIMEOUT_SECONDS} seconds." >&2
+            dump_readiness_diagnostics
             return 1
         fi
         sleep 1
