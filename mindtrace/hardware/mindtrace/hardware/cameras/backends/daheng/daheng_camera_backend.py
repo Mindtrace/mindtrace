@@ -1235,7 +1235,7 @@ class DahengCameraBackend(CameraBackend):
         except Exception as e:
             raise CameraConfigurationError(f"Failed to set pixel format for camera '{self.camera_name}': {e}") from e
 
-    async def import_config(self, config_path: str):
+    async def import_config(self, config_path: str) -> Tuple[int, int]:
         """Import camera configuration from JSON file.
 
         Args:

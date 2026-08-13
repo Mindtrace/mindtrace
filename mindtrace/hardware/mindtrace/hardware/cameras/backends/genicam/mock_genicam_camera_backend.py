@@ -630,7 +630,7 @@ class MockGenICamCameraBackend(CameraBackend):
         await asyncio.sleep(0.001)  # Simulate operation delay
         return self.timeout_ms
 
-    async def import_config(self, config_path: str):
+    async def import_config(self, config_path: str) -> Tuple[int, int]:
         """Import simulated camera configuration from JSON file."""
         if not os.path.exists(config_path):
             raise CameraConfigurationError(f"Configuration file not found: {config_path}")

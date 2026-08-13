@@ -458,7 +458,7 @@ class MockBaslerCameraBackend(CameraBackend):
             self.logger.warning(f"Connection check failed for mock camera '{self.camera_name}': {str(e)}")
             return False
 
-    async def import_config(self, config_path: str):
+    async def import_config(self, config_path: str) -> Tuple[int, int]:
         """Import camera configuration from common JSON format.
 
         Args:

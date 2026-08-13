@@ -980,7 +980,7 @@ class AsyncCamera(Mindtrace):
         async with self._lock:
             return await self._backend.export_config(config_path)
 
-    async def import_config(self, config_path: str):
+    async def import_config(self, config_path: str) -> Tuple[int, int]:
         """Import camera configuration (backend-specific method)."""
         async with self._lock:
             return await self._backend.import_config(config_path)

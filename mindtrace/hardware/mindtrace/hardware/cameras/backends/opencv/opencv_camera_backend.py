@@ -1167,7 +1167,7 @@ class OpenCVCameraBackend(CameraBackend):
                 f"Failed to export config to '{config_path}' for camera '{self.camera_name}': {str(e)}"
             )
 
-    async def import_config(self, config_path: str):
+    async def import_config(self, config_path: str) -> Tuple[int, int]:
         """Import camera configuration from common JSON format.
 
         Does not apply open-time settings (``width``, ``height``, ``fps``);

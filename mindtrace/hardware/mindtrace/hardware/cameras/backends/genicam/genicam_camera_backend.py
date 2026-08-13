@@ -1540,7 +1540,7 @@ class GenICamCameraBackend(CameraBackend):
             self.logger.warning(f"White balance range retrieval failed for camera '{self.camera_name}': {str(e)}")
             return ["auto", "manual", "once"]
 
-    async def import_config(self, config_path: str):
+    async def import_config(self, config_path: str) -> Tuple[int, int]:
         """Import camera configuration from JSON file.
 
         Args:
