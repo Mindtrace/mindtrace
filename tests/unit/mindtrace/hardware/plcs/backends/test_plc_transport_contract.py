@@ -5,12 +5,12 @@ must never be inside the same channel at the same time, a reconnect must never
 interleave with an in-flight operation, and a driver failure must surface as a
 typed error rather than a sentinel value.
 
-They also pin the recovery contract built on top of that: a transport-class
-failure is retried inside the channel lock, the reconnect of that channel
-escalates (the first retry runs on a still-connected session, later retries — and
-any driver reporting disconnected — reset the channel first), a non-retryable
-failure is not retried at all, and a reconnect that itself fails never aborts the
-loop.
+They also pin the recovery contract built on top of that: one attempt per call,
+no retry. Any failed exchange (wire death, timeout, garbled reply, or a
+delivered reply carrying session-dead statuses) closes its channel and raises
+typed; the channel reopens at the next call's entry. Only a delivered, parsed
+reply keeps the session — and only ``RequestError`` (rejected before the wire)
+raises without touching it.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ from mindtrace.hardware.core.exceptions import (
     PLCConnectionError,
     PLCTagReadError,
     PLCTagWriteError,
+    PLCTimeoutError,
 )
 from mindtrace.hardware.plcs.backends.allen_bradley import AllenBradleyPLC, MockAllenBradleyPLC
 from mindtrace.hardware.plcs.backends.allen_bradley import allen_bradley_plc as ab_module
@@ -466,7 +467,9 @@ class TestErrorTaxonomy:
         assert results["Motor1_Speed"].error.kind is TagErrorKind.encode
 
     async def test_whole_call_data_error_is_transport_class(self):
-        """A garbled reply leaves the session suspect, so it is retryable."""
+        """A raised DataError cannot occur on the audited Logix path (packing
+        errors are wrapped and stamped per-tag) - transport-class defense: if
+        one ever escapes, it is unaudited territory and the channel closes."""
         write_driver = FakeLogixDriver(write_error=DataError("Error packing -128 as USINT"))
         plc = _allen_bradley(FakeLogixDriver(), write_driver)
 
@@ -475,6 +478,7 @@ class TestErrorTaxonomy:
 
         assert isinstance(excinfo.value.__cause__, DataError)
         assert len(write_driver.write_calls) == 1
+        assert write_driver.connected is False
 
     async def test_whole_call_comm_error_is_transport_class(self):
         read_driver = FakeLogixDriver(read_error=CommError("socket closed"))
@@ -823,7 +827,9 @@ class TestCloseOnProof:
         assert excinfo.value is boom  # travels by identity
         assert plc.closes == []
 
-    async def test_a_timeout_keeps_the_session(self):
+    async def test_a_timeout_closes_the_channel(self):
+        """The timed-out request is still outstanding; its late reply would
+        answer the NEXT request. Replies match requests by arrival order only."""
         comm = CommError("failed to receive reply")
         comm.__cause__ = TimeoutError("timed out")
         read_driver = FakeLogixDriver(read_error=comm)
@@ -832,16 +838,19 @@ class TestCloseOnProof:
         with pytest.raises(PLCCommunicationError):
             await plc.read_tag(["Tag1"])
 
-        assert read_driver.connected is True  # busy is not dead
+        assert read_driver.connected is False
 
-    async def test_a_garbled_reply_keeps_the_session(self):
+    async def test_a_garbled_reply_closes_the_channel(self):
+        """Defensive pin: on the audited Logix path parse failures are STAMPED
+        (frame-atomic receive), so a RAISED reply-class error means an exchange
+        aborted somewhere unaudited - close rather than trust the stream."""
         read_driver = FakeLogixDriver(read_error=DataError("Error unpacking reply"))
         plc = _allen_bradley(read_driver, FakeLogixDriver())
 
         with pytest.raises(PLCCommunicationError):
             await plc.read_tag(["Tag1"])
 
-        assert read_driver.connected is True  # reply-level trouble is transient
+        assert read_driver.connected is False
 
     async def test_a_session_dead_status_condemns_the_whole_batch(self):
         """The controller stating our session is gone (CIP 0x07) closes + raises."""
@@ -1012,33 +1021,53 @@ class TestAllenBradleyChannelLifecycle:
         # The failed reopen closed the replacement rather than leaking it.
         assert dead.connected is False
 
-    async def test_timeout_knobs_are_applied_per_channel(self, monkeypatch):
-        """connection_timeout bounds the open itself; then the channel's own knob takes over."""
+    async def test_timeout_knobs_bound_the_exchange_not_just_the_config(self, monkeypatch):
+        """Behavior, not assignment: pycomm3's socket_timeout setter only writes
+        config, so the per-channel knob must be enforced at this layer. A read
+        that outlives ``read_timeout`` raises typed and closes the channel."""
+        import time as _time
 
-        class RecordingDriver(FakeLogixDriver):
-            def __init__(self, **kwargs):
-                object.__setattr__(self, "timeout_history", [])
-                super().__init__(**kwargs)
+        stalled = FakeLogixDriver(read_results=[_tag(value=1)])
+        original_read = stalled.read
 
-            def __setattr__(self, name, value):
-                if name == "socket_timeout":
-                    self.timeout_history.append(value)
-                super().__setattr__(name, value)
+        def _slow_read(*addresses):
+            _time.sleep(0.2)  # blocks the worker thread, like a silent controller
+            return original_read(*addresses)
 
-        dead = FakeLogixDriver(read_error=_socket_death_comm_error())
-        recorder = RecordingDriver(read_results=[_tag(value=1)])
-        monkeypatch.setattr(ab_module, "LogixDriver", lambda ip_address: recorder)
-        plc = _allen_bradley(dead, FakeLogixDriver())
-        plc.connection_timeout = 7.5
-        plc.read_timeout = 2.5
+        stalled.read = _slow_read
+        plc = _allen_bradley(stalled, FakeLogixDriver())
+        plc.read_timeout = 0.05
 
-        with pytest.raises(PLCCommunicationError):
-            await plc.read_tag(["Tag1"])  # wire death closes the read channel
+        started = _time.monotonic()
+        # PLCTimeoutError subclasses PLCCommunicationError: same contract, finer label.
+        with pytest.raises(PLCTimeoutError, match="timed out after 0.05s"):
+            await plc.read_tag(["Tag1"])
+        elapsed = _time.monotonic() - started
 
-        results = await plc.read_tag(["Tag1"])  # entry reopen applies the knobs
+        assert elapsed < 0.19  # the knob cut the call short, not the sleep
+        assert stalled.connected is False  # a late reply must not answer the next request
 
-        assert results["Tag1"].value == 1
-        assert recorder.timeout_history == [7.5, 2.5]
+    async def test_write_timeout_is_the_write_channels_knob(self):
+        """The channels' knobs are independent: a stalled write is cut by
+        write_timeout even when read_timeout is generous."""
+        import time as _time
+
+        stalled = FakeLogixDriver(write_results=[_tag(value=1)])
+        original_write = stalled.write
+
+        def _slow_write(*writes):
+            _time.sleep(0.2)
+            return original_write(*writes)
+
+        stalled.write = _slow_write
+        plc = _allen_bradley(FakeLogixDriver(), stalled)
+        plc.read_timeout = 30.0
+        plc.write_timeout = 0.05
+
+        with pytest.raises(PLCTimeoutError, match="Write timed out after 0.05s"):
+            await plc.write_tag([("Tag1", 1)])
+
+        assert stalled.connected is False
 
     async def test_an_open_that_raises_does_not_leak_the_driver(self, monkeypatch):
         read_driver = FakeLogixDriver(read_error=_socket_death_comm_error())

@@ -5,11 +5,13 @@ Transport contract — every ``read_tag`` / ``write_tag`` outcome is one of:
 - ``{addr: value}``: it worked.
 - ``{addr: error}``: that ADDRESS is wrong — a stable verdict; retrying is pointless.
 - raises ``PLCCommunicationError``: the LINK failed this call. One attempt, no
-  retry — re-issuing is the caller's job. The BACKEND closes its channel only on
-  PROOF the session is dead (a wire-dead exception class, or a delivered reply
-  carrying connection/session error statuses) and reopens it at the next call's
-  entry. Timeouts and garbled replies raise but keep the session.
-- raises ``PLCTagError``: the REQUEST is wrong; the session is fine.
+  retry — re-issuing is the caller's job. Only a delivered, parsed reply proves
+  the reply stream is still aligned with the request stream, so the BACKEND
+  closes its channel on ANY failed exchange (wire death, timeout, garbled
+  reply, or a delivered reply carrying session-dead statuses) and reopens it
+  at the next call's entry.
+- raises ``PLCTagError``: the REQUEST is wrong (rejected before the wire); the
+  session is fine.
 
 Link trouble never appears in a returned map — a BACKEND OBLIGATION: detect
 session-dead statuses on the raw driver text, close the channel, raise. Access

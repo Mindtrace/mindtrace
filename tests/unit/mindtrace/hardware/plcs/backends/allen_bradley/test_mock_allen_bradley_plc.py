@@ -339,7 +339,7 @@ class TestMockAllenBradleyPLCConnection:
         await plc._close_channel("read")
 
         assert plc._channels_open == {"read": False, "write": True}
-        assert await plc.is_connected() is False
+        assert await plc.is_connected() is True  # lifecycle state; the channel self-heals
 
         result = await plc.read_tag(["Motor1_Speed"])  # entry reopens the read channel
         assert result["Motor1_Speed"].ok is True
@@ -567,13 +567,17 @@ class TestMockAllenBradleyPLCTagReading:
 
     @pytest.mark.asyncio
     async def test_read_tag_with_timeout_flag(self, mock_plc):
-        """A simulated timeout is transport-class: retried, then raised typed."""
+        """A simulated timeout raises typed and closes the read channel, like
+        the real backend: a late reply must not answer the next request."""
         await mock_plc.connect()
         mock_plc.simulate_timeout = True
         mock_plc.read_timeout = 0.01
 
         with pytest.raises(PLCCommunicationError):
             await mock_plc.read_tag(["Motor1_Speed"])
+
+        assert mock_plc._channels_open == {"read": False, "write": True}
+        assert await mock_plc.is_connected() is True  # lifecycle state; self-heals
 
     @pytest.mark.asyncio
     async def test_read_tag_internal_error_propagates_unwrapped(self, mock_plc):

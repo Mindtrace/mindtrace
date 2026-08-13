@@ -42,6 +42,7 @@ from mindtrace.hardware.core.exceptions import (
     PLCTagNotFoundError,
     PLCTagReadError,
     PLCTagWriteError,
+    PLCTimeoutError,
 )
 from mindtrace.hardware.plcs.backends.base import BasePLC
 from mindtrace.hardware.plcs.types import TagError, TagErrorKind, TagResult
@@ -392,13 +393,9 @@ class MockAllenBradleyPLC(BasePLC):
         return True
 
     async def is_connected(self) -> bool:
-        """
-        Check if mock Allen Bradley PLC is currently connected.
-
-        Returns:
-            True if connected, False otherwise
-        """
-        return self._is_connected
+        """In the connected LIFECYCLE state, as on the real backend: a channel
+        closed on proof reopens at the next call's entry and does not count."""
+        return self._ever_connected
 
     async def _read_tags(self, addresses: List[str]) -> Dict[str, TagResult]:
         """Simulate a batched read; unknown addresses come back as missing_tag."""
@@ -406,10 +403,12 @@ class MockAllenBradleyPLC(BasePLC):
             raise PLCTagReadError("Simulated tag read failure")
 
         if self.simulate_timeout:
-            # Chained from TimeoutError like the real thing: a timeout raises but
-            # is NOT proof of death, so it must not close the channel.
+            # Chained from TimeoutError like the real thing. A timed-out exchange
+            # leaves the reply stream misaligned, so the channel closes and
+            # reopens at the next call's entry.
             await asyncio.sleep(self.read_timeout)
-            raise PLCCommunicationError("Simulated read timeout") from TimeoutError("simulated socket timeout")
+            await self._close_channel("read")
+            raise PLCTimeoutError("Simulated read timeout") from TimeoutError("simulated socket timeout")
 
         await self._channel("read")
 
@@ -582,7 +581,9 @@ class MockAllenBradleyPLC(BasePLC):
                 "ip_address": self.ip_address,
                 "driver_type": self.driver_type,
                 "plc_type": self.plc_type,
-                "connected": self._is_connected,
+                "connected": self._ever_connected,
+                "read_channel_open": self._channels_open["read"],
+                "write_channel_open": self._channels_open["write"],
                 "mock": True,
             }
 

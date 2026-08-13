@@ -20,6 +20,7 @@ from mindtrace.hardware.core.exceptions import (
     PLCTagNotFoundError,
     PLCTagReadError,
     PLCTagWriteError,
+    PLCTimeoutError,
     SDKNotAvailableError,
 )
 from mindtrace.hardware.plcs.backends.base import BasePLC
@@ -31,10 +32,8 @@ try:
 
     PYCOMM3_AVAILABLE = True
     PYCOMM3_ERRORS: Tuple[type, ...] = (CommError, DataError, RequestError, ResponseError)
-    # CommError,  pycomm3's own wire/session verdict
-    PYCOMM3_WIRE_ERRORS: Tuple[type, ...] = (CommError, OSError)
-    # Reply-level trouble - garbled or refused replies. keep session.
-    PYCOMM3_REPLY_ERRORS: Tuple[type, ...] = (DataError, ResponseError)
+    # Anything raised from INSIDE an exchange closes the channel.
+    PYCOMM3_EXCHANGE_ERRORS: Tuple[type, ...] = (CommError, DataError, ResponseError, OSError)
     PYCOMM3_TAG_ERRORS: Tuple[type, ...] = (DataError, RequestError, ResponseError)
 except ImportError:
     PYCOMM3_AVAILABLE = False
@@ -42,20 +41,8 @@ except ImportError:
     SLCDriver = None
     CIPDriver = None
     PYCOMM3_ERRORS = ()
-    PYCOMM3_WIRE_ERRORS = (OSError,)
-    PYCOMM3_REPLY_ERRORS = ()
+    PYCOMM3_EXCHANGE_ERRORS = (OSError,)
     PYCOMM3_TAG_ERRORS = ()
-
-
-def _chain_has_timeout(error) -> bool:
-    """socket.timeout IS TimeoutError; differentiate from socket errors."""
-    seen: set = set()
-    while error is not None and id(error) not in seen:
-        if isinstance(error, TimeoutError):
-            return True
-        seen.add(id(error))
-        error = error.__cause__ or error.__context__
-    return False
 
 
 class AllenBradleyPLC(BasePLC):
@@ -290,12 +277,16 @@ class AllenBradleyPLC(BasePLC):
     def _channel_timeout(self, channel: str) -> float:
         return self.read_timeout if channel == "read" else self.write_timeout
 
+    async def _bounded(self, channel: str, call: Any, *args: Any, **kwargs: Any) -> Any:
+        """Bounds the calls on a channel with a timeout."""
+        return await asyncio.wait_for(asyncio.to_thread(call, *args, **kwargs), self._channel_timeout(channel))
+
     async def _open_driver(self, channel: str) -> Any:
         """Construct and open ONE driver for the resolved plc_type; raises if it will not open.
 
-        Two-phase socket timeout: ``connection_timeout`` bounds the open itself,
-        then the channel's read/write timeout takes over — the configured knobs
-        are what actually bound how long a call can fence its channel.
+        ``connection_timeout`` is the driver's socket deadline: it bounds the
+        open handshake and backstops the data phase, whose real bound is
+        ``_bounded``'s per-channel knob.
 
         Uses the family ``connect()`` resolved — an entry reopen must not
         re-detect and drift ``driver_type`` while the other channel's driver
@@ -315,7 +306,6 @@ class AllenBradleyPLC(BasePLC):
         if not opened:
             await self._close_driver(driver, "new")
             raise PLCConnectionError(f"Failed to open a driver to Allen Bradley PLC at {self.ip_address}")
-        driver.socket_timeout = self._channel_timeout(channel)
         self.driver_type = driver_name
         return driver
 
@@ -366,11 +356,8 @@ class AllenBradleyPLC(BasePLC):
         return closed
 
     async def is_connected(self) -> bool:
-        """Connected means BOTH channels' drivers are open."""
-        try:
-            return self._driver_open(self._read_driver) and self._driver_open(self._write_driver)
-        except Exception:
-            return False
+        """connected means in the lifecycle state of connect() succeeded, disconnect() was not called."""
+        return self._read_driver is not None and self._write_driver is not None
 
     async def _read_tags(self, addresses: List[str]) -> Dict[str, TagResult]:
         """Read on the read channel; per-tag errors are classified, not logged away."""
@@ -380,7 +367,7 @@ class AllenBradleyPLC(BasePLC):
 
         try:
             if self.driver_type == "LogixDriver":
-                results = await asyncio.to_thread(driver.read, *addresses)
+                results = await self._bounded("read", driver.read, *addresses)
                 tags = results if isinstance(results, list) else [results]
                 if len(tags) != len(addresses):
                     raise PLCTagReadError(
@@ -396,14 +383,16 @@ class AllenBradleyPLC(BasePLC):
 
         except PLCTagReadError:
             raise
-        except PYCOMM3_WIRE_ERRORS as e:
-            if not _chain_has_timeout(e):  # busy is not dead; the caller decides patience
-                await self._close_driver(driver, "read")
-            raise PLCCommunicationError(f"Read failed on Allen Bradley PLC at {self.ip_address}: {e}") from e
-        except PYCOMM3_REPLY_ERRORS as e:
+        except TimeoutError as e:
+            await self._close_driver(driver, "read")
+            raise PLCTimeoutError(
+                f"Read timed out after {self.read_timeout}s on Allen Bradley PLC at {self.ip_address}"
+            ) from e
+        except PYCOMM3_EXCHANGE_ERRORS as e:
+            await self._close_driver(driver, "read")
             raise PLCCommunicationError(f"Read failed on Allen Bradley PLC at {self.ip_address}: {e}") from e
         except PYCOMM3_ERRORS as e:
-            # What's left is RequestError — a malformed request; the session is fine.
+            # What's left is RequestError, hit before the exchange.
             raise PLCTagReadError(f"Driver rejected the read on Allen Bradley PLC at {self.ip_address}: {e}") from e
         except Exception as e:
             raise PLCTagReadError(f"Unexpected read failure on Allen Bradley PLC at {self.ip_address}: {e}") from e
@@ -415,7 +404,7 @@ class AllenBradleyPLC(BasePLC):
         """One SLC data-file read; only per-tag driver errors stay per-tag — a
         CommError is a whole-call failure and propagates to ``_read_tags``."""
         try:
-            return tag_to_result(await asyncio.to_thread(driver.read, address))
+            return tag_to_result(await self._bounded("read", driver.read, address))
         except PYCOMM3_TAG_ERRORS as e:
             return TagResult(error=classify_tag_error(e))
 
@@ -423,11 +412,12 @@ class AllenBradleyPLC(BasePLC):
         """One generic-CIP read, dispatched on the address form."""
         try:
             if address.startswith("Identity") or address == "DeviceInfo":
-                return TagResult(value=await asyncio.to_thread(driver.list_identity, self.ip_address))
+                return TagResult(value=await self._bounded("read", driver.list_identity, self.ip_address))
 
             if address.startswith("Assembly"):
                 instance = int(address.split(":")[-1]) if ":" in address else 1
-                result = await asyncio.to_thread(
+                result = await self._bounded(
+                    "read",
                     driver.generic_message,
                     service=0x0E,  # Get_Attribute_Single
                     class_code=0x04,  # Assembly Object
@@ -439,10 +429,11 @@ class AllenBradleyPLC(BasePLC):
 
             if address.startswith("Module"):
                 slot = int(address.split(":")[-1]) if ":" in address else 0
-                return TagResult(value=await asyncio.to_thread(driver.get_module_info, slot))
+                return TagResult(value=await self._bounded("read", driver.get_module_info, slot))
 
             if address.startswith("Connection"):
-                result = await asyncio.to_thread(
+                result = await self._bounded(
+                    "read",
                     driver.generic_message,
                     service=0x01,  # Get_Attributes_All
                     class_code=0x06,  # Connection Manager Object
@@ -456,7 +447,8 @@ class AllenBradleyPLC(BasePLC):
                 class_code = int(parts[0], 16) if parts[0].startswith("0x") else int(parts[0])
                 instance = int(parts[1])
                 attribute = int(parts[2])
-                result = await asyncio.to_thread(
+                result = await self._bounded(
+                    "read",
                     driver.generic_message,
                     service=0x0E,  # Get_Attribute_Single
                     class_code=class_code,
@@ -466,7 +458,7 @@ class AllenBradleyPLC(BasePLC):
                 )
                 return tag_to_result(result)
 
-            return tag_to_result(await asyncio.to_thread(driver.read, address))
+            return tag_to_result(await self._bounded("read", driver.read, address))
         except PYCOMM3_TAG_ERRORS as e:
             return TagResult(error=classify_tag_error(e))
 
@@ -478,7 +470,7 @@ class AllenBradleyPLC(BasePLC):
 
         try:
             if self.driver_type == "LogixDriver":
-                results = await asyncio.to_thread(driver.write, *writes)
+                results = await self._bounded("write", driver.write, *writes)
                 tags = results if isinstance(results, list) else [results]
                 if len(tags) != len(writes):
                     raise PLCTagWriteError(
@@ -496,14 +488,16 @@ class AllenBradleyPLC(BasePLC):
 
         except PLCTagWriteError:
             raise
-        except PYCOMM3_WIRE_ERRORS as e:
-            if not _chain_has_timeout(e):
-                await self._close_driver(driver, "write")
-            raise PLCCommunicationError(f"Write failed on Allen Bradley PLC at {self.ip_address}: {e}") from e
-        except PYCOMM3_REPLY_ERRORS as e:
+        except TimeoutError as e:
+            await self._close_driver(driver, "write")
+            raise PLCTimeoutError(
+                f"Write timed out after {self.write_timeout}s on Allen Bradley PLC at {self.ip_address}"
+            ) from e
+        except PYCOMM3_EXCHANGE_ERRORS as e:
+            await self._close_driver(driver, "write")
             raise PLCCommunicationError(f"Write failed on Allen Bradley PLC at {self.ip_address}: {e}") from e
         except PYCOMM3_ERRORS as e:
-            # RequestError: a malformed request; the session is fine.
+            # RequestError: raised before anything hit the wire; the session is untouched.
             raise PLCTagWriteError(f"Driver rejected the write on Allen Bradley PLC at {self.ip_address}: {e}") from e
         except Exception as e:
             raise PLCTagWriteError(f"Unexpected write failure on Allen Bradley PLC at {self.ip_address}: {e}") from e
@@ -515,7 +509,7 @@ class AllenBradleyPLC(BasePLC):
         """One SLC data-file write; only per-tag driver errors stay per-tag — a
         CommError is a whole-call failure and propagates to ``_write_tags``."""
         try:
-            result = await asyncio.to_thread(driver.write, (address, value))
+            result = await self._bounded("write", driver.write, (address, value))
             return tag_to_result(result, value_on_success=value, use_tag_value=False)
         except PYCOMM3_TAG_ERRORS as e:
             return TagResult(error=classify_tag_error(e))
@@ -525,7 +519,8 @@ class AllenBradleyPLC(BasePLC):
         try:
             if address.startswith("Assembly"):
                 instance = int(address.split(":")[-1]) if ":" in address else 1
-                result = await asyncio.to_thread(
+                result = await self._bounded(
+                    "write",
                     driver.generic_message,
                     service=0x10,  # Set_Attribute_Single
                     class_code=0x04,  # Assembly Object
@@ -538,7 +533,8 @@ class AllenBradleyPLC(BasePLC):
 
             if address.startswith("Parameter"):
                 instance = int(address.split(":")[-1]) if ":" in address else 1
-                result = await asyncio.to_thread(
+                result = await self._bounded(
+                    "write",
                     driver.generic_message,
                     service=0x10,  # Set_Attribute_Single
                     class_code=0x0F,  # Parameter Object
@@ -554,7 +550,8 @@ class AllenBradleyPLC(BasePLC):
                 class_code = int(parts[0], 16) if parts[0].startswith("0x") else int(parts[0])
                 instance = int(parts[1])
                 attribute = int(parts[2])
-                result = await asyncio.to_thread(
+                result = await self._bounded(
+                    "write",
                     driver.generic_message,
                     service=0x10,  # Set_Attribute_Single
                     class_code=class_code,
@@ -565,7 +562,7 @@ class AllenBradleyPLC(BasePLC):
                 )
                 return tag_to_result(result, value_on_success=value, use_tag_value=False)
 
-            result = await asyncio.to_thread(driver.write, (address, value))
+            result = await self._bounded("write", driver.write, (address, value))
             return tag_to_result(result, value_on_success=value, use_tag_value=False)
         except PYCOMM3_TAG_ERRORS as e:
             return TagResult(error=classify_tag_error(e))
@@ -907,6 +904,10 @@ class AllenBradleyPLC(BasePLC):
                 "driver_type": self.driver_type,
                 "plc_type": self.plc_type,
                 "connected": await self.is_connected(),
+                # Diagnostics: a False here with connected=True is a channel
+                # awaiting its entry reopen, not a disconnection.
+                "read_channel_open": self._driver_open(self._read_driver),
+                "write_channel_open": self._driver_open(self._write_driver),
             }
 
             if self.driver_type == "LogixDriver":

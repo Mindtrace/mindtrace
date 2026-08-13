@@ -515,8 +515,10 @@ class TestAllenBradleyPLCConnection:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_is_connected_requires_both_sessions(self, mock_pycomm3_available):
-        """Connected means BOTH sessions are open; a dropped write socket is not connected."""
+    async def test_is_connected_is_the_lifecycle_state(self, mock_pycomm3_available):
+        """A dropped channel is NOT a disconnection — it reopens at the next
+        call's entry, and a supervisor reacting to False here would tear down
+        the healthy channel. Only disconnect() (or never connecting) is False."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
@@ -530,34 +532,12 @@ class TestAllenBradleyPLCConnection:
         await plc.connect()
         assert await plc.is_connected() is True
 
-        write_driver.connected = False
-        assert await plc.is_connected() is False
+        write_driver.connected = False  # closed on proof: self-healing, still connected
+        assert await plc.is_connected() is True
 
-        write_driver.connected = True
         read_driver.connected = False
+        await plc.disconnect()
         assert await plc.is_connected() is False
-
-    @pytest.mark.asyncio
-    async def test_is_connected_exception_handling(self, mock_pycomm3_available, mock_logix_driver):
-        """Test is_connected exception handling."""
-        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
-            AllenBradleyPLC,
-            LogixDriver,
-        )
-
-        # Make accessing connected property raise an exception
-        def _get_connected():
-            raise Exception("Access failed")
-
-        type(mock_logix_driver).connected = property(_get_connected)
-
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
-        LogixDriver.return_value = mock_logix_driver
-        await plc.connect()
-
-        result = await plc.is_connected()
-
-        assert result is False
 
 
 class TestAllenBradleyPLCInitialize:
