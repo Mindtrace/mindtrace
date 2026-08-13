@@ -294,6 +294,37 @@ async def test_reinit_serializes_concurrent_open(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_reinit_replaces_camera_when_close_fails(monkeypatch):
+    """Reinit must deregister a wedged camera even if backend close raises."""
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._restore_saved_config_on_open = False
+    manager._reinitialization_cooldown = 0
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    async def failing_close(self):
+        raise CameraConnectionError("simulated close failure")
+
+    monkeypatch.setattr(
+        "mindtrace.hardware.cameras.core.async_camera.AsyncCamera.close",
+        failing_close,
+    )
+
+    try:
+        await manager.open(name, test_connection=False)
+        original_proxy = manager._cameras[name]
+        original_backend = original_proxy._backend
+
+        await manager._handle_camera_failure(name)
+
+        reopened = manager._cameras[name]
+        assert reopened is not original_proxy
+        assert reopened._backend is not original_backend
+        assert manager._failure_counts.get(name, 0) == 0
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_reinit_replays_runtime_configure(monkeypatch, tmp_path):
     """Auto-reinit must replay accumulated runtime configure settings after profile restore."""
     import json
