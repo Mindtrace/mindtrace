@@ -244,6 +244,17 @@ class TestPLCManagerRegistration:
             assert success is False
 
     @pytest.mark.asyncio
+    async def test_register_plc_lets_a_bad_keyword_escape(self, mock_plc_manager):
+        """A constructor signature mismatch is a programming error, not a failed
+        registration — swallowing it into False points the blame at the registry."""
+        with pytest.raises(TypeError):
+            await mock_plc_manager.register_plc(
+                "TestPLC", "AllenBradley", "192.168.1.100", plc_type="logix", retry_count=3
+            )
+
+        assert "TestPLC" not in mock_plc_manager.plcs
+
+    @pytest.mark.asyncio
     async def test_register_plc_with_kwargs(self, mock_plc_manager, mock_plc_instance):
         """Test registering PLC with additional kwargs."""
         mock_backend_class = MagicMock(return_value=mock_plc_instance)
@@ -268,6 +279,17 @@ class TestPLCManagerRegistration:
 
         assert success is True
         assert "TestPLC" not in mock_plc_manager.plcs
+
+    @pytest.mark.asyncio
+    async def test_unregister_plc_disconnects_a_half_open_plc(self, mock_plc_manager, mock_plc_instance):
+        """A PLC reporting not-connected can still hold a live channel session."""
+        mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
+        mock_plc_instance.is_connected.return_value = False
+
+        success = await mock_plc_manager.unregister_plc("TestPLC")
+
+        assert success is True
+        mock_plc_instance.disconnect.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_unregister_plc_not_found(self, mock_plc_manager):

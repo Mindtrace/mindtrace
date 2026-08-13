@@ -266,7 +266,6 @@ class PLCManagerService(Service):
                 connection_timeout=request.connection_timeout,
                 read_timeout=request.read_timeout,
                 write_timeout=request.write_timeout,
-                retry_count=request.retry_count,
                 retry_delay=request.retry_delay,
             )
 
@@ -299,7 +298,6 @@ class PLCManagerService(Service):
                         connection_timeout=plc_req.connection_timeout,
                         read_timeout=plc_req.read_timeout,
                         write_timeout=plc_req.write_timeout,
-                        retry_count=plc_req.retry_count,
                         retry_delay=plc_req.retry_delay,
                     )
 

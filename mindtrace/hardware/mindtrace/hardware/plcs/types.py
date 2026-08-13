@@ -129,7 +129,6 @@ _TRANSIENT_PATTERNS = (
 _SESSION_DEAD_PHRASES = (
     "connection lost",  # CIP 0x07 - the connection you were using is gone
     "invalid session handle",  # encapsulation 0x0064 - your registration is gone
-    "session handle",
 )
 
 

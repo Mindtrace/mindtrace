@@ -329,6 +329,8 @@ class PLCManager(Mindtrace):
             self.logger.info(f"Registered PLC '{plc_name}' with {backend} backend")
             return True
 
+        except TypeError:
+            raise
         except Exception as e:
             self.logger.error(f"Failed to register PLC '{plc_name}': {e}")
             return False
@@ -349,8 +351,8 @@ class PLCManager(Mindtrace):
 
         try:
             plc = self.plcs[plc_name]
-            if await plc.is_connected():
-                await plc.disconnect()
+            # Unconditional: a half-open PLC still holds a live session.
+            await plc.disconnect()
 
             del self.plcs[plc_name]
             self.logger.info(f"Unregistered PLC '{plc_name}'")

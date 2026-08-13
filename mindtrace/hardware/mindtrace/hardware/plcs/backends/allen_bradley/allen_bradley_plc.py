@@ -119,6 +119,9 @@ class AllenBradleyPLC(BasePLC):
 
         self.plc_type = plc_type or "auto"
         self.driver_type = None
+        # Resolved once per connect(); reopens reuse it so a re-detection cannot
+        # drift the two channels onto different driver families.
+        self._driver_family: Optional[str] = None
         self._read_driver: Any = None
         self._write_driver: Any = None
         self._tags_cache: Optional[List[str]] = None
@@ -261,6 +264,8 @@ class AllenBradleyPLC(BasePLC):
             self._write_driver = None
             self.plc = None
 
+        self._driver_family = await self._resolve_plc_type()
+
         try:
             self._read_driver = await self._open_driver("read")
         except Exception as e:
@@ -291,8 +296,12 @@ class AllenBradleyPLC(BasePLC):
         Two-phase socket timeout: ``connection_timeout`` bounds the open itself,
         then the channel's read/write timeout takes over — the configured knobs
         are what actually bound how long a call can fence its channel.
+
+        Uses the family ``connect()`` resolved — an entry reopen must not
+        re-detect and drift ``driver_type`` while the other channel's driver
+        is still live.
         """
-        driver_class, driver_name = self._driver_class(await self._resolve_plc_type())
+        driver_class, driver_name = self._driver_class(self._driver_family)
 
         driver = await asyncio.to_thread(driver_class, self.ip_address)
         driver.socket_timeout = self.connection_timeout

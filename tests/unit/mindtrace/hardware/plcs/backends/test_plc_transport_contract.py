@@ -947,6 +947,27 @@ class TestAllenBradleyChannelLifecycle:
         assert plc._write_driver is write_driver
         assert write_driver.connected is True
 
+    async def test_a_reopen_reuses_the_family_connect_resolved(self, monkeypatch):
+        """An entry reopen must not re-detect the PLC family: a failed detection
+        falls back to CIPDriver and would drift ``driver_type`` while the other
+        channel still holds a LogixDriver."""
+        read_driver = FakeLogixDriver(read_error=_socket_death_comm_error())
+        replacement = FakeLogixDriver(read_results=[_tag(value=42)])
+        monkeypatch.setattr(ab_module, "LogixDriver", lambda ip_address: replacement)
+        plc = _allen_bradley(read_driver, FakeLogixDriver())
+
+        async def _no_redetect():
+            raise AssertionError("a reopen must not re-detect the PLC family")
+
+        monkeypatch.setattr(plc, "_resolve_plc_type", _no_redetect)
+
+        with pytest.raises(PLCCommunicationError):
+            await plc.read_tag(["Tag1"])
+        results = await plc.read_tag(["Tag1"])  # reopens without re-detection
+
+        assert results["Tag1"].value == 42
+        assert plc.driver_type == "LogixDriver"
+
     async def test_a_closed_write_channel_reopens_at_entry(self, monkeypatch):
         read_driver = FakeLogixDriver()
         write_driver = FakeLogixDriver(write_error=_socket_death_comm_error())
