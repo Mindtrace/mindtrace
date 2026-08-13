@@ -485,7 +485,6 @@ class AsyncCameraManager(Mindtrace):
             self._failure_counts.pop(camera_name, None)
             self._open_kwargs.pop(camera_name, None)
             self._runtime_configure.pop(camera_name, None)
-            self._open_locks.pop(camera_name, None)
             self.logger.info(f"Camera '{camera_name}' closed")
         except Exception as e:
             self.logger.warning(f"Failed to close '{camera_name}': {e}")

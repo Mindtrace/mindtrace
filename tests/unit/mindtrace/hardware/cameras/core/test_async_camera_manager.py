@@ -65,7 +65,7 @@ async def test_close_waits_for_in_flight_open(monkeypatch):
         proxy = await open_task
         assert proxy is not None
         assert name not in manager.active_cameras
-        assert name not in manager._open_locks
+        assert name in manager._open_locks
     finally:
         await manager.close(None)
 
@@ -245,6 +245,50 @@ async def test_reinit_replays_open_kwargs(monkeypatch):
             "synthetic_height": 480,
             "buffer_count": 12,
         }
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_reinit_serializes_concurrent_open(monkeypatch):
+    """Auto-reinit must hold the per-camera lock for the full close+reopen cycle."""
+    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._restore_saved_config_on_open = False
+    manager._max_consecutive_failures = 3
+    manager._reinitialization_cooldown = 0
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    create_calls: list[str] = []
+    original_create = AsyncCameraManager._create_camera_instance
+
+    def counting_create(self, backend, device_name, **kwargs):
+        create_calls.append(f"{backend}:{device_name}")
+        return original_create(self, backend, device_name, **kwargs)
+
+    original_initialize = MockBaslerCameraBackend.initialize
+
+    async def slow_initialize(self):
+        await asyncio.sleep(0.3)
+        return await original_initialize(self)
+
+    monkeypatch.setattr(AsyncCameraManager, "_create_camera_instance", counting_create)
+    monkeypatch.setattr(MockBaslerCameraBackend, "initialize", slow_initialize)
+
+    try:
+        await manager.open(name, test_connection=False)
+        create_calls.clear()
+
+        reinit_task = asyncio.create_task(manager._handle_camera_failure(name))
+        await asyncio.sleep(0.05)
+        ensure_open_task = asyncio.create_task(manager.open(name, test_connection=False))
+
+        await asyncio.gather(reinit_task, ensure_open_task)
+
+        assert create_calls.count(name) == 1
+        assert name in manager.active_cameras
+        assert name in manager._open_locks
     finally:
         await manager.close(None)
 
