@@ -624,6 +624,8 @@ class TestCameraManagerServiceBusinessLogic:
         assert import_response.success is True
         assert import_response.data.operation == "import"
         assert import_response.data.file_path == "/tmp/camera.json"
+        assert import_response.data.properties_count == 1
+        assert import_response.data.total == 1
         assert export_response.success is False
         assert export_response.data.operation == "export"
         assert export_response.data.success is False
@@ -644,7 +646,27 @@ class TestCameraManagerServiceBusinessLogic:
         mock_camera.import_config.assert_awaited_once_with("/default/MockBasler_Camera1.json")
         mock_camera.export_config.assert_awaited_once_with("/default/MockBasler_Camera1.json")
         assert import_response.data.file_path == "/default/MockBasler_Camera1.json"
+        assert import_response.data.properties_count == 1
+        assert import_response.data.total == 1
         assert export_response.data.file_path == "/default/MockBasler_Camera1.json"
+
+    @pytest.mark.asyncio
+    async def test_import_camera_config_reports_partial_apply_counts(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+        mock_manager.active_cameras = ["MockBasler:Camera1"]
+        mock_camera = AsyncMock()
+        mock_camera.import_config.return_value = (3, 7)
+        mock_manager.open = AsyncMock(return_value=mock_camera)
+
+        response = await service.import_camera_config(
+            ConfigFileImportRequest(camera="MockBasler:Camera1", config_path="/tmp/camera.json")
+        )
+
+        assert response.success is False
+        assert response.data.success is False
+        assert response.data.properties_count == 3
+        assert response.data.total == 7
+        assert "(3/7 settings applied)" in response.message
 
     @pytest.mark.asyncio
     async def test_reset_camera_config_deletes_saved_file(self, service_with_mock_manager):

@@ -957,7 +957,13 @@ class CameraManagerService(Service):
             applied, total = await camera_proxy.import_config(config_path)
             success = total == 0 or applied == total
 
-            result = ConfigFileOperationResult(file_path=config_path, operation="import", success=success)
+            result = ConfigFileOperationResult(
+                file_path=config_path,
+                operation="import",
+                success=success,
+                properties_count=applied,
+                total=total,
+            )
 
             return ConfigFileResponse(
                 success=success,
