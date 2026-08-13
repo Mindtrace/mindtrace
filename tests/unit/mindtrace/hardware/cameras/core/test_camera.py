@@ -109,7 +109,7 @@ def test_sync_camera_capture_and_config():
 
             try:
                 # Save configuration
-                cam.save_config(config_path)
+                cam.export_config(config_path)
 
                 # Verify config file was created and contains valid JSON
                 import os
@@ -123,7 +123,7 @@ def test_sync_camera_capture_and_config():
                 assert isinstance(config_data, dict), "Configuration should be a dictionary"
 
                 # Load configuration back
-                cam.load_config(config_path)
+                cam.import_config(config_path)
 
             finally:
                 # Clean up
