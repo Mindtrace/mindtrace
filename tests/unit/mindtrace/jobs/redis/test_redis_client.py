@@ -53,13 +53,12 @@ def test_delete_queue_success(client):
     result = client.delete_queue("q")
     assert result["status"] == "success"
     event_data = json.dumps({"event": "delete", "queue": "q"})
-    assert pipeline.method_calls[:4] == [
+    assert pipeline.method_calls == [
         call.hdel(mock_conn.METADATA_KEY, "q"),
         call.delete("queue:q"),
-        call.publish(mock_conn.EVENTS_CHANNEL, event_data),
         call.execute(),
     ]
-    mock_conn.connection.publish.assert_not_called()
+    mock_conn.connection.publish.assert_called_once_with(mock_conn.EVENTS_CHANNEL, event_data)
 
 
 def test_declare_queue_rechecks_central_metadata_under_distributed_lock(client):

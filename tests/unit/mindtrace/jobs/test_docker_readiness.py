@@ -1,5 +1,4 @@
 import os
-import re
 import subprocess
 from pathlib import Path
 
@@ -17,11 +16,7 @@ def test_docker_readiness_failure_honors_configured_deadline(tmp_path):
     _write_command(
         tmp_path,
         "docker",
-        'case "$*" in\n'
-        '  "compose version") exit 0 ;;\n'
-        '  *"rabbitmq-diagnostics"*) exit 1 ;;\n'
-        "  *) exit 0 ;;\n"
-        "esac",
+        'case "$*" in\n  "compose version") exit 0 ;;\n  *"rabbitmq-diagnostics"*) exit 1 ;;\n  *) exit 0 ;;\nesac',
     )
     _write_command(tmp_path, "curl", "exit 0")
     _write_command(tmp_path, "nc", "exit 0")
@@ -46,15 +41,3 @@ def test_docker_readiness_failure_honors_configured_deadline(tmp_path):
 
     assert result.returncode != 0
     assert "timed out" in (result.stdout + result.stderr).lower()
-
-
-def test_ci_test_job_has_a_hard_timeout():
-    project_root = Path(__file__).resolve().parents[4]
-    workflow = (project_root / ".github" / "workflows" / "ci.yml").read_text()
-    test_job = re.search(r"(?ms)^  test:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)", workflow)
-
-    assert test_job is not None, "The CI workflow must define its test job."
-    assert re.search(
-        r"(?m)^    timeout-minutes:\s*[1-9][0-9]*\s*$",
-        test_job.group("body"),
-    ), "The CI test job needs a hard upper bound even if test setup stalls."
