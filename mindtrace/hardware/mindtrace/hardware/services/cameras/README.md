@@ -294,7 +294,7 @@ pick up that file on (re)open.
 | `/cameras/config/import` | Reads per-camera JSON and applies to live camera |
 | `open()` (when restore enabled) | Reads per-camera JSON and applies to live camera before connection test |
 | `/cameras/config/reset` | Deletes the managed per-camera profile; next close/open uses backend defaults |
-| Auto-reinit after capture failures | No — closes and reopens only; does not rewrite the saved file |
+| Auto-reinit after capture failures | No — closes and reopens only; does not rewrite the saved file. Replays the original `open()` kwargs; runtime `/cameras/configure` settings are not reapplied. |
 
 Saved profiles restore **imaging settings** (exposure, gain, trigger, ROI, etc.)
 and **per-camera GigE transport settings** (`packet_size`, `inter_packet_delay`,
@@ -321,8 +321,10 @@ The camera manager tracks consecutive capture failures per camera. When a camera
 
 1. Checks the reinitialization cooldown (prevents thrashing)
 2. Closes the camera
-3. Re-opens and restores the saved configuration (when restore is enabled)
+3. Re-opens with the original `open()` kwargs and restores the saved configuration (when restore is enabled)
 4. Resets the failure counter
+
+Runtime settings applied via `/cameras/configure` after open are **not** replayed by reinit unless they were exported to the saved profile.
 
 ### Configuration
 

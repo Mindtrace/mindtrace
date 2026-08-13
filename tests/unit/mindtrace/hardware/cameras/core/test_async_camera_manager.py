@@ -205,6 +205,51 @@ def test_validate_camera_name_rejects_invalid_format():
 
 
 @pytest.mark.asyncio
+async def test_reinit_replays_open_kwargs(monkeypatch):
+    """Auto-reinit must reopen with the same constructor kwargs as the original open."""
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._restore_saved_config_on_open = False
+    manager._max_consecutive_failures = 3
+    manager._reinitialization_cooldown = 0
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    async def failing_capture(self, save_path=None, output_format="pil"):
+        raise CameraConnectionError("simulated capture failure")
+
+    monkeypatch.setattr(
+        "mindtrace.hardware.cameras.core.async_camera.AsyncCamera.capture",
+        failing_capture,
+    )
+
+    try:
+        camera = await manager.open(
+            name,
+            test_connection=False,
+            synthetic_width=640,
+            synthetic_height=480,
+            buffer_count=12,
+        )
+        assert camera._backend.synthetic_width == 640
+        assert camera._backend.synthetic_height == 480
+        assert camera._backend.buffer_count == 12
+
+        for _ in range(3):
+            await manager.batch_capture([name])
+
+        reopened = manager._cameras[name]
+        assert reopened._backend.synthetic_width == 640
+        assert reopened._backend.synthetic_height == 480
+        assert reopened._backend.buffer_count == 12
+        assert manager._open_kwargs[name] == {
+            "synthetic_width": 640,
+            "synthetic_height": 480,
+            "buffer_count": 12,
+        }
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_open_skips_restore_when_disabled_at_manager_level(tmp_path):
     """Manager-level policy can disable auto-restore on open."""
     manager = AsyncCameraManager(include_mocks=True, restore_saved_config_on_open=False)

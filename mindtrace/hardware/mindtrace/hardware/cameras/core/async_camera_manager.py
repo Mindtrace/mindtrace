@@ -115,6 +115,7 @@ class AsyncCameraManager(Mindtrace):
         # Auto-reconnection / failure tracking
         self._failure_counts: Dict[str, int] = {}
         self._last_reinit_attempt: Dict[str, float] = {}
+        self._open_kwargs: Dict[str, Dict[str, Any]] = {}
         self._max_consecutive_failures = self._hardware_config.cameras.max_consecutive_failures
         self._reinitialization_cooldown = self._hardware_config.cameras.reinitialization_cooldown
 
@@ -467,6 +468,7 @@ class AsyncCameraManager(Mindtrace):
                 raise CameraConnectionError(f"Camera '{camera_name}' connection test failed: {e}")
 
         self._cameras[camera_name] = proxy
+        self._open_kwargs[camera_name] = dict(kwargs)
         self.logger.info(f"Camera '{camera_name}' initialized successfully")
 
         return proxy
@@ -480,6 +482,7 @@ class AsyncCameraManager(Mindtrace):
             await self._cameras[camera_name].close()
             del self._cameras[camera_name]
             self._failure_counts.pop(camera_name, None)
+            self._open_kwargs.pop(camera_name, None)
             self._open_locks.pop(camera_name, None)
             self.logger.info(f"Camera '{camera_name}' closed")
         except Exception as e:
@@ -786,13 +789,14 @@ class AsyncCameraManager(Mindtrace):
         self._last_reinit_attempt[camera_name] = current_time
 
         async with self._get_open_lock(camera_name):
+            replay_kwargs = dict(self._open_kwargs.get(camera_name, {}))
             try:
                 await self._close_locked(camera_name)
             except Exception as e:
                 self.logger.warning(f"Error closing '{camera_name}' during reinit: {e}")
 
             try:
-                await self._open_locked(camera_name, test_connection=True)
+                await self._open_locked(camera_name, test_connection=True, **replay_kwargs)
                 self._failure_counts[camera_name] = 0
                 self.logger.info(f"Reinit successful for '{camera_name}'")
             except Exception as e:
