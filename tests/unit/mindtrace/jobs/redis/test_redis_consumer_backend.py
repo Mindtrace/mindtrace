@@ -224,7 +224,7 @@ def test_receive_message_success(backend):
 
 def test_receive_message_empty(backend):
     backend, mock_conn = backend
-    fake_queue = MagicMock()
+    fake_queue = MagicMock(spec=["pop"])
     fake_queue.pop.side_effect = Empty
     mock_conn.queues = {"q": fake_queue}
     mock_conn._local_lock = MagicMock().__enter__.return_value
@@ -233,7 +233,7 @@ def test_receive_message_empty(backend):
 
 def test_receive_message_propagates_redis_operational_failure(backend):
     backend, mock_conn = backend
-    fake_queue = MagicMock()
+    fake_queue = MagicMock(spec=["pop"])
     fake_queue.pop.side_effect = RuntimeError("redis unavailable")
     mock_conn.queues = {"q": fake_queue}
     mock_conn._local_lock = MagicMock().__enter__.return_value
@@ -244,7 +244,7 @@ def test_receive_message_propagates_redis_operational_failure(backend):
 
 def test_blocking_consume_does_not_wait_after_removing_malformed_redis_payload(backend):
     backend, mock_conn = backend
-    fake_queue = MagicMock()
+    fake_queue = MagicMock(spec=["pop"])
     fake_queue.pop.return_value = "not-json"
     mock_conn.queues = {"q": fake_queue}
     mock_conn._local_lock = MagicMock().__enter__.return_value

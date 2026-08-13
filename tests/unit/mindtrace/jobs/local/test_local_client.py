@@ -240,6 +240,7 @@ class TestLocalClient:
 
         queue_instance = client.queues["test-queue"]
         queue_instance.push("invalid json content")
+        client.queues.save("test-queue", queue_instance, on_conflict="overwrite")
 
         with pytest.raises(json.JSONDecodeError):
             client.receive_message("test-queue", block=True, timeout=0.01)
@@ -290,16 +291,15 @@ class TestLocalClient:
         result = client.delete_queue("does-not-exist")
         assert result["status"] == "success"
 
-    def test_receive_empty_logs_debug(self, temp_local_client):
+    def test_receive_empty_does_not_log_warning(self, temp_local_client):
         client = temp_local_client
         q = "empty-queue"
         client.declare_queue(q)
-        # Attach a MagicMock logger with debug and warning
         mock_logger = MagicMock()
         client.logger = mock_logger
         result = client.receive_message(q, block=False)
         assert result is None
-        client.logger.warning.assert_called()
+        client.logger.warning.assert_not_called()
 
     def test_receive_message_pop_returns_none_triggers_debug(self, temp_local_client):
         client = temp_local_client

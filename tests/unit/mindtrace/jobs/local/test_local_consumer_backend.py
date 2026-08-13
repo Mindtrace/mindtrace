@@ -118,7 +118,7 @@ class TestLocalConsumerBackend:
         assert orchestrator.count_queue_messages(queue_name) == 0
 
     def test_consumer_with_error(self, temp_local_client):
-        """Test handling of KeyboardInterrupt during consumption."""
+        """Unexpected errors from the processing wrapper must remain observable."""
         orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
@@ -131,7 +131,8 @@ class TestLocalConsumerBackend:
 
         consumer.consumer_backend.process_message = Mock(side_effect=Exception("Test error"))
 
-        consumer.consume(num_messages=1, queues=queue_name, block=True)
+        with pytest.raises(Exception, match="Test error"):
+            consumer.consume(num_messages=1, queues=queue_name, block=True)
 
         assert orchestrator.count_queue_messages(queue_name) == 0
 
@@ -276,6 +277,7 @@ class TestLocalConsumerBackend:
         orchestrator.backend.declare_queue(queue_name)
         queue = orchestrator.backend.queues[queue_name]
         queue.push("not-json")
+        orchestrator.backend.queues.save(queue_name, queue, on_conflict="overwrite")
         consumer = SimpleConsumer()
         consumer.connect_to_orchestrator(orchestrator, queue_name)
 
