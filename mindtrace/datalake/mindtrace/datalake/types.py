@@ -605,6 +605,7 @@ class Datum(DatalakeDocument):
         name = "datalake_datums"
         indexes = [
             "split",
+            "annotation_set_ids",
             [("created_at", -1), ("datum_id", -1)],
             [("split", 1), ("created_at", -1), ("datum_id", -1)],
         ]
