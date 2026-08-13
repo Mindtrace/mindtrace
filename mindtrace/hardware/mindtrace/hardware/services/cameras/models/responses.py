@@ -379,6 +379,10 @@ class ConfigFileOperationResult(BaseModel):
     file_path: str
     operation: str  # "import", "export", or "reset"
     success: bool
+    deleted: Optional[bool] = Field(
+        None,
+        description="For reset only: True if a file was removed, False if no saved profile existed.",
+    )
     properties_count: Optional[int] = None
 
 

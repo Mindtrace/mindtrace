@@ -658,6 +658,7 @@ class TestCameraManagerServiceBusinessLogic:
         assert response.success is True
         assert response.data.operation == "reset"
         assert response.data.success is True
+        assert response.data.deleted is True
         assert "Deleted saved configuration" in response.message
 
     @pytest.mark.asyncio
@@ -669,7 +670,8 @@ class TestCameraManagerServiceBusinessLogic:
         response = await service.reset_camera_config(ConfigFileResetRequest(camera="MockBasler:Camera1"))
 
         assert response.success is True
-        assert response.data.success is False
+        assert response.data.success is True
+        assert response.data.deleted is False
         assert "No saved configuration found" in response.message
 
     @pytest.mark.asyncio

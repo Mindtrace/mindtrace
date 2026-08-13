@@ -1010,7 +1010,12 @@ class CameraManagerService(Service):
             config_path = manager.get_camera_config_path(request.camera)
             deleted = manager.reset_saved_config(request.camera)
 
-            result = ConfigFileOperationResult(file_path=config_path, operation="reset", success=deleted)
+            result = ConfigFileOperationResult(
+                file_path=config_path,
+                operation="reset",
+                success=True,
+                deleted=deleted,
+            )
 
             return ConfigFileResponse(
                 success=True,
