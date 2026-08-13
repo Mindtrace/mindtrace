@@ -726,6 +726,12 @@ class AsyncCameraManager(Mindtrace):
         safe_name = camera_name.replace(":", "_").replace("/", "_")
         return str(Path(self._camera_config_dir) / f"{safe_name}.json")
 
+    def validate_camera_name(self, camera_name: str) -> None:
+        """Validate camera name format and that the backend is available on this manager."""
+        backend, _device_name = self._parse_camera_name(camera_name)
+        if backend not in self._discovered_backends:
+            raise CameraNotFoundError(f"Backend '{backend}' not available")
+
     def reset_saved_config(self, camera_name: str) -> bool:
         """Delete a camera's persisted configuration file under ``camera_config_dir``.
 

@@ -227,6 +227,15 @@ class TestCameraManagerServiceBusinessLogic:
         mock_manager.open = AsyncMock()
         mock_manager.close = AsyncMock()
 
+        def validate_camera_name(camera_name: str) -> None:
+            if ":" not in camera_name:
+                raise CameraConfigurationError(f"Invalid camera name format: '{camera_name}'")
+            backend = camera_name.split(":", 1)[0]
+            if backend not in mock_manager.backends.return_value:
+                raise CameraNotFoundError(f"Backend '{backend}' not available")
+
+        mock_manager.validate_camera_name = Mock(side_effect=validate_camera_name)
+
         service._camera_manager = mock_manager
         return service, mock_manager
 
@@ -697,6 +706,26 @@ class TestCameraManagerServiceBusinessLogic:
         assert "No saved configuration found" in response.message
 
     @pytest.mark.asyncio
+    async def test_reset_camera_config_works_when_camera_not_open(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+        mock_manager.active_cameras = []
+        mock_manager.get_camera_config_path = Mock(return_value="/default/MockBasler_Camera1.json")
+        mock_manager.reset_saved_config = Mock(return_value=True)
+
+        response = await service.reset_camera_config(ConfigFileResetRequest(camera="MockBasler:Camera1"))
+
+        mock_manager.validate_camera_name.assert_called_once_with("MockBasler:Camera1")
+        mock_manager.reset_saved_config.assert_called_once_with("MockBasler:Camera1")
+        assert response.data.deleted is True
+
+    @pytest.mark.asyncio
+    async def test_reset_camera_config_rejects_unknown_backend(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+
+        with pytest.raises(CameraNotFoundError, match="Backend 'Basler' not available"):
+            await service.reset_camera_config(ConfigFileResetRequest(camera="Basler:missing"))
+
+    @pytest.mark.asyncio
     async def test_configure_camera_failure_handling(self, service_with_mock_manager):
         """Test configure camera handles configuration failures correctly."""
         service, mock_manager = service_with_mock_manager
@@ -955,8 +984,6 @@ class TestCameraManagerServiceCaptureAndHomography:
             await service.export_camera_config(
                 ConfigFileExportRequest(camera="Basler:missing", config_path="/tmp/out.json")
             )
-        with pytest.raises(CameraNotFoundError):
-            await service.reset_camera_config(ConfigFileResetRequest(camera="Basler:missing"))
 
     @pytest.mark.asyncio
     async def test_capture_image_timeout_returns_failed_response(self, service_with_mock_manager):

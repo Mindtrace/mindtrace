@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
-from mindtrace.hardware.core.exceptions import CameraConfigurationError, CameraConnectionError
+from mindtrace.hardware.core.exceptions import CameraConfigurationError, CameraConnectionError, CameraNotFoundError
 
 
 @pytest.mark.asyncio
@@ -181,6 +181,27 @@ async def test_reset_saved_config_is_idempotent_when_file_missing(tmp_path):
     name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
 
     assert manager.reset_saved_config(name) is False
+
+
+def test_validate_camera_name_accepts_known_backend():
+    manager = AsyncCameraManager(include_mocks=True)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    manager.validate_camera_name(name)
+
+
+def test_validate_camera_name_rejects_unknown_backend():
+    manager = AsyncCameraManager(include_mocks=True)
+
+    with pytest.raises(CameraNotFoundError, match="Backend 'UnknownBackend' not available"):
+        manager.validate_camera_name("UnknownBackend:cam1")
+
+
+def test_validate_camera_name_rejects_invalid_format():
+    manager = AsyncCameraManager(include_mocks=True)
+
+    with pytest.raises(CameraConfigurationError, match="Invalid camera name format"):
+        manager.validate_camera_name("not-a-valid-name")
 
 
 @pytest.mark.asyncio
