@@ -277,21 +277,51 @@ For GigE cameras sharing a single NIC, the `batch_size` per group must account f
 - **`inter_packet_delay`** (camera setting, e.g., 1000 ticks) spaces out packets to prevent NIC buffer overflow
 - With 12.5MP cameras on 1Gbps, typically max 2 concurrent transfers are reliable
 
-## Auto-Reconnection
+## Configuration Persistence
 
-`/cameras/configure` and `/cameras/configure/batch` apply runtime settings only;
-they do not write to `MINDTRACE_HW_CAMERA_CONFIG_DIR`. Persist settings with
-`/cameras/config/export` (omit `config_path` to use the default per-camera file
-under `MINDTRACE_HW_CAMERA_CONFIG_DIR`). Opening a camera restores that file
-before testing the connection when `MINDTRACE_HW_CAMERA_RESTORE_SAVED_CONFIG_ON_OPEN`
-is enabled (default). To open without loading a saved profile, call
-`/cameras/config/reset` first, then close and reopen the camera.
+When a camera is opened, the manager can restore a persisted JSON profile from
+`MINDTRACE_HW_CAMERA_CONFIG_DIR` **before** the connection test runs. Operators
+commit defaults with `/cameras/config/export`; production and UI open paths then
+pick up that file on (re)open.
+
+### Operations
+
+| Operation | Persists to disk? |
+|---|---|
+| `/cameras/configure` | No — runtime only |
+| `/cameras/configure/batch` | No — runtime only |
+| `/cameras/config/export` | Yes — writes per-camera JSON under `MINDTRACE_HW_CAMERA_CONFIG_DIR` |
+| `/cameras/config/import` | Reads per-camera JSON and applies to live camera |
+| `open()` (when restore enabled) | Reads per-camera JSON and applies to live camera before connection test |
+| `/cameras/config/reset` | Deletes the managed per-camera profile; next close/open uses backend defaults |
+| Auto-reinit after capture failures | No — closes and reopens only; does not rewrite the saved file |
+
+Saved profiles restore **imaging settings** (exposure, gain, trigger, ROI, etc.)
+and **per-camera GigE transport settings** (`packet_size`, `inter_packet_delay`,
+`bandwidth_limit`). They do **not** include manager-owned performance settings
+(`timeout_ms`, `retrieve_retry_count`, `buffer_count`) — use
+`/cameras/performance/settings` instead. OpenCV **open-time** settings
+(`width`, `height`, `fps`) are also excluded; pass them to `open()` or hardware
+config defaults.
+
+To open without loading a saved profile: call `/cameras/config/reset`, then close
+and reopen the camera. Partial profile apply is logged at WARNING during auto-restore;
+`/cameras/config/import` reports `success=false` when not all settings applied.
+
+### Environment
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `MINDTRACE_HW_CAMERA_CONFIG_DIR` | `~/.config/mindtrace/cameras` | Directory for preserved configs |
+| `MINDTRACE_HW_CAMERA_RESTORE_SAVED_CONFIG_ON_OPEN` | true | Restore saved config when opening a camera |
+
+## Auto-Reconnection
 
 The camera manager tracks consecutive capture failures per camera. When a camera exceeds the failure threshold, it automatically:
 
 1. Checks the reinitialization cooldown (prevents thrashing)
 2. Closes the camera
-3. Re-opens and restores the saved configuration
+3. Re-opens and restores the saved configuration (when restore is enabled)
 4. Resets the failure counter
 
 ### Configuration
@@ -300,8 +330,6 @@ The camera manager tracks consecutive capture failures per camera. When a camera
 |---------------------|---------|-------------|
 | `MINDTRACE_HW_CAMERA_MAX_CONSECUTIVE_FAILURES` | 5 | Failures before attempting reinit |
 | `MINDTRACE_HW_CAMERA_REINITIALIZATION_COOLDOWN` | 30.0 | Seconds between reinit attempts |
-| `MINDTRACE_HW_CAMERA_CONFIG_DIR` | `~/.config/mindtrace/cameras` | Directory for preserved configs |
-| `MINDTRACE_HW_CAMERA_RESTORE_SAVED_CONFIG_ON_OPEN` | true | Restore saved config when opening a camera |
 
 ### Diagnostics
 
