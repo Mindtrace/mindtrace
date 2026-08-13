@@ -41,6 +41,36 @@ async def test_open_idempotent_and_close():
 
 
 @pytest.mark.asyncio
+async def test_close_waits_for_in_flight_open(monkeypatch):
+    """close() must not return while an in-flight open is still registering the camera."""
+    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    async def slow_check_connection(self):
+        await asyncio.sleep(0.3)
+        return True
+
+    monkeypatch.setattr(MockBaslerCameraBackend, "check_connection", slow_check_connection)
+
+    try:
+        open_task = asyncio.create_task(manager.open(name, test_connection=True))
+        await asyncio.sleep(0.05)
+        assert name not in manager.active_cameras
+
+        await manager.close(name)
+        assert name not in manager.active_cameras
+
+        proxy = await open_task
+        assert proxy is not None
+        assert name not in manager.active_cameras
+        assert name not in manager._open_locks
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_open_restores_saved_config_before_connection_test(monkeypatch, tmp_path):
     """Saved settings are restored on open; later runtime configure tweaks are not persisted."""
     from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend

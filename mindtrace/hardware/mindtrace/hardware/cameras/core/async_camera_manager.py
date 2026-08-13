@@ -415,6 +415,76 @@ class AsyncCameraManager(Mindtrace):
 
         return all_details if details else all_cameras
 
+    def _get_open_lock(self, camera_name: str) -> asyncio.Lock:
+        """Return the per-camera lifecycle lock, creating it if needed."""
+        if camera_name not in self._open_locks:
+            self._open_locks[camera_name] = asyncio.Lock()
+        return self._open_locks[camera_name]
+
+    async def _open_locked(
+        self,
+        camera_name: str,
+        test_connection: bool = True,
+        **kwargs,
+    ) -> AsyncCamera:
+        """Open a single camera. Caller must hold ``_get_open_lock(camera_name)``."""
+        if camera_name in self._cameras:
+            self.logger.warning(f"Camera '{camera_name}' already open; returning existing instance")
+            return self._cameras[camera_name]
+
+        backend, device_name = self._parse_camera_name(camera_name)
+        self.logger.debug(f"Creating camera backend instance for '{camera_name}'")
+        camera = self._create_camera_instance(backend, device_name, **kwargs)
+
+        try:
+            self.logger.debug(f"Setting up camera backend for '{camera_name}'")
+            await camera.setup_camera()
+            self.logger.debug(f"Camera backend setup completed for '{camera_name}'")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize camera '{camera_name}': {e}")
+            raise CameraInitializationError(f"Failed to initialize camera '{camera_name}': {e}")
+
+        proxy = AsyncCamera(camera, camera_name)
+        if self._restore_saved_config_on_open:
+            await self._auto_import_config(camera_name, proxy)
+
+        if test_connection:
+            self.logger.info(f"Testing connection for camera '{camera_name}'...")
+            try:
+                success = await camera.check_connection()
+                if not success:
+                    test_image = await camera.capture()
+                    if test_image is None:
+                        await camera.close()
+                        raise CameraConnectionError(
+                            f"Camera '{camera_name}' failed connection test - could not capture test image"
+                        )
+                self.logger.info(f"Camera '{camera_name}' passed connection test")
+            except Exception as e:
+                await camera.close()
+                if isinstance(e, CameraConnectionError):
+                    raise
+                raise CameraConnectionError(f"Camera '{camera_name}' connection test failed: {e}")
+
+        self._cameras[camera_name] = proxy
+        self.logger.info(f"Camera '{camera_name}' initialized successfully")
+
+        return proxy
+
+    async def _close_locked(self, camera_name: str) -> None:
+        """Close a single camera. Caller must hold ``_get_open_lock(camera_name)``."""
+        if camera_name not in self._cameras:
+            return
+
+        try:
+            await self._cameras[camera_name].close()
+            del self._cameras[camera_name]
+            self._failure_counts.pop(camera_name, None)
+            self._open_locks.pop(camera_name, None)
+            self.logger.info(f"Camera '{camera_name}' closed")
+        except Exception as e:
+            self.logger.warning(f"Failed to close '{camera_name}': {e}")
+
     async def open(
         self,
         names: Optional[Union[str, List[str]]] = None,
@@ -458,53 +528,8 @@ class AsyncCameraManager(Mindtrace):
 
         if isinstance(names, str):
             camera_name = names
-            if camera_name not in self._open_locks:
-                self._open_locks[camera_name] = asyncio.Lock()
-
-            async with self._open_locks[camera_name]:
-                if camera_name in self._cameras:
-                    # Idempotent: return existing proxy
-                    self.logger.warning(f"Camera '{camera_name}' already open; returning existing instance")
-                    return self._cameras[camera_name]
-
-                backend, device_name = self._parse_camera_name(camera_name)
-                self.logger.debug(f"Creating camera backend instance for '{camera_name}'")
-                camera = self._create_camera_instance(backend, device_name, **kwargs)
-
-                try:
-                    self.logger.debug(f"Setting up camera backend for '{camera_name}'")
-                    await camera.setup_camera()
-                    self.logger.debug(f"Camera backend setup completed for '{camera_name}'")
-                except Exception as e:
-                    self.logger.error(f"Failed to initialize camera '{camera_name}': {e}")
-                    raise CameraInitializationError(f"Failed to initialize camera '{camera_name}': {e}")
-
-                proxy = AsyncCamera(camera, camera_name)
-                if self._restore_saved_config_on_open:
-                    await self._auto_import_config(camera_name, proxy)
-
-                if test_connection:
-                    self.logger.info(f"Testing connection for camera '{camera_name}'...")
-                    try:
-                        success = await camera.check_connection()
-                        if not success:
-                            test_image = await camera.capture()
-                            if test_image is None:
-                                await camera.close()
-                                raise CameraConnectionError(
-                                    f"Camera '{camera_name}' failed connection test - could not capture test image"
-                                )
-                        self.logger.info(f"Camera '{camera_name}' passed connection test")
-                    except Exception as e:
-                        await camera.close()
-                        if isinstance(e, CameraConnectionError):
-                            raise
-                        raise CameraConnectionError(f"Camera '{camera_name}' connection test failed: {e}")
-
-                self._cameras[camera_name] = proxy
-                self.logger.info(f"Camera '{camera_name}' initialized successfully")
-
-                return proxy
+            async with self._get_open_lock(camera_name):
+                return await self._open_locked(camera_name, test_connection=test_connection, **kwargs)
 
         # Multiple
         camera_names = names
@@ -754,21 +779,20 @@ class AsyncCameraManager(Mindtrace):
         )
         self._last_reinit_attempt[camera_name] = current_time
 
-        # Close the camera
-        try:
-            await self.close(camera_name)
-        except Exception as e:
-            self.logger.warning(f"Error closing '{camera_name}' during reinit: {e}")
+        async with self._get_open_lock(camera_name):
+            try:
+                await self._close_locked(camera_name)
+            except Exception as e:
+                self.logger.warning(f"Error closing '{camera_name}' during reinit: {e}")
 
-        # Re-open restores the persisted config before testing the connection.
-        try:
-            await self.open(camera_name, test_connection=True)
-            self._failure_counts[camera_name] = 0
-            self.logger.info(f"Reinit successful for '{camera_name}'")
-        except Exception as e:
-            self.logger.error(f"Reinit failed for '{camera_name}': {e}")
-            # Reset counter to prevent immediate re-trigger on next capture
-            self._failure_counts[camera_name] = 0
+            try:
+                await self._open_locked(camera_name, test_connection=True)
+                self._failure_counts[camera_name] = 0
+                self.logger.info(f"Reinit successful for '{camera_name}'")
+            except Exception as e:
+                self.logger.error(f"Reinit failed for '{camera_name}': {e}")
+                # Reset counter to prevent immediate re-trigger on next capture
+                self._failure_counts[camera_name] = 0
 
     def _record_capture_success(self, camera_name: str) -> None:
         """Reset failure counter on successful capture."""
@@ -799,15 +823,8 @@ class AsyncCameraManager(Mindtrace):
             targets = list(names)
 
         for camera_name in targets:
-            if camera_name in self._cameras:
-                try:
-                    await self._cameras[camera_name].close()
-                    del self._cameras[camera_name]
-                    # Clean up failure tracking (but preserve group assignments — they're config, not state)
-                    self._failure_counts.pop(camera_name, None)
-                    self.logger.info(f"Camera '{camera_name}' closed")
-                except Exception as e:
-                    self.logger.warning(f"Failed to close '{camera_name}': {e}")
+            async with self._get_open_lock(camera_name):
+                await self._close_locked(camera_name)
 
     async def batch_configure(self, configurations: Dict[str, Dict[str, Any]]) -> Dict[str, bool]:
         """Configure multiple cameras simultaneously."""
