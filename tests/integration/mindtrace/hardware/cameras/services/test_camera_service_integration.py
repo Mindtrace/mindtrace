@@ -377,9 +377,7 @@ class TestServiceConfigurationOperations:
         mock_proxy = AsyncMock()
         mock_camera_manager.active_cameras = {"MockBasler:TestCam1": mock_proxy}
         mock_camera_manager.open.return_value = mock_proxy
-        mock_camera_manager.configure_camera = AsyncMock(
-            side_effect=CameraConfigurationError("Invalid exposure value")
-        )
+        mock_camera_manager.configure_camera = AsyncMock(side_effect=CameraConfigurationError("Invalid exposure value"))
 
         request = CameraConfigureRequest(
             camera="MockBasler:TestCam1",
