@@ -398,7 +398,9 @@ def test_consume_exception_block_true_propagates_without_waiting(backend):
     backend, _ = backend
     backend.logger = MagicMock()
     backend.receive_message = MagicMock(side_effect=RuntimeError("redis unavailable"))
-    backend._stop_event.wait = MagicMock()
+    backend._stop_event.wait = MagicMock(
+        side_effect=AssertionError("A failed queue sweep must not enter the blocking wait path.")
+    )
 
     with pytest.raises(RuntimeError, match="redis unavailable"):
         backend.consume(num_messages=1, queues="q", block=True)

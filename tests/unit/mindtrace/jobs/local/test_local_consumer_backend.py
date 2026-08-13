@@ -563,7 +563,10 @@ class TestLocalConsumerBackend:
 
         orchestrator.backend.receive_message = MagicMock(side_effect=RuntimeError("Simulated orchestrator error"))
 
-        with patch("mindtrace.jobs.local.consumer_backend.time.sleep") as sleep:
+        with patch(
+            "mindtrace.jobs.local.consumer_backend.time.sleep",
+            side_effect=AssertionError("A failed queue sweep must not enter the blocking wait path."),
+        ) as sleep:
             with pytest.raises(RuntimeError, match="Simulated orchestrator error"):
                 consumer.consume(num_messages=1, queues=queue_name, block=True)
 
