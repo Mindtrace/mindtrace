@@ -67,7 +67,6 @@ def _mock_hardware_config():
             connection_timeout=1.5,
             read_timeout=2.5,
             write_timeout=3.5,
-            retry_count=3,
             retry_delay=0.01,
         )
     )
@@ -92,7 +91,6 @@ class TestBasePLCInitialization:
         assert plc.connection_timeout == 1.5
         assert plc.read_timeout == 2.5
         assert plc.write_timeout == 3.5
-        assert plc.retry_count == 3
         assert plc.retry_delay == 0.01
         assert plc.initialized is False
 
@@ -103,14 +101,12 @@ class TestBasePLCInitialization:
             connection_timeout=10.0,
             read_timeout=20.0,
             write_timeout=30.0,
-            retry_count=4,
             retry_delay=0.5,
         )
 
         assert plc.connection_timeout == 10.0
         assert plc.read_timeout == 20.0
         assert plc.write_timeout == 30.0
-        assert plc.retry_count == 4
         assert plc.retry_delay == 0.5
 
     def test_constructor_creates_independent_channel_locks(self, plc):

@@ -89,9 +89,8 @@ class InstrumentedPLC(BasePLC):
         kwargs.setdefault("ip_address", "192.168.1.100")
         super().__init__(**kwargs)
 
-    async def _reconnect_channel(self, channel: str) -> bool:
-        await self.device.run(f"reconnect_{channel}")
-        return True
+    async def _close_channel(self, channel: str) -> None:
+        await self.device.run(f"close_{channel}")
 
     async def initialize(self):
         return True, None, None
@@ -113,7 +112,9 @@ class InstrumentedPLC(BasePLC):
         await self.device.run("read", self.read_delay)
         if self.read_failures > 0:
             self.read_failures -= 1
-            raise PLCCommunicationError("socket closed")
+            # A real backend closes its channel inside the failing call.
+            await self._close_channel("read")
+            raise PLCCommunicationError("socket closed") from ConnectionResetError("peer reset")
         return {address: TagResult(value=address) for address in addresses}
 
     async def _write_tags(self, writes: List[Tuple[str, Any]]) -> Dict[str, TagResult]:
@@ -194,35 +195,21 @@ class FakeLogixDriver:
 
 
 class ScriptedPLC(BasePLC):
-    """Backend whose delegates replay a script and whose reconnects are recorded.
+    """Backend whose delegates replay a script and whose channel closes are recorded.
 
     A script entry is either a results dict or an exception to raise; the LAST
     entry sticks, so a one-element script is a permanent condition.
-
-    ``dies_on_error`` models the dead-socket case: a raised transport error also
-    flips the driver to disconnected, which is what makes recovery reconnect
-    before the first retry. Left False, the fake is the busy-but-live device whose
-    first retry is free.
     """
 
-    def __init__(
-        self,
-        read_script=None,
-        write_script=None,
-        reconnect: Any = True,
-        dies_on_error: bool = False,
-        **kwargs,
-    ):
+    def __init__(self, read_script=None, write_script=None, **kwargs):
         self._read_script = list(read_script or [])
         self._write_script = list(write_script or [])
-        self.reconnect_result = reconnect
-        self.dies_on_error = dies_on_error
         self.read_calls = 0
         self.write_calls = 0
-        self.reconnects: List[str] = []
-        # Delegate calls completed when each reconnect fired, so a test can pin
-        # WHICH attempt bought the reconnect and not merely how many there were.
-        self.reconnect_marks: List[int] = []
+        self.closes: List[str] = []
+        # Delegate calls completed when each close fired, so a test can pin WHEN
+        # the channel was condemned, not merely that it was.
+        self.close_marks: List[int] = []
         self._connected = True
         kwargs.setdefault("plc_name", "PLC1")
         kwargs.setdefault("ip_address", "192.168.1.100")
@@ -234,14 +221,6 @@ class ScriptedPLC(BasePLC):
         if isinstance(step, BaseException):
             raise step
         return step
-
-    def _play_channel(self, script: List[Any]) -> Dict[str, TagResult]:
-        try:
-            return self._play(script)
-        except PLCCommunicationError:
-            if self.dies_on_error:
-                self._connected = False
-            raise
 
     async def initialize(self):
         return True, None, None
@@ -259,20 +238,15 @@ class ScriptedPLC(BasePLC):
 
     async def _read_tags(self, addresses: List[str]) -> Dict[str, TagResult]:
         self.read_calls += 1
-        return self._play_channel(self._read_script)
+        return self._play(self._read_script)
 
     async def _write_tags(self, writes: List[Tuple[str, Any]]) -> Dict[str, TagResult]:
         self.write_calls += 1
-        return self._play_channel(self._write_script)
+        return self._play(self._write_script)
 
-    async def _reconnect_channel(self, channel: str) -> bool:
-        self.reconnects.append(channel)
-        self.reconnect_marks.append(self.read_calls + self.write_calls)
-        if isinstance(self.reconnect_result, BaseException):
-            raise self.reconnect_result
-        if self.reconnect_result:
-            self._connected = True
-        return self.reconnect_result
+    async def _close_channel(self, channel: str) -> None:
+        self.closes.append(channel)
+        self.close_marks.append(self.read_calls + self.write_calls)
 
     async def _get_all_tags(self):
         return []
@@ -289,8 +263,18 @@ class ScriptedPLC(BasePLC):
         return {"name": "ScriptedPLC"}
 
 
-def _transport_result(message: str = "socket closed") -> TagResult:
-    return TagResult(error=TagError(kind=TagErrorKind.transport, message=message))
+def _socket_death_comm_error() -> CommError:
+    """A pycomm3 CommError carrying kernel proof, as socket_.py produces it."""
+    error = CommError("failed to receive reply")
+    error.__cause__ = ConnectionResetError("peer reset")
+    return error
+
+
+def _socket_death(message: str = "failed to receive reply") -> PLCCommunicationError:
+    """A raise whose chain carries kernel proof (non-timeout OSError)."""
+    error = PLCCommunicationError(message)
+    error.__cause__ = ConnectionResetError("peer reset")
+    return error
 
 
 def _tag(value=None, error=None):
@@ -298,17 +282,13 @@ def _tag(value=None, error=None):
     return SimpleNamespace(value=value, error=error)
 
 
-def _allen_bradley(
-    read_driver, write_driver, driver_type: str = "LogixDriver", retry_count: int = 1
-) -> AllenBradleyPLC:
+def _allen_bradley(read_driver, write_driver, driver_type: str = "LogixDriver") -> AllenBradleyPLC:
     """An AB backend wired to fake sessions.
 
     ``retry_count`` defaults to 1 so taxonomy tests observe exactly one delegate
     call; the recovery tests raise it and supply their own ``_reconnect_channel``.
     """
-    plc = AllenBradleyPLC(
-        plc_name="PLC1", ip_address="192.168.1.100", plc_type="logix", retry_count=retry_count, retry_delay=0.0
-    )
+    plc = AllenBradleyPLC(plc_name="PLC1", ip_address="192.168.1.100", plc_type="logix", retry_delay=0.0)
     plc._read_driver = read_driver
     plc._write_driver = write_driver
     plc.plc = read_driver
@@ -440,16 +420,17 @@ class TestErrorTaxonomy:
             ("Error unpacking response", TagErrorKind.encode),
             ("Invalid data type for tag", TagErrorKind.type_mismatch),
             ("Wrong data type", TagErrorKind.type_mismatch),
-            ("Connection timed out", TagErrorKind.transport),
-            # SERVICE_STATUS 0x07: the socket, not the address.
-            ("Connection lost", TagErrorKind.transport),
-            # cip_driver's own CommError texts, stamped rather than raised.
-            ("failed to receive reply", TagErrorKind.transport),
-            # errno text for a socket that died under the driver, flattened onto the tag.
-            ("[Errno 104] Connection reset by peer", TagErrorKind.transport),
-            ("[Errno 32] Broken pipe", TagErrorKind.transport),
-            ("[Errno 103] Software caused connection abort", TagErrorKind.transport),
-            ("[Errno 111] Connection refused", TagErrorKind.transport),
+            # Timeout-flavored CIP statuses are TRANSIENT: never a channel action.
+            ("Connection timed out", TagErrorKind.transient),
+            ("Insufficient resource", TagErrorKind.transient),
+            ("Message timeout", TagErrorKind.transient),
+            # SERVICE_STATUS 0x07 is session-dead: the AB backend promotes it to a
+            # raise before any caller sees a map, so its classify label is moot.
+            ("Connection lost", TagErrorKind.unknown),
+            # Socket-level failures always RAISE (CommError) and never appear
+            # stamped, so their texts are deliberately not transport patterns.
+            ("failed to receive reply", TagErrorKind.unknown),
+            ("[Errno 104] Connection reset by peer", TagErrorKind.unknown),
             # A controller refusal we have no name for is NOT evidence of a sick
             # socket: transport is matched, never assumed, because guessing it
             # would cost the whole call a reconnect cycle.
@@ -508,7 +489,7 @@ class TestErrorTaxonomy:
     async def test_a_request_error_is_not_transport_class(self):
         """A malformed request is the caller's bug: typed, final, never retried."""
         read_driver = FakeLogixDriver(read_error=RequestError("Failed to parse tag request"))
-        plc = _allen_bradley(read_driver, FakeLogixDriver(), retry_count=3)
+        plc = _allen_bradley(read_driver, FakeLogixDriver())
         plc._reconnect_channel = AsyncMock(return_value=True)
 
         with pytest.raises(PLCTagReadError) as excinfo:
@@ -520,7 +501,7 @@ class TestErrorTaxonomy:
 
     async def test_a_write_request_error_is_not_transport_class(self):
         write_driver = FakeLogixDriver(write_error=RequestError("Failed to parse tag request"))
-        plc = _allen_bradley(FakeLogixDriver(), write_driver, retry_count=3)
+        plc = _allen_bradley(FakeLogixDriver(), write_driver)
         plc._reconnect_channel = AsyncMock(return_value=True)
 
         with pytest.raises(PLCTagWriteError) as excinfo:
@@ -730,19 +711,18 @@ class TestLockOrdering:
 
         assert [snapshot[0] for snapshot in device.snapshots] == ["disconnect", "connect", "write"]
 
-    async def test_recovery_happens_inside_the_channel_lock(self):
-        """A reconnect between attempts is still alone on its channel."""
+    async def test_a_close_on_proof_is_alone_on_its_channel(self):
+        """The close after a kernel-reported failure runs under the channel lock."""
         device = FakeDevice()
-        plc = InstrumentedPLC(device, read_delay=0.002, read_failures=2, retry_count=3, retry_delay=0.0)
+        plc = InstrumentedPLC(device, read_delay=0.002, read_failures=2, retry_delay=0.0)
 
-        await asyncio.gather(*[plc.read_tag(["Tag1"]) for _ in range(6)])
+        results = await asyncio.gather(*[plc.read_tag(["Tag1"]) for _ in range(6)], return_exceptions=True)
 
-        # Free first retry: the driver stays connected, so the two scripted
-        # failures buy one reconnect (before attempt 3), not one each.
-        assert device.calls["reconnect_read"] == 1
+        assert sum(isinstance(result, PLCCommunicationError) for result in results) == 2
+        assert device.calls["close_read"] == 2
         assert device.concurrent("read") == 1, device.snapshots
-        for snapshot in device.snapshots_containing("reconnect_read"):
-            assert snapshot == ("reconnect_read",), snapshot
+        for snapshot in device.snapshots_containing("close_read"):
+            assert snapshot == ("close_read",), snapshot
 
     async def test_lifecycle_operations_use_one_lock_order(self):
         """connect/disconnect/reconnect all take read-then-write, so they cannot deadlock."""
@@ -758,123 +738,108 @@ class TestLockOrdering:
         assert device.calls["disconnect"] == 6
 
 
-class TestChannelRecovery:
-    """Transport-class failures are retried in place, escalating to a reconnect."""
+class TestCloseOnProof:
+    """One attempt, no retry; the channel closes only on proof the session is dead."""
 
-    async def test_a_transport_failure_reconnects_and_succeeds_on_the_next_attempt(self):
+    async def test_a_wire_error_closes_the_channel(self):
+        read_driver = FakeLogixDriver(read_error=_socket_death_comm_error())
+        write_driver = FakeLogixDriver()
+        plc = _allen_bradley(read_driver, write_driver)
+
+        with pytest.raises(PLCCommunicationError) as excinfo:
+            await plc.read_tag(["Tag1"])
+
+        assert isinstance(excinfo.value.__cause__, CommError)
+        assert read_driver.connected is False  # closed on the library's wire verdict
+        assert write_driver.connected is True
+
+    async def test_a_peers_clean_close_closes_the_channel(self):
+        """recv of b"" carries no OSError; pycomm3's CommError class is the verdict."""
+        import struct as _struct
+
+        comm = CommError("failed to receive reply")
+        comm.__cause__ = _struct.error("unpack requires a buffer of 4 bytes")
+        read_driver = FakeLogixDriver(read_error=comm)
+        plc = _allen_bradley(read_driver, FakeLogixDriver())
+
+        with pytest.raises(PLCCommunicationError):
+            await plc.read_tag(["Tag1"])
+
+        assert read_driver.connected is False
+
+    async def test_the_base_never_closes_on_a_raised_error(self):
+        """Raise-door closes are the backend's judgment; the base only passes them on."""
+        boom = _socket_death()
+        plc = ScriptedPLC(read_script=[boom])
+
+        with pytest.raises(PLCCommunicationError) as excinfo:
+            await plc.read_tag(["Tag1"])
+
+        assert excinfo.value is boom  # travels by identity
+        assert plc.closes == []
+
+    async def test_a_timeout_keeps_the_session(self):
+        comm = CommError("failed to receive reply")
+        comm.__cause__ = TimeoutError("timed out")
+        read_driver = FakeLogixDriver(read_error=comm)
+        plc = _allen_bradley(read_driver, FakeLogixDriver())
+
+        with pytest.raises(PLCCommunicationError):
+            await plc.read_tag(["Tag1"])
+
+        assert read_driver.connected is True  # busy is not dead
+
+    async def test_a_garbled_reply_keeps_the_session(self):
+        read_driver = FakeLogixDriver(read_error=DataError("Error unpacking reply"))
+        plc = _allen_bradley(read_driver, FakeLogixDriver())
+
+        with pytest.raises(PLCCommunicationError):
+            await plc.read_tag(["Tag1"])
+
+        assert read_driver.connected is True  # reply-level trouble is transient
+
+    async def test_a_session_dead_status_condemns_the_whole_batch(self):
+        """The controller stating our session is gone (CIP 0x07) closes + raises."""
+        read_driver = FakeLogixDriver(read_results=[_tag(error="Connection lost"), _tag(value=2)])
+        plc = _allen_bradley(read_driver, FakeLogixDriver())
+
+        with pytest.raises(PLCCommunicationError, match=r"1/2") as excinfo:
+            await plc.read_tag(["Tag1", "Tag2"])
+
+        assert read_driver.connected is False
+        assert not hasattr(excinfo.value, "results")
+        assert not hasattr(excinfo.value, "transport_addresses")
+
+    async def test_a_transient_status_is_returned_and_keeps_the_session(self):
+        """Busy/timeout/garbled statuses hand back a transient verdict - no action."""
+        read_driver = FakeLogixDriver(read_results=[_tag(error="Insufficient resource"), _tag(value=2)])
+        plc = _allen_bradley(read_driver, FakeLogixDriver())
+
+        results = await plc.read_tag(["Tag1", "Tag2"])
+
+        assert results["Tag1"].error.kind is TagErrorKind.transient
+        assert results["Tag2"].value == 2
+        assert read_driver.connected is True
+
+    async def test_the_base_returns_maps_untouched(self):
+        """Session-dead promotion is the BACKEND's duty; the base never inspects maps."""
         plc = ScriptedPLC(
-            read_script=[PLCCommunicationError("socket closed"), {"Tag1": TagResult(value=1)}],
-            dies_on_error=True,  # dead socket: the reconnect is owed before the first retry
-            retry_count=3,
+            read_script=[{"Tag1": TagResult(error=TagError(kind=TagErrorKind.unknown, message="Connection lost"))}]
         )
 
         results = await plc.read_tag(["Tag1"])
 
-        assert results["Tag1"].value == 1
-        assert plc.read_calls == 2
-        assert plc.reconnects == ["read"]
+        assert results["Tag1"].ok is False
+        assert plc.closes == []
 
-    async def test_recovery_stays_on_the_failing_channel(self):
-        plc = ScriptedPLC(
-            write_script=[PLCCommunicationError("socket closed"), {"Tag1": TagResult(value=1)}],
-            dies_on_error=True,  # dead socket: the reconnect is owed before the first retry
-            retry_count=3,
-        )
-
-        await plc.write_tag([("Tag1", 1)])
-
-        assert plc.write_calls == 2
-        assert plc.reconnects == ["write"]
-
-    async def test_exhausted_attempts_raise_with_the_attempt_count(self):
-        plc = ScriptedPLC(read_script=[PLCCommunicationError("socket closed")], retry_count=3)
-
-        with pytest.raises(PLCCommunicationError, match=r"attempts=3"):
-            await plc.read_tag(["Tag1"])
-
-        assert plc.read_calls == 3
-        # Free first retry on a still-connected driver: of the two gaps between
-        # the three attempts, only the second one buys a reconnect.
-        assert plc.reconnects == ["read"]
-
-    async def test_a_non_retryable_failure_is_not_retried(self):
-        plc = ScriptedPLC(read_script=[PLCTagReadError("malformed request")], retry_count=3)
-
-        with pytest.raises(PLCTagReadError):
-            await plc.read_tag(["Tag1"])
-
-        assert plc.read_calls == 1
-        assert plc.reconnects == []
-
-    async def test_a_wedged_batch_is_treated_as_a_channel_failure(self):
-        """Every tag failed on transport: the socket is sick, not the addresses."""
-        plc = ScriptedPLC(
-            read_script=[
-                {"Tag1": _transport_result(), "Tag2": _transport_result()},
-                {"Tag1": TagResult(value=1), "Tag2": TagResult(value=2)},
-            ],
-            retry_count=3,
-        )
-
-        results = await plc.read_tag(["Tag1", "Tag2"])
-
-        assert results["Tag1"].value == 1
-        # The wedged batch bought a retry — a per-tag failure would have returned
-        # after one call. Free first retry: on a still-connected driver that retry
-        # is re-sent on the live session, so no reconnect is owed yet.
-        assert plc.read_calls == 2
-        assert plc.reconnects == []
-
-    async def test_a_batch_that_stays_wedged_is_raised_not_returned(self):
-        """A transport error never reaches the caller as a result: the budget ends in a raise."""
-        plc = ScriptedPLC(read_script=[{"Tag1": _transport_result()}], retry_count=3)
-
-        with pytest.raises(PLCCommunicationError, match=r"attempts=3") as excinfo:
-            await plc.read_tag(["Tag1"])
-
-        # The partial map rides along for the log, out of the caller's way.
-        assert excinfo.value.transport_addresses == ("Tag1",)
-        assert excinfo.value.results["Tag1"].error.kind is TagErrorKind.transport
-        assert plc.read_calls == 3
-        # Free first retry: only the gap before attempt 3 buys a reconnect.
-        assert plc.reconnects == ["read"]
-
-    async def test_one_transport_entry_condemns_the_whole_batch(self):
-        """A packet that never happened cannot be reported as a per-address verdict.
-
-        pycomm3 stamps a failed exchange on every tag that packet carried, so a
-        multi-packet batch can come back half real. Retrying is the only cure, and
-        a batch that stays half real is a channel failure: its transport entries
-        are transient (and, for writes, ambiguous — the request may have executed
-        with only the reply lost), so they must not be returned as if they were
-        stable address verdicts.
-        """
-        plc = ScriptedPLC(
-            read_script=[
-                {
-                    "Tag1": _transport_result(),
-                    "Ghost": TagResult(error=TagError(kind=TagErrorKind.missing_tag, message="no such tag")),
-                    "Tag2": TagResult(value=2),
-                }
-            ],
-            retry_count=2,
-        )
-
-        with pytest.raises(PLCCommunicationError):
-            await plc.read_tag(["Tag1", "Ghost", "Tag2"])
-
-        assert plc.read_calls == 2
-
-    async def test_a_batch_of_address_verdicts_is_returned_unretried(self):
-        """Verdicts are stable: retrying could only produce the same answer."""
+    async def test_a_batch_of_address_verdicts_is_returned_untouched(self):
         plc = ScriptedPLC(
             read_script=[
                 {
                     "Ghost": TagResult(error=TagError(kind=TagErrorKind.missing_tag, message="no such tag")),
                     "Odd": TagResult(error=TagError(kind=TagErrorKind.unknown, message="Attribute not settable")),
                 }
-            ],
-            retry_count=3,
+            ]
         )
 
         results = await plc.read_tag(["Ghost", "Odd"])
@@ -882,215 +847,135 @@ class TestChannelRecovery:
         assert results["Ghost"].error.kind is TagErrorKind.missing_tag
         assert results["Odd"].error.kind is TagErrorKind.unknown
         assert plc.read_calls == 1
-        assert plc.reconnects == []
+        assert plc.closes == []
 
-    async def test_an_empty_batch_is_never_wedged(self):
-        plc = ScriptedPLC(read_script=[{}], retry_count=3)
+    async def test_a_request_class_failure_never_touches_the_channel(self):
+        plc = ScriptedPLC(read_script=[PLCTagReadError("driver rejected the read")])
 
-        assert await plc.read_tag([]) == {}
-        assert plc.reconnects == []
-
-    # --- The escalation rule itself: when a reconnect is owed, and when it is not ---
-
-    async def test_a_transient_failure_retries_on_the_live_session(self):
-        """The first retry is free: a busy PLC or a lone timeout costs no reconnect.
-
-        Bouncing a session the driver still reports as open turns one hiccup into
-        a torn-down socket, which is what the escalation exists to avoid.
-        """
-        plc = ScriptedPLC(
-            read_script=[PLCCommunicationError("connection timed out"), {"Tag1": TagResult(value=1)}],
-            retry_count=3,
-        )
-
-        results = await plc.read_tag(["Tag1"])
-
-        assert results["Tag1"].value == 1
-        assert plc.read_calls == 2
-        assert plc.reconnects == []
-
-    async def test_a_disconnected_driver_reconnects_before_the_first_retry(self):
-        """No free retry for a dead socket: re-sending on it could only fail again."""
-        plc = ScriptedPLC(
-            read_script=[PLCCommunicationError("socket closed"), {"Tag1": TagResult(value=1)}],
-            dies_on_error=True,
-            retry_count=3,
-        )
-
-        results = await plc.read_tag(["Tag1"])
-
-        assert results["Tag1"].value == 1
-        assert plc.read_calls == 2
-        assert plc.reconnects == ["read"]
-        # Fired after attempt 1 — i.e. before the FIRST retry, not the second.
-        assert plc.reconnect_marks == [1]
-
-    async def test_a_second_failure_on_a_live_session_escalates_to_a_reconnect(self):
-        """Twice-failed but still "connected" means the session is lying: reset it.
-
-        The driver reports open the whole way through, so only the second retry —
-        never the first — pays for a reconnect.
-        """
-        plc = ScriptedPLC(
-            read_script=[
-                PLCCommunicationError("socket closed"),
-                PLCCommunicationError("socket closed"),
-                {"Tag1": TagResult(value=1)},
-            ],
-            retry_count=3,
-        )
-
-        results = await plc.read_tag(["Tag1"])
-
-        assert results["Tag1"].value == 1
-        assert plc.read_calls == 3
-        assert plc.reconnects == ["read"]
-        # Fired after attempt 2 only: nothing was reconnected before attempt 2.
-        assert plc.reconnect_marks == [2]
-
-
-class TestFailedReconnects:
-    """A reconnect that fails is a logged event, not an escape from the loop."""
-
-    async def test_a_failed_reconnect_does_not_abort_the_loop(self):
-        plc = ScriptedPLC(
-            read_script=[PLCCommunicationError("socket closed")],
-            reconnect=PLCConnectionError("device refused"),
-            retry_count=3,
-        )
-
-        with pytest.raises(PLCCommunicationError, match=r"attempts=3"):
+        with pytest.raises(PLCTagReadError):
             await plc.read_tag(["Tag1"])
 
-        # Every attempt was made even though no reconnect succeeded.
-        assert plc.read_calls == 3
-        # Free first retry: the driver still reports connected, so the sole
-        # reconnect — the one that raised — is the one before attempt 3.
-        assert plc.reconnects == ["read"]
+        assert plc.closes == []
 
-    async def test_a_reconnect_returning_false_is_treated_the_same(self):
-        plc = ScriptedPLC(
-            read_script=[PLCCommunicationError("socket closed")],
-            reconnect=False,
-            retry_count=3,
-        )
-
-        with pytest.raises(PLCCommunicationError, match=r"attempts=3"):
-            await plc.read_tag(["Tag1"])
-
-        assert plc.read_calls == 3
-        # Free first retry: one reconnect is attempted, before attempt 3.
-        assert plc.reconnects == ["read"]
-
-    async def test_a_late_reconnect_success_still_saves_the_call(self):
-        """The budget is spent on attempts, not abandoned after the first failure."""
-        plc = ScriptedPLC(
-            read_script=[
-                PLCCommunicationError("socket closed"),
-                PLCCommunicationError("socket closed"),
-                {"Tag1": TagResult(value=1)},
-            ],
-            reconnect=PLCConnectionError("device refused"),
-            retry_count=3,
-        )
-
-        results = await plc.read_tag(["Tag1"])
-
-        assert results["Tag1"].value == 1
-        assert plc.read_calls == 3
-        # Free first retry: the failed reconnect is the one before attempt 3, and
-        # attempt 3 ran anyway.
-        assert plc.reconnects == ["read"]
-
-    async def test_a_dead_read_channel_does_not_fence_the_write_channel(self):
-        plc = ScriptedPLC(
-            read_script=[PLCCommunicationError("socket closed")],
-            write_script=[{"Tag1": TagResult(value=1)}],
-            reconnect=PLCConnectionError("device refused"),
-            retry_count=3,
-        )
+    async def test_channels_close_independently(self):
+        read_driver = FakeLogixDriver(read_error=_socket_death_comm_error())
+        write_driver = FakeLogixDriver(write_results=[_tag(value=None)])
+        plc = _allen_bradley(read_driver, write_driver)
 
         with pytest.raises(PLCCommunicationError):
             await plc.read_tag(["Tag1"])
+        assert read_driver.connected is False
 
-        assert (await plc.write_tag([("Tag1", 1)]))["Tag1"].value == 1
-        # Free first retry: one reconnect, and it stayed on the read channel.
-        assert plc.reconnects == ["read"]
+        results = await plc.write_tag([("Tag1", 1)])
+        assert results["Tag1"].value == 1
+        assert write_driver.connected is True  # the write channel was never touched
 
-    async def test_the_exhausted_raise_is_a_plain_communication_error(self):
-        """Never ``type(last_error)(msg)``: a subclass constructor may not take one."""
+    async def test_an_empty_batch_is_never_condemned(self):
+        plc = ScriptedPLC(read_script=[{}])
 
-        class PickyCommunicationError(PLCCommunicationError):
-            def __init__(self, message: str, code: int):
-                super().__init__(f"{message} [{code}]")
-                self.code = code
-
-        plc = ScriptedPLC(read_script=[PickyCommunicationError("socket closed", 7)], retry_count=2)
-
-        with pytest.raises(PLCCommunicationError) as excinfo:
-            await plc.read_tag(["Tag1"])
-
-        assert type(excinfo.value) is PLCCommunicationError
-        assert isinstance(excinfo.value.__cause__, PickyCommunicationError)
+        assert await plc.read_tag([]) == {}
+        assert plc.closes == []
 
 
-class TestAllenBradleyChannelRecovery:
-    """The AB backend rebuilds one driver session and leaves the other alone.
+class TestAllenBradleyChannelLifecycle:
+    """A channel closed on proof reopens at the NEXT call's entry; a channel that
+    was never opened is a lifecycle error and opens nothing."""
 
-    The failing driver dies with its error, the way a real session that lost its
-    socket does: ``is_connected`` then reports False and recovery reconnects before
-    the first retry, which is the path these tests are about.
-    """
-
-    async def test_read_recovery_replaces_only_the_read_session(self, monkeypatch):
-        read_driver = FakeLogixDriver(read_error=CommError("socket closed"), dies_on_error=True)
+    async def test_a_closed_read_channel_reopens_at_entry(self, monkeypatch):
+        read_driver = FakeLogixDriver(read_error=_socket_death_comm_error())
         write_driver = FakeLogixDriver()
         replacement = FakeLogixDriver(read_results=[_tag(value=42)])
         monkeypatch.setattr(ab_module, "LogixDriver", lambda ip_address: replacement)
-        plc = _allen_bradley(read_driver, write_driver, retry_count=2)
+        plc = _allen_bradley(read_driver, write_driver)
 
-        results = await plc.read_tag(["Tag1"])
+        with pytest.raises(PLCCommunicationError):
+            await plc.read_tag(["Tag1"])
+        assert read_driver.connected is False  # closed on proof
+        assert plc._read_driver is read_driver  # kept: closed is not "never connected"
+
+        results = await plc.read_tag(["Tag1"])  # entry reopens the channel
 
         assert results["Tag1"].value == 42
         assert plc._read_driver is replacement
-        # chiron's preflight reads plc.plc.tags — the alias must follow the new session.
+        # chiron's preflight reads plc.plc.tags - the alias must follow the new session.
         assert plc.plc is replacement
-        assert read_driver.connected is False
         assert plc._write_driver is write_driver
         assert write_driver.connected is True
 
-    async def test_write_recovery_replaces_only_the_write_session(self, monkeypatch):
+    async def test_a_closed_write_channel_reopens_at_entry(self, monkeypatch):
         read_driver = FakeLogixDriver()
-        write_driver = FakeLogixDriver(write_error=CommError("socket closed"), dies_on_error=True)
+        write_driver = FakeLogixDriver(write_error=_socket_death_comm_error())
         replacement = FakeLogixDriver(write_results=[_tag(value=7)])
         monkeypatch.setattr(ab_module, "LogixDriver", lambda ip_address: replacement)
-        plc = _allen_bradley(read_driver, write_driver, retry_count=2)
+        plc = _allen_bradley(read_driver, write_driver)
+
+        with pytest.raises(PLCCommunicationError):
+            await plc.write_tag([("Tag1", 7)])
+        assert write_driver.connected is False
 
         results = await plc.write_tag([("Tag1", 7)])
 
         assert results["Tag1"].value == 7
         assert plc._write_driver is replacement
-        assert write_driver.connected is False
         assert plc._read_driver is read_driver
         assert plc.plc is read_driver
-        assert read_driver.connected is True
 
-    async def test_a_session_that_will_not_reopen_still_exhausts_the_budget(self, monkeypatch):
-        read_driver = FakeLogixDriver(read_error=CommError("socket closed"), dies_on_error=True)
+    async def test_a_never_opened_channel_raises_and_opens_nothing(self, monkeypatch):
+        constructed = []
+        monkeypatch.setattr(ab_module, "LogixDriver", lambda ip_address: constructed.append(ip_address))
+        plc = AllenBradleyPLC(plc_name="PLC1", ip_address="192.168.1.100", plc_type="logix", retry_delay=0.0)
+
+        with pytest.raises(PLCConnectionError, match="never opened"):
+            await plc.read_tag(["Tag1"])
+
+        assert constructed == []
+        assert plc._write_driver is None
+
+    async def test_a_reopen_that_wont_open_raises_typed(self, monkeypatch):
+        read_driver = FakeLogixDriver(read_error=_socket_death_comm_error())
         dead = FakeLogixDriver()
         dead.open = lambda: False
         monkeypatch.setattr(ab_module, "LogixDriver", lambda ip_address: dead)
-        plc = _allen_bradley(read_driver, FakeLogixDriver(), retry_count=2)
+        plc = _allen_bradley(read_driver, FakeLogixDriver())
 
-        with pytest.raises(PLCCommunicationError, match=r"attempts=2"):
-            await plc.read_tag(["Tag1"])
+        with pytest.raises(PLCCommunicationError):
+            await plc.read_tag(["Tag1"])  # closes the read channel
+        with pytest.raises(PLCCommunicationError, match="Could not reopen"):
+            await plc.read_tag(["Tag1"])  # entry reopen fails, typed
 
         # The failed reopen closed the replacement rather than leaking it.
         assert dead.connected is False
 
+    async def test_timeout_knobs_are_applied_per_channel(self, monkeypatch):
+        """connection_timeout bounds the open itself; then the channel's own knob takes over."""
+
+        class RecordingDriver(FakeLogixDriver):
+            def __init__(self, **kwargs):
+                object.__setattr__(self, "timeout_history", [])
+                super().__init__(**kwargs)
+
+            def __setattr__(self, name, value):
+                if name == "socket_timeout":
+                    self.timeout_history.append(value)
+                super().__setattr__(name, value)
+
+        dead = FakeLogixDriver(read_error=_socket_death_comm_error())
+        recorder = RecordingDriver(read_results=[_tag(value=1)])
+        monkeypatch.setattr(ab_module, "LogixDriver", lambda ip_address: recorder)
+        plc = _allen_bradley(dead, FakeLogixDriver())
+        plc.connection_timeout = 7.5
+        plc.read_timeout = 2.5
+
+        with pytest.raises(PLCCommunicationError):
+            await plc.read_tag(["Tag1"])  # wire death closes the read channel
+
+        results = await plc.read_tag(["Tag1"])  # entry reopen applies the knobs
+
+        assert results["Tag1"].value == 1
+        assert recorder.timeout_history == [7.5, 2.5]
+
     async def test_an_open_that_raises_does_not_leak_the_driver(self, monkeypatch):
-        """A constructed driver whose open() throws is closed before the raise travels."""
-        read_driver = FakeLogixDriver(read_error=CommError("socket closed"), dies_on_error=True)
+        read_driver = FakeLogixDriver(read_error=_socket_death_comm_error())
         leaky = FakeLogixDriver()
 
         def _explode():
@@ -1098,9 +983,11 @@ class TestAllenBradleyChannelRecovery:
 
         leaky.open = _explode
         monkeypatch.setattr(ab_module, "LogixDriver", lambda ip_address: leaky)
-        plc = _allen_bradley(read_driver, FakeLogixDriver(), retry_count=2)
+        plc = _allen_bradley(read_driver, FakeLogixDriver())
 
-        with pytest.raises(PLCCommunicationError, match=r"attempts=2"):
+        with pytest.raises(PLCCommunicationError):
+            await plc.read_tag(["Tag1"])
+        with pytest.raises(PLCCommunicationError, match="Could not reopen"):
             await plc.read_tag(["Tag1"])
 
         assert leaky.connected is False
@@ -1111,9 +998,7 @@ class TestAllenBradleyAutoDetect:
 
     @staticmethod
     def _auto_plc() -> AllenBradleyPLC:
-        return AllenBradleyPLC(
-            plc_name="PLC1", ip_address="192.168.1.100", plc_type="auto", retry_count=1, retry_delay=0.0
-        )
+        return AllenBradleyPLC(plc_name="PLC1", ip_address="192.168.1.100", plc_type="auto", retry_delay=0.0)
 
     async def test_an_unreachable_device_does_not_latch_cip(self, monkeypatch):
         """Nothing answered, so "cip" is a guess for this attempt only."""

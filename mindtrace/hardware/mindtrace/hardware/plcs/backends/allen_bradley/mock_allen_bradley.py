@@ -80,7 +80,6 @@ class MockAllenBradleyPLC(BasePLC):
         connection_timeout: Optional[float] = None,
         read_timeout: Optional[float] = None,
         write_timeout: Optional[float] = None,
-        retry_count: Optional[int] = None,
         retry_delay: Optional[float] = None,
     ):
         """
@@ -94,7 +93,6 @@ class MockAllenBradleyPLC(BasePLC):
             connection_timeout: Connection timeout in seconds
             read_timeout: Tag read timeout in seconds
             write_timeout: Tag write timeout in seconds
-            retry_count: Number of retry attempts
             retry_delay: Delay between retries in seconds
         """
         super().__init__(
@@ -104,7 +102,6 @@ class MockAllenBradleyPLC(BasePLC):
             connection_timeout=connection_timeout,
             read_timeout=read_timeout,
             write_timeout=write_timeout,
-            retry_count=retry_count,
             retry_delay=retry_delay,
         )
 
@@ -112,6 +109,7 @@ class MockAllenBradleyPLC(BasePLC):
         self.driver_type = None
         # One flag per channel: reopening read must not report write as open.
         self._channels_open: Dict[str, bool] = {"read": False, "write": False}
+        self._ever_connected = False
         self._tag_values: Dict[str, Any] = {}
         self._tag_types: Dict[str, str] = {}
         self._cache_ttl = 300  # 5 minutes
@@ -139,10 +137,20 @@ class MockAllenBradleyPLC(BasePLC):
     def _is_connected(self, value: bool) -> None:
         self._channels_open = {channel: bool(value) for channel in self._channels_open}
 
-    def _channel(self, channel: str) -> None:
-        """Raise unless ``channel`` is open, like the real backend's channel guards."""
+    async def _channel(self, channel: str) -> None:
+        """Entry guard, like the real backend's: a never-connected channel is a
+        lifecycle error; one that died reopens here."""
+        if not self._ever_connected:
+            raise PLCConnectionError(
+                f"The {channel} channel to mock Allen Bradley PLC at {self.ip_address} was never opened - call connect()"
+            )
         if not self._channels_open[channel]:
-            raise PLCCommunicationError(f"Mock not connected to Allen Bradley PLC at {self.ip_address}")
+            if self.fail_connect:
+                raise PLCCommunicationError(f"Could not reopen the {channel} channel (simulated)")
+            self._channels_open[channel] = True
+            if channel == "read":
+                self.plc = self._tag_namespace()
+            self.logger.info(f"Mock reopened the {channel} channel to Allen Bradley PLC at {self.ip_address}")
 
     def _initialize_mock_data(self):
         """Initialize realistic mock tag data based on PLC type."""
@@ -341,6 +349,7 @@ class MockAllenBradleyPLC(BasePLC):
         await asyncio.sleep(0.05)  # Simulate connection delay
 
         self._is_connected = True
+        self._ever_connected = True
         self.plc = self._tag_namespace()
         self.logger.info(f"Mock connected to Allen Bradley PLC using {self.driver_type}")
         return True
@@ -366,26 +375,17 @@ class MockAllenBradleyPLC(BasePLC):
         """pycomm3-shaped tag definitions for the simulated controller tags."""
         return {name: {"tag_type": "atomic", "data_type": tag_type} for name, tag_type in self._tag_types.items()}
 
-    async def _reconnect_channel(self, channel: str) -> bool:
-        """Reopen ONE simulated channel; the other channel's state is untouched.
-
-        ``fail_connect`` still decides the outcome, which keeps the
-        failed-reconnect path testable.
-        """
-        if self.fail_connect:
-            raise PLCConnectionError(f"Simulated {channel} channel reconnect failure")
-
-        await self._resolve_driver_type()
-        self._channels_open[channel] = True
+    async def _close_channel(self, channel: str) -> None:
+        """Close ONE simulated channel; it reopens at the next call's entry."""
+        self._channels_open[channel] = False
         if channel == "read":
-            self.plc = self._tag_namespace()
-        self.logger.info(f"Mock reopened the {channel} channel to Allen Bradley PLC at {self.ip_address}")
-        return True
+            self.plc = None
 
     async def _disconnect(self) -> bool:
         """Simulate closing the connection."""
         await asyncio.sleep(0.01)  # Simulate disconnect delay
         self._is_connected = False
+        self._ever_connected = False
         self.plc = None
         self.initialized = False
         self.logger.info(f"Mock disconnected from Allen Bradley PLC at {self.ip_address}")
@@ -406,12 +406,12 @@ class MockAllenBradleyPLC(BasePLC):
             raise PLCTagReadError("Simulated tag read failure")
 
         if self.simulate_timeout:
-            # A real AB timeout surfaces as CommError -> PLCCommunicationError
-            # (retryable); the simulation must land in the same contract class.
+            # Chained from TimeoutError like the real thing: a timeout raises but
+            # is NOT proof of death, so it must not close the channel.
             await asyncio.sleep(self.read_timeout)
-            raise PLCCommunicationError("Simulated read timeout")
+            raise PLCCommunicationError("Simulated read timeout") from TimeoutError("simulated socket timeout")
 
-        self._channel("read")
+        await self._channel("read")
 
         # One batched exchange is one round trip: latency must not scale with
         # batch size, or a big poll starves other readers of the channel lock.
@@ -445,7 +445,7 @@ class MockAllenBradleyPLC(BasePLC):
         if self.fail_write:
             raise PLCTagWriteError("Simulated tag write failure")
 
-        self._channel("write")
+        await self._channel("write")
 
         await asyncio.sleep(self.io_delay_s)  # one round trip, batch-size independent
 
@@ -491,7 +491,7 @@ class MockAllenBradleyPLC(BasePLC):
         if self._tags_cache is not None and current_time - self._cache_timestamp < self._cache_ttl:
             return self._tags_cache
 
-        self._channel("read")
+        await self._channel("read")
 
         # Return available tags based on driver type
         try:
@@ -543,7 +543,7 @@ class MockAllenBradleyPLC(BasePLC):
         Returns:
             Dictionary with tag information
         """
-        self._channel("read")
+        await self._channel("read")
 
         try:
             if tag_name not in self._tag_values:
@@ -574,7 +574,7 @@ class MockAllenBradleyPLC(BasePLC):
         Returns:
             Dictionary with PLC information
         """
-        self._channel("read")
+        await self._channel("read")
 
         try:
             base_info = {

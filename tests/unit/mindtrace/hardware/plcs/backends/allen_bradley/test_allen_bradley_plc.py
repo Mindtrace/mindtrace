@@ -6,6 +6,7 @@ allowing full test coverage without requiring physical hardware.
 """
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
@@ -169,13 +170,11 @@ class TestAllenBradleyPLCInitialization:
             connection_timeout=5.0,
             read_timeout=2.0,
             write_timeout=2.0,
-            retry_count=3,
             retry_delay=1.0,
         )
         assert plc.connection_timeout == 5.0
         assert plc.read_timeout == 2.0
         assert plc.write_timeout == 2.0
-        assert plc.retry_count == 3
         assert plc.retry_delay == 1.0
 
 
@@ -348,7 +347,7 @@ class TestAllenBradleyPLCConnection:
 
         mock_logix_driver.open.side_effect = [Exception("Failed"), True, True]
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=3)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
 
         with pytest.raises(PLCConnectionError):
@@ -366,7 +365,7 @@ class TestAllenBradleyPLCConnection:
 
         mock_logix_driver.open.side_effect = Exception("Connection failed")
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=2)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
 
         with pytest.raises(PLCConnectionError) as exc_info:
@@ -392,8 +391,9 @@ class TestAllenBradleyPLCConnection:
         with pytest.raises(PLCConnectionError):
             await plc.connect()
 
-        # Both half-open sessions are closed again.
-        assert mock_logix_driver.close.call_count == 2
+        # The read open failed first, was closed, and the write driver was
+        # never constructed - sequential opens cannot leak a second session.
+        assert mock_logix_driver.close.call_count == 1
 
     @pytest.mark.asyncio
     async def test_connect_fails_when_only_the_read_session_opens(self, mock_pycomm3_available):
@@ -413,8 +413,7 @@ class TestAllenBradleyPLCConnection:
         with pytest.raises(PLCConnectionError) as exc_info:
             await plc.connect()
 
-        assert "read=True" in str(exc_info.value)
-        assert "write=False" in str(exc_info.value)
+        assert "read channel opened but the write channel did not" in str(exc_info.value)
         read_driver.close.assert_called_once()
         write_driver.close.assert_called_once()
 
@@ -592,7 +591,7 @@ class TestAllenBradleyPLCInitialize:
 
         mock_logix_driver.open.side_effect = Exception("Connection failed")
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=1)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
 
         with pytest.raises(PLCInitializationError):
@@ -609,7 +608,7 @@ class TestAllenBradleyPLCInitialize:
         mock_driver = MagicMock()
         mock_driver.open.return_value = False
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=1)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_driver
 
         # This will raise PLCConnectionError, which gets caught and re-raised as PLCInitializationError
@@ -627,7 +626,7 @@ class TestAllenBradleyPLCInitialize:
         mock_driver = MagicMock()
         mock_driver.open.return_value = False
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=1)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_driver
 
         # Mock connect to return False directly (simulating a case where it returns False)
@@ -659,7 +658,8 @@ class TestTagErrorClassification:
             ("Invalid data type for tag", TagErrorKind.type_mismatch),
             ("Tag type mismatch", TagErrorKind.type_mismatch),
             # socket related
-            ("Connection reset by peer", TagErrorKind.transport),
+            # Socket deaths always RAISE; their texts are not stamp patterns.
+            ("Connection reset by peer", TagErrorKind.unknown),
             ("'NoneType' object has no attribute 'read'", TagErrorKind.unknown),
         ],
     )
@@ -851,7 +851,7 @@ class TestAllenBradleyPLCTagReading:
 
         mock_logix_driver.read.side_effect = driver_error_class("socket closed")
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=1)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
         await plc.connect()
 
@@ -859,7 +859,6 @@ class TestAllenBradleyPLCTagReading:
             await plc.read_tag(["Motor1_Speed"])
 
         assert isinstance(exc_info.value.__cause__, driver_error_class)
-        assert "attempts=1" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_read_request_error_is_never_retried(self, mock_pycomm3_available, mock_logix_driver):
@@ -871,7 +870,7 @@ class TestAllenBradleyPLCTagReading:
 
         mock_logix_driver.read.side_effect = RequestError("Failed to parse tag request")
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=3)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
         await plc.connect()
         plc._reconnect_channel = AsyncMock(return_value=True)
@@ -940,7 +939,7 @@ class TestAllenBradleyPLCTagReading:
 
         mock_slc_driver.read.side_effect = [100, CommError("socket closed")]
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="slc", retry_count=1)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="slc")
         SLCDriver.return_value = mock_slc_driver
         await plc.connect()
 
@@ -1112,48 +1111,46 @@ class TestAllenBradleyPLCTagReading:
 
     @pytest.mark.asyncio
     async def test_read_tag_not_connected(self, mock_pycomm3_available, mock_logix_driver):
-        """A closed channel whose session will not reopen still raises, and never
-        goes through the public lifecycle."""
+        """A never-connected channel is a lifecycle error: nothing gets opened."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
         )
 
-        mock_logix_driver.open.return_value = False  # the channel refuses to come back
-
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=2)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
-        # A reconnect that WOULD succeed — recovery must still not take both locks.
-        plc.reconnect = AsyncMock(return_value=True)
 
-        with pytest.raises(PLCCommunicationError) as exc_info:
+        with pytest.raises(PLCConnectionError, match="never opened"):
             await plc.read_tag(["Motor1_Speed"])
 
-        assert "read channel" in str(exc_info.value)
-        assert "attempts=2" in str(exc_info.value)
-        plc.reconnect.assert_not_called()
+        LogixDriver.assert_not_called()
         mock_logix_driver.read.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_read_tag_after_channel_drops(self, mock_pycomm3_available, mock_logix_driver):
-        """A session that drops after connect is rebuilt on the read channel only."""
+        """A session that drops after connect reopens at the next call, read channel only."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
         )
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=2)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
         await plc.connect()
         plc.reconnect = AsyncMock(return_value=True)
         write_driver = plc._write_driver
 
         mock_logix_driver.connected = False
-        # The replacement session is just as dead, so the read still fails — the
-        # point is that it failed after a channel reconnect, not a lifecycle one.
-        with pytest.raises(PLCCommunicationError):
-            await plc.read_tag(["Motor1_Speed"])
+        replacement = MagicMock()
+        replacement.open.return_value = True
+        replacement.connected = True
+        replacement.read.return_value = SimpleNamespace(value=1500.0, error=None)
+        LogixDriver.return_value = replacement
 
+        results = await plc.read_tag(["Motor1_Speed"])
+
+        assert results["Motor1_Speed"].value == 1500.0
+        assert plc._read_driver is replacement
         plc.reconnect.assert_not_called()
         assert plc._write_driver is write_driver
 
@@ -1469,7 +1466,7 @@ class TestAllenBradleyPLCTagWriting:
 
         mock_logix_driver.write.side_effect = driver_error_class("socket closed")
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=1)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
         await plc.connect()
 
@@ -1477,7 +1474,6 @@ class TestAllenBradleyPLCTagWriting:
             await plc.write_tag([("Motor1_Speed", 1500.0)])
 
         assert isinstance(exc_info.value.__cause__, driver_error_class)
-        assert "attempts=1" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_write_request_error_is_never_retried(self, mock_pycomm3_available, mock_logix_driver):
@@ -1489,7 +1485,7 @@ class TestAllenBradleyPLCTagWriting:
 
         mock_logix_driver.write.side_effect = RequestError("Failed to parse tag request")
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=3)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
         await plc.connect()
         plc._reconnect_channel = AsyncMock(return_value=True)
@@ -1664,46 +1660,45 @@ class TestAllenBradleyPLCTagWriting:
 
     @pytest.mark.asyncio
     async def test_write_tag_not_connected(self, mock_pycomm3_available, mock_logix_driver):
-        """A closed channel whose session will not reopen still raises, and never
-        goes through the public lifecycle."""
+        """A never-connected channel is a lifecycle error: nothing gets opened."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
         )
 
-        mock_logix_driver.open.return_value = False  # the channel refuses to come back
-
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=2)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
-        # A reconnect that WOULD succeed — recovery must still not take both locks.
-        plc.reconnect = AsyncMock(return_value=True)
 
-        with pytest.raises(PLCCommunicationError) as exc_info:
+        with pytest.raises(PLCConnectionError, match="never opened"):
             await plc.write_tag([("Motor1_Speed", 1500.0)])
 
-        assert "write channel" in str(exc_info.value)
-        assert "attempts=2" in str(exc_info.value)
-        plc.reconnect.assert_not_called()
+        LogixDriver.assert_not_called()
         mock_logix_driver.write.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_write_tag_after_channel_drops(self, mock_pycomm3_available, mock_logix_driver):
-        """A session that drops after connect is rebuilt on the write channel only."""
+        """A session that drops after connect reopens at the next call, write channel only."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
         )
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=2)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
         await plc.connect()
         plc.reconnect = AsyncMock(return_value=True)
 
         mock_logix_driver.connected = False
+        replacement = MagicMock()
+        replacement.open.return_value = True
+        replacement.connected = True
+        replacement.write.return_value = SimpleNamespace(value=None, error=None)
+        LogixDriver.return_value = replacement
 
-        with pytest.raises(PLCCommunicationError):
-            await plc.write_tag([("Motor1_Speed", 1500.0)])
+        results = await plc.write_tag([("Motor1_Speed", 1500.0)])
 
+        assert results["Motor1_Speed"].value == 1500.0
+        assert plc._write_driver is replacement
         plc.reconnect.assert_not_called()
 
     @pytest.mark.asyncio
@@ -1752,9 +1747,9 @@ class TestAllenBradleyPLCTagWriting:
     async def test_write_tag_result_stamped_with_link_trouble_raises(self, mock_pycomm3_available, mock_cip_driver):
         """A tag stamped with pycomm3's own link text is a channel failure, not a result.
 
-        The exchange carrying this write never happened, so the caller is told by a
-        raise — with the partial map attached for the log — rather than handed a
-        write it cannot tell apart from a completed one.
+        The exchange carrying this write never happened, so the caller is told by
+        a raise (stamped addresses go to the log) and the channel is closed on
+        the controller's word.
         """
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
@@ -1762,19 +1757,20 @@ class TestAllenBradleyPLCTagWriting:
         )
 
         error_result = MagicMock()
-        error_result.error = "failed to receive reply"
+        error_result.error = "Connection lost"
         mock_cip_driver.generic_message.return_value = error_result
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip", retry_count=2, retry_delay=0.01)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip", retry_delay=0.01)
         CIPDriver.return_value = mock_cip_driver
         await plc.connect()
 
-        with pytest.raises(PLCCommunicationError, match=r"attempts=2") as exc_info:
+        with pytest.raises(PLCCommunicationError, match=r"1/1") as exc_info:
             await plc.write_tag([("Assembly:20", [1500, 0, 255, 0])])
 
-        assert exc_info.value.transport_addresses == ("Assembly:20",)
-        assert exc_info.value.results["Assembly:20"].error.kind is TagErrorKind.transport
-        assert mock_cip_driver.generic_message.call_count == 2
+        assert not hasattr(exc_info.value, "transport_addresses")
+        assert not hasattr(exc_info.value, "results")
+        assert mock_cip_driver.generic_message.call_count == 1
+        assert mock_cip_driver.close.called  # the write channel was closed on proof
 
     @pytest.mark.asyncio
     async def test_write_tag_cip_assembly_exception(self, mock_pycomm3_available, mock_cip_driver):
@@ -2078,7 +2074,7 @@ class TestAllenBradleyPLCTagDiscovery:
 
     @pytest.mark.asyncio
     async def test_get_all_tags_not_connected(self, mock_pycomm3_available, mock_logix_driver):
-        """Listing tags on a closed channel raises; it never reconnects."""
+        """A never-connected channel is a lifecycle error: nothing gets opened."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
@@ -2086,13 +2082,11 @@ class TestAllenBradleyPLCTagDiscovery:
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
-        # A reconnect that WOULD succeed — the transport must still not call it.
-        plc.reconnect = AsyncMock(return_value=True)
 
-        with pytest.raises(PLCCommunicationError):
+        with pytest.raises(PLCConnectionError, match="never opened"):
             await plc.get_all_tags()
 
-        plc.reconnect.assert_not_called()
+        LogixDriver.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_get_all_tags_exception_raises_error(self, mock_pycomm3_available, mock_logix_driver):
@@ -2266,7 +2260,7 @@ class TestAllenBradleyPLCTagInfo:
 
     @pytest.mark.asyncio
     async def test_get_tag_info_not_connected(self, mock_pycomm3_available, mock_logix_driver):
-        """Describing a tag on a closed channel raises; it never reconnects."""
+        """A never-connected channel is a lifecycle error: nothing gets opened."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
@@ -2274,13 +2268,11 @@ class TestAllenBradleyPLCTagInfo:
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
-        # A reconnect that WOULD succeed — the transport must still not call it.
-        plc.reconnect = AsyncMock(return_value=True)
 
-        with pytest.raises(PLCCommunicationError):
+        with pytest.raises(PLCConnectionError, match="never opened"):
             await plc.get_tag_info("Motor1_Speed")
 
-        plc.reconnect.assert_not_called()
+        LogixDriver.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_get_tag_info_exception_raises_error(self, mock_pycomm3_available, mock_logix_driver):
@@ -2401,7 +2393,7 @@ class TestAllenBradleyPLCPLCInfo:
 
     @pytest.mark.asyncio
     async def test_get_plc_info_not_connected(self, mock_pycomm3_available, mock_logix_driver):
-        """Probing a closed channel raises; it never reconnects."""
+        """A never-connected channel is a lifecycle error: nothing gets opened."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
@@ -2409,13 +2401,11 @@ class TestAllenBradleyPLCPLCInfo:
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
-        # A reconnect that WOULD succeed — the transport must still not call it.
-        plc.reconnect = AsyncMock(return_value=True)
 
-        with pytest.raises(PLCCommunicationError):
+        with pytest.raises(PLCConnectionError, match="never opened"):
             await plc.get_plc_info()
 
-        plc.reconnect.assert_not_called()
+        LogixDriver.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_get_plc_info_exception_handling(self, mock_pycomm3_available, mock_logix_driver):

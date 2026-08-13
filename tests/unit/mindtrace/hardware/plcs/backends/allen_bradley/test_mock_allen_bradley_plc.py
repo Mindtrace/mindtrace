@@ -84,13 +84,11 @@ class TestMockAllenBradleyPLCInitialization:
             connection_timeout=5.0,
             read_timeout=2.0,
             write_timeout=2.0,
-            retry_count=3,
             retry_delay=1.0,
         )
         assert plc.connection_timeout == 5.0
         assert plc.read_timeout == 2.0
         assert plc.write_timeout == 2.0
-        assert plc.retry_count == 3
         assert plc.retry_delay == 1.0
 
     def test_init_mock_data_initialization(self):
@@ -237,7 +235,7 @@ class TestMockAllenBradleyPLCConnection:
         """Connect never retries: a configured retry_count does not add attempts."""
         from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
 
-        plc = MockAllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=3)
+        plc = MockAllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         plc.fail_connect = True
 
         attempts = 0
@@ -331,21 +329,21 @@ class TestMockAllenBradleyPLCConnection:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_reconnect_channel_is_channel_scoped(self):
-        """One channel reopening is not a connection, exactly as on the real backend.
-
-        The real backend opens only the failed channel's driver, so ``is_connected``
-        — which needs BOTH sessions — stays False. A mock that bounced the whole
-        lifecycle here would hide that difference from every test above it.
-        """
+    async def test_close_and_reopen_is_channel_scoped(self):
+        """Closing one channel leaves the other open; the next call reopens it."""
         from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
 
         plc = MockAllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        await plc.connect()
 
-        assert await plc._reconnect_channel("read") is True
+        await plc._close_channel("read")
 
-        assert plc._channels_open == {"read": True, "write": False}
+        assert plc._channels_open == {"read": False, "write": True}
         assert await plc.is_connected() is False
+
+        result = await plc.read_tag(["Motor1_Speed"])  # entry reopens the read channel
+        assert result["Motor1_Speed"].ok is True
+        assert plc._channels_open == {"read": True, "write": True}
 
 
 class TestMockAllenBradleyPLCInitialize:
@@ -542,13 +540,9 @@ class TestMockAllenBradleyPLCTagReading:
 
     @pytest.mark.asyncio
     async def test_read_tag_not_connected(self, mock_plc):
-        """A closed channel that cannot be reopened still raises, after N attempts."""
-        mock_plc.fail_connect = True  # recovery is attempted; the simulated device refuses
-
-        with pytest.raises(PLCCommunicationError) as exc_info:
+        """A never-connected channel is a lifecycle error: nothing gets opened."""
+        with pytest.raises(PLCConnectionError, match="never opened"):
             await mock_plc.read_tag(["Motor1_Speed"])
-
-        assert f"attempts={mock_plc.retry_count}" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_read_tag_recovers_a_dropped_channel(self, mock_plc):
@@ -577,7 +571,6 @@ class TestMockAllenBradleyPLCTagReading:
         await mock_plc.connect()
         mock_plc.simulate_timeout = True
         mock_plc.read_timeout = 0.01
-        mock_plc.retry_count = 1
 
         with pytest.raises(PLCCommunicationError):
             await mock_plc.read_tag(["Motor1_Speed"])
@@ -720,13 +713,9 @@ class TestMockAllenBradleyPLCTagWriting:
 
     @pytest.mark.asyncio
     async def test_write_tag_not_connected(self, mock_plc):
-        """A closed channel that cannot be reopened still raises, after N attempts."""
-        mock_plc.fail_connect = True  # recovery is attempted; the simulated device refuses
-
-        with pytest.raises(PLCCommunicationError) as exc_info:
+        """A never-connected channel is a lifecycle error: nothing gets opened."""
+        with pytest.raises(PLCConnectionError, match="never opened"):
             await mock_plc.write_tag([("Production_Count", 2000)])
-
-        assert f"attempts={mock_plc.retry_count}" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_write_tag_recovers_a_dropped_channel(self, mock_plc):
@@ -859,7 +848,7 @@ class TestMockAllenBradleyPLCTagDiscovery:
     @pytest.mark.asyncio
     async def test_get_all_tags_not_connected(self, mock_plc):
         """Test getting all tags when not connected."""
-        with pytest.raises(PLCCommunicationError):
+        with pytest.raises(PLCConnectionError, match="never opened"):
             await mock_plc.get_all_tags()
 
     @pytest.mark.asyncio
@@ -907,7 +896,7 @@ class TestMockAllenBradleyPLCTagInfo:
     @pytest.mark.asyncio
     async def test_get_tag_info_not_connected(self, mock_plc):
         """Test getting tag info when not connected."""
-        with pytest.raises(PLCCommunicationError):
+        with pytest.raises(PLCConnectionError, match="never opened"):
             await mock_plc.get_tag_info("Motor1_Speed")
 
     @pytest.mark.asyncio
@@ -976,7 +965,7 @@ class TestMockAllenBradleyPLCPLCInfo:
     @pytest.mark.asyncio
     async def test_get_plc_info_not_connected(self, mock_plc):
         """Test getting PLC info when not connected."""
-        with pytest.raises(PLCCommunicationError):
+        with pytest.raises(PLCConnectionError, match="never opened"):
             await mock_plc.get_plc_info()
 
     @pytest.mark.asyncio

@@ -23,7 +23,7 @@ from mindtrace.hardware.core.exceptions import (
     SDKNotAvailableError,
 )
 from mindtrace.hardware.plcs.backends.base import BasePLC
-from mindtrace.hardware.plcs.types import TagResult, classify_tag_error, tag_to_result
+from mindtrace.hardware.plcs.types import TagResult, classify_tag_error, session_dead_addresses, tag_to_result
 
 try:
     from pycomm3 import CIPDriver, LogixDriver, SLCDriver
@@ -31,7 +31,10 @@ try:
 
     PYCOMM3_AVAILABLE = True
     PYCOMM3_ERRORS: Tuple[type, ...] = (CommError, DataError, RequestError, ResponseError)
-    PYCOMM3_TRANSPORT_ERRORS: Tuple[type, ...] = (CommError, DataError, ResponseError, OSError)
+    # CommError,  pycomm3's own wire/session verdict
+    PYCOMM3_WIRE_ERRORS: Tuple[type, ...] = (CommError, OSError)
+    # Reply-level trouble - garbled or refused replies. keep session.
+    PYCOMM3_REPLY_ERRORS: Tuple[type, ...] = (DataError, ResponseError)
     PYCOMM3_TAG_ERRORS: Tuple[type, ...] = (DataError, RequestError, ResponseError)
 except ImportError:
     PYCOMM3_AVAILABLE = False
@@ -39,8 +42,20 @@ except ImportError:
     SLCDriver = None
     CIPDriver = None
     PYCOMM3_ERRORS = ()
-    PYCOMM3_TRANSPORT_ERRORS = (OSError,)
+    PYCOMM3_WIRE_ERRORS = (OSError,)
+    PYCOMM3_REPLY_ERRORS = ()
     PYCOMM3_TAG_ERRORS = ()
+
+
+def _chain_has_timeout(error) -> bool:
+    """socket.timeout IS TimeoutError; differentiate from socket errors."""
+    seen: set = set()
+    while error is not None and id(error) not in seen:
+        if isinstance(error, TimeoutError):
+            return True
+        seen.add(id(error))
+        error = error.__cause__ or error.__context__
+    return False
 
 
 class AllenBradleyPLC(BasePLC):
@@ -71,7 +86,6 @@ class AllenBradleyPLC(BasePLC):
         connection_timeout: Optional[float] = None,
         read_timeout: Optional[float] = None,
         write_timeout: Optional[float] = None,
-        retry_count: Optional[int] = None,
         retry_delay: Optional[float] = None,
     ):
         """
@@ -85,7 +99,6 @@ class AllenBradleyPLC(BasePLC):
             connection_timeout: Connection timeout in seconds
             read_timeout: Tag read timeout in seconds
             write_timeout: Tag write timeout in seconds
-            retry_count: Number of retry attempts
             retry_delay: Delay between retries in seconds
 
         Raises:
@@ -101,7 +114,6 @@ class AllenBradleyPLC(BasePLC):
             connection_timeout=connection_timeout,
             read_timeout=read_timeout,
             write_timeout=write_timeout,
-            retry_count=retry_count,
             retry_delay=retry_delay,
         )
 
@@ -145,11 +157,25 @@ class AllenBradleyPLC(BasePLC):
     def _driver_open(driver: Any) -> bool:
         return bool(driver is not None and getattr(driver, "connected", False))
 
-    def _driver_for(self, channel: str) -> Any:
-        """This channel's open driver, or PLCCommunicationError. Never reconnects implicitly."""
-        driver = self._read_driver if channel == "read" else self._write_driver
+    async def _driver_for(self, channel: str) -> Any:
+        """This channel's driver: reopen one that died; never open a never-connected one."""
+        attribute = "_read_driver" if channel == "read" else "_write_driver"
+        driver = getattr(self, attribute)
+        if driver is None:
+            raise PLCConnectionError(
+                f"The {channel} channel to Allen Bradley PLC at {self.ip_address} was never opened - call connect()"
+            )
         if not self._driver_open(driver):
-            raise PLCCommunicationError(f"Not connected to Allen Bradley PLC at {self.ip_address} ({channel} channel)")
+            try:
+                driver = await self._open_driver(channel)
+            except Exception as error:
+                raise PLCCommunicationError(
+                    f"Could not reopen the {channel} channel to Allen Bradley PLC at {self.ip_address}: {error}"
+                ) from error
+            setattr(self, attribute, driver)
+            if channel == "read":
+                self.plc = driver  # downstream code reads plc.tags off the read driver
+            self.logger.info(f"Reopened the {channel} channel to Allen Bradley PLC at {self.ip_address}")
         return driver
 
     async def initialize(self) -> Tuple[bool, Any, Any]:
@@ -220,11 +246,10 @@ class AllenBradleyPLC(BasePLC):
         return "cip"
 
     async def _connect(self) -> bool:
-        """Open both channels' drivers. Raises PLCConnectionError if either fails.
+        """Open both channels' drivers via ``_open_driver``. Raises PLCConnectionError.
 
-        A single attempt; channel recovery goes through ``_reconnect_channel``. Both
-        drivers are constructed before either opens, so a half-open device is
-        reported as such rather than looking like a plain connect failure.
+        A single attempt. A device that only grants one session fails on the
+        write channel with the read side already open - the error says so.
         """
         self.logger.info(f"Connecting to Allen Bradley PLC at {self.ip_address}")
 
@@ -236,36 +261,41 @@ class AllenBradleyPLC(BasePLC):
             self._write_driver = None
             self.plc = None
 
-        driver_class, driver_name = self._driver_class(await self._resolve_plc_type())
+        try:
+            self._read_driver = await self._open_driver("read")
+        except Exception as e:
+            raise PLCConnectionError(f"Failed to connect to Allen Bradley PLC at {self.ip_address}: {e}") from e
+        # `plc` stays the READ driver: downstream code reads plc.tags.
+        self.plc = self._read_driver
 
         try:
-            self._read_driver = await asyncio.to_thread(driver_class, self.ip_address)
-            self._write_driver = await asyncio.to_thread(driver_class, self.ip_address)
-            # `plc` stays the READ driver: downstream code reads plc.tags.
-            self.plc = self._read_driver
-            self.driver_type = driver_name
-
-            read_open = await asyncio.to_thread(self._read_driver.open)
-            write_open = await asyncio.to_thread(self._write_driver.open)
+            self._write_driver = await self._open_driver("write")
         except Exception as e:
-            await self._close_drivers()
-            raise PLCConnectionError(f"Failed to connect to Allen Bradley PLC at {self.ip_address}: {e}") from e
-
-        if not (read_open and write_open):
-            await self._close_drivers()
+            await self._close_driver(self._read_driver, "read")
+            self._read_driver = None
+            self.plc = None
             raise PLCConnectionError(
-                f"Failed to open both channels to Allen Bradley PLC at {self.ip_address} "
-                f"(read={bool(read_open)}, write={bool(write_open)})"
-            )
+                f"Failed to connect to Allen Bradley PLC at {self.ip_address}: "
+                f"the read channel opened but the write channel did not: {e}"
+            ) from e
 
         self.logger.info(f"Connected to Allen Bradley PLC using {self.driver_type} (read + write channels)")
         return True
 
-    async def _open_driver(self) -> Any:
-        """Construct and open ONE driver for the resolved plc_type; raises if it will not open."""
+    def _channel_timeout(self, channel: str) -> float:
+        return self.read_timeout if channel == "read" else self.write_timeout
+
+    async def _open_driver(self, channel: str) -> Any:
+        """Construct and open ONE driver for the resolved plc_type; raises if it will not open.
+
+        Two-phase socket timeout: ``connection_timeout`` bounds the open itself,
+        then the channel's read/write timeout takes over — the configured knobs
+        are what actually bound how long a call can fence its channel.
+        """
         driver_class, driver_name = self._driver_class(await self._resolve_plc_type())
 
         driver = await asyncio.to_thread(driver_class, self.ip_address)
+        driver.socket_timeout = self.connection_timeout
         try:
             opened = await asyncio.to_thread(driver.open)
         except Exception:
@@ -276,6 +306,7 @@ class AllenBradleyPLC(BasePLC):
         if not opened:
             await self._close_driver(driver, "new")
             raise PLCConnectionError(f"Failed to open a driver to Allen Bradley PLC at {self.ip_address}")
+        driver.socket_timeout = self._channel_timeout(channel)
         self.driver_type = driver_name
         return driver
 
@@ -290,28 +321,19 @@ class AllenBradleyPLC(BasePLC):
             return False
         return not getattr(driver, "connected", False)
 
-    async def _reconnect_channel(self, channel: str) -> bool:
-        """Rebuild ONE channel's driver; the other channel's socket is untouched.
-
-        Runs under that channel's lock: never call the public ``reconnect`` /
-        ``connect``, which take both locks and would deadlock.
-        """
-        attribute = "_read_driver" if channel == "read" else "_write_driver"
-
-        await self._close_driver(getattr(self, attribute), channel)
-        setattr(self, attribute, None)
-        if channel == "read":
-            self.plc = None
-
-        await asyncio.sleep(self.retry_delay)  # let the controller drop the old driver
-
-        driver = await self._open_driver()
-        setattr(self, attribute, driver)
-        if channel == "read":
-            # `plc` follows the read driver: downstream code reads plc.tags.
-            self.plc = driver
-        self.logger.info(f"Reopened the {channel} channel to Allen Bradley PLC at {self.ip_address}")
-        return True
+    async def _raise_if_session_dead(self, driver: Any, channel: str, results: Dict[str, TagResult]) -> None:
+        """Session-dead statuses in a delivered reply close the channel and raise."""
+        dead = session_dead_addresses(results)
+        if not dead:
+            return
+        first = results[dead[0]].error.message
+        self.logger.warning(
+            f"{self.plc_name} {channel} channel: session-dead statuses on {len(dead)}/{len(results)} tags ({first})"
+        )
+        await self._close_driver(driver, channel)
+        raise PLCCommunicationError(
+            f"{self.plc_name} {channel} channel failed on {len(dead)}/{len(results)} tags: {first}"
+        )
 
     async def _close_drivers(self) -> bool:
         """Close both channels' drivers; True only if both are actually closed."""
@@ -321,12 +343,15 @@ class AllenBradleyPLC(BasePLC):
         return closed
 
     async def _disconnect(self) -> bool:
-        """Close both channels' drivers."""
+        """Close both channels' drivers and forget them."""
         if self._read_driver is None and self._write_driver is None:
             return True
 
         closed = await self._close_drivers()
         if closed:
+            self._read_driver = None
+            self._write_driver = None
+            self.plc = None
             self.logger.info(f"Disconnected from Allen Bradley PLC at {self.ip_address}")
             self.initialized = False
         return closed
@@ -340,7 +365,7 @@ class AllenBradleyPLC(BasePLC):
 
     async def _read_tags(self, addresses: List[str]) -> Dict[str, TagResult]:
         """Read on the read channel; per-tag errors are classified, not logged away."""
-        driver = self._driver_for("read")
+        driver = await self._driver_for("read")
         if not addresses:
             return {}
 
@@ -353,24 +378,29 @@ class AllenBradleyPLC(BasePLC):
                         f"Allen Bradley PLC at {self.ip_address} returned {len(tags)} results "
                         f"for {len(addresses)} requested tags"
                     )
-                return {address: tag_to_result(tag) for address, tag in zip(addresses, tags)}
-
-            if self.driver_type == "SLCDriver":
+                results = {address: tag_to_result(tag) for address, tag in zip(addresses, tags)}
+            elif self.driver_type == "SLCDriver":
                 # SLC data-file reads are not batchable; one request per address.
-                return {address: await self._slc_read_one(driver, address) for address in addresses}
-
-            return {address: await self._cip_read_one(driver, address) for address in addresses}
+                results = {address: await self._slc_read_one(driver, address) for address in addresses}
+            else:
+                results = {address: await self._cip_read_one(driver, address) for address in addresses}
 
         except PLCTagReadError:
             raise
-        except PYCOMM3_TRANSPORT_ERRORS as e:
-            # Retryable: the caller's recovery loop reconnects the read channel.
+        except PYCOMM3_WIRE_ERRORS as e:
+            if not _chain_has_timeout(e):  # busy is not dead; the caller decides patience
+                await self._close_driver(driver, "read")
+            raise PLCCommunicationError(f"Read failed on Allen Bradley PLC at {self.ip_address}: {e}") from e
+        except PYCOMM3_REPLY_ERRORS as e:
             raise PLCCommunicationError(f"Read failed on Allen Bradley PLC at {self.ip_address}: {e}") from e
         except PYCOMM3_ERRORS as e:
-            # What's left is RequestError — a malformed request no retry can fix.
+            # What's left is RequestError — a malformed request; the session is fine.
             raise PLCTagReadError(f"Driver rejected the read on Allen Bradley PLC at {self.ip_address}: {e}") from e
         except Exception as e:
             raise PLCTagReadError(f"Unexpected read failure on Allen Bradley PLC at {self.ip_address}: {e}") from e
+
+        await self._raise_if_session_dead(driver, "read", results)
+        return results
 
     async def _slc_read_one(self, driver: Any, address: str) -> TagResult:
         """One SLC data-file read; only per-tag driver errors stay per-tag — a
@@ -433,7 +463,7 @@ class AllenBradleyPLC(BasePLC):
 
     async def _write_tags(self, writes: List[Tuple[str, Any]]) -> Dict[str, TagResult]:
         """Write on the write channel; per-tag errors are classified, not laundered to False."""
-        driver = self._driver_for("write")
+        driver = await self._driver_for("write")
         if not writes:
             return {}
 
@@ -446,26 +476,31 @@ class AllenBradleyPLC(BasePLC):
                         f"Allen Bradley PLC at {self.ip_address} returned {len(tags)} results "
                         f"for {len(writes)} requested writes"
                     )
-                return {
+                results_map = {
                     address: tag_to_result(tag, value_on_success=value, use_tag_value=False)
                     for (address, value), tag in zip(writes, tags)
                 }
-
-            if self.driver_type == "SLCDriver":
-                return {address: await self._slc_write_one(driver, address, value) for address, value in writes}
-
-            return {address: await self._cip_write_one(driver, address, value) for address, value in writes}
+            elif self.driver_type == "SLCDriver":
+                results_map = {address: await self._slc_write_one(driver, address, value) for address, value in writes}
+            else:
+                results_map = {address: await self._cip_write_one(driver, address, value) for address, value in writes}
 
         except PLCTagWriteError:
             raise
-        except PYCOMM3_TRANSPORT_ERRORS as e:
-            # Retryable: the caller's recovery loop reconnects the write channel.
+        except PYCOMM3_WIRE_ERRORS as e:
+            if not _chain_has_timeout(e):
+                await self._close_driver(driver, "write")
+            raise PLCCommunicationError(f"Write failed on Allen Bradley PLC at {self.ip_address}: {e}") from e
+        except PYCOMM3_REPLY_ERRORS as e:
             raise PLCCommunicationError(f"Write failed on Allen Bradley PLC at {self.ip_address}: {e}") from e
         except PYCOMM3_ERRORS as e:
-            # RequestError: a malformed request no retry can fix.
+            # RequestError: a malformed request; the session is fine.
             raise PLCTagWriteError(f"Driver rejected the write on Allen Bradley PLC at {self.ip_address}: {e}") from e
         except Exception as e:
             raise PLCTagWriteError(f"Unexpected write failure on Allen Bradley PLC at {self.ip_address}: {e}") from e
+
+        await self._raise_if_session_dead(driver, "write", results_map)
+        return results_map
 
     async def _slc_write_one(self, driver: Any, address: str, value: Any) -> TagResult:
         """One SLC data-file write; only per-tag driver errors stay per-tag — a
@@ -539,7 +574,7 @@ class AllenBradleyPLC(BasePLC):
         if self._tags_cache is not None and current_time - self._cache_timestamp < self._cache_ttl:
             return self._tags_cache
 
-        driver = self._driver_for("read")
+        driver = await self._driver_for("read")
 
         try:
             if self.driver_type == "LogixDriver":
@@ -793,7 +828,7 @@ class AllenBradleyPLC(BasePLC):
         Returns:
             Dictionary with tag information (type, description, etc.)
         """
-        driver = self._driver_for("read")
+        driver = await self._driver_for("read")
 
         try:
             if self.driver_type == "LogixDriver":
@@ -854,7 +889,7 @@ class AllenBradleyPLC(BasePLC):
         Returns:
             Dictionary with PLC information
         """
-        driver = self._driver_for("read")
+        driver = await self._driver_for("read")
 
         try:
             info = {
@@ -1170,7 +1205,7 @@ class AllenBradleyPLC(BasePLC):
                 "SLC data file mapping with bit-level access",
                 "Logix tag enumeration and data type detection",
                 "PLC information retrieval and device identification",
-                "Connection management with automatic retry logic",
+                "Explicit connect lifecycle; a channel closed on proof reopens at the next call",
                 "Async/await support for non-blocking operations",
                 "Caching system for improved performance",
                 "Device-specific object discovery",

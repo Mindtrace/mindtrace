@@ -1,11 +1,11 @@
 """Typed per-tag results for the PLC transport, and the classifier that produces them.
 
-``missing_tag`` / ``type_mismatch`` / ``encode`` / ``unknown`` are stable
-address verdicts, returned to the caller. ``transport`` means the exchange
-failed — the transport escalates it (retry, then raise); it never reaches a
-caller in a result map. Hence transport is matched POSITIVELY from pycomm3's
-link-level strings; the unrecognized residue is ``unknown``, never an excuse to
-bounce a live session.
+Kinds describe; they never act. Config kinds (``missing_tag`` /
+``type_mismatch`` / ``encode``) are stable verdicts about the address or value.
+``transient`` marks an exchange that misbehaved (busy / timeout / garbled) —
+re-asking can succeed, and the transport takes no channel action. ``unknown``
+is the residue. Session-DEAD statuses never reach a result map: backends
+detect those on the raw driver text, close the channel, and raise.
 """
 
 from dataclasses import dataclass
@@ -14,17 +14,13 @@ from typing import Any, Optional
 
 
 class TagErrorKind(str, Enum):
-    """Why a single tag operation failed.
-
-    The first four are address verdicts the caller receives; ``transport`` is the
-    escalating kind and never survives in a returned map.
-    """
+    """Why a single tag operation failed. Labels only — the transport never acts on them."""
 
     missing_tag = "missing_tag"  # tag/member does not exist on the controller
     type_mismatch = "type_mismatch"  # value type incompatible with the tag type
     encode = "encode"  # value could not be encoded for the wire
+    transient = "transient"  # this exchange misbehaved (busy/timeout/garbled); re-ask later
     unknown = "unknown"  # the controller refused it for a reason we cannot name
-    transport = "transport"  # the exchange carrying this tag failed: escalate
 
 
 @dataclass(frozen=True)
@@ -47,6 +43,10 @@ class TagResult:
         return self.error is None
 
 
+def _matches(text: str, phrases: tuple) -> bool:
+    return any(phrase in text for phrase in phrases)
+
+
 # Per-tag errors arrive as flattened TEXT (no exception type survives pycomm3's
 # result pipeline); every pattern below is quoted from pycomm3 source.
 
@@ -66,46 +66,57 @@ _ENCODE_PATTERNS = ("error encoding value", "error packing", "error unpacking")
 # status_info.py EXTEND_CODES 0xFF wrong data type; last two are defensive spellings.
 # A bare "type" would also catch "'NoneType' object ...".
 _TYPE_PATTERNS = ("data type", "invalid type", "type mismatch")
-# The enumerated link-level surface: cip_driver.py CommError texts, forward-open
-# refusal, connection-describing SERVICE_STATUS/EXTEND_CODES (0x01/0x07/0x1F/
-# 0x0203/0x0204), and OS errno text stamped onto tags. Every entry names a failed
-# exchange or dead link outright.
-_TRANSPORT_PATTERNS = (
-    "failed to send message",
-    "failed to receive reply",
-    "target did not connect",
-    "connection failure",
-    "connection lost",
-    "connection related failure",
-    "connection timeout",
-    "connection timed out",
-    "unconnected message timeout",
-    "invalid session handle",
-    "session handle",
-    # errno text; "connection abort" stem covers "abort"/"aborted" spellings
-    "connection reset",
-    "broken pipe",
-    "connection abort",
-    "connection refused",
+# The stamped transport surface: statuses a DELIVERED reply can carry about the
+# session itself — CIP connection statuses (SERVICE_STATUS/EXTEND_CODES 0x01/0x07/
+# 0x0203/0x0204) and encapsulation session statuses.
+_TRANSIENT_PATTERNS = (
+    "insufficient resource",  # CIP 0x02 - controller busy
+    "insufficient packet space",  # CIP 0x06
+    "message timeout",  # CIP 0xFE - controller-side message timer
+    "invalid reply received",  # CIP 0x22 - garbled, this exchange only
+    "failed to parse reply",  # pycomm3 packet parse failure, stamped per packet
+    "connection timeout",  # CIP ext 0x0203 - timeout-flavored, tolerance rule
+    "connection timed out",  # defensive spelling of the same
+    "unconnected message timeout",  # CIP ext 0x0204
+    "connection failure",  # CIP 0x01 - establishment family; cannot occur on the data path
+    "connection related failure",  # CIP 0x1F - same
 )
+
+
+# The ONLY documented statuses by which a DELIVERED reply positively states that
+# OUR session/connection is gone.(thus should be marked as session dead)
+_SESSION_DEAD_PHRASES = (
+    "connection lost",  # CIP 0x07 - the connection you were using is gone
+    "invalid session handle",  # encapsulation 0x0064 - your registration is gone
+    "session handle",
+)
+
+
+def session_dead_addresses(results) -> list:
+    """Addresses whose error text says the SESSION died, not the address."""
+    dead = []
+    for address, result in results.items():
+        if result.error is not None:
+            if _matches(result.error.message.lower(), _SESSION_DEAD_PHRASES):
+                dead.append(address)
+    return dead
 
 
 def classify_tag_error(message: Any) -> TagError:
     """Map a driver error string onto a TagErrorKind, preserving the raw text.
 
-    Order: missing → encode → type → transport; the residue is ``unknown``,
-    which never escalates.
+    Order: missing → encode → type → transient; the residue is ``unknown``.
     """
     raw = str(message)
     text = raw.lower()
-    if any(pattern in text for pattern in _MISSING_TAG_PATTERNS):
+    if _matches(text, _MISSING_TAG_PATTERNS):
         kind = TagErrorKind.missing_tag
-    elif any(pattern in text for pattern in _ENCODE_PATTERNS):
+    elif _matches(text, _ENCODE_PATTERNS):
         kind = TagErrorKind.encode
-    elif any(pattern in text for pattern in _TYPE_PATTERNS):
+    elif _matches(text, _TYPE_PATTERNS):
         kind = TagErrorKind.type_mismatch
-    elif any(pattern in text for pattern in _TRANSPORT_PATTERNS):
-        kind = TagErrorKind.transport
+    elif _matches(text, _TRANSIENT_PATTERNS):
+        kind = TagErrorKind.transient
     else:
         kind = TagErrorKind.unknown
     return TagError(kind=kind, message=raw)

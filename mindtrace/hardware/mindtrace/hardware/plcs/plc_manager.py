@@ -69,7 +69,6 @@ Configuration:
     - MINDTRACE_HW_PLC_CONNECTION_TIMEOUT: Connection timeout in seconds
     - MINDTRACE_HW_PLC_READ_TIMEOUT: Tag read timeout in seconds
     - MINDTRACE_HW_PLC_WRITE_TIMEOUT: Tag write timeout in seconds
-    - MINDTRACE_HW_PLC_RETRY_COUNT: Number of retry attempts
     - MINDTRACE_HW_PLC_MAX_CONCURRENT_CONNECTIONS: Maximum concurrent connections
     - MINDTRACE_HW_PLC_ALLEN_BRADLEY_ENABLED: Enable Allen-Bradley backend
     - MINDTRACE_HW_PLC_SIEMENS_ENABLED: Enable Siemens backend
@@ -465,7 +464,7 @@ class PLCManager(Mindtrace):
         """
         Read tags from a specific PLC.
 
-        Thin passthrough: retry and reconnect live in the backend, and its
+        Thin passthrough: the backend makes one attempt (a channel closed on proof reopens at the next call), and its
         exceptions propagate unwrapped.
 
         Args:
@@ -486,7 +485,7 @@ class PLCManager(Mindtrace):
         """
         Write tags to a specific PLC.
 
-        Thin passthrough: retry and reconnect live in the backend, and its
+        Thin passthrough: the backend makes one attempt (a channel closed on proof reopens at the next call), and its
         exceptions propagate unwrapped.
 
         Args:
