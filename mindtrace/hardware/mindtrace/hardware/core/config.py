@@ -30,6 +30,7 @@ Environment Variables:
     - MINDTRACE_HW_CAMERA_MAX_CONSECUTIVE_FAILURES: Consecutive capture failures before auto-reinit (default: 5)
     - MINDTRACE_HW_CAMERA_REINITIALIZATION_COOLDOWN: Seconds between reinit attempts (default: 30.0)
     - MINDTRACE_HW_CAMERA_CONFIG_DIR: Directory for preserved camera configs
+    - MINDTRACE_HW_CAMERA_RESTORE_SAVED_CONFIG_ON_OPEN: Restore saved config on camera open (default: true)
     - MINDTRACE_HW_CAMERA_SAVE_API_URL: External save API URL for capture forwarding
     - MINDTRACE_HW_CAMERA_SAVE_API_TIMEOUT: HTTP timeout for save API forwarding (default: 10.0)
     - MINDTRACE_HW_CAMERA_OPENCV_WIDTH: OpenCV default frame width
@@ -200,6 +201,7 @@ class CameraSettings:
     max_consecutive_failures: int = 5  # Consecutive capture failures before attempting reinit
     reinitialization_cooldown: float = 30.0  # Seconds between reinit attempts
     camera_config_dir: str = ""  # Dir for preserved camera configs; empty = PathSettings.config_dir + "/cameras"
+    restore_saved_config_on_open: bool = True  # Restore persisted config from camera_config_dir when opening a camera
 
     # Capture save forwarding
     save_api_url: str = ""  # External save API URL; empty = local save only
@@ -750,6 +752,9 @@ class HardwareConfigManager(Mindtrace):
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_CONFIG_DIR"):
             self._config.cameras.camera_config_dir = env_val
+
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_RESTORE_SAVED_CONFIG_ON_OPEN"):
+            self._config.cameras.restore_saved_config_on_open = env_val.lower() == "true"
 
         # Capture save forwarding
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_SAVE_API_URL"):

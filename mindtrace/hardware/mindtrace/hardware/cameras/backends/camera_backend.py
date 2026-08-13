@@ -304,7 +304,22 @@ class CameraBackend(MindtraceABC):
         self.logger.error(f"set_config not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_config not supported by {self.__class__.__name__}")
 
-    async def import_config(self, config_path: str):
+    async def import_config(self, config_path: str) -> Tuple[int, int]:
+        """Import camera configuration from a backend-specific JSON file.
+
+        Args:
+            config_path: Path to the configuration file.
+
+        Returns:
+            Tuple of (applied_settings, total_settings). ``applied_settings`` counts
+            keys successfully applied; ``total_settings`` counts keys present in the
+            file that the backend attempted to apply. Individual setting failures are
+            logged and do not raise; hard failures (missing file, invalid format, etc.)
+            raise ``CameraConfigurationError`` or related exceptions.
+
+        Raises:
+            NotImplementedError: If the backend does not support configuration import.
+        """
         self.logger.error(f"import_config not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"import_config not supported by {self.__class__.__name__}")
 

@@ -24,6 +24,7 @@ from mindtrace.hardware.services.cameras.models.requests import (
     CaptureImageRequest,
     ConfigFileExportRequest,
     ConfigFileImportRequest,
+    ConfigFileResetRequest,
     # Capture Groups
     ConfigureCaptureGroupsRequest,
     # Specific Parameters
@@ -141,6 +142,7 @@ __all__ = [
     "CameraPerformanceSettingsRequest",
     "ConfigFileImportRequest",
     "ConfigFileExportRequest",
+    "ConfigFileResetRequest",
     "CaptureImageRequest",
     "CaptureBatchRequest",
     "CaptureHDRRequest",
