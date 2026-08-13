@@ -750,7 +750,7 @@ class AsyncCameraManager(Mindtrace):
             if not Path(config_path).exists():
                 self.logger.debug(f"No saved config for '{camera_name}'")
                 return
-            applied, total = await camera.load_config(config_path)
+            applied, total = await camera.import_config(config_path)
             if total > 0 and applied < total:
                 self.logger.warning(
                     f"Saved config for '{camera_name}' only partially applied "

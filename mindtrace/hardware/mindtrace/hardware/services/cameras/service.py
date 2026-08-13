@@ -954,7 +954,7 @@ class CameraManagerService(Service):
                 raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
 
             camera_proxy = await manager.open(request.camera)
-            applied, total = await camera_proxy.load_config(config_path)
+            applied, total = await camera_proxy.import_config(config_path)
             success = total == 0 or applied == total
 
             result = ConfigFileOperationResult(file_path=config_path, operation="import", success=success)
@@ -984,7 +984,7 @@ class CameraManagerService(Service):
                 raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
 
             camera_proxy = await manager.open(request.camera)
-            success = await camera_proxy.save_config(config_path)
+            success = await camera_proxy.export_config(config_path)
 
             result = ConfigFileOperationResult(file_path=config_path, operation="export", success=success)
 

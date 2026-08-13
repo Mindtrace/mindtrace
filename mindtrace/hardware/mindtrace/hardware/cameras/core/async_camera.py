@@ -512,7 +512,7 @@ class AsyncCamera(Mindtrace):
         """
         return self._backend.get_image_quality_enhancement()
 
-    async def save_config(self, path: str) -> bool:
+    async def export_config(self, path: str) -> bool:
         """Export current camera configuration to a file via backend.
 
         Args:
@@ -525,7 +525,7 @@ class AsyncCamera(Mindtrace):
             await self._backend.export_config(path)
             return True
 
-    async def load_config(self, path: str) -> Tuple[int, int]:
+    async def import_config(self, path: str) -> Tuple[int, int]:
         """Import camera configuration from a file via backend.
 
         Args:
@@ -974,16 +974,6 @@ class AsyncCamera(Mindtrace):
         """Get available white balance modes (backend-specific method)."""
         async with self._lock:
             return await self._backend.get_wb_range()
-
-    async def export_config(self, config_path: str):
-        """Export camera configuration (backend-specific method)."""
-        async with self._lock:
-            return await self._backend.export_config(config_path)
-
-    async def import_config(self, config_path: str) -> Tuple[int, int]:
-        """Import camera configuration (backend-specific method)."""
-        async with self._lock:
-            return await self._backend.import_config(config_path)
 
     async def close(self):
         """Close the camera and release resources."""
