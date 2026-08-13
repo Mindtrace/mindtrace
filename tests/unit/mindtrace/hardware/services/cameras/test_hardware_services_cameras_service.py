@@ -478,9 +478,7 @@ class TestCameraManagerServiceBusinessLogic:
         assert response.data is True
 
         # Test business logic: properties passed correctly
-        mock_manager.configure_camera.assert_awaited_once_with(
-            "ActiveCamera", {"exposure": 1000, "gain": 2.5}
-        )
+        mock_manager.configure_camera.assert_awaited_once_with("ActiveCamera", {"exposure": 1000, "gain": 2.5})
 
     @pytest.mark.asyncio
     async def test_configure_camera_inactive_camera_error(self, service_with_mock_manager):
@@ -790,9 +788,7 @@ class TestCameraManagerServiceErrorHandling:
         service, mock_manager = service_with_mock_manager
         mock_manager.active_cameras = ["TestCamera"]
         mock_manager.open = AsyncMock()
-        mock_manager.configure_camera = AsyncMock(
-            side_effect=CameraConfigurationError("Invalid config")
-        )
+        mock_manager.configure_camera = AsyncMock(side_effect=CameraConfigurationError("Invalid config"))
 
         request = CameraConfigureRequest(camera="TestCamera", properties={"invalid_param": "bad_value"})
 

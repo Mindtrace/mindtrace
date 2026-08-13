@@ -804,9 +804,7 @@ class AsyncCameraManager(Mindtrace):
                     try:
                         await self.configure_camera(camera_name, replay_configure)
                     except Exception as e:
-                        self.logger.warning(
-                            f"Failed to replay runtime configure for '{camera_name}' after reinit: {e}"
-                        )
+                        self.logger.warning(f"Failed to replay runtime configure for '{camera_name}' after reinit: {e}")
                 self._failure_counts[camera_name] = 0
                 self.logger.info(f"Reinit successful for '{camera_name}'")
             except Exception as e:
