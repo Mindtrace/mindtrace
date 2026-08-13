@@ -34,6 +34,8 @@ def test_declare_queue_fifo(client):
 def test_declare_queue_already_exists(client):
     client, mock_conn = client
     mock_conn.queues = {"q": MagicMock()}
+    mock_conn.connection.lock.return_value.acquire.return_value = True
+    mock_conn.connection.hget.return_value = b"fifo"
     result = client.declare_queue("q", queue_type="fifo")
     assert result["status"] == "success"
     assert "already exists" in result["message"]
