@@ -143,6 +143,11 @@ class TestConfigFileImportRequest:
         assert request.camera == "Basler:device1"
         assert request.config_path is None
 
+    def test_config_file_import_request_rejects_empty_path(self):
+        """Test ConfigFileImportRequest rejects empty config_path."""
+        with pytest.raises(ValidationError):
+            ConfigFileImportRequest(camera="Basler:device1", config_path="")
+
 
 class TestConfigFileExportRequest:
     """Tests for ConfigFileExportRequest model."""
@@ -158,6 +163,11 @@ class TestConfigFileExportRequest:
         request = ConfigFileExportRequest(camera="Basler:device1")
         assert request.camera == "Basler:device1"
         assert request.config_path is None
+
+    def test_config_file_export_request_rejects_empty_path(self):
+        """Test ConfigFileExportRequest rejects empty config_path."""
+        with pytest.raises(ValidationError):
+            ConfigFileExportRequest(camera="Basler:device1", config_path="")
 
 
 class TestConfigFileResetRequest:

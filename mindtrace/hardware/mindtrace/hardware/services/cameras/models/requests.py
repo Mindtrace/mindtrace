@@ -96,6 +96,7 @@ class ConfigFileImportRequest(BaseModel):
     camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
     config_path: Optional[str] = Field(
         None,
+        min_length=1,
         description=(
             "Path to configuration file to import. When omitted, uses "
             "MINDTRACE_HW_CAMERA_CONFIG_DIR with a per-camera filename."
@@ -109,6 +110,7 @@ class ConfigFileExportRequest(BaseModel):
     camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
     config_path: Optional[str] = Field(
         None,
+        min_length=1,
         description=(
             "Path where to export configuration file. When omitted, uses "
             "MINDTRACE_HW_CAMERA_CONFIG_DIR with a per-camera filename."
