@@ -116,6 +116,7 @@ class AsyncCameraManager(Mindtrace):
         self._failure_counts: Dict[str, int] = {}
         self._last_reinit_attempt: Dict[str, float] = {}
         self._open_kwargs: Dict[str, Dict[str, Any]] = {}
+        self._runtime_configure: Dict[str, Dict[str, Any]] = {}
         self._max_consecutive_failures = self._hardware_config.cameras.max_consecutive_failures
         self._reinitialization_cooldown = self._hardware_config.cameras.reinitialization_cooldown
 
@@ -483,6 +484,7 @@ class AsyncCameraManager(Mindtrace):
             del self._cameras[camera_name]
             self._failure_counts.pop(camera_name, None)
             self._open_kwargs.pop(camera_name, None)
+            self._runtime_configure.pop(camera_name, None)
             self._open_locks.pop(camera_name, None)
             self.logger.info(f"Camera '{camera_name}' closed")
         except Exception as e:
@@ -790,6 +792,7 @@ class AsyncCameraManager(Mindtrace):
 
         async with self._get_open_lock(camera_name):
             replay_kwargs = dict(self._open_kwargs.get(camera_name, {}))
+            replay_configure = dict(self._runtime_configure.get(camera_name, {}))
             try:
                 await self._close_locked(camera_name)
             except Exception as e:
@@ -797,12 +800,34 @@ class AsyncCameraManager(Mindtrace):
 
             try:
                 await self._open_locked(camera_name, test_connection=True, **replay_kwargs)
+                if replay_configure:
+                    try:
+                        await self.configure_camera(camera_name, replay_configure)
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Failed to replay runtime configure for '{camera_name}' after reinit: {e}"
+                        )
                 self._failure_counts[camera_name] = 0
                 self.logger.info(f"Reinit successful for '{camera_name}'")
             except Exception as e:
                 self.logger.error(f"Reinit failed for '{camera_name}': {e}")
                 # Reset counter to prevent immediate re-trigger on next capture
                 self._failure_counts[camera_name] = 0
+
+    def _merge_runtime_configure(self, camera_name: str, settings: Dict[str, Any]) -> None:
+        """Accumulate runtime configure settings to replay after auto-reinit."""
+        if not settings:
+            return
+        self._runtime_configure.setdefault(camera_name, {}).update(settings)
+
+    async def configure_camera(self, camera_name: str, settings: Dict[str, Any]) -> bool:
+        """Configure a camera and record settings for auto-reinit replay."""
+        if camera_name not in self._cameras:
+            raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
+        success = await self._cameras[camera_name].configure(**settings)
+        if success:
+            self._merge_runtime_configure(camera_name, settings)
+        return bool(success)
 
     def _record_capture_success(self, camera_name: str) -> None:
         """Reset failure counter on successful capture."""
@@ -838,28 +863,19 @@ class AsyncCameraManager(Mindtrace):
 
     async def batch_configure(self, configurations: Dict[str, Dict[str, Any]]) -> Dict[str, bool]:
         """Configure multiple cameras simultaneously."""
-        results = {}
+        items = list(configurations.items())
+        config_results = await asyncio.gather(
+            *(self.configure_camera(name, settings) for name, settings in items),
+            return_exceptions=True,
+        )
 
-        async def configure_camera(camera_name: str, settings: Dict[str, Any]) -> Tuple[str, bool]:
-            try:
-                if camera_name not in self._cameras:
-                    raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
-                camera = self._cameras[camera_name]
-                await camera.configure(**settings)
-                return camera_name, True
-            except Exception as e:
-                self.logger.error(f"Configuration failed for '{camera_name}': {e}")
-                return camera_name, False
-
-        tasks = [configure_camera(name, settings) for name, settings in configurations.items()]
-        config_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        for result in config_results:
+        results: Dict[str, bool] = {}
+        for (camera_name, _), result in zip(items, config_results):
             if isinstance(result, BaseException):
-                self.logger.error(f"Configuration task failed: {result}")
+                self.logger.error(f"Configuration failed for '{camera_name}': {result}")
+                results[camera_name] = False
             else:
-                camera_name, success = result
-                results[camera_name] = success
+                results[camera_name] = bool(result)
 
         return results
 

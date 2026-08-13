@@ -250,6 +250,49 @@ async def test_reinit_replays_open_kwargs(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_reinit_replays_runtime_configure(monkeypatch, tmp_path):
+    """Auto-reinit must replay accumulated runtime configure settings after profile restore."""
+    import json
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    manager._max_consecutive_failures = 3
+    manager._reinitialization_cooldown = 0
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    config_path = manager.get_camera_config_path(name)
+
+    async def failing_capture(self, save_path=None, output_format="pil"):
+        raise CameraConnectionError("simulated capture failure")
+
+    monkeypatch.setattr(
+        "mindtrace.hardware.cameras.core.async_camera.AsyncCamera.capture",
+        failing_capture,
+    )
+
+    try:
+        camera = await manager.open(name, test_connection=False)
+        assert await manager.configure_camera(name, {"exposure": 15000}) is True
+        await camera.export_config(config_path)
+        assert await manager.configure_camera(name, {"exposure": 33333, "gain": 4.0}) is True
+        assert await camera.get_exposure() == 33333
+        assert await camera.get_gain() == 4.0
+
+        for _ in range(3):
+            await manager.batch_capture([name])
+
+        reopened = manager._cameras[name]
+        assert await reopened.get_exposure() == 33333
+        assert await reopened.get_gain() == 4.0
+        assert manager._runtime_configure[name] == {"exposure": 33333, "gain": 4.0}
+
+        with open(config_path) as f:
+            saved = json.load(f)
+        assert saved["exposure_time"] == 15000
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_open_skips_restore_when_disabled_at_manager_level(tmp_path):
     """Manager-level policy can disable auto-restore on open."""
     manager = AsyncCameraManager(include_mocks=True, restore_saved_config_on_open=False)

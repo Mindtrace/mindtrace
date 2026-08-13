@@ -789,10 +789,10 @@ class CameraManagerService(Service):
                 raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
 
             self.logger.debug(f"Opening camera proxy for '{request.camera}'...")
-            camera_proxy = await manager.open(request.camera)
+            await manager.open(request.camera)
 
             self.logger.debug(f"Calling configure on camera proxy with properties: {request.properties}")
-            success = await camera_proxy.configure(**request.properties)
+            success = await manager.configure_camera(request.camera, request.properties)
             self.logger.debug(f"Configure completed with success: {success}")
 
             # Handle None return value (convert to False)
