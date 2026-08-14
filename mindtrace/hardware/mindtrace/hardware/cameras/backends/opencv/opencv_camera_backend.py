@@ -1104,6 +1104,9 @@ class OpenCVCameraBackend(CameraBackend):
     async def export_config(self, config_path: str):
         """Export current camera configuration to common JSON format.
 
+        Open-time settings (``width``, ``height``, ``fps``) are omitted; pass
+        them to ``AsyncCameraManager.open()`` instead.
+
         Args:
             config_path (str): Path to save configuration file
 
@@ -1124,9 +1127,6 @@ class OpenCVCameraBackend(CameraBackend):
                 "camera_name": self.camera_name,
                 "camera_index": self.camera_index,
                 "timestamp": time.time(),
-                "width": int(await self._run_blocking(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH)),
-                "height": int(await self._run_blocking(self.cap.get, cv2.CAP_PROP_FRAME_HEIGHT)),
-                "fps": await self._run_blocking(self.cap.get, cv2.CAP_PROP_FPS),
                 "exposure_time": await self._run_blocking(self.cap.get, cv2.CAP_PROP_EXPOSURE),
                 "brightness": await self._run_blocking(self.cap.get, cv2.CAP_PROP_BRIGHTNESS),
                 "contrast": await self._run_blocking(self.cap.get, cv2.CAP_PROP_CONTRAST),
@@ -1140,8 +1140,6 @@ class OpenCVCameraBackend(CameraBackend):
                 "white_balance_blue_u": await self._run_blocking(self.cap.get, cv2.CAP_PROP_WHITE_BALANCE_BLUE_U),
                 "white_balance_red_v": await self._run_blocking(self.cap.get, cv2.CAP_PROP_WHITE_BALANCE_RED_V),
                 "image_enhancement": self.img_quality_enhancement,
-                "retrieve_retry_count": self.retrieve_retry_count,
-                "timeout_ms": self.timeout_ms,
                 "pixel_format": "RGB8",  # OpenCV converted output
                 "trigger_mode": "continuous",  # OpenCV default
                 "roi": {
@@ -1169,8 +1167,12 @@ class OpenCVCameraBackend(CameraBackend):
                 f"Failed to export config to '{config_path}' for camera '{self.camera_name}': {str(e)}"
             )
 
-    async def import_config(self, config_path: str):
+    async def import_config(self, config_path: str) -> Tuple[int, int]:
         """Import camera configuration from common JSON format.
+
+        Does not apply open-time settings (``width``, ``height``, ``fps``);
+        those are set by ``AsyncCameraManager.open()`` via backend constructor
+        kwargs.
 
         Args:
             config_path: Path to configuration file
@@ -1202,18 +1204,6 @@ class OpenCVCameraBackend(CameraBackend):
 
             # Handle both common format and legacy nested format for backward compatibility
             settings = config.get("settings", config)  # Use nested if available, otherwise flat
-
-            if "width" in settings and "height" in settings:
-                total_settings += 2
-                if await self._run_blocking(self.cap.set, cv2.CAP_PROP_FRAME_WIDTH, settings["width"]):
-                    success_count += 1
-                if await self._run_blocking(self.cap.set, cv2.CAP_PROP_FRAME_HEIGHT, settings["height"]):
-                    success_count += 1
-
-            if "fps" in settings:
-                total_settings += 1
-                if await self._run_blocking(self.cap.set, cv2.CAP_PROP_FPS, settings["fps"]):
-                    success_count += 1
 
             # Handle both exposure_time (common format) and exposure (legacy)
             exposure_key = "exposure_time" if "exposure_time" in settings else "exposure"
@@ -1267,20 +1257,11 @@ class OpenCVCameraBackend(CameraBackend):
                 success_count += 1
                 total_settings += 1
 
-            if "retrieve_retry_count" in settings:
-                self.retrieve_retry_count = settings["retrieve_retry_count"]
-                success_count += 1
-                total_settings += 1
-
-            if "timeout_ms" in settings:
-                self.timeout_ms = settings["timeout_ms"]
-                success_count += 1
-                total_settings += 1
-
             self.logger.debug(
                 f"Configuration imported from '{config_path}' for camera '{self.camera_name}': "
                 f"{success_count}/{total_settings} settings applied successfully"
             )
+            return success_count, total_settings
 
         except CameraConfigurationError:
             raise

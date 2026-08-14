@@ -1167,8 +1167,14 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.warning(f"Connection check failed for camera '{self.camera_name}': {str(e)}")
             return False
 
-    async def import_config(self, config_path: str):
+    async def import_config(self, config_path: str) -> Tuple[int, int]:
         """Import camera configuration from common JSON format.
+
+        Restores imaging settings and per-camera GigE transport settings
+        (``packet_size``, ``inter_packet_delay``, ``bandwidth_limit``).
+        Does not apply manager-owned settings (``timeout_ms``,
+        ``retrieve_retry_count``, ``buffer_count``); those are set by
+        ``AsyncCameraManager`` at construction time.
 
         Args:
             config_path: Path to configuration file
@@ -1384,16 +1390,6 @@ class BaslerCameraBackend(CameraBackend):
                     success_count += 1
                     total_settings += 1
 
-                if "retrieve_retry_count" in config_data:
-                    self.retrieve_retry_count = config_data["retrieve_retry_count"]
-                    success_count += 1
-                    total_settings += 1
-
-                if "timeout_ms" in config_data:
-                    self.timeout_ms = config_data["timeout_ms"]
-                    success_count += 1
-                    total_settings += 1
-
                 # Restore liquid lens / focus settings
                 if "optical_power" in config_data:
                     total_settings += 1
@@ -1456,6 +1452,7 @@ class BaslerCameraBackend(CameraBackend):
                 f"Configuration imported from '{config_path}' for camera '{self.camera_name}': "
                 f"{success_count}/{total_settings} settings applied successfully"
             )
+            return success_count, total_settings
 
         except CameraConfigurationError:
             raise
@@ -1465,6 +1462,11 @@ class BaslerCameraBackend(CameraBackend):
 
     async def export_config(self, config_path: str):
         """Export current camera configuration to common JSON format.
+
+        Exports imaging settings and per-camera GigE transport settings.
+        Manager-owned settings (``timeout_ms``, ``retrieve_retry_count``,
+        ``buffer_count``) are omitted; they are controlled by
+        ``AsyncCameraManager`` and ``POST cameras/performance/set``.
 
         Args:
             config_path: Path where to save configuration file
@@ -1623,9 +1625,6 @@ class BaslerCameraBackend(CameraBackend):
                 "roi": {"x": roi_x, "y": roi_y, "width": width, "height": height},
                 "pixel_format": pixel_format,
                 "image_enhancement": self.img_quality_enhancement,
-                "retrieve_retry_count": self.retrieve_retry_count,
-                "timeout_ms": self.timeout_ms,
-                "buffer_count": getattr(self, "buffer_count", 25),
                 "packet_size": packet_size,
                 "inter_packet_delay": inter_packet_delay,
                 "bandwidth_limit": bandwidth_limit,

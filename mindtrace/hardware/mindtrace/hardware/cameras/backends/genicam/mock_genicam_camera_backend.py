@@ -630,7 +630,7 @@ class MockGenICamCameraBackend(CameraBackend):
         await asyncio.sleep(0.001)  # Simulate operation delay
         return self.timeout_ms
 
-    async def import_config(self, config_path: str):
+    async def import_config(self, config_path: str) -> Tuple[int, int]:
         """Import simulated camera configuration from JSON file."""
         if not os.path.exists(config_path):
             raise CameraConfigurationError(f"Configuration file not found: {config_path}")
@@ -639,17 +639,26 @@ class MockGenICamCameraBackend(CameraBackend):
             with open(config_path, "r") as f:
                 config_data = json.load(f)
 
-            # Apply mock configuration
+            applied = 0
+            total = 0
+
             if "exposure_time" in config_data:
+                total += 1
                 await self.set_exposure(config_data["exposure_time"])
+                applied += 1
 
             if "gain" in config_data:
+                total += 1
                 await self.set_gain(config_data["gain"])
+                applied += 1
 
             if "trigger_mode" in config_data:
+                total += 1
                 await self.set_triggermode(config_data["trigger_mode"])
+                applied += 1
 
             if "roi" in config_data:
+                total += 1
                 roi = config_data["roi"]
                 await self.set_ROI(
                     roi.get("x", 0),
@@ -657,11 +666,15 @@ class MockGenICamCameraBackend(CameraBackend):
                     roi.get("width", self.synthetic_width),
                     roi.get("height", self.synthetic_height),
                 )
+                applied += 1
 
             if "image_enhancement" in config_data:
+                total += 1
                 self.img_quality_enhancement = config_data["image_enhancement"]
+                applied += 1
 
             self.logger.debug(f"Mock configuration imported from '{config_path}'")
+            return applied, total
 
         except Exception as e:
             raise CameraConfigurationError(f"Failed to import configuration: {str(e)}")
@@ -687,9 +700,6 @@ class MockGenICamCameraBackend(CameraBackend):
                 "roi": self.roi.copy(),
                 "pixel_format": self.pixel_format,
                 "image_enhancement": self.img_quality_enhancement,
-                "retrieve_retry_count": self.retrieve_retry_count,
-                "timeout_ms": self.timeout_ms,
-                "buffer_count": self.buffer_count,
             }
 
             with open(config_path, "w") as f:

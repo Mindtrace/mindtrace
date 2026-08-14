@@ -70,6 +70,7 @@ from mindtrace.hardware.services.cameras.models import (
     ConfigFileExportRequest,
     ConfigFileImportRequest,
     ConfigFileOperationResult,
+    ConfigFileResetRequest,
     ConfigFileResponse,
     ConfigureCaptureGroupsRequest,
     DictResponse,
@@ -168,6 +169,12 @@ class CameraManagerService(Service):
         self.logger.debug("Returning camera manager")
         return self._camera_manager
 
+    def _resolve_camera_config_path(self, manager: AsyncCameraManager, camera: str, config_path: Optional[str]) -> str:
+        """Resolve config file path, defaulting to MINDTRACE_HW_CAMERA_CONFIG_DIR per camera."""
+        if config_path:
+            return config_path
+        return manager.get_camera_config_path(camera)
+
     async def shutdown_cleanup(self):
         """Cleanup camera manager on shutdown."""
         # Stop all active streams
@@ -257,6 +264,9 @@ class CameraManagerService(Service):
         )
         self.add_endpoint(
             "cameras/config/export", self.export_camera_config, ALL_SCHEMAS["export_camera_config"], as_tool=True
+        )
+        self.add_endpoint(
+            "cameras/config/reset", self.reset_camera_config, ALL_SCHEMAS["reset_camera_config"], as_tool=True
         )
 
         # Image Capture
@@ -779,10 +789,10 @@ class CameraManagerService(Service):
                 raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
 
             self.logger.debug(f"Opening camera proxy for '{request.camera}'...")
-            camera_proxy = await manager.open(request.camera)
+            await manager.open(request.camera)
 
             self.logger.debug(f"Calling configure on camera proxy with properties: {request.properties}")
-            success = await camera_proxy.configure(**request.properties)
+            success = await manager.configure_camera(request.camera, request.properties)
             self.logger.debug(f"Configure completed with success: {success}")
 
             # Handle None return value (convert to False)
@@ -937,21 +947,32 @@ class CameraManagerService(Service):
         """Import camera configuration from file."""
         try:
             manager = await self._get_camera_manager()
+            config_path = self._resolve_camera_config_path(manager, request.camera, request.config_path)
 
             # Check if camera is active
             if request.camera not in manager.active_cameras:
                 raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
 
             camera_proxy = await manager.open(request.camera)
-            success = await camera_proxy.load_config(request.config_path)
+            applied, total = await camera_proxy.import_config(config_path)
+            success = total == 0 or applied == total
 
-            result = ConfigFileOperationResult(file_path=request.config_path, operation="import", success=success)
+            result = ConfigFileOperationResult(
+                file_path=config_path,
+                operation="import",
+                success=success,
+                properties_count=applied,
+                total=total,
+            )
 
             return ConfigFileResponse(
                 success=success,
-                message=f"Configuration imported for camera '{request.camera}'"
-                if success
-                else f"Import failed for '{request.camera}'",
+                message=(
+                    f"Configuration imported for camera '{request.camera}'"
+                    if success
+                    else f"Configuration partially imported for camera '{request.camera}' "
+                    f"({applied}/{total} settings applied)"
+                ),
                 data=result,
             )
         except Exception as e:
@@ -962,15 +983,16 @@ class CameraManagerService(Service):
         """Export camera configuration to file."""
         try:
             manager = await self._get_camera_manager()
+            config_path = self._resolve_camera_config_path(manager, request.camera, request.config_path)
 
             # Check if camera is active
             if request.camera not in manager.active_cameras:
                 raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
 
             camera_proxy = await manager.open(request.camera)
-            success = await camera_proxy.save_config(request.config_path)
+            success = await camera_proxy.export_config(config_path)
 
-            result = ConfigFileOperationResult(file_path=request.config_path, operation="export", success=success)
+            result = ConfigFileOperationResult(file_path=config_path, operation="export", success=success)
 
             return ConfigFileResponse(
                 success=success,
@@ -981,6 +1003,36 @@ class CameraManagerService(Service):
             )
         except Exception as e:
             self.logger.error(f"Failed to export config for camera '{request.camera}': {e}")
+            raise
+
+    async def reset_camera_config(self, request: ConfigFileResetRequest) -> ConfigFileResponse:
+        """Delete a camera's persisted configuration file."""
+        try:
+            manager = await self._get_camera_manager()
+
+            manager.validate_camera_name(request.camera)
+
+            config_path = manager.get_camera_config_path(request.camera)
+            deleted = manager.reset_saved_config(request.camera)
+
+            result = ConfigFileOperationResult(
+                file_path=config_path,
+                operation="reset",
+                success=True,
+                deleted=deleted,
+            )
+
+            return ConfigFileResponse(
+                success=True,
+                message=(
+                    f"Deleted saved configuration for camera '{request.camera}'"
+                    if deleted
+                    else f"No saved configuration found for camera '{request.camera}'"
+                ),
+                data=result,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to reset config for camera '{request.camera}': {e}")
             raise
 
     # Wire encoding map for output_format → (PIL save format, default save kwargs).

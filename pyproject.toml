@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace"
-version = "0.14.0.dev1"
+version = "0.14.1.dev0"
 description = "Mindtrace monorepo with modular packages"
 requires-python = ">=3.12"
 readme = "README.md"
@@ -13,52 +13,52 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-  "mindtrace-core>=0.14.0.dev1",
-  "mindtrace-agents>=0.14.0.dev1",
-  "mindtrace-jobs>=0.14.0.dev1",
-  "mindtrace-registry>=0.14.0.dev1",
-  "mindtrace-database>=0.14.0.dev1",
-  "mindtrace-services>=0.14.0.dev1",
-  "mindtrace-hardware>=0.14.0.dev1",
-  "mindtrace-cluster>=0.14.0.dev1",
-  "mindtrace-models>=0.14.0.dev1",
-  "mindtrace-automation>=0.14.0.dev1",
-  "mindtrace-apps>=0.14.0.dev1",
-  "mindtrace-ui>=0.14.0.dev1",
-  "mindtrace-datalake>=0.14.0.dev1",
-  "mindtrace-storage>=0.14.0.dev1",
+  "mindtrace-core>=0.14.1.dev0",
+  "mindtrace-agents>=0.14.1.dev0",
+  "mindtrace-jobs>=0.14.1.dev0",
+  "mindtrace-registry>=0.14.1.dev0",
+  "mindtrace-database>=0.14.1.dev0",
+  "mindtrace-services>=0.14.1.dev0",
+  "mindtrace-hardware>=0.14.1.dev0",
+  "mindtrace-cluster>=0.14.1.dev0",
+  "mindtrace-models>=0.14.1.dev0",
+  "mindtrace-automation>=0.14.1.dev0",
+  "mindtrace-apps>=0.14.1.dev0",
+  "mindtrace-ui>=0.14.1.dev0",
+  "mindtrace-datalake>=0.14.1.dev0",
+  "mindtrace-storage>=0.14.1.dev0",
 ]
 
 [project.optional-dependencies]
-cameras-basler = ["mindtrace-hardware[cameras-basler]>=0.14.0.dev1"]
-cameras-genicam = ["mindtrace-hardware[cameras-genicam]>=0.14.0.dev1"]
-cameras-daheng = ["mindtrace-hardware[cameras-daheng]>=0.14.0.dev1"]
-cameras-all = ["mindtrace-hardware[cameras-all]>=0.14.0.dev1"]
+cameras-basler = ["mindtrace-hardware[cameras-basler]>=0.14.1.dev0"]
+cameras-genicam = ["mindtrace-hardware[cameras-genicam]>=0.14.1.dev0"]
+cameras-daheng = ["mindtrace-hardware[cameras-daheng]>=0.14.1.dev0"]
+cameras-all = ["mindtrace-hardware[cameras-all]>=0.14.1.dev0"]
 stereo-basler = [
-    "mindtrace-hardware[stereo-basler]>=0.14.0.dev1",
+    "mindtrace-hardware[stereo-basler]>=0.14.1.dev0",
     "plyfile>=1.1.3",
 ]
-stereo-all = ["mindtrace-hardware[stereo-all]>=0.14.0.dev1"]
+stereo-all = ["mindtrace-hardware[stereo-all]>=0.14.1.dev0"]
 scanners-photoneo = [
-    "mindtrace-hardware[scanners-photoneo]>=0.14.0.dev1",
+    "mindtrace-hardware[scanners-photoneo]>=0.14.1.dev0",
     "plyfile>=1.1.3",
 ]
-scanners-all = ["mindtrace-hardware[scanners-all]>=0.14.0.dev1"]
-hardware-all = ["mindtrace-hardware[hardware-all]>=0.14.0.dev1"]
+scanners-all = ["mindtrace-hardware[scanners-all]>=0.14.1.dev0"]
+hardware-all = ["mindtrace-hardware[hardware-all]>=0.14.1.dev0"]
 # Models extras
-models-train = ["mindtrace-models[train]>=0.14.0.dev1"]
-models-transformers = ["mindtrace-models[transformers]>=0.14.0.dev1"]
-models-timm = ["mindtrace-models[timm]>=0.14.0.dev1"]
-models-peft = ["mindtrace-models[peft]>=0.14.0.dev1"]
-models-mlflow = ["mindtrace-models[mlflow]>=0.14.0.dev1"]
-models-wandb = ["mindtrace-models[wandb]>=0.14.0.dev1"]
-models-onnx = ["mindtrace-models[onnx]>=0.14.0.dev1"]
-models-all = ["mindtrace-models[all]>=0.14.0.dev1"]
+models-train = ["mindtrace-models[train]>=0.14.1.dev0"]
+models-transformers = ["mindtrace-models[transformers]>=0.14.1.dev0"]
+models-timm = ["mindtrace-models[timm]>=0.14.1.dev0"]
+models-peft = ["mindtrace-models[peft]>=0.14.1.dev0"]
+models-mlflow = ["mindtrace-models[mlflow]>=0.14.1.dev0"]
+models-wandb = ["mindtrace-models[wandb]>=0.14.1.dev0"]
+models-onnx = ["mindtrace-models[onnx]>=0.14.1.dev0"]
+models-all = ["mindtrace-models[all]>=0.14.1.dev0"]
 # Datalake extras
-import-flowers102 = ["mindtrace-datalake[import-flowers102]>=0.14.0.dev1"]
-export-huggingface = ["mindtrace-datalake[export-huggingface]>=0.14.0.dev1"]
-dataloaders = ["mindtrace-datalake[dataloaders]>=0.14.0.dev1"]
-export-all = ["mindtrace-datalake[export-all]>=0.14.0.dev1"]
+import-flowers102 = ["mindtrace-datalake[import-flowers102]>=0.14.1.dev0"]
+export-huggingface = ["mindtrace-datalake[export-huggingface]>=0.14.1.dev0"]
+dataloaders = ["mindtrace-datalake[dataloaders]>=0.14.1.dev0"]
+export-all = ["mindtrace-datalake[export-all]>=0.14.1.dev0"]
 
 
 [dependency-groups]

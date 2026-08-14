@@ -427,6 +427,11 @@ class TestAsyncDatalakeUnit:
                     f"{key!r} (forward or exact-reverse scan) required by {resource!r} sort {sort_name!r}"
                 )
 
+    def test_datum_annotation_set_lookup_index_is_declared(self):
+        """Annotation record inserts must not scan all Datums to find an AnnotationSet."""
+
+        assert "annotation_set_ids" in Datum.Settings.indexes
+
     @pytest.mark.parametrize(
         ("filter_item", "item", "expected"),
         [

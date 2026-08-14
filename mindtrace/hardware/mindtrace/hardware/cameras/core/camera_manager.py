@@ -26,14 +26,23 @@ class CameraManager(Mindtrace):
         - Use `close_all_cameras()` or `shutdown()` to stop the background loop and release resources.
     """
 
-    def __init__(self, include_mocks: bool = False, max_concurrent_captures: int | None = None, **kwargs):
+    def __init__(
+        self,
+        include_mocks: bool = False,
+        max_concurrent_captures: int | None = None,
+        restore_saved_config_on_open: bool | None = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self._shutting_down = False
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
         self._manager = self._call_in_loop(
-            AsyncCameraManager, include_mocks=include_mocks, max_concurrent_captures=max_concurrent_captures
+            AsyncCameraManager,
+            include_mocks=include_mocks,
+            max_concurrent_captures=max_concurrent_captures,
+            restore_saved_config_on_open=restore_saved_config_on_open,
         )
         self.logger.info("CameraManager (sync) initialized with background event loop")
 
@@ -54,7 +63,10 @@ class CameraManager(Mindtrace):
         return AsyncCameraManager.discover(backends=backends, details=details, include_mocks=include_mocks)
 
     def open(
-        self, names: Optional[Union[str, List[str]]] = None, test_connection: bool = True, **kwargs
+        self,
+        names: Optional[Union[str, List[str]]] = None,
+        test_connection: bool = True,
+        **kwargs,
     ) -> Union["Camera", Dict[str, "Camera"]]:
         """Open one or more cameras.
 
@@ -77,7 +89,13 @@ class CameraManager(Mindtrace):
         Notes:
             - This method is idempotent for single-name calls; if the camera is already open, the existing instance is returned.
         """
-        result = self._submit_coro(self._manager.open(names, test_connection=test_connection, **kwargs))
+        result = self._submit_coro(
+            self._manager.open(
+                names,
+                test_connection=test_connection,
+                **kwargs,
+            )
+        )
         if isinstance(result, AsyncCamera):
             return Camera(result, self._loop)
         # assume dict[str, AsyncCamera]

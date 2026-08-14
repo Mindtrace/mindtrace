@@ -377,9 +377,20 @@ class ConfigFileOperationResult(BaseModel):
     """Configuration file operation result."""
 
     file_path: str
-    operation: str  # "import" or "export"
+    operation: str  # "import", "export", or "reset"
     success: bool
-    properties_count: Optional[int] = None
+    deleted: Optional[bool] = Field(
+        None,
+        description="For reset only: True if a file was removed, False if no saved profile existed.",
+    )
+    properties_count: Optional[int] = Field(
+        None,
+        description="For import only: number of settings successfully applied.",
+    )
+    total: Optional[int] = Field(
+        None,
+        description="For import only: number of settings present in the file that were attempted.",
+    )
 
 
 class ConfigFileResponse(BaseResponse):
