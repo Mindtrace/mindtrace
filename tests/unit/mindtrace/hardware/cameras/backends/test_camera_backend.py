@@ -503,39 +503,6 @@ class TestCameraBackendDefaultImplementations:
 
     @pytest.mark.asyncio
     @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
-    async def test_config_methods_log_warnings(self, mock_get_config, caplog):
-        """Test that config methods log warnings and return expected values."""
-        mock_config_obj = MagicMock()
-        mock_config_obj.cameras.image_quality_enhancement = True
-        mock_config_obj.cameras.retrieve_retry_count = 3
-        mock_get_config.return_value.get_config.return_value = mock_config_obj
-
-        backend = MinimalConcreteBackend()
-
-        # Temporarily lower handler levels to capture warnings
-        original_levels, original_propagate, original_logger_level = enable_log_capture(backend)
-
-        with caplog.at_level(logging.WARNING):
-            # Test async config methods - call base class methods to trigger exceptions
-            with pytest.raises(NotImplementedError):
-                await CameraBackend.set_config(backend, "test_config")
-            with pytest.raises(NotImplementedError):
-                await CameraBackend.import_config(backend, "/path/to/config")
-            with pytest.raises(NotImplementedError):
-                await CameraBackend.export_config(backend, "/path/to/config")
-
-        # Restore original handler levels
-        restore_log_settings(backend, original_levels, original_propagate, original_logger_level)
-
-        # Should log warnings
-        # Check log records instead of text for more reliable capture
-        log_messages = [record.message for record in caplog.records]
-        assert any("set_config not implemented" in msg for msg in log_messages)
-        assert any("import_config not implemented" in msg for msg in log_messages)
-        assert any("export_config not implemented" in msg for msg in log_messages)
-
-    @pytest.mark.asyncio
-    @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
     async def test_white_balance_methods_log_warnings(self, mock_get_config, caplog):
         """Test white balance methods log warnings and return expected values."""
         mock_config_obj = MagicMock()

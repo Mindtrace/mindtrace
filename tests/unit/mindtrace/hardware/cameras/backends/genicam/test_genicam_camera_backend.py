@@ -896,17 +896,6 @@ class TestDiscoveryAndHelperMethods:
 
 class TestAdditionalGenICamOperations:
     @pytest.mark.asyncio
-    async def test_initialize_imports_existing_config(self, mock_harvester_module, tmp_path):
-        from mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend import GenICamCameraBackend
-
-        config_path = tmp_path / "camera.json"
-        config_path.write_text("{}")
-        backend = GenICamCameraBackend("12345678", cti_path="/mock/path/to/gentl.cti", camera_config=str(config_path))
-        backend.import_config = AsyncMock()
-
-        await backend.initialize()
-
-        backend.import_config.assert_awaited_once_with(str(config_path))
 
     @pytest.mark.asyncio
     async def test_get_width_and_height_ranges_default_when_nodes_missing(self, genicam_backend_uninitialized):
@@ -1020,63 +1009,8 @@ class TestAdditionalGenICamOperations:
         assert wb_node.value == "Once"
 
     @pytest.mark.asyncio
-    async def test_import_config_supports_legacy_exposure_and_genicam_nodes(
-        self, genicam_backend_uninitialized, tmp_path
-    ):
-        backend = attach_mock_acquirer(genicam_backend_uninitialized)
-        backend.set_exposure = AsyncMock()
-        backend.set_gain = AsyncMock()
-        backend.set_triggermode = AsyncMock()
-        backend.set_auto_wb_once = AsyncMock()
-        backend.set_ROI = AsyncMock()
-        backend._apply_genicam_nodes = AsyncMock()
-        config_path = tmp_path / "camera.json"
-        config_path.write_text(
-            json.dumps(
-                {
-                    "exposure": 1500,
-                    "gain": 2.5,
-                    "triggermode": "trigger",
-                    "white_balance": "once",
-                    "roi": {"x": 1, "y": 2, "width": 100, "height": 50},
-                    "genicam_nodes": {"PixelFormat": "Mono8"},
-                }
-            )
-        )
-
-        await backend.import_config(str(config_path))
-
-        backend.set_exposure.assert_awaited_once_with(1500)
-        backend.set_gain.assert_awaited_once_with(2.5)
-        backend.set_triggermode.assert_awaited_once_with("trigger")
-        backend.set_auto_wb_once.assert_awaited_once_with("once")
-        backend.set_ROI.assert_awaited_once_with(1, 2, 100, 50)
-        backend._apply_genicam_nodes.assert_awaited_once_with({"PixelFormat": "Mono8"})
 
     @pytest.mark.asyncio
-    async def test_export_config_writes_current_values(self, genicam_backend_uninitialized, tmp_path):
-        backend = attach_mock_acquirer(genicam_backend_uninitialized)
-        backend.get_exposure = AsyncMock(return_value=1000.0)
-        backend.get_gain = AsyncMock(return_value=2.0)
-        backend.get_triggermode = AsyncMock(return_value="trigger")
-        backend.get_wb = AsyncMock(return_value="auto")
-        backend.get_ROI = AsyncMock(return_value={"x": 1, "y": 2, "width": 100, "height": 50})
-        backend.get_exposure_range = AsyncMock(return_value=[10.0, 10000.0])
-        backend.get_gain_range = AsyncMock(return_value=[0.0, 24.0])
-        backend.get_wb_range = AsyncMock(return_value=["auto", "once"])
-        backend._export_genicam_nodes = AsyncMock(return_value={"PixelFormat": "Mono8"})
-        config_path = tmp_path / "nested" / "camera.json"
-
-        with patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.time.time", return_value=123.0):
-            await backend.export_config(str(config_path))
-
-        config = json.loads(config_path.read_text())
-        assert config["camera_name"] == "12345678"
-        assert config["vendor"] == "Keyence"
-        assert config["exported_timestamp"] == 123.0
-        assert config["exposure_time"] == 1000.0
-        assert config["roi"] == {"x": 1, "y": 2, "width": 100, "height": 50}
-        assert config["genicam_nodes"] == {"PixelFormat": "Mono8"}
 
     @pytest.mark.asyncio
     async def test_apply_and_export_genicam_nodes_use_available_values(self, genicam_backend_uninitialized):
@@ -1085,8 +1019,8 @@ class TestAdditionalGenICamOperations:
         node_map = MockNodeMap(PixelFormat=pixel_format, ReverseX=reverse_x)
         backend = attach_mock_acquirer(genicam_backend_uninitialized, node_map)
 
-        await backend._apply_genicam_nodes({"PixelFormat": "Mono8", "Missing": 1, "ReverseX": True})
-        exported = await backend._export_genicam_nodes()
+        await backend.apply_genicam_nodes({"PixelFormat": "Mono8", "Missing": 1, "ReverseX": True})
+        exported = await backend.get_genicam_nodes()
 
         assert pixel_format.value == "Mono8"
         assert reverse_x.value is True
