@@ -258,13 +258,25 @@ backend setup and log that an explicit reset is required.
 RabbitMQ channels and connections close automatically whenever `consume()`
 returns; a later call reconnects.
 
-`consume(..., block=True)` waits indefinitely until the requested number of
-messages has been attempted, shutdown is requested, or the caller interrupts
-the operation. `num_messages=0` means to continue indefinitely. With
-`block=False`, consumption returns as soon as no message is immediately
-available, even if the requested count has not been reached.
-`consume_until_empty()` drains only currently available RabbitMQ messages and
-does not wait for new work to arrive.
+`consume(..., block=True)` waits until the requested number of messages has
+been attempted, shutdown is requested, or the caller interrupts the operation.
+`num_messages=0` means to continue indefinitely. For RabbitMQ, this bare
+blocking form registers every requested queue with `basic_consume` on one
+channel and lets the broker push deliveries. Stopping the operation stops all
+queues registered by that call together.
+
+Finite RabbitMQ calls (`num_messages > 0`), `consume_until_empty()`, and
+`consume(..., block=False)` remain pull-based. With `block=False`, consumption
+returns as soon as no message is immediately available, even if the requested
+count has not been reached. `consume_until_empty()` drains only currently
+available RabbitMQ messages and does not wait for new work to arrive.
+
+RabbitMQ invokes `Consumer.run()` synchronously on Pika's I/O thread during
+broker-pushed consumption. Keep processing bounded or hand work to another
+execution layer if the worker must continue servicing broker I/O concurrently.
+A channel or connection failure ends the current consume operation; callers
+remain responsible for retry and backoff. Push and pull calls both return the
+same attempted-delivery count described above.
 
 Calling `consumer.close()` is different from normal per-operation cleanup: it
 permanently closes the consumer backend. It is safe to call more than once,
