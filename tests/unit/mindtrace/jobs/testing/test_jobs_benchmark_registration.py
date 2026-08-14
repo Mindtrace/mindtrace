@@ -54,7 +54,8 @@ def test_jobs_benchmark_profiles_have_expected_defaults_and_resources() -> None:
     for suite_id in runner.list_suite_ids():
         schema = runner.get_suite_schema(suite_id)
         assert schema.profiles["smoke"]["duration_seconds"] == 1.0
-        assert schema.profiles["smoke"]["backend"] == "local"
+        expected_smoke_backend = "redis" if suite_id == "jobs.stress.pipeline_scaling" else "local"
+        assert schema.profiles["smoke"]["backend"] == expected_smoke_backend
         assert schema.profiles["stress"]["duration_seconds"] == 10.0
         assert schema.profiles["stress"]["backend"] == "rabbitmq"
         assert schema.resource_json_schema is not None
@@ -64,6 +65,10 @@ def test_jobs_benchmark_profiles_have_expected_defaults_and_resources() -> None:
             properties
         )
         assert properties["rabbitmq_password"]["secret"] is True
+
+    consume_schema = runner.get_suite_schema("jobs.stress.consume_ceiling")
+    assert consume_schema.profiles["smoke"]["backlog_messages"] == 500
+    assert consume_schema.profiles["stress"]["backlog_messages"] == 100_000
 
 
 def test_every_jobs_workload_accepts_all_backend_names() -> None:
@@ -83,11 +88,12 @@ def test_consume_mode_compatibility_is_explicit() -> None:
         JobsConsumeCeilingInput(backend="redis", consume_mode="push")
 
 
-def test_local_pipeline_rejects_multi_worker_scaling() -> None:
-    assert JobsPipelineScalingInput(backend="local", producer_count=1, consumer_count=1)
+def test_local_pipeline_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="Local pipeline benchmarks are unsupported"):
+        JobsPipelineScalingInput(backend="local", producer_count=1, consumer_count=1)
 
-    with pytest.raises(ValidationError, match="producer_count=1 and consumer_count=1"):
-        JobsPipelineScalingInput(backend="local", producer_count=1, consumer_count=2)
+    assert JobsPipelineScalingInput(backend="redis", producer_count=1, consumer_count=4)
+    assert JobsPipelineScalingInput(backend="rabbitmq", producer_count=1, consumer_count=4)
 
 
 def test_jobs_benchmark_registration_is_idempotent_when_replace_is_false() -> None:

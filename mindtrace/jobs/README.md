@@ -521,9 +521,13 @@ The consume modes report:
 Use identical parameter overrides for payload, backlog, prefetch, and duration
 when comparing these modes. Round-trip and publication support Local, Redis,
 and RabbitMQ. Iterative and steady consumption also support all three backends;
-push is RabbitMQ-only. Pipeline scaling supports Redis and RabbitMQ with
-multiple consumers, while Local is restricted to one producer and one consumer
-until its shared-queue concurrency semantics are established.
+push is RabbitMQ-only. Pipeline scaling supports Redis and RabbitMQ; Local is
+rejected because its registry-backed queues are not safe for concurrent
+producer/consumer access.
+
+Unexpected Redis event-listener failures are included in each Jobs benchmark's
+`background_errors` metric and promoted to validation failures. Normal listener
+shutdown does not count as a failure.
 
 Backend connection settings are resources: Local accepts an optional
 `local_base_dir`; Redis accepts `redis_host`, `redis_port`, and `redis_db`; and

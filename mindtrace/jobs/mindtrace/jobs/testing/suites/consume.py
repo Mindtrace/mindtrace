@@ -24,6 +24,7 @@ from mindtrace.jobs.testing.suites._common import (
     delivery_transport,
     make_jobs,
     payload_text,
+    redis_background_errors,
     validate_parameters,
     wait_for_deadline,
 )
@@ -123,7 +124,7 @@ class JobsConsumeCeilingSuite(BenchTestSuite):
                 "backend": "local",
                 "consume_mode": "steady_pull",
                 "payload_size_bytes": 128,
-                "backlog_messages": 1_000,
+                "backlog_messages": 500,
                 "preload_batch_size": 250,
                 "prefetch_count": 1,
             },
@@ -159,6 +160,7 @@ class JobsConsumeCeilingSuite(BenchTestSuite):
             daemon=True,
         )
         validation_errors: list[str] = []
+        background_errors: list[str] = []
         resources_retained = config.keep_resources
         started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         elapsed = 0.0
@@ -210,6 +212,11 @@ class JobsConsumeCeilingSuite(BenchTestSuite):
             if thread.is_alive():
                 consumer.stop()
                 thread.join(timeout=parameters.join_timeout_seconds)
+            background_errors = redis_background_errors(
+                runtime.client,
+                getattr(consumer, "consumer_backend", None),
+            )
+            validation_errors.extend(background_errors)
             if not thread.is_alive():
                 consumer.close()
             resources_retained = config.keep_resources or thread.is_alive()
@@ -237,6 +244,7 @@ class JobsConsumeCeilingSuite(BenchTestSuite):
                 "consume_api_calls": outcome.consume_calls,
                 "messages_per_second": stats.successes / elapsed if elapsed > 0 else 0.0,
                 "latency_kind": "consumer_callback",
+                "background_errors": background_errors,
                 "resources_retained": resources_retained,
                 "queue_name": runtime.queue_name if resources_retained else None,
             },

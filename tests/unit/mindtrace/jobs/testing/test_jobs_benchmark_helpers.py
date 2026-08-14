@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import mindtrace.jobs.testing.suites._common as common
-from mindtrace.jobs.testing.suites._common import WorkerStats, merge_worker_stats
+from mindtrace.jobs.redis.connection import RedisConnection
+from mindtrace.jobs.testing.suites._common import WorkerStats, merge_worker_stats, redis_background_errors
 from mindtrace.jobs.testing.suites.consume import _ConsumeOutcome, _consume_worker
 
 
@@ -119,3 +121,28 @@ def test_redis_worker_client_attaches_to_existing_queue(monkeypatch) -> None:
         durable=True,
         auto_delete=False,
     )
+
+
+def test_redis_background_errors_are_formatted_and_deduplicated() -> None:
+    connection = RedisConnection.__new__(RedisConnection)
+    connection._local_lock = threading.Lock()
+    connection._event_listener_error = RuntimeError("listener stopped")
+    connection.host = "redis.example"
+    connection.port = 6380
+    connection.db = 2
+    owner = SimpleNamespace(connection=connection)
+
+    assert redis_background_errors(owner, connection, owner) == [
+        "Redis event listener redis.example:6380/2 raised RuntimeError: listener stopped"
+    ]
+
+
+def test_redis_background_errors_ignore_healthy_and_non_redis_resources() -> None:
+    connection = RedisConnection.__new__(RedisConnection)
+    connection._local_lock = threading.Lock()
+    connection._event_listener_error = None
+    connection.host = "localhost"
+    connection.port = 6379
+    connection.db = 0
+
+    assert redis_background_errors(SimpleNamespace(connection=connection), MagicMock()) == []

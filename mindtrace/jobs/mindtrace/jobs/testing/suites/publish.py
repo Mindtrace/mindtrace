@@ -22,6 +22,7 @@ from mindtrace.jobs.testing.suites._common import (
     make_jobs,
     merge_worker_stats,
     payload_text,
+    redis_background_errors,
     validate_parameters,
     validate_resources,
     wait_for_deadline,
@@ -161,6 +162,7 @@ class JobsPublishCeilingSuite(BenchTestSuite):
         start_event = threading.Event()
         stop_event = threading.Event()
         validation_errors: list[str] = []
+        background_errors: list[str] = []
         resources_retained = config.keep_resources
         started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         measurement_start = time.perf_counter()
@@ -204,6 +206,8 @@ class JobsPublishCeilingSuite(BenchTestSuite):
             for thread in threads:
                 if thread.is_alive():
                     thread.join(timeout=parameters.join_timeout_seconds)
+            background_errors = redis_background_errors(runtime.client, *clients)
+            validation_errors.extend(background_errors)
             for client, thread in zip(clients, threads, strict=True):
                 if client is not runtime.client and not thread.is_alive():
                     close_backend_client(client)
@@ -232,6 +236,7 @@ class JobsPublishCeilingSuite(BenchTestSuite):
                 "messages_published": stats.successes,
                 "messages_per_second": stats.successes / elapsed if elapsed > 0 else 0.0,
                 "latency_kind": "publish_batch_api_call",
+                "background_errors": background_errors,
                 "resources_retained": resources_retained,
                 "queue_name": runtime.queue_name if resources_retained else None,
             },
