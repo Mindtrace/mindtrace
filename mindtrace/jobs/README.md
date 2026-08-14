@@ -454,6 +454,45 @@ Related examples in the repo:
 
 - [Simple orchestrator example](../../samples/jobs/orchestrator_simple.py)
 
+## Benchmarks
+
+The Jobs package registers benchmark suites with the `mindtrace-bench` CLI.
+The smoke profile runs an isolated Local publish/consume round trip for about
+one second:
+
+```bash
+$ uv run mindtrace-bench jobs --profile smoke
+```
+
+With RabbitMQ available at `localhost:5672` using the README setup credentials
+`user` / `password`, the stress profile runs each workload for about ten
+seconds:
+
+```bash
+$ uv run mindtrace-bench jobs --profile stress
+```
+
+The RabbitMQ stress suites report:
+
+- sustained batch publication throughput;
+- repeated public `consume(num_messages=1)` throughput, including per-call
+  connection and channel lifecycle;
+- steady `basic_get` pull throughput using one long finite consume call;
+- broker-pushed `basic_consume` throughput using bare blocking `consume()`;
+- end-to-end broker-pushed pipeline throughput and latency with one consumer;
+- the same pipeline workload with four independent consumers and connections.
+
+The three consume-ceiling suites use identical payload, backlog, prefetch, and
+ten-second defaults so their `messages_per_second` metrics can be compared
+directly. Each suite creates a uniquely named durable queue and removes it
+after the run unless `--keep-resources` is supplied.
+
+List the registered suite IDs without running them:
+
+```bash
+$ uv run mindtrace-bench jobs --profile stress --list
+```
+
 ## Testing
 
 If you are working in the full Mindtrace repo, run tests for this module specifically:

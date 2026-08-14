@@ -128,12 +128,14 @@ Tier 1 smoke suites verify local wiring and one end-to-end operation:
 - **`database.smoke.mongo_crud`** — Mongo ODM insert/get/update/find/delete.
 - **`registry.smoke.local_crud`** — local Registry save/load/delete.
 - **`datalake.smoke.local_object`** — local Datalake put/get/head object with Mongo metadata initialization.
+- **`jobs.smoke.round_trip`** — isolated Local publish/consume round trips for one second.
 
 Tier 2 stress suites are designed for overhead comparisons across layers and parameter sweeps such as concurrency, object size, backend, and local-vs-remote Mongo:
 
 - **Database**: **`database.stress.mongo_insert_ceiling`**, **`database.stress.mongo_read_ceiling`**, **`database.stress.mongo_update_ceiling`**.
 - **Registry**: **`registry.stress.write_ceiling`**, **`registry.stress.read_ceiling`**, **`registry.stress.mixed_rw`**, **`registry.stress.version_churn`**.
 - **Datalake**: **`datalake.stress.payload_write_ceiling`**, **`datalake.stress.payload_read_ceiling`**, **`datalake.stress.payload_mixed_rw`**, **`datalake.stress.mongo_insert_ceiling`**, **`datalake.stress.create_asset_from_object`**, **`datalake.stress.collection_item`**, **`datalake.stress.retention`**.
+- **Jobs**: RabbitMQ publication ceiling; iterative `consume(1)`, steady pull, and broker-push consume ceilings; and one-vs-four-consumer end-to-end pipeline scaling.
 
 Tier 3, intentionally left for a follow-on PR, should cover broader package areas and operational scenarios such as hardware packages, replication, large import sessions, and long-haul soak runs.
 
@@ -148,6 +150,7 @@ Each first-party wheel that ships benchmarks exposes **`mindtrace.<pkg>.testing`
 database = "mindtrace.database.testing:register_benchmark_suites"
 registry = "mindtrace.registry.testing:register_benchmark_suites"
 datalake = "mindtrace.datalake.testing:register_benchmark_suites"
+jobs = "mindtrace.jobs.testing:register_benchmark_suites"
 ```
 
 ---
