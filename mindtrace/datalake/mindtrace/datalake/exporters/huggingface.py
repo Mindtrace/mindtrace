@@ -45,14 +45,11 @@ def _classification_class_names(dataset: ExportableDataset) -> list[str]:
 
 def _detection_class_names(dataset: ExportableDataset) -> list[str]:
     configured = _configured_class_names(dataset, "detection")
+    if configured:
+        return configured
     labels = {
         annotation.label for item in dataset.items for annotation in item.annotations if annotation.kind == "bbox"
     }
-    if configured:
-        unknown = sorted(labels - set(configured))
-        if unknown:
-            raise ValueError(f"Detection annotations use labels missing from detection_class_names: {unknown}.")
-        return configured
     if not labels:
         raise ValueError("Detection export requires bbox annotations or dataset metadata detection_class_names.")
     return sorted(labels)
@@ -417,6 +414,7 @@ def _export_detection_dataset(
     class_ids = {name: index for index, name in enumerate(class_names)}
     features = _detection_features(datasets_module, class_names)
     rows_by_split: dict[str, list[dict[str, Any]]] = {}
+    annotation_count = 0
 
     for item in dataset.items:
         objects: dict[str, list[Any]] = {
@@ -432,6 +430,11 @@ def _export_detection_dataset(
         for annotation in item.annotations:
             if annotation.kind != "bbox":
                 continue
+            if annotation.label not in class_ids:
+                raise ValueError(
+                    f"Detection annotation {annotation.annotation_id!r} uses label {annotation.label!r}, "
+                    "which is missing from detection_class_names."
+                )
             geometry = annotation.geometry
             if geometry.get("type") != "bbox":
                 raise ValueError(f"Detection annotation {annotation.annotation_id!r} must use geometry type 'bbox'.")
@@ -449,6 +452,7 @@ def _export_detection_dataset(
             objects["difficult"].append(bool(attributes.get("difficult", False)))
             objects["truncated"].append(bool(attributes.get("truncated", False)))
             objects["occluded"].append(bool(attributes.get("occluded", False)))
+            annotation_count += 1
 
         split_name = item.split or "default"
         rows_by_split.setdefault(split_name, []).append(
@@ -469,7 +473,7 @@ def _export_detection_dataset(
         destination=destination,
         features=features,
         asset_count=dataset.asset_count,
-        annotation_count=sum(annotation.kind == "bbox" for item in dataset.items for annotation in item.annotations),
+        annotation_count=annotation_count,
     )
 
 
