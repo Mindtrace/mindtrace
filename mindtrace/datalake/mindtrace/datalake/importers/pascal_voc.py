@@ -483,6 +483,7 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
             },
             size_bytes=len(image_bytes),
             created_by=config.created_by,
+            on_conflict="overwrite",
         )
         image_asset_count += 1
 
@@ -521,6 +522,7 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
                 },
                 size_bytes=len(mask_bytes),
                 created_by=config.created_by,
+                on_conflict="overwrite",
             )
             asset_refs["semantic_mask"] = semantic_mask_asset.asset_id
             mask_asset_count += 1
