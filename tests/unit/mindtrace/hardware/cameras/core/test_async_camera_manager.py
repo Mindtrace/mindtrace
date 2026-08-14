@@ -403,6 +403,49 @@ async def test_reinit_replays_runtime_configure(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_apply_saved_config_updates_runtime_configure_for_reinit(monkeypatch, tmp_path):
+    """apply_saved_config must refresh runtime configure so reinit does not replay stale settings."""
+    import json
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    manager._max_consecutive_failures = 3
+    manager._reinitialization_cooldown = 0
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    async def failing_capture(self, save_path=None, output_format="pil"):
+        raise CameraConnectionError("simulated capture failure")
+
+    monkeypatch.setattr(
+        "mindtrace.hardware.cameras.core.async_camera.AsyncCamera.capture",
+        failing_capture,
+    )
+
+    with open(tmp_path / "imported.json", "w", encoding="utf-8") as f:
+        json.dump({"exposure_time": 15000}, f)
+    import_path = str(tmp_path / "imported.json")
+
+    try:
+        camera = await manager.open(name, test_connection=False)
+        assert await manager.configure_camera(name, {"exposure_time": 25000}) is True
+        assert await camera.get_exposure() == 25000
+        assert manager._runtime_configure[name] == {"exposure_time": 25000}
+
+        result = await manager.apply_saved_config(name, import_path)
+        assert result.success is True
+        assert await camera.get_exposure() == 15000
+        assert manager._runtime_configure[name] == {"exposure_time": 15000}
+
+        for _ in range(3):
+            await manager.batch_capture([name])
+
+        reopened = manager._cameras[name]
+        assert await reopened.get_exposure() == 15000
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_open_skips_restore_when_disabled_at_manager_level(tmp_path):
     """Manager-level policy can disable auto-restore on open."""
     manager = AsyncCameraManager(include_mocks=True, restore_saved_config_on_open=False)

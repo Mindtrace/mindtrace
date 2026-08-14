@@ -2,6 +2,7 @@
 
 from mindtrace.hardware.cameras.core.configuration import (
     ConfigurationApplyResult,
+    find_skipped_keys,
     normalize_settings,
     settings_to_camera_configuration_dict,
 )
@@ -56,3 +57,42 @@ def test_configuration_apply_result_success_property():
     assert ConfigurationApplyResult(applied=3, total=3).success is True
     assert ConfigurationApplyResult(applied=0, total=0).success is True
     assert ConfigurationApplyResult(applied=2, total=5).success is False
+    assert ConfigurationApplyResult(applied=0, total=0, skipped=("exposre_time",)).success is False
+    assert ConfigurationApplyResult(applied=1, total=1, skipped=("camera_type",)).success is True
+
+
+def test_find_skipped_keys_reports_unknown_top_level_keys():
+    data = {
+        "camera_type": "basler",
+        "timestamp": 1.0,
+        "exposure": 12000.0,
+        "triggermode": "trigger",
+    }
+
+    assert find_skipped_keys(data) == ("camera_type", "timestamp")
+
+
+def test_find_skipped_keys_reports_unknown_nested_settings_keys():
+    data = {
+        "camera_type": "basler",
+        "settings": {
+            "exposure": 12000.0,
+            "unknown_flag": True,
+        },
+    }
+
+    assert find_skipped_keys(data) == ("camera_type", "unknown_flag")
+
+
+def test_find_skipped_keys_treats_legacy_aliases_as_consumed():
+    data = {
+        "exposure": 12000.0,
+        "triggermode": "trigger",
+        "img_quality_enhancement": True,
+        "roi_x": 1,
+        "roi_y": 2,
+        "width": 640,
+        "height": 480,
+    }
+
+    assert find_skipped_keys(data) == ()

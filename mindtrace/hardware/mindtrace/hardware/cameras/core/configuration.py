@@ -53,11 +53,63 @@ class ConfigurationApplyResult:
     applied: int
     total: int
     failures: Dict[str, str] = field(default_factory=dict)
+    skipped: tuple[str, ...] = ()
 
     @property
     def success(self) -> bool:
-        return self.total == 0 or self.applied == self.total
+        """True when every recognized key applied and input was not exclusively unrecognized keys."""
+        if self.skipped and self.total == 0:
+            return False
+        return self.applied == self.total
 
+
+def find_skipped_keys(data: Dict[str, Any]) -> tuple[str, ...]:
+    """Return input keys that were not consumed by :func:`normalize_settings`.
+
+    Args:
+        data: Raw configure payload or legacy JSON dict.
+
+    Returns:
+        Tuple of key names present in the input but not mapped to a configurable setting.
+    """
+    if not isinstance(data, dict):
+        return ()
+
+    skipped: list[str] = []
+    if "settings" in data and isinstance(data.get("settings"), dict):
+        skipped.extend(key for key in data if key != "settings")
+
+    source = data.get("settings", data)
+    if not isinstance(source, dict):
+        return tuple(skipped)
+
+    consumed: set[str] = set()
+
+    if "exposure_time" in source:
+        consumed.add("exposure_time")
+    elif "exposure" in source:
+        consumed.add("exposure")
+
+    if "trigger_mode" in source:
+        consumed.add("trigger_mode")
+    elif "triggermode" in source:
+        consumed.add("triggermode")
+
+    if "image_enhancement" in source:
+        consumed.add("image_enhancement")
+    elif "img_quality_enhancement" in source:
+        consumed.add("img_quality_enhancement")
+
+    if "roi" in source:
+        consumed.add("roi")
+    elif all(key in source for key in ("roi_x", "roi_y", "width", "height")):
+        consumed.update(("roi_x", "roi_y", "width", "height"))
+
+    passthrough_keys = set(CONFIGURABLE_KEYS) - {"exposure_time", "trigger_mode", "image_enhancement", "roi"}
+    consumed.update(key for key in passthrough_keys if key in source)
+
+    skipped.extend(key for key in source if key not in consumed)
+    return tuple(skipped)
 
 def _normalize_roi(value: Any) -> Optional[Tuple[int, int, int, int]]:
     if value is None:

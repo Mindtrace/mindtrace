@@ -16,7 +16,7 @@ from mindtrace.hardware.cameras.core.capture_groups import (
     get_semaphore_for_capture,
     validate_stage_set_configs,
 )
-from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult
+from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult, normalize_settings
 from mindtrace.hardware.core.exceptions import (
     CameraConfigurationError,
     CameraConnectionError,
@@ -812,7 +812,10 @@ class AsyncCameraManager(Mindtrace):
         if not path.exists():
             raise CameraConfigurationError(f"Configuration file not found: {path}")
         raw_config = json.loads(path.read_text(encoding="utf-8"))
-        return await self._cameras[camera_name].configure(**raw_config)
+        result = await self._cameras[camera_name].configure(**raw_config)
+        if result.success and result.total > 0:
+            self._merge_runtime_configure(camera_name, normalize_settings(raw_config))
+        return result
 
     async def persist_camera_config(self, camera_name: str, config_path: Optional[str] = None) -> str:
         """Export current camera settings to a JSON file.

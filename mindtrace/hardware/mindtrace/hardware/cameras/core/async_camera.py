@@ -11,6 +11,7 @@ from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
 from mindtrace.hardware.cameras.core.configuration import (
     CONFIGURABLE_KEYS,
     ConfigurationApplyResult,
+    find_skipped_keys,
     normalize_settings,
 )
 from mindtrace.hardware.core.exceptions import (
@@ -323,8 +324,9 @@ class AsyncCamera(Mindtrace):
                 Legacy aliases (``exposure``, ``triggermode``, etc.) are normalized.
 
         Returns:
-            ConfigurationApplyResult with applied/total counts.
+            ConfigurationApplyResult with applied/total counts and any skipped keys.
         """
+        skipped = find_skipped_keys(settings)
         normalized = normalize_settings(settings)
         applied = 0
         total = 0
@@ -332,6 +334,10 @@ class AsyncCamera(Mindtrace):
 
         async with self._lock:
             self.logger.debug(f"Configuring camera '{self._full_name}' with settings: {normalized}")
+            if skipped:
+                self.logger.warning(
+                    f"Skipped unrecognized configuration keys for camera '{self._full_name}': {skipped}"
+                )
             for key in CONFIGURABLE_KEYS:
                 if key not in normalized:
                     continue
@@ -345,7 +351,7 @@ class AsyncCamera(Mindtrace):
                     self.logger.warning(f"Could not set '{key}' for camera '{self._full_name}': {exc}")
 
         self.logger.debug(f"Configuration completed for camera '{self._full_name}': {applied}/{total} settings applied")
-        return ConfigurationApplyResult(applied=applied, total=total, failures=failures)
+        return ConfigurationApplyResult(applied=applied, total=total, failures=failures, skipped=skipped)
 
     async def _apply_config_key(self, key: str, value: Any) -> None:
         """Apply a single normalized configuration key."""
@@ -429,13 +435,7 @@ class AsyncCamera(Mindtrace):
         if key == "pixel_format":
             return await self._backend.get_current_pixel_format()
         if key == "white_balance":
-            try:
-                return await self._backend.get_white_balance()
-            except Exception:
-                if hasattr(self._backend, "get_opencv_properties"):
-                    props = await self._backend.get_opencv_properties()
-                    return props.get("white_balance")
-                raise
+            return await self._backend.get_wb()
         if key == "image_enhancement":
             return self._backend.get_image_quality_enhancement()
         if key == "optical_power":

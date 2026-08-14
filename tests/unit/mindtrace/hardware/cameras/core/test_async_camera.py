@@ -859,3 +859,37 @@ async def test_async_camera_additional_methods():
 
     finally:
         await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_get_configuration_includes_white_balance_from_backend():
+    """get_configuration() must read white balance via backend get_wb(), not get_white_balance()."""
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        expected_wb = await cam.get_white_balance()
+        config = await cam.get_configuration()
+
+        assert "white_balance" in config
+        assert config["white_balance"] == expected_wb
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_configure_reports_skipped_unknown_keys():
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        result = await cam.configure(exposre_time=15000, camera_type="basler")
+
+        assert result.skipped == ("exposre_time", "camera_type")
+        assert result.total == 0
+        assert result.applied == 0
+        assert result.success is False
+    finally:
+        await manager.close(None)
