@@ -331,19 +331,19 @@ class TestServiceConfigurationOperations:
     @pytest.mark.asyncio
     async def test_configure_single_camera(self, camera_service, mock_camera_manager):
         """Test configuring a single camera through service."""
-        # Setup mock camera
         mock_proxy = AsyncMock()
-        mock_proxy.configure.return_value = True
         mock_camera_manager.active_cameras = {"MockBasler:TestCam1": mock_proxy}
         mock_camera_manager.open.return_value = mock_proxy
+        mock_camera_manager.configure_camera = AsyncMock(return_value=True)
 
+        properties = {
+            "exposure": 2000,
+            "gain": 5.0,
+            "trigger_mode": "continuous",
+        }
         request = CameraConfigureRequest(
             camera="MockBasler:TestCam1",
-            properties={
-                "exposure": 2000,
-                "gain": 5.0,
-                "trigger_mode": "continuous",
-            },
+            properties=properties,
         )
         result = await camera_service.configure_camera(request)
 
@@ -351,46 +351,33 @@ class TestServiceConfigurationOperations:
         assert result.success is True
         assert result.data is True
 
-        # Verify configuration was called
-        mock_proxy.configure.assert_called_once()
-        call_kwargs = mock_proxy.configure.call_args[1]
-        assert call_kwargs["exposure"] == 2000
-        assert call_kwargs["gain"] == 5.0
-        assert call_kwargs["trigger_mode"] == "continuous"
+        mock_camera_manager.configure_camera.assert_awaited_once_with("MockBasler:TestCam1", properties)
 
     @pytest.mark.asyncio
     async def test_configure_roi(self, camera_service, mock_camera_manager):
         """Test configuring ROI through service."""
-        # Setup mock camera
         mock_proxy = AsyncMock()
-        mock_proxy.configure.return_value = True
         mock_camera_manager.active_cameras = {"MockBasler:TestCam1": mock_proxy}
         mock_camera_manager.open.return_value = mock_proxy
+        mock_camera_manager.configure_camera = AsyncMock(return_value=True)
 
+        properties = {"roi": [0, 0, 640, 480]}  # x, y, width, height
         request = CameraConfigureRequest(
             camera="MockBasler:TestCam1",
-            properties={
-                "roi": [0, 0, 640, 480],  # x, y, width, height
-            },
+            properties=properties,
         )
         result = await camera_service.configure_camera(request)
 
         assert result.success is True
-
-        # Verify ROI was passed
-        mock_proxy.configure.assert_called_once()
-        call_kwargs = mock_proxy.configure.call_args[1]
-        assert "roi" in call_kwargs
-        assert call_kwargs["roi"] == [0, 0, 640, 480]
+        mock_camera_manager.configure_camera.assert_awaited_once_with("MockBasler:TestCam1", properties)
 
     @pytest.mark.asyncio
     async def test_configure_invalid_parameters(self, camera_service, mock_camera_manager):
         """Test configuration with invalid parameters."""
-        # Setup mock camera that rejects config
         mock_proxy = AsyncMock()
-        mock_proxy.configure.side_effect = CameraConfigurationError("Invalid exposure value")
         mock_camera_manager.active_cameras = {"MockBasler:TestCam1": mock_proxy}
         mock_camera_manager.open.return_value = mock_proxy
+        mock_camera_manager.configure_camera = AsyncMock(side_effect=CameraConfigurationError("Invalid exposure value"))
 
         request = CameraConfigureRequest(
             camera="MockBasler:TestCam1",

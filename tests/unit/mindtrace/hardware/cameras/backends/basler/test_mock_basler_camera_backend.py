@@ -78,9 +78,6 @@ async def temp_config_file():
             "roi": {"x": 0, "y": 0, "width": 1920, "height": 1080},
             "pixel_format": "BGR8",
             "image_enhancement": True,
-            "retrieve_retry_count": 3,
-            "timeout_ms": 5000,
-            "buffer_count": 25,
         }
         json.dump(config_data, f, indent=2)
         temp_path = f.name
@@ -132,6 +129,32 @@ async def test_configuration_compatibility(mock_basler_camera, temp_config_file)
 
 
 @pytest.mark.asyncio
+async def test_import_config_ignores_manager_owned_keys(mock_basler_camera, tmp_path):
+    """Legacy profiles may contain manager-owned keys; import_config must ignore them."""
+    camera = mock_basler_camera
+    await camera.initialize()
+    camera.timeout_ms = 9000
+    camera.retrieve_retry_count = 7
+
+    config_path = tmp_path / "legacy_profile.json"
+    with open(config_path, "w") as f:
+        json.dump(
+            {
+                "exposure_time": 12000.0,
+                "timeout_ms": 2000,
+                "retrieve_retry_count": 1,
+                "buffer_count": 10,
+            },
+            f,
+        )
+
+    await camera.import_config(str(config_path))
+    assert await camera.get_exposure() == 12000.0
+    assert camera.timeout_ms == 9000
+    assert camera.retrieve_retry_count == 7
+
+
+@pytest.mark.asyncio
 async def test_common_format_export(mock_basler_camera):
     camera = mock_basler_camera
     await camera.initialize()
@@ -151,6 +174,9 @@ async def test_common_format_export(mock_basler_camera):
         assert config["gain"] == 4.0
         assert config["trigger_mode"] == "trigger"
         assert config["image_enhancement"] is True
+        assert "timeout_ms" not in config
+        assert "retrieve_retry_count" not in config
+        assert "buffer_count" not in config
     finally:
         os.unlink(export_path)
 

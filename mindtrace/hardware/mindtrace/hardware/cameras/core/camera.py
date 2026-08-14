@@ -394,7 +394,7 @@ class Camera(Mindtrace):
         """Set focus/autofocus parameters."""
         self._submit(self._backend.set_focus_config(**settings))
 
-    def save_config(self, path: str) -> bool:
+    def export_config(self, path: str) -> bool:
         """Export current camera configuration to a file via backend.
 
         Args:
@@ -406,13 +406,16 @@ class Camera(Mindtrace):
         self._submit(self._backend.export_config(path))
         return True
 
-    def load_config(self, path: str):
+    def import_config(self, path: str) -> Tuple[int, int]:
         """Import camera configuration from a file via backend.
 
         Args:
             path: Configuration file path (backend-specific JSON).
+
+        Returns:
+            Tuple of (applied_settings, total_settings) from the backend import.
         """
-        self._submit(self._backend.load_config(path))
+        return self._submit(self._backend.import_config(path))
 
     def check_connection(self) -> bool:
         """Check whether the backend connection is healthy.
