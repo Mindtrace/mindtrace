@@ -103,7 +103,7 @@ def test_consume_until_empty_aborts_when_consuming_channel_makes_no_progress():
 
 
 @pytest.mark.rabbitmq
-def test_blocking_consume_polls_later_queue_when_first_queue_is_empty():
+def test_push_consume_processes_later_queue_after_poison_and_stops():
     processed = threading.Event()
 
     class StopAfterOneConsumer(SampleConsumer):
@@ -119,6 +119,7 @@ def test_blocking_consume_polls_later_queue_when_first_queue_is_empty():
     ready_queue = unique_queue("consumer-ready-second")
     orchestrator.register(JobSchema(name=empty_queue, input_schema=SampleJobInput, output_schema=SampleJobOutput))
     orchestrator.register(JobSchema(name=ready_queue, input_schema=SampleJobInput, output_schema=SampleJobOutput))
+    client.channel.basic_publish(exchange="default", routing_key=ready_queue, body=b"not-json")
     orchestrator.publish(ready_queue, create_test_job("ready", ready_queue))
 
     consumer = StopAfterOneConsumer(empty_queue)
@@ -131,6 +132,7 @@ def test_blocking_consume_polls_later_queue_when_first_queue_is_empty():
         thread.join(timeout=5)
 
         assert thread.is_alive() is False
+        assert consumer.consumer_backend.closed is False
         assert [job["name"] for job in consumer.processed_jobs] == ["ready"]
         assert client.count_queue_messages(empty_queue) == 0
         assert client.count_queue_messages(ready_queue) == 0
