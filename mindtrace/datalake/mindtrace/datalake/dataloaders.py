@@ -170,6 +170,7 @@ class HuggingFaceDetectionDataset:
             "labels": torch.tensor([obj["category"] for obj in objects], dtype=torch.long),
             "area": torch.tensor([obj["area"] for obj in objects], dtype=torch.float32),
             "iscrowd": torch.zeros(len(objects), dtype=torch.long),
+            "difficult": torch.tensor([bool(obj.get("difficult", False)) for obj in objects], dtype=torch.bool),
         }
         if self.transform is not None:
             image, target = self.transform(image, target)
