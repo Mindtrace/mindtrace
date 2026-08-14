@@ -15,6 +15,12 @@ The `Jobs` module provides Mindtrace’s backend-agnostic job queue system for p
 - **Queue variants** including FIFO, stack, and priority queues
 - **Convenient job creation** with `job_from_schema()`
 
+## Installation
+
+```bash
+pip install mindtrace-jobs
+```
+
 ## Quick Start
 
 ```python
@@ -103,6 +109,8 @@ their own optimized `publish_batch()` implementation. RabbitMQ publisher confirm
 are not enabled, so returned job IDs represent calls that completed without a
 synchronous publish error rather than broker-confirmed acceptance. A later
 asynchronous broker rejection may not map precisely to the reported input index.
+The returned IDs are backend-generated publication IDs and are not guaranteed to
+match the `Job.id` field in the message body.
 
 In practice, the jobs package is built around four concepts:
 
@@ -200,15 +208,27 @@ Then connect the consumer to an orchestrator and start consuming:
 ```python
 consumer = ReportConsumer()
 consumer.connect_to_orchestrator(orchestrator, "build_report")
-consumer.consume(num_messages=1)
+attempted = consumer.consume(num_messages=1)
+print(attempted)
 ```
+
+`consume()` returns the number of deliveries attempted, not the number that
+completed successfully. Consumer backends use the success or failure of
+`run()` to apply their failure policy, but they do not persist or return the
+dictionary returned by `run()`. Store results explicitly if your application
+needs them.
 
 With RabbitMQ, messages are acknowledged only after `run()` succeeds. Failed
 messages are dead-lettered by default (`basic_nack(requeue=False)`); when the
-queue has no dead-letter exchange, RabbitMQ discards them. `REQUEUE` retries a
-failed delivery once, then dead-letters it if it fails again. RabbitMQ reports
-the prior delivery through its `redelivered` flag, so no message retry counter
-is required:
+queue has no dead-letter exchange, RabbitMQ discards them. The Jobs package does
+not create a dead-letter exchange or queue automatically; configure those on
+the RabbitMQ queue before relying on dead-letter routing.
+
+`REQUEUE` requeues a failed delivery when RabbitMQ has not already marked it as
+redelivered. A failure on a delivery whose broker `redelivered` flag is already
+set is rejected with `requeue=False`. That flag may also be set after a prior
+worker or connection loss, so it is broker delivery history rather than a
+dedicated processing-attempt counter:
 
 ```python
 from mindtrace.jobs import ConsumerFailurePolicy
@@ -232,7 +252,7 @@ provide.
 
 Calling `consumer.stop()` requests graceful shutdown. An in-flight job finishes
 and is acknowledged or rejected before the blocking consume loop exits. The
-stop request is terminal: later consume calls remain stopped until the caller
+stop request is latched: later consume calls remain stopped until the caller
 explicitly invokes `consumer.reset()`. Calls made while stopped return before
 backend setup and log that an explicit reset is required.
 RabbitMQ channels and connections close automatically whenever `consume()`
@@ -240,8 +260,9 @@ returns; a later call reconnects.
 
 `consume(..., block=True)` waits indefinitely until the requested number of
 messages has been attempted, shutdown is requested, or the caller interrupts
-the operation. With `block=False`, consumption returns as soon as no message is
-immediately available, even if the requested count has not been reached.
+the operation. `num_messages=0` means to continue indefinitely. With
+`block=False`, consumption returns as soon as no message is immediately
+available, even if the requested count has not been reached.
 `consume_until_empty()` drains only currently available RabbitMQ messages and
 does not wait for new work to arrive.
 
@@ -353,11 +374,22 @@ backend.declare_queue("stack_tasks", queue_type="stack")
 
 ### Priority queue
 
+Higher numeric values are consumed first.
+
 ```python
 backend.declare_queue("priority_tasks", queue_type="priority")
+
+priority_job = job_from_schema(schema, ReportInput(report_id="rpt-urgent"))
+background_job = job_from_schema(schema, ReportInput(report_id="rpt-background"))
+
 orchestrator.publish("priority_tasks", priority_job, priority=100)
 orchestrator.publish("priority_tasks", background_job, priority=10)
 ```
+
+Local priority queues preserve publish order when priorities are equal. Redis
+currently preserves duplicate payloads but does not guarantee FIFO ordering for
+equal-priority jobs; that follow-up is tracked in
+[#536](https://github.com/Mindtrace/mindtrace/issues/536).
 
 ### RabbitMQ priority queues
 
@@ -372,6 +404,7 @@ Then publish with a priority value:
 
 ```python
 orchestrator = Orchestrator(backend)
+job = job_from_schema(schema, ReportInput(report_id="rpt-priority"))
 orchestrator.publish("rabbitmq_priority", job, priority=255)
 ```
 
@@ -408,7 +441,6 @@ $ docker run -d --name rabbitmq \
 Related examples in the repo:
 
 - [Simple orchestrator example](../../samples/jobs/orchestrator_simple.py)
-- [Jobs demo sample](../../samples/jobs/sample_jobs_demo.py)
 
 ## Testing
 
@@ -416,7 +448,7 @@ If you are working in the full Mindtrace repo, run tests for this module specifi
 
 ```bash
 $ git clone https://github.com/Mindtrace/mindtrace.git && cd mindtrace
-$ uv sync --dev --all-extras
+$ uv sync --dev
 $ ds test: jobs
 $ ds test: --unit jobs
 ```
@@ -425,6 +457,7 @@ $ ds test: --unit jobs
 
 - `JobSchema` is currently an alias of `TaskSchema`, so older naming in the jobs package may reflect that transition.
 - Consumers operate on `job_dict` payloads, so your `run()` implementation should be defensive about the shape it expects.
+- Consumer `run()` return values are not validated against `output_schema` or stored by the consumer backends.
 - Local, Redis, and RabbitMQ backends expose similar high-level workflows, but their queue semantics and operational requirements differ.
 - Redis and RabbitMQ require external services; the local backend is the simplest place to start.
 - Priority queue support exists across backends, but the declaration model differs for RabbitMQ vs. local/Redis backends.
