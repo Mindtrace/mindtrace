@@ -707,3 +707,27 @@ def test_semantic_dataset_reads_constants_without_decoding_first_sample(monkeypa
     assert dataset.class_names == ("background", "person")
     assert dataset.background_id == 0
     assert dataset.ignore_index == 255
+
+
+def test_build_datasets_dispatches_to_caller_supplied_task_profile(monkeypatch):
+    split_dataset = _FakeSplitDataset([{"custom": "value"}], column_names=["custom"], features={})
+    payload = _FakeDatasetDict(train=split_dataset)
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+    calls = []
+
+    def build_custom_profile(dataset, *, split, transform):
+        calls.append((dataset, split, transform))
+        return "custom-dataset"
+
+    built = dataloaders.build_datasets(
+        "/export",
+        task="custom",
+        task_profiles={"custom": build_custom_profile},
+    )
+
+    assert built == {"train": "custom-dataset"}
+    assert calls == [(split_dataset, "train", None)]

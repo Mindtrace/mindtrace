@@ -533,3 +533,154 @@ def test_huggingface_instance_segmentation_export_writes_typed_objects(tmp_path:
         "asset_img-instance_1.png",
         "asset_img-instance_2.png",
     ]
+
+
+def test_huggingface_export_consumes_rows_through_streaming_constructor(tmp_path: Path, monkeypatch):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+    from mindtrace.datalake.types import AnnotationRecord
+
+    class _StreamingOnlyDataset(_FakeDataset):
+        @classmethod
+        def from_list(cls, rows, features=None):
+            raise AssertionError("export must not materialize all rows before Arrow construction")
+
+        @classmethod
+        def from_generator(cls, generator, features=None):
+            rows = generator() if callable(generator) else generator
+            return cls(list(rows), features=features)
+
+    fake_module = _fake_datasets_module()
+    fake_module.Dataset = _StreamingOnlyDataset
+    monkeypatch.setattr(huggingface_exporter.importlib, "import_module", lambda name: fake_module)
+    dataset = ExportableDataset(
+        name="streamed-classification",
+        metadata={"classification_class_names": ["healthy"]},
+        items=[
+            ExportableItem(
+                asset=sample_asset(),
+                payload_bytes=png_bytes(),
+                annotations=[
+                    AnnotationRecord(
+                        annotation_id="classification-1",
+                        kind="classification",
+                        label="healthy",
+                        label_id=0,
+                        source={"type": "human", "name": "pytest"},
+                    )
+                ],
+            )
+        ],
+    )
+
+    result = export_dataset_as_huggingface(
+        dataset,
+        destination=tmp_path / "streamed-hf",
+        options={"task": "classification"},
+    )
+
+    assert result.asset_count == 1
+    assert (tmp_path / "streamed-hf" / "dataset.json").exists()
+
+
+def test_huggingface_detection_export_traverses_items_once_for_rows_and_counts(tmp_path: Path, monkeypatch):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+    from mindtrace.datalake.types import AnnotationRecord
+
+    class _CountingItems(list):
+        def __init__(self, values):
+            super().__init__(values)
+            self.iterations = 0
+
+        def __iter__(self):
+            self.iterations += 1
+            return super().__iter__()
+
+    monkeypatch.setattr(
+        huggingface_exporter.importlib,
+        "import_module",
+        lambda name: _fake_datasets_module(),
+    )
+    item = ExportableItem(
+        asset=sample_asset(),
+        payload_bytes=png_bytes(),
+        annotations=[
+            AnnotationRecord(
+                annotation_id="detection-1",
+                kind="bbox",
+                label="person",
+                label_id=1,
+                geometry={"type": "bbox", "x": 0, "y": 0, "width": 1, "height": 1},
+                source={"type": "human", "name": "pytest"},
+            )
+        ],
+    )
+    items = _CountingItems([item])
+    dataset = ExportableDataset.model_construct(
+        name="counted-detection",
+        metadata={"detection_class_names": ["person"]},
+        items=items,
+        warnings=[],
+    )
+
+    result = export_dataset_as_huggingface(
+        dataset,
+        destination=tmp_path / "counted-hf",
+        options={"task": "detection"},
+    )
+
+    assert result.annotation_count == 1
+    assert items.iterations == 1
+
+
+def test_instance_mask_export_does_not_use_deprecated_per_pixel_pillow_iteration(tmp_path: Path, monkeypatch):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+    from mindtrace.datalake.types import AnnotationRecord
+
+    monkeypatch.setattr(
+        huggingface_exporter.importlib,
+        "import_module",
+        lambda name: _fake_datasets_module(),
+    )
+
+    def reject_getdata(_image):
+        raise AssertionError("instance-mask export must use a vectorized pixel path")
+
+    monkeypatch.setattr(Image.Image, "getdata", reject_getdata)
+    mask_asset = sample_asset()
+    mask_asset.asset_id = "instance_mask_asset"
+    mask_asset.kind = "mask"
+    dataset = ExportableDataset(
+        name="penn-fudan",
+        metadata={
+            "task_type": "instance_segmentation",
+            "instance_segmentation_class_names": ["background", "person"],
+        },
+        items=[
+            ExportableItem(
+                asset=sample_asset(),
+                payload_bytes=png_bytes(),
+                related_assets={"instance_mask": mask_asset},
+                related_payload_bytes={"instance_mask": _indexed_instance_mask_bytes()},
+                annotations=[
+                    AnnotationRecord(
+                        annotation_id="instance-1",
+                        kind="instance_mask",
+                        label="person",
+                        label_id=1,
+                        geometry={"mask_asset_id": "instance_mask_asset", "instance_id": 1},
+                        attributes={"iscrowd": False},
+                        source={"type": "human", "name": "pytest"},
+                    )
+                ],
+            )
+        ],
+    )
+
+    result = export_dataset_as_huggingface(
+        dataset,
+        destination=tmp_path / "instance-without-media",
+        include_media=False,
+        options={"task": "instance_segmentation"},
+    )
+
+    assert result.annotation_count == 1
