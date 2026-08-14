@@ -9,6 +9,23 @@ from mindtrace.core.testing.runner import TestRunner
 from mindtrace.core.utils.time import utcnow
 
 
+def _format_bench_summary(summary: dict) -> str:
+    """Format one benchmark result with its directly comparable throughput."""
+
+    line = (
+        f"{summary['suite_id']}: {summary['status']} "
+        f"ops={summary['operations']} failures={summary['failures']} "
+        f"rate={summary['throughput_ops_per_second']:.2f} ops/s "
+        f"duration={summary['duration_seconds']:.2f}s"
+    )
+    if summary.get("error_counts"):
+        line += f" errors={summary['error_counts']}"
+    metrics = summary.get("metrics") or {}
+    if metrics.get("last_error_type"):
+        line += f" last_error={metrics['last_error_type']}: {metrics.get('last_error_message', '')}"
+    return line
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run installed Mindtrace benchmark suites.")
     parser.add_argument(
@@ -67,14 +84,7 @@ def main(argv: list[str] | None = None) -> int:
 
     suite_failures = sum(1 for row in exec_rows if row.status != "passed")
     for row in bench_results:
-        summary = row.to_dict()
-        line = f"{summary['suite_id']}: {summary['status']} ops={summary['operations']} failures={summary['failures']}"
-        if summary.get("error_counts"):
-            line += f" errors={summary['error_counts']}"
-        metrics = summary.get("metrics") or {}
-        if metrics.get("last_error_type"):
-            line += f" last_error={metrics['last_error_type']}: {metrics.get('last_error_message', '')}"
-        print(line)
+        print(_format_bench_summary(row.to_dict()))
 
     return 1 if suite_failures else 0
 
