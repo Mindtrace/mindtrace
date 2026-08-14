@@ -852,7 +852,7 @@ class TestCloseOnProof:
         read_driver = FakeLogixDriver(read_error=comm)
         plc = _allen_bradley(read_driver, FakeLogixDriver())
 
-        with pytest.raises(PLCCommunicationError):
+        with pytest.raises(PLCTimeoutError, match="Read timed out after"):
             await plc.read_tag(["Tag1"])
 
         assert read_driver.connected is False
@@ -1038,53 +1038,119 @@ class TestAllenBradleyChannelLifecycle:
         # The failed reopen closed the replacement rather than leaking it.
         assert dead.connected is False
 
-    async def test_timeout_knobs_bound_the_exchange_not_just_the_config(self, monkeypatch):
-        """Behavior, not assignment: pycomm3's socket_timeout setter only writes
-        config, so the per-channel knob must be enforced at this layer. A read
-        that outlives ``read_timeout`` raises typed and closes the channel."""
+    async def test_the_channel_knob_is_the_socket_deadline_at_open(self, monkeypatch):
+        """pycomm3 applies socket_timeout exactly once, when open() constructs the
+        Socket - so the value present AT open is the live deadline. Each channel
+        opens with its own knob; connection_timeout is out of the channel path."""
+
+        class SnapshottingDriver(FakeLogixDriver):
+            def open(self):
+                self.timeout_at_open = self.socket_timeout
+                return super().open()
+
+        dead_read = FakeLogixDriver(read_error=_socket_death_comm_error())
+        dead_write = FakeLogixDriver(write_error=_socket_death_comm_error())
+        replacements = [
+            SnapshottingDriver(read_results=[_tag(value=1)]),
+            SnapshottingDriver(write_results=[_tag(value=1)]),
+        ]
+        monkeypatch.setattr(ab_module, "LogixDriver", lambda ip_address: replacements.pop(0))
+        plc = _allen_bradley(dead_read, dead_write)
+        plc.connection_timeout = 9.0
+        plc.read_timeout = 2.5
+        plc.write_timeout = 3.5
+
+        with pytest.raises(PLCCommunicationError):
+            await plc.read_tag(["Tag1"])  # closes the read channel
+        await plc.read_tag(["Tag1"])  # entry reopen applies the read knob
+        with pytest.raises(PLCCommunicationError):
+            await plc.write_tag([("Tag1", 1)])
+        await plc.write_tag([("Tag1", 1)])
+
+        assert plc._read_driver.timeout_at_open == 2.5
+        assert plc._write_driver.timeout_at_open == 3.5
+
+    async def test_a_socket_deadline_timeout_is_typed_and_closes_the_channel(self):
+        """The NORMAL timeout path: the driver's own deadline fires on the worker
+        thread as a CommError chained from TimeoutError - the thread is finished,
+        so the close is single-threaded and safe, and the label is the finer
+        PLCTimeoutError."""
+        comm = CommError("failed to receive reply")
+        comm.__cause__ = TimeoutError("timed out")
+        write_driver = FakeLogixDriver(write_error=comm)
+        plc = _allen_bradley(FakeLogixDriver(), write_driver)
+
+        with pytest.raises(PLCTimeoutError, match="Write timed out after"):
+            await plc.write_tag([("Tag1", 1)])
+
+        assert write_driver.connected is False
+
+    async def test_backstop_expiry_abandons_the_driver_without_touching_it(self, monkeypatch):
+        """When even the socket deadline fails to fire (a dripping reply), the
+        worker thread is still INSIDE the driver: the channel is swapped out
+        untouched - never closed from a second thread - and a fresh driver
+        opens at the next entry."""
         import time as _time
 
         stalled = FakeLogixDriver(read_results=[_tag(value=1)])
         original_read = stalled.read
+        close_calls = []
+        stalled.close = lambda: close_calls.append(True)
 
         def _slow_read(*addresses):
-            _time.sleep(0.2)  # blocks the worker thread, like a silent controller
+            _time.sleep(1.5)  # outlives the 0.02 * 1.5 + 1 backstop
             return original_read(*addresses)
 
         stalled.read = _slow_read
+        replacement = FakeLogixDriver(read_results=[_tag(value=42)])
+        monkeypatch.setattr(ab_module, "LogixDriver", lambda ip_address: replacement)
         plc = _allen_bradley(stalled, FakeLogixDriver())
-        plc.read_timeout = 0.05
+        plc.read_timeout = 0.02
 
-        started = _time.monotonic()
-        # PLCTimeoutError subclasses PLCCommunicationError: same contract, finer label.
-        with pytest.raises(PLCTimeoutError, match="timed out after 0.05s"):
+        with pytest.raises(PLCTimeoutError, match="backstop"):
             await plc.read_tag(["Tag1"])
-        elapsed = _time.monotonic() - started
 
-        assert elapsed < 0.19  # the knob cut the call short, not the sleep
-        assert stalled.connected is False  # a late reply must not answer the next request
+        assert close_calls == []  # never called into the live-thread driver
+        assert stalled.connected is True  # untouched
+        assert plc._read_driver is not stalled  # abandoned
 
-    async def test_write_timeout_is_the_write_channels_knob(self):
-        """The channels' knobs are independent: a stalled write is cut by
-        write_timeout even when read_timeout is generous."""
+        results = await plc.read_tag(["Tag1"])  # entry opens a FRESH driver
+        assert results["Tag1"].value == 42
+        assert plc._read_driver is replacement
+
+    async def test_caller_cancellation_abandons_the_channel(self, monkeypatch):
+        """Cancellation mid-exchange (a plan push cancelling the poll task, an
+        HTTP client disconnecting) leaves a live thread inside the driver;
+        reusing that driver would interleave two exchanges on one socket, so
+        the channel is abandoned and the next call opens a fresh driver."""
+        import threading
         import time as _time
 
-        stalled = FakeLogixDriver(write_results=[_tag(value=1)])
-        original_write = stalled.write
+        stalled = FakeLogixDriver(read_results=[_tag(value=1)])
+        original_read = stalled.read
+        entered = threading.Event()
 
-        def _slow_write(*writes):
-            _time.sleep(0.2)
-            return original_write(*writes)
+        def _slow_read(*addresses):
+            entered.set()
+            _time.sleep(0.3)
+            return original_read(*addresses)
 
-        stalled.write = _slow_write
-        plc = _allen_bradley(FakeLogixDriver(), stalled)
-        plc.read_timeout = 30.0
-        plc.write_timeout = 0.05
+        stalled.read = _slow_read
+        replacement = FakeLogixDriver(read_results=[_tag(value=42)])
+        monkeypatch.setattr(ab_module, "LogixDriver", lambda ip_address: replacement)
+        plc = _allen_bradley(stalled, FakeLogixDriver())
 
-        with pytest.raises(PLCTimeoutError, match="Write timed out after 0.05s"):
-            await plc.write_tag([("Tag1", 1)])
+        task = asyncio.create_task(plc.read_tag(["Tag1"]))
+        assert await asyncio.to_thread(entered.wait, 1.0)  # worker is inside driver.read
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
-        assert stalled.connected is False
+        assert stalled.connected is True  # never touched
+        assert plc._read_driver is not stalled  # abandoned
+
+        results = await plc.read_tag(["Tag1"])  # lock is free; a fresh driver serves
+        assert results["Tag1"].value == 42
 
     async def test_an_open_that_raises_does_not_leak_the_driver(self, monkeypatch):
         read_driver = FakeLogixDriver(read_error=_socket_death_comm_error())

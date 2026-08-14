@@ -10,6 +10,7 @@ share a socket.
 
 import asyncio
 import time
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
 from mindtrace.hardware.core.exceptions import (
@@ -48,6 +49,23 @@ except ImportError:
     PYCOMM3_ERRORS = ()
     PYCOMM3_EXCHANGE_ERRORS = (OSError,)
     PYCOMM3_TAG_ERRORS = ()
+
+
+# Stand-in for a driver whose worker thread never returned: the real one must
+# never be called into again; ``connected`` False makes the next entry open fresh.
+_ABANDONED_DRIVER = SimpleNamespace(connected=False, close=lambda: None)
+
+
+def _chain_has_timeout(error: Any) -> bool:
+    """LABEL selector only - policy is identical (the channel closes either way);
+    this just picks PLCTimeoutError over PLCCommunicationError for the caller."""
+    seen: set = set()
+    while error is not None and id(error) not in seen:
+        if isinstance(error, TimeoutError):
+            return True
+        seen.add(id(error))
+        error = error.__cause__ or error.__context__
+    return False
 
 
 class AllenBradleyPLC(BasePLC):
@@ -204,6 +222,7 @@ class AllenBradleyPLC(BasePLC):
         # Try LogixDriver first (most common)
         try:
             test_plc = await asyncio.to_thread(LogixDriver, self.ip_address)
+            test_plc.socket_timeout = self.connection_timeout
             connection_result = await asyncio.to_thread(test_plc.open)
             if connection_result:
                 await asyncio.to_thread(test_plc.close)
@@ -215,6 +234,7 @@ class AllenBradleyPLC(BasePLC):
         # Try SLCDriver
         try:
             test_plc = await asyncio.to_thread(SLCDriver, self.ip_address)
+            test_plc.socket_timeout = self.connection_timeout
             connection_result = await asyncio.to_thread(test_plc.open)
             if connection_result:
                 await asyncio.to_thread(test_plc.close)
@@ -283,15 +303,25 @@ class AllenBradleyPLC(BasePLC):
         return self.read_timeout if channel == "read" else self.write_timeout
 
     async def _bounded(self, channel: str, call: Any, *args: Any, **kwargs: Any) -> Any:
-        """Bounds the calls on a channel with a timeout."""
-        return await asyncio.wait_for(asyncio.to_thread(call, *args, **kwargs), self._channel_timeout(channel))
+        """One driver call under a generous BACKSTOP bound.
+
+        The channel's socket deadline (set at open) is the real timeout, firing
+        on the thread that owns the driver; this outer bound only trips when
+        that deadline malfunctions (a dripping reply, a blocked send). The
+        worker thread is then still inside the driver, so expiry must ABANDON
+        the channel - swap the driver out untouched - never close it.
+        """
+        return await asyncio.wait_for(
+            asyncio.to_thread(call, *args, **kwargs), self._channel_timeout(channel) * 1.5 + 1.0
+        )
 
     async def _open_driver(self, channel: str) -> Any:
         """Construct and open ONE driver for the resolved plc_type; raises if it will not open.
 
-        ``connection_timeout`` is the driver's socket deadline: it bounds the
-        open handshake and backstops the data phase, whose real bound is
-        ``_bounded``'s per-channel knob.
+        The channel's read/write knob is the driver's socket deadline - pycomm3
+        applies it once, at open() - so it bounds this channel's handshake AND
+        every exchange, and timeouts surface on the thread that owns the driver.
+        ``connection_timeout`` bounds the discovery probes only.
 
         Uses the family ``connect()`` resolved — an entry reopen must not
         re-detect and drift ``driver_type`` while the other channel's driver
@@ -300,7 +330,7 @@ class AllenBradleyPLC(BasePLC):
         driver_class, driver_name = self._driver_class(self._driver_family)
 
         driver = await asyncio.to_thread(driver_class, self.ip_address)
-        driver.socket_timeout = self.connection_timeout
+        driver.socket_timeout = self._channel_timeout(channel)
         try:
             opened = await asyncio.to_thread(driver.open)
         except Exception:
@@ -389,12 +419,22 @@ class AllenBradleyPLC(BasePLC):
         except PLCTagReadError:
             raise
         except TimeoutError as e:
-            await self._close_driver(driver, "read")
+            # Backstop expiry: the worker thread is STILL inside the driver.
+            self._read_driver = _ABANDONED_DRIVER
             raise PLCTimeoutError(
-                f"Read timed out after {self.read_timeout}s on Allen Bradley PLC at {self.ip_address}"
+                f"Read gave no reply within the backstop on Allen Bradley PLC at {self.ip_address}"
             ) from e
+        except asyncio.CancelledError:
+            # Caller cancelled mid-exchange: same live-thread situation.
+            self._read_driver = _ABANDONED_DRIVER
+            raise
         except PYCOMM3_EXCHANGE_ERRORS as e:
+            # The thread finished (it raised), so closing is single-threaded and safe.
             await self._close_driver(driver, "read")
+            if _chain_has_timeout(e):
+                raise PLCTimeoutError(
+                    f"Read timed out after {self.read_timeout}s on Allen Bradley PLC at {self.ip_address}"
+                ) from e
             raise PLCCommunicationError(f"Read failed on Allen Bradley PLC at {self.ip_address}: {e}") from e
         except PYCOMM3_ERRORS as e:
             # What's left is RequestError, hit before the exchange.
@@ -494,12 +534,19 @@ class AllenBradleyPLC(BasePLC):
         except PLCTagWriteError:
             raise
         except TimeoutError as e:
-            await self._close_driver(driver, "write")
+            self._write_driver = _ABANDONED_DRIVER
             raise PLCTimeoutError(
-                f"Write timed out after {self.write_timeout}s on Allen Bradley PLC at {self.ip_address}"
+                f"Write gave no reply within the backstop on Allen Bradley PLC at {self.ip_address}"
             ) from e
+        except asyncio.CancelledError:
+            self._write_driver = _ABANDONED_DRIVER
+            raise
         except PYCOMM3_EXCHANGE_ERRORS as e:
             await self._close_driver(driver, "write")
+            if _chain_has_timeout(e):
+                raise PLCTimeoutError(
+                    f"Write timed out after {self.write_timeout}s on Allen Bradley PLC at {self.ip_address}"
+                ) from e
             raise PLCCommunicationError(f"Write failed on Allen Bradley PLC at {self.ip_address}: {e}") from e
         except PYCOMM3_ERRORS as e:
             # RequestError: raised before anything hit the wire; the session is untouched.
