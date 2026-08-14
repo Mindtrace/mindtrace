@@ -249,7 +249,20 @@ class CameraManagerConnectionManager(ConnectionManager):
             Current camera configuration
         """
         request = CameraQueryRequest(camera=camera)
-        response = await self.post("/cameras/configuration", request.model_dump())
+        response = await self.post("/cameras/config/get", request.model_dump())
+        return response["data"]
+
+    async def get_saved_camera_configuration(self, camera: str) -> Optional[Dict[str, Any]]:
+        """Get persisted camera configuration from disk.
+
+        Args:
+            camera: Camera name to query
+
+        Returns:
+            Saved camera configuration, or ``None`` when no saved file exists
+        """
+        request = CameraQueryRequest(camera=camera)
+        response = await self.post("/cameras/config/saved/get", request.model_dump())
         return response["data"]
 
     async def import_camera_config(self, camera: str, config_path: Optional[str] = None) -> Dict[str, Any]:

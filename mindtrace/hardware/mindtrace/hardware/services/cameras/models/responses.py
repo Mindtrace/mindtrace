@@ -182,6 +182,12 @@ class CameraConfigurationResponse(BaseResponse):
     data: CameraConfiguration
 
 
+class SavedCameraConfigurationResponse(BaseResponse):
+    """Response model for persisted (on-disk) camera configuration."""
+
+    data: Optional[CameraConfiguration] = None
+
+
 class ActiveCamerasResponse(BaseResponse):
     """Response model for active cameras list."""
 

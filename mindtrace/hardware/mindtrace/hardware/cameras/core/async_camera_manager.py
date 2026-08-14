@@ -1,6 +1,7 @@
 """Async camera manager for Mindtrace hardware cameras."""
 
 import asyncio
+import json
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -752,6 +753,29 @@ class AsyncCameraManager(Mindtrace):
         path.unlink()
         self.logger.info(f"Deleted saved config for '{camera_name}' at {path}")
         return True
+
+    def read_saved_config(self, camera_name: str) -> dict | None:
+        """Read persisted config JSON for a camera.
+
+        Args:
+            camera_name: Camera name in the form ``Backend:device_name``.
+
+        Returns:
+            Parsed configuration dict, or ``None`` if no saved file exists.
+
+        Raises:
+            CameraConfigurationError: If the saved file contains invalid JSON.
+        """
+        self.validate_camera_name(camera_name)
+        path = Path(self.get_camera_config_path(camera_name))
+        if not path.exists():
+            self.logger.debug(f"No saved config for '{camera_name}' at {path}")
+            return None
+        try:
+            with path.open(encoding="utf-8") as config_file:
+                return json.load(config_file)
+        except json.JSONDecodeError as exc:
+            raise CameraConfigurationError(f"Invalid saved config JSON at {path}: {exc}") from exc
 
     async def _auto_import_config(self, camera_name: str, camera: AsyncCamera) -> None:
         """Restore camera config from previously saved file."""

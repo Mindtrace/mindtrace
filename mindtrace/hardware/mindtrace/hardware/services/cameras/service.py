@@ -11,7 +11,7 @@ import io
 import logging
 import os
 import time
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image as PILImage
@@ -98,6 +98,7 @@ from mindtrace.hardware.services.cameras.models import (
     NetworkDiagnostics,
     NetworkDiagnosticsResponse,
     OpticalPowerRequest,
+    SavedCameraConfigurationResponse,
     StreamInfo,
     StreamInfoResponse,
     StreamStartRequest,
@@ -111,6 +112,37 @@ from mindtrace.hardware.services.cameras.models import (
 )
 from mindtrace.hardware.services.cameras.schemas import ALL_SCHEMAS, HealthSchema
 from mindtrace.services import Service
+
+
+def _saved_config_dict_to_camera_configuration(data: Dict[str, Any]) -> CameraConfiguration:
+    """Map persisted camera config JSON to the API configuration model."""
+    roi: Optional[Tuple[int, int, int, int]] = None
+    roi_data = data.get("roi")
+    if isinstance(roi_data, dict):
+        roi = (
+            int(roi_data.get("x", 0)),
+            int(roi_data.get("y", 0)),
+            int(roi_data.get("width", 0)),
+            int(roi_data.get("height", 0)),
+        )
+    elif isinstance(roi_data, (list, tuple)) and len(roi_data) == 4:
+        roi = tuple(int(value) for value in roi_data)  # type: ignore[assignment]
+    elif all(key in data for key in ("roi_x", "roi_y", "width", "height")):
+        roi = (int(data["roi_x"]), int(data["roi_y"]), int(data["width"]), int(data["height"]))
+
+    return CameraConfiguration(
+        exposure_time=data.get("exposure_time"),
+        gain=data.get("gain"),
+        roi=roi,
+        trigger_mode=data.get("trigger_mode"),
+        pixel_format=data.get("pixel_format"),
+        white_balance=data.get("white_balance"),
+        image_enhancement=data.get("image_enhancement"),
+        optical_power=data.get("optical_power"),
+        bandwidth_limit=data.get("bandwidth_limit"),
+        packet_size=data.get("packet_size"),
+        inter_packet_delay=data.get("inter_packet_delay"),
+    )
 
 
 class CameraManagerService(Service):
@@ -257,6 +289,12 @@ class CameraManagerService(Service):
             "cameras/config/get",
             self.get_camera_configuration,
             ALL_SCHEMAS["get_camera_configuration"],
+            as_tool=True,
+        )
+        self.add_endpoint(
+            "cameras/config/saved/get",
+            self.get_saved_camera_configuration,
+            ALL_SCHEMAS["get_saved_camera_configuration"],
             as_tool=True,
         )
         self.add_endpoint(
@@ -941,6 +979,30 @@ class CameraManagerService(Service):
             )
         except Exception as e:
             self.logger.error(f"Failed to get camera configuration for '{request.camera}': {e}")
+            raise
+
+    async def get_saved_camera_configuration(self, request: CameraQueryRequest) -> SavedCameraConfigurationResponse:
+        """Get persisted camera configuration from disk without applying it."""
+        try:
+            manager = await self._get_camera_manager()
+            manager.validate_camera_name(request.camera)
+            raw_config = manager.read_saved_config(request.camera)
+
+            if raw_config is None:
+                return SavedCameraConfigurationResponse(
+                    success=True,
+                    message=f"No saved configuration found for camera '{request.camera}'",
+                    data=None,
+                )
+
+            config = _saved_config_dict_to_camera_configuration(raw_config)
+            return SavedCameraConfigurationResponse(
+                success=True,
+                message=f"Retrieved saved configuration for camera '{request.camera}'",
+                data=config,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to get saved camera configuration for '{request.camera}': {e}")
             raise
 
     async def import_camera_config(self, request: ConfigFileImportRequest) -> ConfigFileResponse:

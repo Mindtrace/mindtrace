@@ -183,6 +183,41 @@ async def test_reset_saved_config_is_idempotent_when_file_missing(tmp_path):
     assert manager.reset_saved_config(name) is False
 
 
+def test_read_saved_config_returns_none_when_file_missing(tmp_path):
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    assert manager.read_saved_config(name) is None
+
+
+def test_read_saved_config_returns_parsed_json(tmp_path):
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    config_path = Path(manager.get_camera_config_path(name))
+    config_path.write_text(
+        '{"exposure_time": 15000.0, "roi": {"x": 1, "y": 2, "width": 640, "height": 480}}',
+        encoding="utf-8",
+    )
+
+    config = manager.read_saved_config(name)
+
+    assert config["exposure_time"] == 15000.0
+    assert config["roi"]["width"] == 640
+
+
+def test_read_saved_config_raises_on_invalid_json(tmp_path):
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    config_path = Path(manager.get_camera_config_path(name))
+    config_path.write_text("{not-json", encoding="utf-8")
+
+    with pytest.raises(CameraConfigurationError, match="Invalid saved config JSON"):
+        manager.read_saved_config(name)
+
+
 def test_validate_camera_name_accepts_known_backend():
     manager = AsyncCameraManager(include_mocks=True)
     name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]

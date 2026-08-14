@@ -64,7 +64,8 @@ uv run python -m mindtrace.hardware.services.cameras.launcher --include-mocks
 
 - `POST /cameras/configure` - Configure camera parameters (runtime-configurable)
 - `POST /cameras/configure/batch` - Configure multiple cameras
-- `POST /cameras/configuration` - Get current camera configuration
+- `POST /cameras/config/get` - Get current camera configuration (live hardware)
+- `POST /cameras/config/saved/get` - Get persisted camera configuration from disk
 - `POST /cameras/config/import` - Import configuration from file
 - `POST /cameras/config/export` - Export configuration to file
 - `POST /cameras/config/reset` - Delete persisted configuration file
@@ -290,6 +291,8 @@ pick up that file on (re)open.
 |---|---|
 | `/cameras/configure` | No — runtime only |
 | `/cameras/configure/batch` | No — runtime only |
+| `/cameras/config/get` | No — reads live hardware state |
+| `/cameras/config/saved/get` | No — reads per-camera JSON from disk without applying it |
 | `/cameras/config/export` | Yes — writes per-camera JSON under `MINDTRACE_HW_CAMERA_CONFIG_DIR` |
 | `/cameras/config/import` | Reads per-camera JSON and applies to live camera |
 | `open()` (when restore enabled) | Reads per-camera JSON and applies to live camera before connection test |

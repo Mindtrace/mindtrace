@@ -118,6 +118,7 @@ from mindtrace.hardware.services.cameras.models.responses import (
     # Parameter Ranges
     ParameterRange,
     RangeResponse,
+    SavedCameraConfigurationResponse,
     # Streaming
     StreamInfo,
     StreamInfoResponse,
@@ -190,6 +191,7 @@ __all__ = [
     "CameraStatusResponse",
     "CameraCapabilitiesResponse",
     "CameraConfigurationResponse",
+    "SavedCameraConfigurationResponse",
     "CameraPerformanceSettings",
     "CameraPerformanceSettingsResponse",
     "ActiveCamerasResponse",

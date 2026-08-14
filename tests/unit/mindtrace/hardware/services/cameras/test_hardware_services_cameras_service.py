@@ -726,6 +726,79 @@ class TestCameraManagerServiceBusinessLogic:
             await service.reset_camera_config(ConfigFileResetRequest(camera="Basler:missing"))
 
     @pytest.mark.asyncio
+    async def test_get_saved_camera_configuration_maps_saved_json(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+        mock_manager.read_saved_config = Mock(
+            return_value={
+                "camera_type": "basler",
+                "exposure_time": 20000.0,
+                "gain": 2.0,
+                "trigger_mode": "continuous",
+                "white_balance": "auto",
+                "roi": {"x": 10, "y": 20, "width": 640, "height": 480},
+                "pixel_format": "BGR8",
+                "image_enhancement": True,
+                "packet_size": 1500,
+                "inter_packet_delay": 100,
+                "bandwidth_limit": 800.0,
+                "optical_power": 1.5,
+            }
+        )
+
+        response = await service.get_saved_camera_configuration(CameraQueryRequest(camera="MockBasler:Camera1"))
+
+        mock_manager.validate_camera_name.assert_called_once_with("MockBasler:Camera1")
+        mock_manager.read_saved_config.assert_called_once_with("MockBasler:Camera1")
+        assert response.success is True
+        assert response.data.exposure_time == 20000.0
+        assert response.data.gain == 2.0
+        assert response.data.roi == (10, 20, 640, 480)
+        assert response.data.pixel_format == "BGR8"
+        assert response.data.image_enhancement is True
+        assert response.data.packet_size == 1500
+        assert response.data.inter_packet_delay == 100
+        assert response.data.bandwidth_limit == 800.0
+        assert response.data.optical_power == 1.5
+        assert "Retrieved saved configuration" in response.message
+
+    @pytest.mark.asyncio
+    async def test_get_saved_camera_configuration_when_file_missing(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+        mock_manager.read_saved_config = Mock(return_value=None)
+
+        response = await service.get_saved_camera_configuration(CameraQueryRequest(camera="MockBasler:Camera1"))
+
+        assert response.success is True
+        assert response.data is None
+        assert "No saved configuration found" in response.message
+
+    @pytest.mark.asyncio
+    async def test_get_saved_camera_configuration_works_when_camera_not_open(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+        mock_manager.active_cameras = []
+        mock_manager.read_saved_config = Mock(return_value=None)
+
+        response = await service.get_saved_camera_configuration(CameraQueryRequest(camera="MockBasler:Camera1"))
+
+        assert response.success is True
+        assert response.data is None
+
+    @pytest.mark.asyncio
+    async def test_get_saved_camera_configuration_rejects_unknown_backend(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+
+        with pytest.raises(CameraNotFoundError, match="Backend 'Basler' not available"):
+            await service.get_saved_camera_configuration(CameraQueryRequest(camera="Basler:missing"))
+
+    @pytest.mark.asyncio
+    async def test_get_saved_camera_configuration_propagates_invalid_json_error(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+        mock_manager.read_saved_config = Mock(side_effect=CameraConfigurationError("Invalid saved config JSON"))
+
+        with pytest.raises(CameraConfigurationError, match="Invalid saved config JSON"):
+            await service.get_saved_camera_configuration(CameraQueryRequest(camera="MockBasler:Camera1"))
+
+    @pytest.mark.asyncio
     async def test_configure_camera_failure_handling(self, service_with_mock_manager):
         """Test configure camera handles configuration failures correctly."""
         service, mock_manager = service_with_mock_manager
@@ -943,8 +1016,9 @@ class TestCameraManagerServiceCaptureAndHomography:
         CameraManagerService._register_endpoints(service)
 
         endpoint_paths = [entry.args[0] for entry in service.add_endpoint.call_args_list]
-        assert service.add_endpoint.call_count == 48
+        assert service.add_endpoint.call_count == 49
         assert "health" in endpoint_paths
+        assert "cameras/config/saved/get" in endpoint_paths
         assert "cameras/capture" in endpoint_paths
         assert "cameras/stream/start" in endpoint_paths
         assert "stream/{camera_name}" in endpoint_paths
