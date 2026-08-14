@@ -133,6 +133,7 @@ class HuggingFaceDetectionDataset:
         *,
         split: str,
         transform: Callable[[Any, dict[str, Any]], tuple[Any, dict[str, Any]]] | None = None,
+        return_metadata: bool = False,
         _payload: Any | None = None,
     ) -> None:
         datasets, _, _, _ = _require_huggingface_dataloader_dependencies()
@@ -140,6 +141,7 @@ class HuggingFaceDetectionDataset:
         self._dataset = _select_split(payload, split)
         self.split = split
         self.transform = transform
+        self.return_metadata = return_metadata
 
         required_columns = {"asset_id", "image", "objects"}
         missing = sorted(required_columns - set(self._dataset.column_names))
@@ -168,11 +170,14 @@ class HuggingFaceDetectionDataset:
             "labels": torch.tensor([obj["category"] for obj in objects], dtype=torch.long),
             "area": torch.tensor([obj["area"] for obj in objects], dtype=torch.float32),
             "iscrowd": torch.zeros(len(objects), dtype=torch.long),
-            "asset_id": row["asset_id"],
         }
         if self.transform is not None:
-            return self.transform(image, target)
-        return pil_to_tensor(image).float().div(255), target
+            image, target = self.transform(image, target)
+        else:
+            image = pil_to_tensor(image).float().div(255)
+        if self.return_metadata:
+            return image, target, {"asset_id": row["asset_id"]}
+        return image, target
 
 
 class HuggingFaceSemanticSegmentationDataset:
@@ -238,6 +243,7 @@ class HuggingFaceInstanceSegmentationDataset:
         *,
         split: str,
         transform: Callable[[Any, dict[str, Any]], tuple[Any, dict[str, Any]]] | None = None,
+        return_metadata: bool = False,
         _payload: Any | None = None,
     ) -> None:
         datasets, _, _, _ = _require_huggingface_dataloader_dependencies()
@@ -245,6 +251,7 @@ class HuggingFaceInstanceSegmentationDataset:
         self._dataset = _select_split(payload, split)
         self.split = split
         self.transform = transform
+        self.return_metadata = return_metadata
 
         required_columns = {"asset_id", "image", "objects"}
         missing = sorted(required_columns - set(self._dataset.column_names))
@@ -293,16 +300,19 @@ class HuggingFaceInstanceSegmentationDataset:
             "masks": masks,
             "area": torch.tensor([obj["area"] for obj in objects], dtype=torch.float32),
             "iscrowd": torch.tensor([int(obj["iscrowd"]) for obj in objects], dtype=torch.long),
-            "asset_id": row["asset_id"],
         }
         if self.transform is not None:
-            return self.transform(image, target)
-        return pil_to_tensor(image).float().div(255), target
+            image, target = self.transform(image, target)
+        else:
+            image = pil_to_tensor(image).float().div(255)
+        if self.return_metadata:
+            return image, target, {"asset_id": row["asset_id"]}
+        return image, target
 
 
 def _variable_size_collate_fn(batch: Sequence[tuple[Any, Any]]):
-    images, targets = zip(*batch, strict=True)
-    return list(images), list(targets)
+    columns = tuple(zip(*batch, strict=True))
+    return tuple(list(column) for column in columns)
 
 
 def _worker_init_fn(_: int) -> None:

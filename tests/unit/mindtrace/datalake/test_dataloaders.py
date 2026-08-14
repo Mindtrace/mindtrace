@@ -220,7 +220,7 @@ def test_detection_dataset_returns_xywh_targets_and_zero_based_labels(monkeypatc
     assert target["labels"].dtype == "long"
     assert target["area"].value == [1200.0]
     assert target["iscrowd"].value == [0]
-    assert target["asset_id"] == "voc-1"
+    assert "asset_id" not in target
     assert dataset.class_names == ("aeroplane", "bicycle")
 
 
@@ -456,7 +456,7 @@ def test_instance_segmentation_dataset_returns_mask_rcnn_target(monkeypatch):
     assert target["masks"].dtype == "bool"
     assert target["area"].value == [321.0]
     assert target["iscrowd"].value == [0]
-    assert target["asset_id"] == "penn-fudan-1"
+    assert "asset_id" not in target
 
 
 def test_build_datasets_rejects_ambiguous_segmentation_schema(monkeypatch):
