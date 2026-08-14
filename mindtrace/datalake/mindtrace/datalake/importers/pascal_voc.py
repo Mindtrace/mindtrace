@@ -401,8 +401,8 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
 
     The importer creates each source image Asset once, attaches all requested annotations to
     one canonical Datum, and optionally creates task-specific DatasetVersion views over those
-    shared Datums. Single-label classification uses lightweight region Datums that reference
-    the source image Asset rather than storing cropped copies. Semantic segmentation preserves
+    shared Datums. Single-label classification crops bounding boxes during export from the
+    canonical image Datums. Semantic segmentation preserves
     the original categorical VOC mask, including background ``0`` and void/ignore ``255`` pixels.
     """
 
@@ -441,7 +441,6 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
     manifest: list[str] = []
     main_manifest: list[str] = []
     semantic_manifest: list[str] = []
-    single_label_manifest: list[str] = []
     image_asset_count = 0
     mask_asset_count = 0
     classification_record_count = 0
@@ -584,46 +583,6 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
             datalake.add_annotation_records(records, annotation_set_id=annotation_set.annotation_set_id)
             detection_record_count += len(records)
 
-            if config.create_task_versions:
-                for object_index, detection in enumerate(detections):
-                    region_datum = datalake.create_datum(
-                        asset_refs={"image": image_asset.asset_id},
-                        split=config.split,
-                        metadata={
-                            "source_dataset": "pascal_voc",
-                            "year": "2012",
-                            "source_image_id": image_id,
-                            "source_datum_id": datum.datum_id,
-                            "source_object_index": object_index,
-                            "source_bbox": [detection["geometry"][key] for key in ("x", "y", "width", "height")],
-                            "derivation": "bbox_crop",
-                        },
-                    )
-                    single_label_manifest.append(region_datum.datum_id)
-                    region_annotation_set = _create_annotation_set_if_needed(
-                        datalake,
-                        datum_id=region_datum.datum_id,
-                        name="pascal-voc-single-label-classification-source",
-                        annotation_schema_id=schemas["detection"].annotation_schema_id,
-                    )
-                    datalake.add_annotation_records(
-                        [
-                            {
-                                "kind": "bbox",
-                                "label": detection["label"],
-                                "label_id": detection["label_id"],
-                                "source": {
-                                    "type": "derived",
-                                    "name": "pascal-voc-bbox-crop",
-                                    "version": "2012",
-                                },
-                                "geometry": detection["geometry"],
-                                "attributes": detection["attributes"],
-                            }
-                        ],
-                        annotation_set_id=region_annotation_set.annotation_set_id,
-                    )
-
         if semantic_mask_asset is not None:
             annotation_set = _create_annotation_set_if_needed(
                 datalake,
@@ -703,7 +662,7 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
             },
         )
         version_specs["classification_single_label"] = (
-            single_label_manifest,
+            main_manifest,
             {
                 **dataset_metadata,
                 "task_type": "classification",
@@ -744,7 +703,7 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
         detection_record_count=detection_record_count,
         segmentation_record_count=segmentation_record_count,
         dataset_version_id=dataset_version_ids["canonical"],
-        derived_datum_count=len(single_label_manifest),
+        derived_datum_count=0,
         dataset_names=dataset_names,
         dataset_version_ids=dataset_version_ids,
     )
