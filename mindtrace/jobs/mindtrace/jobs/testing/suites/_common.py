@@ -10,21 +10,31 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from shutil import rmtree
 from tempfile import mkdtemp
-from typing import Any, Callable
+from typing import Any, Callable, Literal, TypeVar
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
 from mindtrace.core import BenchResult, BenchSuiteConfig, utcnow_iso
 from mindtrace.core.testing.workloads import deterministic_payload
-from mindtrace.jobs import Job, LocalClient, Orchestrator, RabbitMQClient
+from mindtrace.jobs import Job, LocalClient, Orchestrator, RabbitMQClient, RedisClient
+from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
 
+BackendName = Literal["local", "redis", "rabbitmq"]
 _QUEUE_COMPONENT = re.compile(r"[^a-zA-Z0-9_.-]+")
+_InputModel = TypeVar("_InputModel", bound=BaseModel)
 
 
-class RabbitMQBenchResources(BaseModel):
-    """Connection settings used by RabbitMQ benchmark suites."""
+class JobsBenchResources(BaseModel):
+    """Optional connection settings for every supported Jobs backend."""
 
+    local_base_dir: Path | None = Field(
+        None,
+        description="Optional parent directory for the isolated Local benchmark directory.",
+    )
+    redis_host: str = Field("localhost", description="Redis server hostname.")
+    redis_port: int = Field(6379, ge=1, le=65535, description="Redis server port.")
+    redis_db: int = Field(0, ge=0, description="Redis database number.")
     rabbitmq_host: str = Field("localhost", description="RabbitMQ server hostname.")
     rabbitmq_port: int = Field(5672, ge=1, le=65535, description="RabbitMQ server port.")
     rabbitmq_username: str = Field("user", description="RabbitMQ username.")
@@ -112,79 +122,153 @@ def merge_worker_stats(stats: list[WorkerStats], *, latency_sample_limit: int) -
 
 
 @dataclass(frozen=True)
-class RabbitMQRuntime:
-    """Owned RabbitMQ resources for one benchmark variant."""
+class BackendRuntime:
+    """Resources owned by one benchmark variant."""
 
-    client: RabbitMQClient
+    backend: BackendName
+    client: OrchestratorBackend
     orchestrator: Orchestrator
     queue_name: str
+    local_root: Path | None = None
 
 
-@dataclass(frozen=True)
-class LocalRuntime:
-    """Owned Local backend resources for one benchmark invocation."""
+def validate_parameters(config: BenchSuiteConfig, model: type[_InputModel]) -> _InputModel:
+    """Validate resolved workload parameters through the declared input model."""
 
-    client: LocalClient
-    orchestrator: Orchestrator
-    queue_name: str
-    root: Path
+    return model.model_validate(config.parameters)
+
+
+def validate_resources(config: BenchSuiteConfig) -> JobsBenchResources:
+    """Validate resolved backend resources."""
+
+    return JobsBenchResources.model_validate(config.resources)
 
 
 def queue_name_for(config: BenchSuiteConfig, suffix: str = "work") -> str:
-    """Return a RabbitMQ-safe queue name unique to a suite invocation."""
+    """Return a backend-safe queue name unique to a suite invocation."""
 
     raw = f"mindtrace.bench.{config.run_id}.{config.suite_id}.{suffix}.{uuid4().hex}"
     return _QUEUE_COMPONENT.sub("-", raw)[:220]
 
 
-def rabbitmq_kwargs(config: BenchSuiteConfig) -> dict[str, Any]:
-    """Resolve RabbitMQ client settings from benchmark resources."""
+def create_backend_client(
+    backend: BackendName,
+    resources: JobsBenchResources,
+    *,
+    local_root: Path | None = None,
+) -> OrchestratorBackend:
+    """Create one client for the selected backend."""
 
-    return {
-        "host": str(config.resources.get("rabbitmq_host", "localhost")),
-        "port": int(config.resources.get("rabbitmq_port", 5672)),
-        "username": str(config.resources.get("rabbitmq_username", "user")),
-        "password": str(config.resources.get("rabbitmq_password", "password")),
-    }
+    if backend == "local":
+        if local_root is None:
+            raise ValueError("local_root is required when creating a Local benchmark client")
+        return LocalClient(client_dir=local_root)
+    if backend == "redis":
+        return RedisClient(host=resources.redis_host, port=resources.redis_port, db=resources.redis_db)
+    return RabbitMQClient(
+        host=resources.rabbitmq_host,
+        port=resources.rabbitmq_port,
+        username=resources.rabbitmq_username,
+        password=resources.rabbitmq_password,
+    )
 
 
-def create_rabbitmq_runtime(config: BenchSuiteConfig, *, suffix: str = "work") -> RabbitMQRuntime:
-    """Create a unique durable RabbitMQ queue and its orchestrator."""
+def create_backend_runtime(
+    config: BenchSuiteConfig,
+    *,
+    backend: BackendName,
+    suffix: str = "work",
+) -> BackendRuntime:
+    """Create an isolated queue and orchestrator for the selected backend."""
 
-    client = RabbitMQClient(**rabbitmq_kwargs(config))
-    queue_name = queue_name_for(config, suffix)
-    declaration = client.declare_queue(queue_name, durable=True, auto_delete=False)
-    if declaration.get("status") != "success":
-        close_rabbitmq_client(client)
-        raise RuntimeError(f"Failed to declare RabbitMQ benchmark queue {queue_name!r}: {declaration}")
-    return RabbitMQRuntime(client=client, orchestrator=Orchestrator(client), queue_name=queue_name)
+    resources = validate_resources(config)
+    local_root: Path | None = None
+    if backend == "local":
+        base_dir = resources.local_base_dir
+        if base_dir is not None:
+            base_dir.mkdir(parents=True, exist_ok=True)
+        local_root = Path(
+            mkdtemp(
+                prefix="mindtrace-jobs-bench-",
+                dir=str(base_dir) if base_dir is not None else None,
+            )
+        )
+
+    client = create_backend_client(backend, resources, local_root=local_root)
+    queue_name = queue_name_for(config, f"{backend}-{suffix}")
+    try:
+        declaration = client.declare_queue(queue_name, queue_type="fifo", durable=True, auto_delete=False)
+        if declaration.get("status") != "success":
+            raise RuntimeError(f"Failed to declare benchmark queue {queue_name!r}: {declaration}")
+    except BaseException:
+        close_backend_client(client)
+        if local_root is not None:
+            rmtree(local_root, ignore_errors=True)
+        raise
+
+    return BackendRuntime(
+        backend=backend,
+        client=client,
+        orchestrator=Orchestrator(client),
+        queue_name=queue_name,
+        local_root=local_root,
+    )
 
 
-def cleanup_rabbitmq_runtime(runtime: RabbitMQRuntime, *, keep_resources: bool) -> None:
-    """Delete the benchmark queue unless the caller asked to retain it."""
+def create_backend_worker_client(
+    runtime: BackendRuntime,
+    resources: JobsBenchResources,
+) -> OrchestratorBackend:
+    """Create a worker client and attach it to the runtime's existing queue."""
+
+    client = create_backend_client(runtime.backend, resources, local_root=runtime.local_root)
+    if runtime.backend == "rabbitmq":
+        # RabbitMQ queues are broker-owned. Batch publication opens and closes
+        # its operation-local connection in the worker thread, so the client's
+        # coordinator-owned bootstrap channel does not need to redeclare it.
+        return client
+    try:
+        declaration = client.declare_queue(
+            runtime.queue_name,
+            queue_type="fifo",
+            durable=True,
+            auto_delete=False,
+        )
+        if declaration.get("status") != "success":
+            raise RuntimeError(
+                f"Failed to attach worker client to benchmark queue {runtime.queue_name!r}: {declaration}"
+            )
+    except BaseException:
+        close_backend_client(client)
+        raise
+    return client
+
+
+def cleanup_backend_runtime(
+    runtime: BackendRuntime,
+    *,
+    keep_resources: bool,
+    close_client: bool = True,
+) -> None:
+    """Delete only resources created by this benchmark invocation."""
 
     try:
         if not keep_resources:
             runtime.client.delete_queue(runtime.queue_name)
     finally:
-        close_rabbitmq_client(runtime.client)
+        if close_client:
+            close_backend_client(runtime.client)
+        if runtime.local_root is not None and not keep_resources:
+            rmtree(runtime.local_root, ignore_errors=True)
 
 
-def create_local_runtime(config: BenchSuiteConfig) -> LocalRuntime:
-    """Create an isolated Local backend for the smoke benchmark."""
+def close_backend_client(client: OrchestratorBackend) -> None:
+    """Close backend-specific resources without assuming a common close API."""
 
-    root = Path(mkdtemp(prefix="mindtrace-jobs-bench-"))
-    client = LocalClient(client_dir=root)
-    queue_name = queue_name_for(config, "local")
-    client.declare_queue(queue_name)
-    return LocalRuntime(client=client, orchestrator=Orchestrator(client), queue_name=queue_name, root=root)
-
-
-def cleanup_local_runtime(runtime: LocalRuntime, *, keep_resources: bool) -> None:
-    """Remove the Local benchmark directory unless retention was requested."""
-
-    if not keep_resources:
-        rmtree(runtime.root, ignore_errors=True)
+    if isinstance(client, RedisClient):
+        client.close()
+    elif isinstance(client, RabbitMQClient):
+        close_rabbitmq_client(client)
 
 
 def close_rabbitmq_client(client: RabbitMQClient) -> None:
@@ -196,6 +280,29 @@ def close_rabbitmq_client(client: RabbitMQClient) -> None:
     connection = getattr(client, "_connection", None)
     if connection is not None:
         connection.close()
+
+
+def connect_consumer(consumer, runtime: BackendRuntime, *, prefetch_count: int) -> None:
+    """Connect a consumer with only backend-supported options."""
+
+    kwargs: dict[str, Any] = {}
+    if runtime.backend == "rabbitmq":
+        kwargs["prefetch_count"] = prefetch_count
+    elif runtime.backend == "redis":
+        kwargs["poll_timeout"] = 1
+    else:
+        kwargs["poll_timeout"] = 0.1
+    consumer.connect_to_orchestrator(runtime.orchestrator, runtime.queue_name, **kwargs)
+
+
+def delivery_transport(backend: BackendName, consume_mode: str) -> str:
+    """Describe the backend mechanism used by a consume workload."""
+
+    if backend == "rabbitmq":
+        return "basic_consume" if consume_mode == "push" else "basic_get"
+    if backend == "redis":
+        return "redis_pop"
+    return "local_pop"
 
 
 def payload_text(size_bytes: int) -> str:

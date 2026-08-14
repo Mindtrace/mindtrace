@@ -237,16 +237,18 @@ class TestRunner(Mindtrace):
         *,
         profile: str,
         run_id: str,
+        parameters: Mapping[str, Any] | None = None,
         resources: Mapping[str, Any] | None = None,
         progress: Callable[[ProgressEvent], None] | None = None,
         cancellation_token: Any | None = None,
         output_dir: Path | None = None,
         keep_resources: bool = False,
     ) -> tuple[list[BenchResult], list[SuiteExecutionResult]]:
-        """Run registered benchmark suites with timing/profile resolved from their contributions."""
+        """Run benches with optional parameter/resource overrides merged over the selected profile."""
 
         rows: list[SuiteExecutionResult] = []
         bench_rows: list[BenchResult] = []
+        merged_parameters = dict(parameters or {})
         merged_resources = dict(resources or {})
 
         for sid in suite_ids:
@@ -255,6 +257,7 @@ class TestRunner(Mindtrace):
                 contrib,
                 profile=profile,
                 run_id=run_id,
+                extra_parameters=merged_parameters,
                 resources=merged_resources,
                 output_dir=output_dir,
                 keep_resources=keep_resources,

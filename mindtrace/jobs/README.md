@@ -456,36 +456,80 @@ Related examples in the repo:
 
 ## Benchmarks
 
-The Jobs package registers benchmark suites with the `mindtrace-bench` CLI.
-The smoke profile runs an isolated Local publish/consume round trip for about
-one second:
+The Jobs package registers four configurable workload suites:
+
+- `jobs.smoke.round_trip`;
+- `jobs.stress.publish_ceiling`;
+- `jobs.stress.consume_ceiling`;
+- `jobs.stress.pipeline_scaling`.
+
+Profiles provide convenient defaults rather than fixing a workload to one
+backend. The CLI smoke default runs an isolated Local publish/consume round
+trip for about one second:
 
 ```bash
 $ uv run mindtrace-bench jobs --profile smoke
 ```
 
 With RabbitMQ available at `localhost:5672` using the README setup credentials
-`user` / `password`, the stress profile runs each workload for about ten
-seconds:
+`user` / `password`, the CLI stress defaults run RabbitMQ publication,
+broker-pushed consumption, and a one-consumer pipeline for about ten seconds
+each:
 
 ```bash
 $ uv run mindtrace-bench jobs --profile stress
 ```
 
-The RabbitMQ stress suites report:
+Python callers can override the selected backend, workload mode, worker counts,
+and connection resources without changing suite IDs. This example runs the
+three directly comparable RabbitMQ consumption modes:
 
-- sustained batch publication throughput;
+```python
+from mindtrace.core import TestRunner
+from mindtrace.jobs.testing import register_benchmark_suites
+
+runner = TestRunner()
+register_benchmark_suites(runner=runner)
+
+resources = {
+    "rabbitmq_host": "localhost",
+    "rabbitmq_port": 5672,
+    "rabbitmq_username": "user",
+    "rabbitmq_password": "password",
+}
+for mode in ("iterative_pull_one", "steady_pull", "push"):
+    results, executions = runner.run_registered_benches(
+        ["jobs.stress.consume_ceiling"],
+        profile="stress",
+        run_id=f"rmq-{mode}",
+        parameters={"backend": "rabbitmq", "consume_mode": mode},
+        resources=resources,
+    )
+    for result in results:
+        print(result.to_dict())
+    if any(execution.status != "passed" for execution in executions):
+        raise RuntimeError(f"RabbitMQ {mode} benchmark failed")
+```
+
+The consume modes report:
+
 - repeated public `consume(num_messages=1)` throughput, including per-call
   connection and channel lifecycle;
 - steady `basic_get` pull throughput using one long finite consume call;
-- broker-pushed `basic_consume` throughput using bare blocking `consume()`;
-- end-to-end broker-pushed pipeline throughput and latency with one consumer;
-- the same pipeline workload with four independent consumers and connections.
+- broker-pushed `basic_consume` throughput using bare blocking `consume()`.
 
-The three consume-ceiling suites use identical payload, backlog, prefetch, and
-ten-second defaults so their `messages_per_second` metrics can be compared
-directly. Each suite creates a uniquely named durable queue and removes it
-after the run unless `--keep-resources` is supplied.
+Use identical parameter overrides for payload, backlog, prefetch, and duration
+when comparing these modes. Round-trip and publication support Local, Redis,
+and RabbitMQ. Iterative and steady consumption also support all three backends;
+push is RabbitMQ-only. Pipeline scaling supports Redis and RabbitMQ with
+multiple consumers, while Local is restricted to one producer and one consumer
+until its shared-queue concurrency semantics are established.
+
+Backend connection settings are resources: Local accepts an optional
+`local_base_dir`; Redis accepts `redis_host`, `redis_port`, and `redis_db`; and
+RabbitMQ accepts its host, port, username, and password. Each invocation creates
+a unique queue and removes only the resources it owns unless resource retention
+is requested.
 
 List the registered suite IDs without running them:
 
