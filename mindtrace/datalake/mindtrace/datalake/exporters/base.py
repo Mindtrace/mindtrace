@@ -112,10 +112,6 @@ def _build_exportable_item(
     if primary_entry is None:
         return None, [f"Skipped datum {resolved_datum.datum.datum_id} because it does not reference any assets."]
     role, asset = primary_entry
-    if len(resolved_datum.assets) > 1:
-        warnings.append(
-            f"Datum {resolved_datum.datum.datum_id} has multiple assets; exporting primary role {role!r} only."
-        )
     annotation_sets, annotations, annotation_warnings = _annotation_sets_for_asset(resolved_datum, asset.asset_id)
     warnings.extend(annotation_warnings)
     return (
