@@ -9,6 +9,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 from mindtrace.core.utils.download import download_with_progress
+from mindtrace.database.core.exceptions import DocumentNotFoundError
 
 from ..async_datalake import DuplicateAnnotationSchemaError
 from ..datalake import Datalake
@@ -107,7 +108,7 @@ def _ensure_dataset_versions_absent(
     for dataset_name in dataset_names.values():
         try:
             datalake.get_dataset_version(dataset_name, dataset_version)
-        except Exception:
+        except DocumentNotFoundError:
             continue
         existing.append(f"{dataset_name}@{dataset_version}")
     if existing:
