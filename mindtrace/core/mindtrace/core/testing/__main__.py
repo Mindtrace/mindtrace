@@ -26,6 +26,18 @@ def _format_bench_summary(summary: dict) -> str:
     return line
 
 
+def _format_progress_event(event: object) -> str:
+    """Format progress and retain setup/runtime failure details."""
+
+    kind = getattr(event, "kind", "?")
+    suite_id = getattr(event, "suite_id", "")
+    line = f"[{kind}] {suite_id}"
+    detail = getattr(event, "detail", None)
+    if detail:
+        line += f": {detail}"
+    return line
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run installed Mindtrace benchmark suites.")
     parser.add_argument(
@@ -70,9 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     run_id = args.run_id or utcnow().strftime("%Y-%m-%dT%H-%M-%SZ")
 
     def _progress(ev: object) -> None:
-        kind = getattr(ev, "kind", "?")
-        sid = getattr(ev, "suite_id", "")
-        print(f"[{kind}] {sid}", flush=True)
+        print(_format_progress_event(ev), flush=True)
 
     bench_results, exec_rows = TestRunner.run_registered_benches(
         matched,

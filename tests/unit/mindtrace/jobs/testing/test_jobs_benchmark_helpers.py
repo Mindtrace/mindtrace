@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import mindtrace.jobs.testing.suites._common as common
 from mindtrace.jobs.testing.suites._common import WorkerStats, merge_worker_stats
 from mindtrace.jobs.testing.suites.consume import _ConsumeOutcome, _consume_worker
 
@@ -94,3 +95,27 @@ def test_consume_worker_surfaces_operation_error() -> None:
 
     assert isinstance(outcome.error, RuntimeError)
     assert str(outcome.error) == "broker failed"
+
+
+def test_rabbitmq_worker_client_does_not_redeclare_broker_owned_queue(monkeypatch) -> None:
+    client = MagicMock()
+    monkeypatch.setattr(common, "create_backend_client", MagicMock(return_value=client))
+    runtime = SimpleNamespace(backend="rabbitmq", local_root=None, queue_name="bench-queue")
+
+    assert common.create_backend_worker_client(runtime, MagicMock()) is client
+    client.declare_queue.assert_not_called()
+
+
+def test_redis_worker_client_attaches_to_existing_queue(monkeypatch) -> None:
+    client = MagicMock()
+    client.declare_queue.return_value = {"status": "success"}
+    monkeypatch.setattr(common, "create_backend_client", MagicMock(return_value=client))
+    runtime = SimpleNamespace(backend="redis", local_root=None, queue_name="bench-queue")
+
+    assert common.create_backend_worker_client(runtime, MagicMock()) is client
+    client.declare_queue.assert_called_once_with(
+        "bench-queue",
+        queue_type="fifo",
+        durable=True,
+        auto_delete=False,
+    )
