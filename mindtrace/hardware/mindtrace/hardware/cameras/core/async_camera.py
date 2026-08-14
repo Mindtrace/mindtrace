@@ -652,10 +652,11 @@ class AsyncCamera(Mindtrace):
 
         async with self._lock:
             config = await self._collect_configuration()
-            config_path = Path(path)
-            config_path.parent.mkdir(parents=True, exist_ok=True)
-            config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
-            return True
+
+        config_path = Path(path)
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+        return True
 
     async def import_config(self, path: str) -> Tuple[int, int]:
         """Import camera configuration from a JSON file via configure().
