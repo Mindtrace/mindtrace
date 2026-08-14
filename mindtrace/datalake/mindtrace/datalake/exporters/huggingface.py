@@ -551,9 +551,10 @@ def _binary_instance_mask(item, annotation, *, include_media: bool) -> tuple[dic
     if payload is None:
         raise ValueError(f"Instance segmentation export requires mask payload bytes for asset {item.asset.asset_id!r}.")
     try:
+        import numpy as np
         from PIL import Image
     except ImportError as exc:
-        raise ImportError("Instance segmentation export requires Pillow.") from exc
+        raise ImportError("Instance segmentation export requires NumPy and Pillow.") from exc
 
     with Image.open(io.BytesIO(payload)) as indexed_mask:
         if indexed_mask.mode not in {"L", "P", "I"}:
@@ -561,32 +562,23 @@ def _binary_instance_mask(item, annotation, *, include_media: bool) -> tuple[dic
                 f"Instance mask for asset {item.asset.asset_id!r} must be indexed and single-channel; "
                 f"received mode {indexed_mask.mode!r}."
             )
-        width, _ = indexed_mask.size
-        binary_values: list[int] = []
-        xs: list[int] = []
-        ys: list[int] = []
         expected_id = int(instance_id)
-        for offset, raw_value in enumerate(indexed_mask.getdata()):
-            selected = int(raw_value) == expected_id
-            binary_values.append(255 if selected else 0)
-            if selected:
-                xs.append(offset % width)
-                ys.append(offset // width)
-        if not xs:
+        selected = np.asarray(indexed_mask) == expected_id
+        ys, xs = np.nonzero(selected)
+        if xs.size == 0:
             raise ValueError(
                 f"Instance id {instance_id!r} for annotation {annotation.annotation_id!r} is absent from its mask."
             )
         bbox = [
-            float(min(xs)),
-            float(min(ys)),
-            float(max(xs) - min(xs) + 1),
-            float(max(ys) - min(ys) + 1),
+            float(xs.min()),
+            float(ys.min()),
+            float(xs.max() - xs.min() + 1),
+            float(ys.max() - ys.min() + 1),
         ]
-        area = float(len(xs))
+        area = float(selected.sum())
         embedded_mask = None
         if include_media:
-            binary_mask = Image.new("L", indexed_mask.size)
-            binary_mask.putdata(binary_values)
+            binary_mask = Image.fromarray(selected.astype(np.uint8) * 255, mode="L")
             output = io.BytesIO()
             binary_mask.save(output, format="PNG")
             embedded_mask = {
