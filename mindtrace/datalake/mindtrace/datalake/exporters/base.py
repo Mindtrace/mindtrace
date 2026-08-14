@@ -103,7 +103,7 @@ def _annotation_sets_for_asset(
 def _build_exportable_item(
     resolved_datum: ResolvedDatum,
     *,
-    payload_bytes: bytes,
+    payload_bytes: bytes | None,
     payload_bytes_by_role: dict[str, bytes] | None = None,
     split_map: dict[str, str] | None = None,
 ) -> tuple[ExportableItem | None, list[str]]:
@@ -161,6 +161,7 @@ def build_exportable_dataset_from_resolved_version_sync(
     resolved_dataset_version: ResolvedDatasetVersion,
     *,
     split_map: dict[str, str] | None = None,
+    include_media: bool = True,
 ) -> ExportableDataset:
     """Build a canonical export view from a resolved dataset snapshot."""
     warnings: list[str] = []
@@ -171,13 +172,17 @@ def build_exportable_dataset_from_resolved_version_sync(
             warnings.append(f"Skipped datum {resolved_datum.datum.datum_id} because it does not reference any assets.")
             continue
         primary_role, _ = primary_entry
-        payload_bytes_by_role = {
-            role: _load_asset_payload_sync(object_loader, related_asset)
-            for role, related_asset in resolved_datum.assets.items()
-        }
+        payload_bytes_by_role = (
+            {
+                role: _load_asset_payload_sync(object_loader, related_asset)
+                for role, related_asset in resolved_datum.assets.items()
+            }
+            if include_media
+            else {}
+        )
         export_item, item_warnings = _build_exportable_item(
             resolved_datum,
-            payload_bytes=payload_bytes_by_role[primary_role],
+            payload_bytes=payload_bytes_by_role.get(primary_role),
             payload_bytes_by_role=payload_bytes_by_role,
             split_map=split_map,
         )
@@ -199,6 +204,7 @@ async def build_exportable_dataset_from_resolved_version_async(
     resolved_dataset_version: ResolvedDatasetVersion,
     *,
     split_map: dict[str, str] | None = None,
+    include_media: bool = True,
 ) -> ExportableDataset:
     """Build a canonical export view from a resolved dataset snapshot."""
     warnings: list[str] = []
@@ -209,13 +215,17 @@ async def build_exportable_dataset_from_resolved_version_async(
             warnings.append(f"Skipped datum {resolved_datum.datum.datum_id} because it does not reference any assets.")
             continue
         primary_role, _ = primary_entry
-        payload_bytes_by_role = {
-            role: await _load_asset_payload_async(object_loader, related_asset)
-            for role, related_asset in resolved_datum.assets.items()
-        }
+        payload_bytes_by_role = (
+            {
+                role: await _load_asset_payload_async(object_loader, related_asset)
+                for role, related_asset in resolved_datum.assets.items()
+            }
+            if include_media
+            else {}
+        )
         export_item, item_warnings = _build_exportable_item(
             resolved_datum,
-            payload_bytes=payload_bytes_by_role[primary_role],
+            payload_bytes=payload_bytes_by_role.get(primary_role),
             payload_bytes_by_role=payload_bytes_by_role,
             split_map=split_map,
         )
