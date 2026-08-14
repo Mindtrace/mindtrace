@@ -7,6 +7,7 @@ import pytest
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
 from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
+    CameraConfigurationError,
     CameraConnectionError,
     CameraTimeoutError,
 )
@@ -891,5 +892,27 @@ async def test_configure_reports_skipped_unknown_keys():
         assert result.total == 0
         assert result.applied == 0
         assert result.success is False
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_configure_reports_genicam_node_failures():
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        async def failing_apply_genicam_nodes(_node_config):
+            raise CameraConfigurationError("Failed to apply GenICam nodes for camera 'test': PixelFormat: bad value")
+
+        cam.backend.apply_genicam_nodes = failing_apply_genicam_nodes  # type: ignore[attr-defined]
+
+        result = await cam.configure(genicam_nodes={"PixelFormat": "Mono8"})
+
+        assert result.success is False
+        assert result.applied == 0
+        assert result.total == 1
+        assert "genicam_nodes" in result.failures
     finally:
         await manager.close(None)

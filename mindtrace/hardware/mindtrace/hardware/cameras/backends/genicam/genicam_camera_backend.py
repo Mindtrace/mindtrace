@@ -1541,33 +1541,56 @@ class GenICamCameraBackend(CameraBackend):
 
         Args:
             node_config: Dictionary of node names to values
+
+        Raises:
+            CameraConfigurationError: If any writable node fails to apply, or no
+                configured nodes match writable nodes on the camera.
         """
         try:
             await self._ensure_connected()
 
-            def _apply_nodes():
+            def _apply_nodes() -> tuple[int, Dict[str, str]]:
                 node_map = self.image_acquirer.remote_device.node_map
                 applied_count = 0
+                failures: Dict[str, str] = {}
 
                 for node_name, value in node_config.items():
+                    node = getattr(node_map, node_name, None)
+                    if node is None or not hasattr(node, "value"):
+                        continue
                     try:
-                        node = getattr(node_map, node_name, None)
-                        if node is not None and hasattr(node, "value"):
-                            node.value = value
-                            applied_count += 1
-                            self.logger.debug(f"Applied GenICam node '{node_name}' = {value}")
+                        node.value = value
+                        applied_count += 1
+                        self.logger.debug(f"Applied GenICam node '{node_name}' = {value}")
                     except Exception as e:
-                        self.logger.debug(f"Could not apply GenICam node '{node_name}': {e}")
+                        failures[node_name] = str(e)
 
-                return applied_count
+                return applied_count, failures
 
-            applied_count = await self._run_blocking(_apply_nodes, timeout=self._op_timeout_s)
+            applied_count, failures = await self._run_blocking(_apply_nodes, timeout=self._op_timeout_s)
+
+            if failures:
+                details = "; ".join(f"{name}: {error}" for name, error in failures.items())
+                raise CameraConfigurationError(
+                    f"Failed to apply GenICam nodes for camera '{self.camera_name}': {details}"
+                )
+
+            if node_config and applied_count == 0:
+                raise CameraConfigurationError(
+                    f"No GenICam nodes from config matched writable nodes on camera '{self.camera_name}'"
+                )
+
             self.logger.debug(
                 f"Applied {applied_count}/{len(node_config)} GenICam nodes for camera '{self.camera_name}'"
             )
 
+        except CameraConfigurationError:
+            raise
         except Exception as e:
             self.logger.warning(f"GenICam node application failed for camera '{self.camera_name}': {str(e)}")
+            raise CameraConfigurationError(
+                f"GenICam node application failed for camera '{self.camera_name}': {e}"
+            ) from e
 
     async def get_genicam_nodes(self) -> Dict[str, Any]:
         """Export key GenICam node values.

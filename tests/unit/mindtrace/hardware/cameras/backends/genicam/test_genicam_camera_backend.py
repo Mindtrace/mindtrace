@@ -1028,6 +1028,22 @@ class TestAdditionalGenICamOperations:
         assert exported["ReverseX"] is True
 
     @pytest.mark.asyncio
+    async def test_apply_genicam_nodes_raises_on_node_set_failure(self, genicam_backend_uninitialized):
+        pixel_format = MockEnumNode("RGB8", ["RGB8", "Mono8"])
+        node_map = MockNodeMap(PixelFormat=pixel_format)
+        backend = attach_mock_acquirer(genicam_backend_uninitialized, node_map)
+
+        with pytest.raises(CameraConfigurationError, match="Failed to apply GenICam nodes"):
+            await backend.apply_genicam_nodes({"PixelFormat": "NotARealFormat"})
+
+    @pytest.mark.asyncio
+    async def test_apply_genicam_nodes_raises_when_no_nodes_match(self, genicam_backend_uninitialized):
+        backend = attach_mock_acquirer(genicam_backend_uninitialized, MockNodeMap())
+
+        with pytest.raises(CameraConfigurationError, match="No GenICam nodes from config matched"):
+            await backend.apply_genicam_nodes({"Missing": 1})
+
+    @pytest.mark.asyncio
     async def test_region_of_interest_methods_cover_region_nodes_and_defaults(self, genicam_backend_uninitialized):
         node_map = MockNodeMap(
             RegionOffsetX=MockGenICamNode(0, min_val=0, max_val=10),
