@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import traceback
 from dataclasses import dataclass
+from threading import Lock
 
 from pika.exceptions import AMQPConnectionError, ChannelClosed, ChannelWrongStateError
 
@@ -68,6 +69,8 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         self.queues = [queue_name] if queue_name else []
         self.connection = RabbitMQConnection(host=host, port=port, username=username, password=password)
         self._active_channel = None
+        self._active_lock = Lock()
+        self._active_push_channel = None
 
     def consume(
         self, num_messages: int = 0, *, queues: str | list[str] | None = None, block: bool = True, **kwargs
@@ -88,10 +91,15 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         try:
             self.connection.connect()
             channel = self.connection.get_channel()
-            self._active_channel = channel
+            push_mode = num_messages == 0 and block
+            with self._active_lock:
+                self._active_channel = channel
+                self._active_push_channel = channel if push_mode else None
             channel.basic_qos(prefetch_count=self.prefetch_count)
             if num_messages > 0:
                 messages_attempted = self._consume_finite_messages(channel, num_messages, queues, block=block)
+            elif push_mode:
+                messages_attempted = self._consume_push_messages(channel, queues)
             else:
                 messages_attempted = self._consume_infinite_messages(channel, queues, block=block)
         except KeyboardInterrupt:
@@ -142,6 +150,44 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                     return settled
                 self._stop_event.wait(0.1)
         return settled
+
+    def _consume_push_messages(self, channel, queues: list[str]) -> int:
+        """Register broker-pushed consumers and block until shutdown."""
+        self.logger.info(f"Started broker-pushed consumption from queues: {queues}.")
+        attempted = 0
+
+        def callback_for(queue_name: str):
+            def on_message(callback_channel, method, _properties, body) -> None:
+                nonlocal attempted
+                attempted += self._process_push_delivery(callback_channel, method, body, queue_name)
+
+            return on_message
+
+        try:
+            if self.stopped:
+                return 0
+            for queue in queues:
+                if self.stopped:
+                    break
+                channel.basic_consume(
+                    queue=queue,
+                    on_message_callback=callback_for(queue),
+                    auto_ack=self.auto_ack,
+                )
+            if not self.stopped:
+                channel.start_consuming()
+            return attempted
+        finally:
+            with self._active_lock:
+                if self._active_push_channel is channel:
+                    self._active_push_channel = None
+
+    def _process_push_delivery(self, channel, method, body, queue_name: str) -> int:
+        """Decode, process, and settle one broker-pushed delivery."""
+        delivery = self._decode_delivery(channel, method, body, queue_name)
+        if delivery is not _SETTLED_NO_MESSAGE:
+            self._process_delivery(channel, delivery)
+        return 1
 
     def _consume_infinite_messages(self, channel, queues: list[str], *, block: bool = True) -> int:
         """Consume available messages, waiting for new work only when requested."""
@@ -275,17 +321,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                 method, _, body = channel.basic_get(queue=queue_name, auto_ack=self.auto_ack)
                 if method:
                     self.logger.info(f"Received message from queue '{queue_name}'.")
-                    try:
-                        message = json.loads(body.decode("utf-8"))
-                    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                        self._reject_delivery(channel, method.delivery_tag, redelivered=method.redelivered)
-                        self.logger.error(f"Rejected malformed RabbitMQ delivery from queue '{queue_name}': {exc}")
-                        return _SETTLED_NO_MESSAGE
-                    return RabbitMQDelivery(
-                        message=message,
-                        delivery_tag=method.delivery_tag,
-                        redelivered=method.redelivered,
-                    )
+                    return self._decode_delivery(channel, method, body, queue_name)
                 if not block:
                     self.logger.debug(f"No message available in queue '{queue_name}'.")
                     return None
@@ -295,17 +331,59 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             self.logger.error(f"Error receiving message from queue '{queue_name}': {exc}")
             raise RuntimeError(f"Error receiving message from queue '{queue_name}': {exc}") from exc
 
+    def _decode_delivery(
+        self, channel, method, body, queue_name: str
+    ) -> RabbitMQDelivery | _SettledNoMessage:
+        """Decode a delivery, settling malformed payloads as local failures."""
+        try:
+            message = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            self._reject_delivery(channel, method.delivery_tag, redelivered=method.redelivered)
+            self.logger.error(f"Rejected malformed RabbitMQ delivery from queue '{queue_name}': {exc}")
+            return _SETTLED_NO_MESSAGE
+        return RabbitMQDelivery(
+            message=message,
+            delivery_tag=method.delivery_tag,
+            redelivered=method.redelivered,
+        )
+
     def close(self) -> None:
         """Permanently close the backend and any active RabbitMQ resources."""
         if self.closed:
             return
         super().close()
-        self._close_active_resources()
+        self._request_push_stop()
+
+    def stop(self) -> None:
+        """Request shutdown and wake an active broker-pushed consumer."""
+        super().stop()
+        self._request_push_stop()
+
+    def _request_push_stop(self) -> bool:
+        """Schedule cancellation when a broker-pushed consumer is active."""
+        with self._active_lock:
+            channel = self._active_push_channel
+        if channel is None:
+            return False
+        scheduled = self.connection.add_callback_threadsafe(lambda: self._stop_consuming(channel))
+        if not scheduled:
+            self.logger.warning(
+                "RabbitMQ push cancellation could not be scheduled; operation cleanup will close resources."
+            )
+        return scheduled
+
+    @staticmethod
+    def _stop_consuming(channel) -> None:
+        """Stop every consumer registered on an open push channel."""
+        if getattr(channel, "is_open", False):
+            channel.stop_consuming()
 
     def _close_active_resources(self) -> None:
         """Release operation-owned resources without closing the backend."""
-        channel = self._active_channel
-        self._active_channel = None
+        with self._active_lock:
+            channel = self._active_channel
+            self._active_channel = None
+            self._active_push_channel = None
         if channel is not None and getattr(channel, "is_open", False):
             try:
                 channel.close()

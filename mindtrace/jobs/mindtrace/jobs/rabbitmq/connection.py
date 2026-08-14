@@ -1,4 +1,5 @@
 import time
+from collections.abc import Callable
 
 import pika.exceptions
 from pika import BlockingConnection, ConnectionParameters, PlainCredentials, exceptions
@@ -69,6 +70,16 @@ class RabbitMQConnection(BrokerConnectionBase):
             return self.connection.channel()
         else:
             return None  # type: ignore
+
+    def add_callback_threadsafe(self, callback: Callable[[], None]) -> bool:
+        """Schedule a callback on the Pika I/O thread when connected."""
+        if not self.is_connected():
+            return False
+        try:
+            self.connection.add_callback_threadsafe(callback)
+        except exceptions.ConnectionWrongStateError:
+            return False
+        return True
 
     def count_queue_messages(self, queue_name: str, **kwargs) -> int:
         """Get the number of messages in a queue."""
