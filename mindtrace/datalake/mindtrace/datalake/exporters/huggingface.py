@@ -194,6 +194,37 @@ def _embedded_related_image(item, role: str, *, include_media: bool, task: str):
     return {"bytes": payload_bytes, "path": f"{asset.asset_id}.png"}
 
 
+def _save_huggingface_rows(
+    datasets_module: Any,
+    dataset: ExportableDataset,
+    rows_by_split: dict[str, list[dict[str, Any]]],
+    *,
+    destination: Path,
+    features: Any | None = None,
+    asset_count: int,
+    annotation_count: int,
+    files_written: list[str] | None = None,
+) -> ExportResult:
+    """Build, save, and summarize a split-aware Hugging Face artifact."""
+    dataset_payload = {
+        split: datasets_module.Dataset.from_list(rows, features=features) for split, rows in rows_by_split.items()
+    }
+    if len(dataset_payload) == 1 and "default" in dataset_payload:
+        hf_dataset = dataset_payload["default"]
+    else:
+        hf_dataset = datasets_module.DatasetDict(dataset_payload)
+    hf_dataset.save_to_disk(str(destination))
+    return ExportResult(
+        format="huggingface",
+        destination=destination,
+        dataset_name=dataset.name,
+        asset_count=asset_count,
+        annotation_count=annotation_count,
+        files_written=[*(files_written or []), "."],
+        warnings=list(dataset.warnings),
+    )
+
+
 def _export_single_label_classification_dataset(
     datasets_module: Any,
     dataset: ExportableDataset,
@@ -235,22 +266,14 @@ def _export_single_label_classification_dataset(
             }
         )
 
-    dataset_payload = {
-        split: datasets_module.Dataset.from_list(rows, features=features) for split, rows in rows_by_split.items()
-    }
-    if len(dataset_payload) == 1 and "default" in dataset_payload:
-        hf_dataset = dataset_payload["default"]
-    else:
-        hf_dataset = datasets_module.DatasetDict(dataset_payload)
-    hf_dataset.save_to_disk(str(destination))
-    return ExportResult(
-        format="huggingface",
+    return _save_huggingface_rows(
+        datasets_module,
+        dataset,
+        rows_by_split,
         destination=destination,
-        dataset_name=dataset.name,
+        features=features,
         asset_count=dataset.asset_count,
         annotation_count=dataset.asset_count,
-        files_written=["."],
-        warnings=list(dataset.warnings),
     )
 
 
@@ -291,22 +314,14 @@ def _export_multi_label_classification_dataset(
             }
         )
 
-    dataset_payload = {
-        split: datasets_module.Dataset.from_list(rows, features=features) for split, rows in rows_by_split.items()
-    }
-    if len(dataset_payload) == 1 and "default" in dataset_payload:
-        hf_dataset = dataset_payload["default"]
-    else:
-        hf_dataset = datasets_module.DatasetDict(dataset_payload)
-    hf_dataset.save_to_disk(str(destination))
-    return ExportResult(
-        format="huggingface",
+    return _save_huggingface_rows(
+        datasets_module,
+        dataset,
+        rows_by_split,
         destination=destination,
-        dataset_name=dataset.name,
+        features=features,
         asset_count=dataset.asset_count,
         annotation_count=annotation_count,
-        files_written=["."],
-        warnings=list(dataset.warnings),
     )
 
 
@@ -379,22 +394,14 @@ def _export_bbox_crop_classification_dataset(
 
     if not crop_count:
         raise ValueError("Bounding-box classification crop export requires at least one bbox annotation.")
-    dataset_payload = {
-        split: datasets_module.Dataset.from_list(rows, features=features) for split, rows in rows_by_split.items()
-    }
-    if len(dataset_payload) == 1 and "default" in dataset_payload:
-        hf_dataset = dataset_payload["default"]
-    else:
-        hf_dataset = datasets_module.DatasetDict(dataset_payload)
-    hf_dataset.save_to_disk(str(destination))
-    return ExportResult(
-        format="huggingface",
+    return _save_huggingface_rows(
+        datasets_module,
+        dataset,
+        rows_by_split,
         destination=destination,
-        dataset_name=dataset.name,
+        features=features,
         asset_count=crop_count,
         annotation_count=crop_count,
-        files_written=["."],
-        warnings=list(dataset.warnings),
     )
 
 
@@ -454,22 +461,14 @@ def _export_detection_dataset(
             }
         )
 
-    dataset_payload = {
-        split: datasets_module.Dataset.from_list(rows, features=features) for split, rows in rows_by_split.items()
-    }
-    if len(dataset_payload) == 1 and "default" in dataset_payload:
-        hf_dataset = dataset_payload["default"]
-    else:
-        hf_dataset = datasets_module.DatasetDict(dataset_payload)
-    hf_dataset.save_to_disk(str(destination))
-    return ExportResult(
-        format="huggingface",
+    return _save_huggingface_rows(
+        datasets_module,
+        dataset,
+        rows_by_split,
         destination=destination,
-        dataset_name=dataset.name,
+        features=features,
         asset_count=dataset.asset_count,
         annotation_count=sum(annotation.kind == "bbox" for item in dataset.items for annotation in item.annotations),
-        files_written=["."],
-        warnings=list(dataset.warnings),
     )
 
 
@@ -522,22 +521,14 @@ def _export_semantic_segmentation_dataset(
             }
         )
 
-    dataset_payload = {
-        split: datasets_module.Dataset.from_list(rows, features=features) for split, rows in rows_by_split.items()
-    }
-    if len(dataset_payload) == 1 and "default" in dataset_payload:
-        hf_dataset = dataset_payload["default"]
-    else:
-        hf_dataset = datasets_module.DatasetDict(dataset_payload)
-    hf_dataset.save_to_disk(str(destination))
-    return ExportResult(
-        format="huggingface",
+    return _save_huggingface_rows(
+        datasets_module,
+        dataset,
+        rows_by_split,
         destination=destination,
-        dataset_name=dataset.name,
+        features=features,
         asset_count=dataset.asset_count,
         annotation_count=dataset.asset_count,
-        files_written=["."],
-        warnings=list(dataset.warnings),
     )
 
 
@@ -657,22 +648,14 @@ def _export_instance_segmentation_dataset(
         )
         annotation_count += len(annotations)
 
-    dataset_payload = {
-        split: datasets_module.Dataset.from_list(rows, features=features) for split, rows in rows_by_split.items()
-    }
-    if len(dataset_payload) == 1 and "default" in dataset_payload:
-        hf_dataset = dataset_payload["default"]
-    else:
-        hf_dataset = datasets_module.DatasetDict(dataset_payload)
-    hf_dataset.save_to_disk(str(destination))
-    return ExportResult(
-        format="huggingface",
+    return _save_huggingface_rows(
+        datasets_module,
+        dataset,
+        rows_by_split,
         destination=destination,
-        dataset_name=dataset.name,
+        features=features,
         asset_count=dataset.asset_count,
         annotation_count=annotation_count,
-        files_written=["."],
-        warnings=list(dataset.warnings),
     )
 
 
@@ -761,7 +744,6 @@ def export_dataset_as_huggingface(
             include_media=include_media,
         )
 
-    warnings = list(dataset.warnings)
     files_written: list[str] = []
     rows_by_split: dict[str, list[dict[str, Any]]] = {}
 
@@ -785,20 +767,12 @@ def export_dataset_as_huggingface(
             }
         )
 
-    dataset_payload = {split: datasets_module.Dataset.from_list(rows) for split, rows in rows_by_split.items()}
-    if len(dataset_payload) == 1 and "default" in dataset_payload:
-        hf_dataset = dataset_payload["default"]
-    else:
-        hf_dataset = datasets_module.DatasetDict(dataset_payload)
-    hf_dataset.save_to_disk(str(destination_path))
-
-    files_written.append(".")
-    return ExportResult(
-        format="huggingface",
+    return _save_huggingface_rows(
+        datasets_module,
+        dataset,
+        rows_by_split,
         destination=destination_path,
-        dataset_name=dataset.name,
         asset_count=dataset.asset_count,
         annotation_count=dataset.annotation_count,
         files_written=files_written,
-        warnings=warnings,
     )
