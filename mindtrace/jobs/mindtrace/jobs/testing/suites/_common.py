@@ -19,6 +19,7 @@ from mindtrace.core import BenchResult, BenchSuiteConfig, utcnow_iso
 from mindtrace.core.testing.workloads import deterministic_payload
 from mindtrace.jobs import Job, LocalClient, Orchestrator, RabbitMQClient, RedisClient
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
+from mindtrace.jobs.redis.connection import RedisConnection
 
 BackendName = Literal["local", "redis", "rabbitmq"]
 _QUEUE_COMPONENT = re.compile(r"[^a-zA-Z0-9_.-]+")
@@ -280,6 +281,25 @@ def close_rabbitmq_client(client: RabbitMQClient) -> None:
     connection = getattr(client, "_connection", None)
     if connection is not None:
         connection.close()
+
+
+def redis_background_errors(*owners: object) -> list[str]:
+    """Return unexpected Redis listener failures owned by benchmark resources."""
+
+    errors: list[str] = []
+    seen_connections: set[int] = set()
+    for owner in owners:
+        connection = owner if isinstance(owner, RedisConnection) else getattr(owner, "connection", None)
+        if not isinstance(connection, RedisConnection) or id(connection) in seen_connections:
+            continue
+        seen_connections.add(id(connection))
+        error = connection.event_listener_error
+        if error is not None:
+            errors.append(
+                f"Redis event listener {connection.host}:{connection.port}/{connection.db} raised "
+                f"{type(error).__name__}: {error}"
+            )
+    return errors
 
 
 def connect_consumer(consumer, runtime: BackendRuntime, *, prefetch_count: int) -> None:

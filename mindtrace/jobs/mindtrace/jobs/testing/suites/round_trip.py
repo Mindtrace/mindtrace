@@ -19,6 +19,7 @@ from mindtrace.jobs.testing.suites._common import (
     create_backend_runtime,
     make_job,
     payload_text,
+    redis_background_errors,
     validate_parameters,
 )
 
@@ -81,6 +82,8 @@ class JobsRoundTripSmokeSuite(BenchTestSuite):
         started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         measurement_start = 0.0
         sequence = 0
+        validation_errors: list[str] = []
+        background_errors: list[str] = []
 
         try:
             connect_consumer(consumer, runtime, prefetch_count=parameters.prefetch_count)
@@ -114,6 +117,11 @@ class JobsRoundTripSmokeSuite(BenchTestSuite):
                     )
                 sequence += 1
         finally:
+            background_errors = redis_background_errors(
+                runtime.client,
+                getattr(consumer, "consumer_backend", None),
+            )
+            validation_errors.extend(background_errors)
             consumer.close()
             cleanup_backend_runtime(runtime, keep_resources=config.keep_resources)
 
@@ -124,10 +132,12 @@ class JobsRoundTripSmokeSuite(BenchTestSuite):
             started_at=started_at,
             duration_seconds=elapsed,
             stats=stats,
+            validation_errors=validation_errors,
             metrics={
                 "backend": parameters.backend,
                 "mode": "round_trip",
                 "payload_size_bytes": parameters.payload_size_bytes,
+                "background_errors": background_errors,
                 "messages_per_second": stats.successes / elapsed if elapsed > 0 else 0.0,
                 "resources_retained": config.keep_resources,
                 "queue_name": runtime.queue_name if config.keep_resources else None,

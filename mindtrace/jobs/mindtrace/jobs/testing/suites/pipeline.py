@@ -25,6 +25,7 @@ from mindtrace.jobs.testing.suites._common import (
     make_jobs,
     merge_worker_stats,
     payload_text,
+    redis_background_errors,
     validate_parameters,
     validate_resources,
     wait_for_deadline,
@@ -46,8 +47,11 @@ class JobsPipelineScalingInput(BaseModel):
 
     @model_validator(mode="after")
     def validate_backend_concurrency(self) -> "JobsPipelineScalingInput":
-        if self.backend == "local" and (self.producer_count != 1 or self.consumer_count != 1):
-            raise ValueError("Local pipeline benchmarks require producer_count=1 and consumer_count=1")
+        if self.backend == "local":
+            raise ValueError(
+                "Local pipeline benchmarks are unsupported because registry-backed queues are not safe for "
+                "concurrent producer/consumer access"
+            )
         return self
 
 
@@ -154,7 +158,7 @@ class JobsPipelineScalingSuite(BenchTestSuite):
         {
             "smoke": {
                 "duration_seconds": 1.0,
-                "backend": "local",
+                "backend": "redis",
                 "payload_size_bytes": 128,
                 "batch_size": 25,
                 "producer_count": 1,
@@ -200,6 +204,7 @@ class JobsPipelineScalingSuite(BenchTestSuite):
         producer_start = threading.Event()
         producer_stop = threading.Event()
         validation_errors: list[str] = []
+        background_errors: list[str] = []
         started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         elapsed = 0.0
         remaining_messages: int | None = None
@@ -326,6 +331,12 @@ class JobsPipelineScalingSuite(BenchTestSuite):
             for thread in consumer_threads:
                 if thread.is_alive():
                     thread.join(timeout=parameters.join_timeout_seconds)
+            background_errors = redis_background_errors(
+                runtime.client,
+                *producer_clients,
+                *(getattr(consumer, "consumer_backend", None) for consumer in consumers),
+            )
+            validation_errors.extend(background_errors)
             for consumer, thread in zip(consumers, consumer_threads, strict=True):
                 if not thread.is_alive():
                     consumer.close()
@@ -369,6 +380,7 @@ class JobsPipelineScalingSuite(BenchTestSuite):
                 "per_consumer_messages": [stats.successes for stats in consumer_stats],
                 "messages_per_second": processed.successes / elapsed if elapsed > 0 else 0.0,
                 "latency_kind": "publish_to_consumer_end_to_end",
+                "background_errors": background_errors,
                 "resources_retained": resources_retained,
                 "queue_name": runtime.queue_name if resources_retained else None,
             },
