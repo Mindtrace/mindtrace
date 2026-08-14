@@ -395,17 +395,17 @@ def _infer_segmentation_profile(dataset: Any) -> str:
 def build_datasets(
     export_path: str | Path,
     *,
-    format: str = "huggingface",
     task: str = "classification",
     splits: Sequence[str] | None = None,
     transforms: Mapping[str, Callable[..., Any]] | Callable[..., Any] | None = None,
+    task_profiles: Mapping[str, Callable[..., Any]] | None = None,
 ) -> dict[str, Any]:
     """Build split-aware PyTorch-compatible datasets over a Mindtrace dataset export."""
 
-    normalized_format = format.strip().lower()
-    if normalized_format != "huggingface":
-        raise ValueError("Generic datasets currently support format='huggingface' only.")
-    normalized_task = _normalize_task(task)
+    custom_profiles = dict(task_profiles or {})
+    normalized_task = task.strip().lower().replace("-", "_")
+    if normalized_task not in custom_profiles:
+        normalized_task = _normalize_task(task)
 
     datasets_module, _, _, _ = _require_huggingface_dataloader_dependencies()
     payload = datasets_module.load_from_disk(str(export_path))
@@ -419,6 +419,9 @@ def build_datasets(
     for split in requested:
         transform = _transform_for_split(transforms, split)
         profile = normalized_task
+        if profile in custom_profiles:
+            built[split] = custom_profiles[profile](_select_split(payload, split), split=split, transform=transform)
+            continue
         if profile == "segmentation":
             profile = _infer_segmentation_profile(_select_split(payload, split))
         if profile == "classification":
@@ -456,10 +459,10 @@ def build_datasets(
 def build_dataloaders(
     export_path: str | Path,
     *,
-    format: str = "huggingface",
     task: str = "classification",
     splits: Sequence[str] | None = None,
     transforms: Mapping[str, Callable[..., Any]] | Callable[..., Any] | None = None,
+    task_profiles: Mapping[str, Callable[..., Any]] | None = None,
     batch_size: int = 32,
     num_workers: int = 0,
     pin_memory: bool = False,
@@ -485,10 +488,10 @@ def build_dataloaders(
 
     built_datasets = build_datasets(
         export_path,
-        format=format,
         task=task,
         splits=splits,
         transforms=transforms,
+        task_profiles=task_profiles,
     )
     _, torch, DataLoader, _ = _require_huggingface_dataloader_dependencies()
     shuffled = {"train"} if shuffle_splits is None else set(shuffle_splits)

@@ -533,7 +533,6 @@ def test_build_dataloaders_discovers_splits_and_only_shuffles_train(monkeypatch)
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
-        ({"format": "coco"}, "format='huggingface'"),
         ({"task": "panoptic"}, "task='segmentation'"),
         ({"batch_size": 0}, "batch_size"),
         ({"num_workers": -1}, "num_workers"),
