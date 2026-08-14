@@ -454,6 +454,8 @@ def build_dataloaders(
     drop_last: bool = False,
     shuffle_splits: Collection[str] | None = None,
     drop_last_splits: Collection[str] | None = None,
+    dataloader_kwargs: Mapping[str, Any] | None = None,
+    per_split_dataloader_kwargs: Mapping[str, Mapping[str, Any]] | None = None,
     seed: int = 0,
 ) -> dict[str, Any]:
     """Build split-aware PyTorch DataLoaders over a Mindtrace dataset export."""
@@ -497,6 +499,18 @@ def build_dataloaders(
                 loader_kwargs["prefetch_factor"] = prefetch_factor
         if not isinstance(dataset, HuggingFaceClassificationDataset):
             loader_kwargs["collate_fn"] = _variable_size_collate_fn
+        native_kwargs = {
+            **(dataloader_kwargs or {}),
+            **((per_split_dataloader_kwargs or {}).get(split, {})),
+        }
+        if "sampler" in native_kwargs:
+            if shuffle_splits is not None and split in shuffled:
+                raise ValueError(f"Split {split!r} cannot configure both a sampler and shuffle=True.")
+            loader_kwargs["shuffle"] = False
+        if "batch_sampler" in native_kwargs:
+            for incompatible in ("batch_size", "shuffle", "sampler", "drop_last"):
+                loader_kwargs.pop(incompatible, None)
+        loader_kwargs.update(native_kwargs)
         loaders[split] = DataLoader(dataset, **loader_kwargs)
     return loaders
 
