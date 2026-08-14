@@ -26,7 +26,7 @@ The training sub-package provides:
 - **Loss Functions**: 9 task-specific losses for classification, detection, segmentation, and composite use
 - **Optimizer Factory**: `build_optimizer` with differential learning rate support
 - **Scheduler Factory**: `build_scheduler` with warmup-cosine, step, plateau, and 1-cycle options
-- **Datalake Bridge**: `DatalakeDataset` and `build_datalake_loader` for direct data integration
+- **Hugging Face Data Adapters**: typed datasets and DataLoaders over exported artifacts
 
 ## Architecture
 
@@ -36,7 +36,7 @@ training/
 ├── trainer.py               # Trainer class (AMP, DDP, grad accum)
 ├── callbacks.py             # Callback base + 6 built-in callbacks
 ├── optimizers.py            # build_optimizer, build_scheduler, WarmupCosineScheduler
-├── datalake.py              # DatalakeDataset, build_datalake_loader
+├── huggingface_dataloaders.py # Exported-artifact datasets and DataLoaders
 └── losses/
     ├── __init__.py          # All loss exports
     ├── classification.py    # FocalLoss, LabelSmoothingCrossEntropy, SupConLoss
@@ -301,26 +301,6 @@ sched = WarmupCosineScheduler(
 )
 ```
 
-## Datalake Integration
-
-Load training data directly from a Mindtrace Datalake query. Requires `mindtrace-datalake` at runtime.
-
-```python
-from mindtrace.models.training import DatalakeDataset, build_datalake_loader
-
-# torch.utils.data.Dataset backed by a Datalake query
-ds = DatalakeDataset(datalake=dl, query={"type": "image"}, transform=tfm)
-
-# Or get a DataLoader directly
-loader = build_datalake_loader(
-    datalake=dl,
-    query={"type": "image"},
-    transform=tfm,
-    batch_size=32,
-    shuffle=True,
-)
-```
-
 ## Multi-GPU Training
 
 ### High-Level (Trainer)
@@ -374,8 +354,6 @@ from mindtrace.models.training import (
     build_scheduler,            # name -> LRScheduler
 
     # Datalake
-    DatalakeDataset,            # torch Dataset backed by Datalake query
-    build_datalake_loader,      # Datalake query -> DataLoader
 )
 
 from mindtrace.models.training.losses import (

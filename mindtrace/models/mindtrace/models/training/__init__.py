@@ -23,11 +23,9 @@ Optimizers & Schedulers
   differential learning rates (``backbone_lr_multiplier``).
 - ``build_scheduler``: Factory for named PyTorch LR schedulers.
 
-Datalake Bridge
----------------
-- ``DatalakeDataset``: ``torch.utils.data.Dataset`` backed by a Datalake query.
-- ``build_datalake_loader``: Factory that returns a ``DataLoader`` from a
-  Datalake query.  Requires ``mindtrace-datalake`` at runtime.
+Hugging Face Data Adapters
+--------------------------
+- Typed PyTorch datasets and DataLoader builders over exported artifacts.
 """
 
 from __future__ import annotations
@@ -41,7 +39,6 @@ from mindtrace.models.training.callbacks import (
     ProgressLogger,
     UnfreezeSchedule,
 )
-from mindtrace.models.training.datalake_bridge import DatalakeDataset, build_datalake_loader
 from mindtrace.models.training.huggingface_dataloaders import (
     HuggingFaceClassificationDataset,
     HuggingFaceDetectionDataset,
@@ -67,9 +64,6 @@ __all__ = [
     # Optimizer / scheduler factories
     "build_optimizer",
     "build_scheduler",
-    # Datalake bridge
-    "DatalakeDataset",
-    "build_datalake_loader",
     "HuggingFaceClassificationDataset",
     "HuggingFaceDetectionDataset",
     "HuggingFaceInstanceSegmentationDataset",
