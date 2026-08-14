@@ -285,10 +285,6 @@ class MockGenICamCameraBackend(CameraBackend):
         # Simulate initialization work
         await asyncio.sleep(0.2)
 
-        # Load config if provided
-        if self.camera_config_path and os.path.exists(self.camera_config_path):
-            await self.import_config(self.camera_config_path)
-
         self.initialized = True
 
         # Return mock objects

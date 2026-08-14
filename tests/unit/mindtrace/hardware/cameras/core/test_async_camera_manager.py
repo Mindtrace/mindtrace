@@ -82,11 +82,11 @@ async def test_open_restores_saved_config_before_connection_test(monkeypatch, tm
 
     try:
         camera = await manager.open(name, test_connection=False)
-        assert await camera.configure(exposure=15000) is True
+        assert (await camera.configure(exposure=15000)).success is True
         await camera.export_config(config_path)
 
         # Runtime configure does not update the saved file.
-        assert await camera.configure(exposure=25000) is True
+        assert (await camera.configure(exposure=25000)).success is True
         assert await camera.get_exposure() == 25000
         await manager.close(name)
 
@@ -159,9 +159,9 @@ async def test_reset_saved_config_then_open_uses_backend_defaults(tmp_path):
 
     try:
         camera = await manager.open(name, test_connection=False)
-        assert await camera.configure(exposure=15000) is True
+        assert (await camera.configure(exposure=15000)).success is True
         await camera.export_config(config_path)
-        assert await camera.configure(exposure=25000) is True
+        assert (await camera.configure(exposure=25000)).success is True
         await manager.close(name)
 
         assert manager.reset_saved_config(name) is True
@@ -412,7 +412,7 @@ async def test_open_skips_restore_when_disabled_at_manager_level(tmp_path):
 
     try:
         camera = await manager.open(name, test_connection=False)
-        assert await camera.configure(exposure=15000) is True
+        assert (await camera.configure(exposure=15000)).success is True
         await camera.export_config(config_path)
         await manager.close(name)
 
@@ -450,7 +450,7 @@ async def test_open_registers_camera_only_after_restore_and_connection_test(monk
 
     try:
         camera = await manager.open(name, test_connection=False)
-        assert await camera.configure(exposure=15000) is True
+        assert (await camera.configure(exposure=15000)).success is True
         await camera.export_config(manager.get_camera_config_path(name))
         await manager.close(name)
 

@@ -588,16 +588,14 @@ class TestCameraManagerServiceBusinessLogic:
         service, mock_manager = service_with_mock_manager
         mock_manager.active_cameras = ["MockBasler:Camera1"]
         mock_camera = AsyncMock()
-        mock_camera.get_roi.return_value = {"x": 1, "y": 2, "width": 640, "height": 480}
-        mock_camera.get_exposure.return_value = 1500
-        mock_camera.get_gain.side_effect = RuntimeError("no gain")
-        mock_camera.get_trigger_mode.return_value = "continuous"
-        mock_camera.get_pixel_format.side_effect = RuntimeError("no pixel format")
-        mock_camera.get_white_balance.return_value = "auto"
-        mock_camera.get_image_enhancement.side_effect = RuntimeError("no enhancement")
-        mock_camera.get_bandwidth_limit.return_value = 800.0
-        mock_camera.get_packet_size.side_effect = RuntimeError("no packet")
-        mock_camera.get_inter_packet_delay.return_value = 100
+        mock_camera.get_configuration.return_value = {
+            "exposure_time": 1500,
+            "roi": (1, 2, 640, 480),
+            "trigger_mode": "continuous",
+            "white_balance": "auto",
+            "bandwidth_limit": 800.0,
+            "inter_packet_delay": 100,
+        }
         mock_manager.open = AsyncMock(return_value=mock_camera)
 
         response = await service.get_camera_configuration(CameraQueryRequest(camera="MockBasler:Camera1"))
@@ -615,13 +613,16 @@ class TestCameraManagerServiceBusinessLogic:
         assert response.data.inter_packet_delay == 100
 
     @pytest.mark.asyncio
-    async def test_import_and_export_camera_config_delegate_to_proxy(self, service_with_mock_manager):
+    async def test_import_and_export_camera_config_delegate_to_manager(self, service_with_mock_manager):
+        from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult
+
         service, mock_manager = service_with_mock_manager
         mock_manager.active_cameras = ["MockBasler:Camera1"]
-        mock_camera = AsyncMock()
-        mock_camera.import_config.return_value = (1, 1)
-        mock_camera.export_config.return_value = False
-        mock_manager.open = AsyncMock(return_value=mock_camera)
+        mock_manager.open = AsyncMock()
+        mock_manager.apply_saved_config = AsyncMock(
+            return_value=ConfigurationApplyResult(applied=1, total=1)
+        )
+        mock_manager.persist_camera_config = AsyncMock(return_value="/tmp/camera.json")
 
         import_response = await service.import_camera_config(
             ConfigFileImportRequest(camera="MockBasler:Camera1", config_path="/tmp/camera.json")
@@ -635,25 +636,32 @@ class TestCameraManagerServiceBusinessLogic:
         assert import_response.data.file_path == "/tmp/camera.json"
         assert import_response.data.properties_count == 1
         assert import_response.data.total == 1
-        assert export_response.success is False
+        assert export_response.success is True
         assert export_response.data.operation == "export"
-        assert export_response.data.success is False
+        assert export_response.data.success is True
+        mock_manager.apply_saved_config.assert_awaited_once_with("MockBasler:Camera1", "/tmp/camera.json")
+        mock_manager.persist_camera_config.assert_awaited_once_with("MockBasler:Camera1", "/tmp/camera.json")
 
     @pytest.mark.asyncio
     async def test_import_and_export_camera_config_use_default_path_when_omitted(self, service_with_mock_manager):
+        from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult
+
         service, mock_manager = service_with_mock_manager
         mock_manager.active_cameras = ["MockBasler:Camera1"]
         mock_manager.get_camera_config_path = Mock(return_value="/default/MockBasler_Camera1.json")
-        mock_camera = AsyncMock()
-        mock_camera.import_config.return_value = (1, 1)
-        mock_camera.export_config.return_value = True
-        mock_manager.open = AsyncMock(return_value=mock_camera)
+        mock_manager.open = AsyncMock()
+        mock_manager.apply_saved_config = AsyncMock(
+            return_value=ConfigurationApplyResult(applied=1, total=1)
+        )
+        mock_manager.persist_camera_config = AsyncMock(return_value="/default/MockBasler_Camera1.json")
 
         import_response = await service.import_camera_config(ConfigFileImportRequest(camera="MockBasler:Camera1"))
         export_response = await service.export_camera_config(ConfigFileExportRequest(camera="MockBasler:Camera1"))
 
-        mock_camera.import_config.assert_awaited_once_with("/default/MockBasler_Camera1.json")
-        mock_camera.export_config.assert_awaited_once_with("/default/MockBasler_Camera1.json")
+        mock_manager.apply_saved_config.assert_awaited_once_with("MockBasler:Camera1", "/default/MockBasler_Camera1.json")
+        mock_manager.persist_camera_config.assert_awaited_once_with(
+            "MockBasler:Camera1", "/default/MockBasler_Camera1.json"
+        )
         assert import_response.data.file_path == "/default/MockBasler_Camera1.json"
         assert import_response.data.properties_count == 1
         assert import_response.data.total == 1
@@ -661,11 +669,14 @@ class TestCameraManagerServiceBusinessLogic:
 
     @pytest.mark.asyncio
     async def test_import_camera_config_reports_partial_apply_counts(self, service_with_mock_manager):
+        from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult
+
         service, mock_manager = service_with_mock_manager
         mock_manager.active_cameras = ["MockBasler:Camera1"]
-        mock_camera = AsyncMock()
-        mock_camera.import_config.return_value = (3, 7)
-        mock_manager.open = AsyncMock(return_value=mock_camera)
+        mock_manager.open = AsyncMock()
+        mock_manager.apply_saved_config = AsyncMock(
+            return_value=ConfigurationApplyResult(applied=3, total=7)
+        )
 
         response = await service.import_camera_config(
             ConfigFileImportRequest(camera="MockBasler:Camera1", config_path="/tmp/camera.json")

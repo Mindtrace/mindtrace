@@ -447,10 +447,6 @@ class BaslerCameraBackend(CameraBackend):
             self.camera = camera
             await self._configure_camera()
 
-            # Load config if provided
-            if self.camera_config_path and os.path.exists(self.camera_config_path):
-                await self.import_config(self.camera_config_path)
-
             self.initialized = True
             return True, camera, None
 
@@ -492,10 +488,6 @@ class BaslerCameraBackend(CameraBackend):
                     # Configure the camera after opening
                     self.camera = camera
                     await self._configure_camera()
-
-                    # Load config if provided
-                    if self.camera_config_path and os.path.exists(self.camera_config_path):
-                        await self.import_config(self.camera_config_path)
 
                     self.initialized = True
                     return True, camera, None
@@ -543,10 +535,6 @@ class BaslerCameraBackend(CameraBackend):
                     # Configure the camera after opening
                     self.camera = camera
                     await self._configure_camera()
-
-                    # Load config if provided
-                    if self.camera_config_path and os.path.exists(self.camera_config_path):
-                        await self.import_config(self.camera_config_path)
 
                     self.initialized = True
                     return True, camera, None

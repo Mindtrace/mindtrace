@@ -1101,6 +1101,50 @@ class OpenCVCameraBackend(CameraBackend):
         except Exception as e:
             self.logger.error(f"Failed to initialize image enhancement for camera '{self.camera_name}': {str(e)}")
 
+    _OPENCV_PROPERTY_MAP: Dict[str, int] = {}
+
+    @classmethod
+    def _opencv_property_map(cls) -> Dict[str, int]:
+        if not cls._OPENCV_PROPERTY_MAP and cv2 is not None:
+            cls._OPENCV_PROPERTY_MAP = {
+                "brightness": cv2.CAP_PROP_BRIGHTNESS,
+                "contrast": cv2.CAP_PROP_CONTRAST,
+                "saturation": cv2.CAP_PROP_SATURATION,
+                "hue": cv2.CAP_PROP_HUE,
+                "gain": cv2.CAP_PROP_GAIN,
+                "auto_exposure": cv2.CAP_PROP_AUTO_EXPOSURE,
+                "white_balance_blue_u": cv2.CAP_PROP_WHITE_BALANCE_BLUE_U,
+                "white_balance_red_v": cv2.CAP_PROP_WHITE_BALANCE_RED_V,
+            }
+        return cls._OPENCV_PROPERTY_MAP
+
+    async def apply_opencv_property(self, key: str, value: Any) -> bool:
+        """Apply a single OpenCV capture property by canonical key name."""
+        await self._ensure_open()
+        assert cv2 is not None
+        prop_map = self._opencv_property_map()
+        cv_prop = prop_map.get(key)
+        if cv_prop is None:
+            return False
+        return bool(await self._run_blocking(self.cap.set, cv_prop, value))
+
+    async def get_opencv_properties(self) -> Dict[str, Any]:
+        """Read OpenCV capture properties included in the canonical config payload."""
+        await self._ensure_open()
+        assert cv2 is not None
+        result: Dict[str, Any] = {}
+        for key, cv_prop in self._opencv_property_map().items():
+            try:
+                result[key] = await self._run_blocking(self.cap.get, cv_prop)
+            except Exception:
+                pass
+        try:
+            auto_wb = await self._run_blocking(self.cap.get, cv2.CAP_PROP_AUTO_WB)
+            result["white_balance"] = "auto" if auto_wb > 0 else "manual"
+        except Exception:
+            pass
+        return result
+
     async def export_config(self, config_path: str):
         """Export current camera configuration to common JSON format.
 

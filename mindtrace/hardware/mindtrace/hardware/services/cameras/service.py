@@ -11,7 +11,7 @@ import io
 import logging
 import os
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Optional, Tuple
 
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image as PILImage
@@ -19,6 +19,9 @@ from PIL import Image as PILImage
 from mindtrace.core import utcnow
 from mindtrace.core.utils.conversions import ndarray_to_pil
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
+from mindtrace.hardware.cameras.core.configuration import (
+    settings_to_camera_configuration_dict,
+)
 from mindtrace.hardware.core.exceptions import (
     CameraConfigurationError,
     CameraNotFoundError,
@@ -112,37 +115,6 @@ from mindtrace.hardware.services.cameras.models import (
 )
 from mindtrace.hardware.services.cameras.schemas import ALL_SCHEMAS, HealthSchema
 from mindtrace.services import Service
-
-
-def _saved_config_dict_to_camera_configuration(data: Dict[str, Any]) -> CameraConfiguration:
-    """Map persisted camera config JSON to the API configuration model."""
-    roi: Optional[Tuple[int, int, int, int]] = None
-    roi_data = data.get("roi")
-    if isinstance(roi_data, dict):
-        roi = (
-            int(roi_data.get("x", 0)),
-            int(roi_data.get("y", 0)),
-            int(roi_data.get("width", 0)),
-            int(roi_data.get("height", 0)),
-        )
-    elif isinstance(roi_data, (list, tuple)) and len(roi_data) == 4:
-        roi = tuple(int(value) for value in roi_data)  # type: ignore[assignment]
-    elif all(key in data for key in ("roi_x", "roi_y", "width", "height")):
-        roi = (int(data["roi_x"]), int(data["roi_y"]), int(data["width"]), int(data["height"]))
-
-    return CameraConfiguration(
-        exposure_time=data.get("exposure_time"),
-        gain=data.get("gain"),
-        roi=roi,
-        trigger_mode=data.get("trigger_mode"),
-        pixel_format=data.get("pixel_format"),
-        white_balance=data.get("white_balance"),
-        image_enhancement=data.get("image_enhancement"),
-        optical_power=data.get("optical_power"),
-        bandwidth_limit=data.get("bandwidth_limit"),
-        packet_size=data.get("packet_size"),
-        inter_packet_delay=data.get("inter_packet_delay"),
-    )
 
 
 class CameraManagerService(Service):
@@ -891,88 +863,12 @@ class CameraManagerService(Service):
         try:
             manager = await self._get_camera_manager()
 
-            # Check if camera is active
             if request.camera not in manager.active_cameras:
                 raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
 
             camera_proxy = await manager.open(request.camera)
-
-            # Get current configuration
-            try:
-                roi_data = await camera_proxy.get_roi()
-                roi_tuple = (
-                    roi_data.get("x", 0),
-                    roi_data.get("y", 0),
-                    roi_data.get("width", 0),
-                    roi_data.get("height", 0),
-                )
-            except Exception:
-                roi_tuple = None
-
-            # Get individual configuration parameters with error handling
-            try:
-                exposure_time = await camera_proxy.get_exposure()
-            except Exception:
-                exposure_time = None
-
-            try:
-                gain = await camera_proxy.get_gain()
-            except Exception:
-                gain = None
-
-            try:
-                trigger_mode = await camera_proxy.get_trigger_mode()
-            except Exception:
-                trigger_mode = None
-
-            try:
-                pixel_format = await camera_proxy.get_pixel_format()
-            except Exception:
-                pixel_format = None
-
-            try:
-                white_balance = await camera_proxy.get_white_balance()
-            except Exception:
-                white_balance = None
-
-            try:
-                image_enhancement = await camera_proxy.get_image_enhancement()
-            except Exception:
-                image_enhancement = None
-
-            try:
-                optical_power = await camera_proxy.get_optical_power()
-            except Exception:
-                optical_power = None
-            # GigE network settings (camera-level)
-            try:
-                bandwidth_limit = await camera_proxy.get_bandwidth_limit()
-            except Exception:
-                bandwidth_limit = None
-
-            try:
-                packet_size = await camera_proxy.get_packet_size()
-            except Exception:
-                packet_size = None
-
-            try:
-                inter_packet_delay = await camera_proxy.get_inter_packet_delay()
-            except Exception:
-                inter_packet_delay = None
-
-            config = CameraConfiguration(
-                exposure_time=exposure_time,
-                gain=gain,
-                roi=roi_tuple,
-                trigger_mode=trigger_mode,
-                pixel_format=pixel_format,
-                white_balance=white_balance,
-                image_enhancement=image_enhancement,
-                optical_power=optical_power,
-                bandwidth_limit=bandwidth_limit,
-                packet_size=packet_size,
-                inter_packet_delay=inter_packet_delay,
-            )
+            config_dict = await camera_proxy.get_configuration()
+            config = CameraConfiguration(**settings_to_camera_configuration_dict(config_dict))
 
             return CameraConfigurationResponse(
                 success=True, message=f"Retrieved configuration for camera '{request.camera}'", data=config
@@ -995,7 +891,7 @@ class CameraManagerService(Service):
                     data=None,
                 )
 
-            config = _saved_config_dict_to_camera_configuration(raw_config)
+            config = CameraConfiguration(**settings_to_camera_configuration_dict(raw_config))
             return SavedCameraConfigurationResponse(
                 success=True,
                 message=f"Retrieved saved configuration for camera '{request.camera}'",
@@ -1015,9 +911,11 @@ class CameraManagerService(Service):
             if request.camera not in manager.active_cameras:
                 raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
 
-            camera_proxy = await manager.open(request.camera)
-            applied, total = await camera_proxy.import_config(config_path)
-            success = total == 0 or applied == total
+            await manager.open(request.camera)
+            apply_result = await manager.apply_saved_config(request.camera, config_path)
+            applied = apply_result.applied
+            total = apply_result.total
+            success = apply_result.success
 
             result = ConfigFileOperationResult(
                 file_path=config_path,
@@ -1051,8 +949,9 @@ class CameraManagerService(Service):
             if request.camera not in manager.active_cameras:
                 raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
 
-            camera_proxy = await manager.open(request.camera)
-            success = await camera_proxy.export_config(config_path)
+            await manager.open(request.camera)
+            config_path = await manager.persist_camera_config(request.camera, config_path)
+            success = True
 
             result = ConfigFileOperationResult(file_path=config_path, operation="export", success=success)
 

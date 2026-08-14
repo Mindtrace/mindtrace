@@ -87,7 +87,7 @@ async def test_async_camera_configure_all_settings(monkeypatch):
         backend.set_auto_wb_once = _set_wb  # type: ignore[attr-defined]
         backend.set_image_quality_enhancement = _set_ie  # type: ignore[attr-defined]
 
-        await cam.configure(
+        result = await cam.configure(
             exposure=1234,
             gain=1.5,
             roi=(1, 2, 3, 4),
@@ -96,6 +96,8 @@ async def test_async_camera_configure_all_settings(monkeypatch):
             white_balance="auto",
             image_enhancement=True,
         )
+        assert result.success is True
+        assert result.applied == result.total
     finally:
         await manager.close(None)
 

@@ -263,10 +263,6 @@ class MockBaslerCameraBackend(CameraBackend):
                 "connected": True,
             }
 
-            # Load config if provided
-            if self.camera_config_path and os.path.exists(self.camera_config_path):
-                await self.import_config(self.camera_config_path)
-
             # Set initialized flag
             self.initialized = True
             self.logger.info(f"Mock Basler camera '{self.camera_name}' initialized successfully")

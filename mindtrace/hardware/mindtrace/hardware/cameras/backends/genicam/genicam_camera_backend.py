@@ -1626,7 +1626,7 @@ class GenICamCameraBackend(CameraBackend):
             if "genicam_nodes" in config and isinstance(config["genicam_nodes"], dict):
                 total += 1
                 try:
-                    await self._apply_genicam_nodes(config["genicam_nodes"])
+                    await self.apply_genicam_nodes(config["genicam_nodes"])
                     applied += 1
                 except Exception as e:
                     self.logger.warning(f"Could not apply GenICam nodes for camera '{self.camera_name}': {e}")
@@ -1677,7 +1677,7 @@ class GenICamCameraBackend(CameraBackend):
             }
 
             # Add GenICam-specific nodes that might be useful
-            genicam_nodes = await self._export_genicam_nodes()
+            genicam_nodes = await self.get_genicam_nodes()
             if genicam_nodes:
                 config["genicam_nodes"] = genicam_nodes
 
@@ -1699,7 +1699,7 @@ class GenICamCameraBackend(CameraBackend):
             self.logger.error(f"Configuration export failed for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to export configuration: {str(e)}")
 
-    async def _apply_genicam_nodes(self, node_config: Dict[str, Any]):
+    async def apply_genicam_nodes(self, node_config: Dict[str, Any]):
         """Apply GenICam node configuration.
 
         Args:
@@ -1732,7 +1732,7 @@ class GenICamCameraBackend(CameraBackend):
         except Exception as e:
             self.logger.warning(f"GenICam node application failed for camera '{self.camera_name}': {str(e)}")
 
-    async def _export_genicam_nodes(self) -> Dict[str, Any]:
+    async def get_genicam_nodes(self) -> Dict[str, Any]:
         """Export key GenICam node values.
 
         Returns:

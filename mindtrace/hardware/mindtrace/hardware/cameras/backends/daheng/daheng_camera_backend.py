@@ -321,10 +321,6 @@ class DahengCameraBackend(CameraBackend):
             # Configure the camera
             await self._configure_camera()
 
-            # Load config if provided
-            if self.camera_config_path and os.path.exists(self.camera_config_path):
-                await self.import_config(self.camera_config_path)
-
             self.initialized = True
             self.logger.info(f"Daheng camera '{self.camera_name}' connected and initialized")
             return True, cam, None

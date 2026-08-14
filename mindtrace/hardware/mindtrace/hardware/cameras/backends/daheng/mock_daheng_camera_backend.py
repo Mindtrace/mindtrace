@@ -234,9 +234,6 @@ class MockDahengCameraBackend(CameraBackend):
                 "connected": True,
             }
 
-            if self.camera_config_path and os.path.exists(self.camera_config_path):
-                await self.import_config(self.camera_config_path)
-
             self.initialized = True
             self._streaming = True
             self.logger.info(f"Mock Daheng camera '{self.camera_name}' initialized successfully")

@@ -16,6 +16,7 @@ from mindtrace.hardware.cameras.core.capture_groups import (
     get_semaphore_for_capture,
     validate_stage_set_configs,
 )
+from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult
 from mindtrace.hardware.core.exceptions import (
     CameraConfigurationError,
     CameraConnectionError,
@@ -780,20 +781,54 @@ class AsyncCameraManager(Mindtrace):
     async def _auto_import_config(self, camera_name: str, camera: AsyncCamera) -> None:
         """Restore camera config from previously saved file."""
         try:
-            config_path = self.get_camera_config_path(camera_name)
-            if not Path(config_path).exists():
+            raw_config = self.read_saved_config(camera_name)
+            if raw_config is None:
                 self.logger.debug(f"No saved config for '{camera_name}'")
                 return
-            applied, total = await camera.import_config(config_path)
-            if total > 0 and applied < total:
+            result = await camera.configure(**raw_config)
+            if result.total > 0 and result.applied < result.total:
                 self.logger.warning(
                     f"Saved config for '{camera_name}' only partially applied "
-                    f"({applied}/{total} settings) from {config_path}"
+                    f"({result.applied}/{result.total} settings)"
                 )
             else:
-                self.logger.info(f"Auto-imported config for '{camera_name}' from {config_path}")
+                self.logger.info(f"Auto-imported config for '{camera_name}'")
         except Exception as e:
             self.logger.warning(f"Failed to auto-import config for '{camera_name}': {e}")
+
+    async def apply_saved_config(self, camera_name: str, config_path: Optional[str] = None) -> ConfigurationApplyResult:
+        """Read configuration JSON from disk and apply via configure().
+
+        Args:
+            camera_name: Active camera name.
+            config_path: Optional explicit path; defaults to managed per-camera profile.
+
+        Returns:
+            ConfigurationApplyResult with applied/total counts.
+        """
+        if camera_name not in self._cameras:
+            raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
+        path = Path(config_path) if config_path else Path(self.get_camera_config_path(camera_name))
+        if not path.exists():
+            raise CameraConfigurationError(f"Configuration file not found: {path}")
+        raw_config = json.loads(path.read_text(encoding="utf-8"))
+        return await self._cameras[camera_name].configure(**raw_config)
+
+    async def persist_camera_config(self, camera_name: str, config_path: Optional[str] = None) -> str:
+        """Export current camera settings to a JSON file.
+
+        Args:
+            camera_name: Active camera name.
+            config_path: Optional explicit path; defaults to managed per-camera profile.
+
+        Returns:
+            Path the configuration was written to.
+        """
+        if camera_name not in self._cameras:
+            raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
+        path = config_path or self.get_camera_config_path(camera_name)
+        await self._cameras[camera_name].export_config(path)
+        return path
 
     async def _handle_camera_failure(self, camera_name: str) -> None:
         """Handle consecutive failures: cooldown check, close, reinit, restore config."""
@@ -845,10 +880,10 @@ class AsyncCameraManager(Mindtrace):
         """Configure a camera and record settings for auto-reinit replay."""
         if camera_name not in self._cameras:
             raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
-        success = await self._cameras[camera_name].configure(**settings)
-        if success:
+        result = await self._cameras[camera_name].configure(**settings)
+        if result.success:
             self._merge_runtime_configure(camera_name, settings)
-        return bool(success)
+        return result.success
 
     def _record_capture_success(self, camera_name: str) -> None:
         """Reset failure counter on successful capture."""
