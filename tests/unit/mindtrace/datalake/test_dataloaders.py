@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from mindtrace.datalake import dataloaders
+from mindtrace.models.training import huggingface_dataloaders as dataloaders
 
 
 class _FakeImage:

@@ -32,14 +32,6 @@ from .data_vault_backends import (
     LocalDataVaultBackend,
 )
 from .datalake import Datalake
-from .dataloaders import (
-    HuggingFaceClassificationDataset,
-    HuggingFaceDetectionDataset,
-    HuggingFaceInstanceSegmentationDataset,
-    HuggingFaceSemanticSegmentationDataset,
-    build_dataloaders,
-    build_datasets,
-)
 from .exporters import ExportableDataset, ExportableItem, ExportResult, export_dataset_to_format, get_dataset_exporter
 from .pagination_types import (
     CursorEnvelope,
@@ -139,10 +131,6 @@ __all__ = [
     "SlowOpsPolicy",
     "DataVault",
     "DataVaultBackend",
-    "HuggingFaceClassificationDataset",
-    "HuggingFaceDetectionDataset",
-    "HuggingFaceInstanceSegmentationDataset",
-    "HuggingFaceSemanticSegmentationDataset",
     "DatalakeServiceAsyncDataVaultBackend",
     "DatalakeServiceDataVaultBackend",
     "LocalAsyncDataVaultBackend",
@@ -176,8 +164,6 @@ __all__ = [
     "DatasetVersion",
     "DatalakeDirectUploadClient",
     "Datalake",
-    "build_datasets",
-    "build_dataloaders",
     "DatalakeService",
     "DirectUploadSession",
     "Datum",

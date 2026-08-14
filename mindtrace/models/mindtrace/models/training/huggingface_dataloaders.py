@@ -15,8 +15,8 @@ def _require_huggingface_dataloader_dependencies():
         from torchvision.transforms.functional import pil_to_tensor
     except ImportError as exc:
         raise ImportError(
-            "Datalake DataLoader wrappers require the optional datasets, torch, and torchvision dependencies. "
-            "Install mindtrace-datalake[dataloaders]."
+            "Hugging Face training adapters require datasets, torch, and torchvision. "
+            "Install mindtrace-models[dataloaders]."
         ) from exc
     return datasets, torch, DataLoader, pil_to_tensor
 

@@ -29,6 +29,7 @@ wandb  = ["wandb>=0.16"]
 
 # Training extras
 train = ["torchvision>=0.15", "optuna>=4.8.0"]
+dataloaders = ["datasets>=2.19.0", "torchvision>=0.15.0"]
 
 # Architecture extras
 timm         = ["timm>=0.9"]

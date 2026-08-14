@@ -415,7 +415,7 @@ records into stable HF schemas.
 from pathlib import Path
 
 from mindtrace.core import Config
-from mindtrace.datalake import build_dataloaders, build_datasets
+from mindtrace.models.training import build_dataloaders, build_datasets
 from torchvision import transforms
 
 mindtrace_temp = Path(Config().MINDTRACE_DIR_PATHS.TEMP_DIR).expanduser()

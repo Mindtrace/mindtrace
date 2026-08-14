@@ -42,6 +42,14 @@ from mindtrace.models.training.callbacks import (
     UnfreezeSchedule,
 )
 from mindtrace.models.training.datalake_bridge import DatalakeDataset, build_datalake_loader
+from mindtrace.models.training.huggingface_dataloaders import (
+    HuggingFaceClassificationDataset,
+    HuggingFaceDetectionDataset,
+    HuggingFaceInstanceSegmentationDataset,
+    HuggingFaceSemanticSegmentationDataset,
+    build_dataloaders,
+    build_datasets,
+)
 from mindtrace.models.training.optimizers import build_optimizer, build_scheduler
 from mindtrace.models.training.trainer import Trainer
 
@@ -62,4 +70,10 @@ __all__ = [
     # Datalake bridge
     "DatalakeDataset",
     "build_datalake_loader",
+    "HuggingFaceClassificationDataset",
+    "HuggingFaceDetectionDataset",
+    "HuggingFaceInstanceSegmentationDataset",
+    "HuggingFaceSemanticSegmentationDataset",
+    "build_datasets",
+    "build_dataloaders",
 ]

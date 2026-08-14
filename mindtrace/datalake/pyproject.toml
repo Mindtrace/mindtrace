@@ -28,11 +28,6 @@ import-flowers102 = [
 export-huggingface = [
     "datasets>=2.19.0",
 ]
-dataloaders = [
-    "datasets>=2.19.0",
-    "torch>=2.0",
-    "torchvision>=0.15.0",
-]
 export-all = [
     "datasets>=2.19.0",
 ]
