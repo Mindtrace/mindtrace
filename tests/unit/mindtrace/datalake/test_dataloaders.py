@@ -61,6 +61,9 @@ class _FakeTensor:
         self.dtype = "bool"
         return self
 
+    def to(self, *_args, **_kwargs):
+        return self
+
 
 class _FakeGenerator:
     def manual_seed(self, seed):
@@ -565,3 +568,142 @@ def test_build_datasets_rejects_missing_requested_split(monkeypatch):
 
     with pytest.raises(KeyError, match="available"):
         dataloaders.build_datasets("/export", splits=("train", "test"))
+
+
+def test_detection_target_contains_only_device_movable_values(monkeypatch):
+    objects_feature = SimpleNamespace(feature={"category": SimpleNamespace(names=["object"])})
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset(
+            [
+                {
+                    "asset_id": "asset-1",
+                    "image": _FakeImage(),
+                    "objects": {
+                        "bbox": [[1.0, 2.0, 3.0, 4.0]],
+                        "category": [0],
+                        "area": [12.0],
+                        "difficult": [False],
+                    },
+                }
+            ],
+            column_names=["asset_id", "image", "objects"],
+            features={"objects": objects_feature},
+        )
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    _, target = dataloaders.HuggingFaceDetectionDataset("/export", split="train")[0]
+
+    assert target
+    assert all(callable(getattr(value, "to", None)) for value in target.values())
+
+
+def test_detection_target_preserves_voc_difficult_flags(monkeypatch):
+    objects_feature = SimpleNamespace(feature={"category": SimpleNamespace(names=["object"])})
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset(
+            [
+                {
+                    "asset_id": "asset-1",
+                    "image": _FakeImage(),
+                    "objects": {
+                        "bbox": [[1.0, 2.0, 3.0, 4.0]],
+                        "category": [0],
+                        "area": [12.0],
+                        "difficult": [True],
+                    },
+                }
+            ],
+            column_names=["asset_id", "image", "objects"],
+            features={"objects": objects_feature},
+        )
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    _, target = dataloaders.HuggingFaceDetectionDataset("/export", split="train")[0]
+
+    assert target["difficult"].value == [True]
+
+
+def test_build_dataloaders_accepts_explicit_per_split_shuffle_and_drop_last(monkeypatch):
+    row = {"image": _FakeImage(), "label": 0}
+    payload = _FakeDatasetDict(
+        default=_FakeSplitDataset([row]),
+        validation=_FakeSplitDataset([row]),
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    loaders = dataloaders.build_dataloaders(
+        "/export",
+        shuffle_splits={"default"},
+        drop_last_splits={"default"},
+    )
+
+    assert loaders["default"].kwargs["shuffle"] is True
+    assert loaders["default"].kwargs["drop_last"] is True
+    assert loaders["validation"].kwargs["shuffle"] is False
+    assert loaders["validation"].kwargs["drop_last"] is False
+
+
+def test_build_dataloaders_forwards_native_dataloader_kwargs(monkeypatch):
+    payload = _FakeDatasetDict(train=_FakeSplitDataset([{"image": _FakeImage(), "label": 0}]))
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+    sampler = object()
+
+    loaders = dataloaders.build_dataloaders(
+        "/export",
+        dataloader_kwargs={"sampler": sampler},
+    )
+
+    assert loaders["train"].kwargs["sampler"] is sampler
+    assert loaders["train"].kwargs["shuffle"] is False
+
+
+def test_semantic_dataset_reads_constants_without_decoding_first_sample(monkeypatch):
+    class _MetadataOnlySplit(_FakeSplitDataset):
+        def __getitem__(self, index):
+            raise AssertionError("dataset construction must not decode row zero")
+
+    split = _MetadataOnlySplit(
+        [],
+        column_names=["asset_id", "background_id", "class_names", "ignore_index", "image", "mask"],
+        features={},
+    )
+    split.info = SimpleNamespace(
+        metadata={
+            "mindtrace": {
+                "profile": "semantic_segmentation",
+                "class_names": ["background", "person"],
+                "background_id": 0,
+                "ignore_index": 255,
+            }
+        }
+    )
+    payload = _FakeDatasetDict(train=split)
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    dataset = dataloaders.HuggingFaceSemanticSegmentationDataset("/export", split="train")
+
+    assert dataset.class_names == ("background", "person")
+    assert dataset.background_id == 0
+    assert dataset.ignore_index == 255

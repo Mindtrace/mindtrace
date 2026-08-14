@@ -253,3 +253,34 @@ def test_prepare_export_destination_overwrites_directory(tmp_path: Path):
 
     assert prepared.is_dir()
     assert not (prepared / "old.txt").exists()
+
+
+def test_export_without_media_does_not_load_asset_payloads():
+    rdv = resolved_dataset_version(asset=sample_asset())
+    datalake = Mock()
+
+    exportable = build_exportable_dataset_from_resolved_version_sync(
+        datalake,
+        rdv,
+        include_media=False,
+    )
+
+    datalake.get_asset_payload.assert_not_called()
+    assert exportable.items[0].payload_bytes is None
+
+
+def test_related_assets_do_not_emit_false_primary_only_warning():
+    primary = sample_asset()
+    related = Asset(
+        asset_id="asset_mask",
+        kind="mask",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="assets", name="asset_mask", version="1"),
+    )
+    rdv = resolved_dataset_version(asset=primary, extra_assets={"mask": related})
+    datalake = Mock()
+    datalake.get_asset_payload = Mock(return_value=png_bytes())
+
+    exportable = build_exportable_dataset_from_resolved_version_sync(datalake, rdv)
+
+    assert not any("exporting primary role" in warning for warning in exportable.warnings)

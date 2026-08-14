@@ -97,3 +97,26 @@ def test_coco_export_rejects_classification_dataset_with_hf_guidance(tmp_path: P
     with pytest.raises(ValueError, match="format='huggingface'"):
         export_dataset_as_coco(dataset, destination=tmp_path / "flowers-coco")
     assert not (tmp_path / "flowers-coco").exists()
+
+
+def test_coco_export_rejects_dataset_without_bbox_or_polygon_annotations(tmp_path: Path):
+    annotation = AnnotationRecord(
+        annotation_id="mask-1",
+        kind="mask",
+        label="foreground",
+        source={"type": "human", "name": "annotator"},
+        geometry={"type": "mask", "mask_asset_id": "asset_img"},
+    )
+    dataset = ExportableDataset(
+        name="mask-only",
+        items=[
+            ExportableItem(
+                asset=sample_asset(),
+                payload_bytes=png_bytes(),
+                annotations=[annotation],
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="bbox.*polygon"):
+        export_dataset_as_coco(dataset, destination=tmp_path / "coco")
