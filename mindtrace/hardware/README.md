@@ -503,7 +503,7 @@ from mindtrace.hardware import PLCManager
 
 async def plc_operations():
     manager = PLCManager()
-    await manager.register_plc("Line1", "192.168.1.100", plc_type="logix")
+    await manager.register_plc("Line1", "AllenBradley", "192.168.1.100", plc_type="logix")
     await manager.connect_plc("Line1")
 
     # Read/write operations return one TagResult per tag
@@ -511,7 +511,7 @@ async def plc_operations():
     if results["Motor_Speed"].ok:
         speed = results["Motor_Speed"].value
     else:
-        kind = results["Motor_Speed"].error.kind  # missing_tag / type_mismatch / encode / transport
+        kind = results["Motor_Speed"].error.kind  # missing_tag / type_mismatch / encode / transient / unknown
 
     await manager.write_tag("Line1", [("Command", True)])
 
@@ -523,20 +523,26 @@ asyncio.run(plc_operations())
 ### Transport behaviour
 
 Reads and writes are serialized on separate channels (a read driver and a write
-driver per PLC), each recovering on its own:
+driver per PLC). One attempt per call, no retry — re-issuing is the caller's
+job (a poll loop's next tick is the retry):
 
-- Transport-class failures retry up to `MINDTRACE_HW_PLC_RETRY_COUNT` times,
-  reconnecting only that channel between attempts, then raise
-  `PLCCommunicationError` with `attempts=N`.
-- The delay between attempts is a flat `MINDTRACE_HW_PLC_RETRY_DELAY`; a failed
-  reconnect is logged, not fatal. No circuit breaker, no escalating backoff.
-- Malformed requests (`PLCTagReadError` / `PLCTagWriteError`) are never retried.
+- Any failed exchange — wire death, timeout, garbled reply, or a delivered
+  reply carrying session-dead statuses — closes its channel and raises typed
+  (`PLCTimeoutError`, a `PLCCommunicationError` subclass, when the failure was
+  a timeout). The channel reopens automatically at the next call's entry.
+  Only a delivered, parsed reply keeps the session.
+- Malformed requests (`PLCTagReadError` / `PLCTagWriteError`) are rejected
+  before the wire; the session is untouched.
 - A returned result map contains only **address verdicts** (`missing_tag` /
-  `type_mismatch` / `encode` / `unknown`) — stable answers a retry cannot
-  change, never retried, never laundered. Link trouble never appears in a
-  returned map: any transport-kind entry escalates into the retry loop and,
-  if it survives the budget, the raised `PLCCommunicationError` (partial map
-  attached as `.results`).
+  `type_mismatch` / `encode` / `transient` / `unknown`). `transient` means the
+  controller answered but that exchange misbehaved — re-asking is reasonable;
+  the others are stable answers retrying cannot change. Link trouble never
+  appears in a returned map.
+- `MINDTRACE_HW_PLC_READ_TIMEOUT` / `WRITE_TIMEOUT` bound each channel's
+  handshake and exchanges (they are the socket deadline);
+  `MINDTRACE_HW_PLC_CONNECTION_TIMEOUT` bounds auto-detection probes.
+- `is_connected()` reports the lifecycle state (`connect()` succeeded,
+  `disconnect()` not called) — a channel healing itself does not flip it.
 
 ### Service Layer
 

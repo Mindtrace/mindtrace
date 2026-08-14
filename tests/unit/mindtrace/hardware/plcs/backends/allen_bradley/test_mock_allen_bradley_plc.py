@@ -580,6 +580,34 @@ class TestMockAllenBradleyPLCTagReading:
         assert await mock_plc.is_connected() is True  # lifecycle state; self-heals
 
     @pytest.mark.asyncio
+    async def test_write_tag_with_timeout_flag(self, mock_plc):
+        """The write channel has its own timeout simulation, like the real backend."""
+        await mock_plc.connect()
+        mock_plc.simulate_timeout = True
+        mock_plc.write_timeout = 0.01
+
+        with pytest.raises(PLCCommunicationError):
+            await mock_plc.write_tag([("Pump1_Command", True)])
+
+        assert mock_plc._channels_open == {"read": True, "write": False}
+
+    @pytest.mark.asyncio
+    async def test_error_flags_do_not_preempt_the_lifecycle_guard(self):
+        """A never-connected mock raises PLCConnectionError like the real
+        backend, no matter which simulation flags are set."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+
+        plc = MockAllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        plc.simulate_timeout = True
+        plc.fail_read = True
+        plc.fail_write = True
+
+        with pytest.raises(PLCConnectionError):
+            await plc.read_tag(["Motor1_Speed"])
+        with pytest.raises(PLCConnectionError):
+            await plc.write_tag([("Pump1_Command", True)])
+
+    @pytest.mark.asyncio
     async def test_read_tag_internal_error_propagates_unwrapped(self, mock_plc):
         """An unexpected internal failure is not laundered into a PLC exception."""
         await mock_plc.connect()

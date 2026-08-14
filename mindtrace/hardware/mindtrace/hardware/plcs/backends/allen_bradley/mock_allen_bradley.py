@@ -399,18 +399,16 @@ class MockAllenBradleyPLC(BasePLC):
 
     async def _read_tags(self, addresses: List[str]) -> Dict[str, TagResult]:
         """Simulate a batched read; unknown addresses come back as missing_tag."""
+        await self._channel("read")
+
         if self.fail_read:
             raise PLCTagReadError("Simulated tag read failure")
 
         if self.simulate_timeout:
-            # Chained from TimeoutError like the real thing. A timed-out exchange
-            # leaves the reply stream misaligned, so the channel closes and
-            # reopens at the next call's entry.
+            # Chained from TimeoutError like the real thing: closes, reopens at entry.
             await asyncio.sleep(self.read_timeout)
             await self._close_channel("read")
             raise PLCTimeoutError("Simulated read timeout") from TimeoutError("simulated socket timeout")
-
-        await self._channel("read")
 
         # One batched exchange is one round trip: latency must not scale with
         # batch size, or a big poll starves other readers of the channel lock.
@@ -441,10 +439,15 @@ class MockAllenBradleyPLC(BasePLC):
 
     async def _write_tags(self, writes: List[Tuple[str, Any]]) -> Dict[str, TagResult]:
         """Simulate a batched write; unknown addresses come back as missing_tag."""
+        await self._channel("write")
+
         if self.fail_write:
             raise PLCTagWriteError("Simulated tag write failure")
 
-        await self._channel("write")
+        if self.simulate_timeout:
+            await asyncio.sleep(self.write_timeout)
+            await self._close_channel("write")
+            raise PLCTimeoutError("Simulated write timeout") from TimeoutError("simulated socket timeout")
 
         await asyncio.sleep(self.io_delay_s)  # one round trip, batch-size independent
 

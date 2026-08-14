@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from mindtrace.core import MindtraceABC
 from mindtrace.hardware.core.config import get_hardware_config
+from mindtrace.hardware.core.exceptions import PLCTagWriteError
 from mindtrace.hardware.plcs.types import TagResult
 
 
@@ -135,6 +136,11 @@ class BasePLC(MindtraceABC):
         trouble raises; see the module docstring's table.
         """
         batch = [tags] if isinstance(tags, tuple) else list(tags)
+        for entry in batch:
+            # Rejecting the shape here keeps PLCTagWriteError's promise: nothing
+            # malformed ever reaches the wire. Lists count as pairs (JSON callers).
+            if not (isinstance(entry, (tuple, list)) and len(entry) == 2):
+                raise PLCTagWriteError(f"write_tag takes (address, value) pairs; got {entry!r}")
         async with self._write_lock:
             return await self._write_tags(list(batch))
 

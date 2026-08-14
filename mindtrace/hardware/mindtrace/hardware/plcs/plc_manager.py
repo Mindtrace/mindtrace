@@ -93,7 +93,6 @@ Concurrency:
 Performance Notes:
     - PLC discovery may take several seconds depending on network size
     - Batch operations are more efficient than individual tag operations
-    - Connection pooling is used for optimal performance
     - Consider PLC-specific optimizations for production use
 """
 

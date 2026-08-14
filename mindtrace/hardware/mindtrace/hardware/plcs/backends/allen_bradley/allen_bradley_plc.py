@@ -30,7 +30,7 @@ from mindtrace.hardware.plcs.backends.allen_bradley.error_text import (
     tag_to_result,
 )
 from mindtrace.hardware.plcs.backends.base import BasePLC
-from mindtrace.hardware.plcs.types import TagResult
+from mindtrace.hardware.plcs.types import TagError, TagErrorKind, TagResult
 
 try:
     from pycomm3 import CIPDriver, LogixDriver, SLCDriver
@@ -40,7 +40,8 @@ try:
     PYCOMM3_ERRORS: Tuple[type, ...] = (CommError, DataError, RequestError, ResponseError)
     # Anything raised from INSIDE an exchange closes the channel.
     PYCOMM3_EXCHANGE_ERRORS: Tuple[type, ...] = (CommError, DataError, ResponseError, OSError)
-    PYCOMM3_TAG_ERRORS: Tuple[type, ...] = (DataError, RequestError, ResponseError)
+    # RequestError is pre-wire: the one raised class the unbatched paths keep per-tag.
+    PYCOMM3_TAG_ERRORS: Tuple[type, ...] = (RequestError,)
 except ImportError:
     PYCOMM3_AVAILABLE = False
     LogixDriver = None
@@ -49,6 +50,13 @@ except ImportError:
     PYCOMM3_ERRORS = ()
     PYCOMM3_EXCHANGE_ERRORS = (OSError,)
     PYCOMM3_TAG_ERRORS = ()
+
+
+def _unsupported_cip_address(address: str) -> TagResult:
+    """CIPDriver has no tag database; only the known address forms can be served."""
+    return TagResult(
+        error=TagError(kind=TagErrorKind.missing_tag, message=f"Unsupported CIP address form: {address!r}")
+    )
 
 
 # Stand-in for a driver whose worker thread never returned: the real one must
@@ -377,17 +385,17 @@ class AllenBradleyPLC(BasePLC):
         return closed
 
     async def _disconnect(self) -> bool:
-        """Close both channels' drivers and forget them."""
+        """Close both channels' drivers and forget them — unconditionally:
+        pycomm3's close() resets its own state before raising."""
         if self._read_driver is None and self._write_driver is None:
             return True
 
         closed = await self._close_drivers()
-        if closed:
-            self._read_driver = None
-            self._write_driver = None
-            self.plc = None
-            self.logger.info(f"Disconnected from Allen Bradley PLC at {self.ip_address}")
-            self.initialized = False
+        self._read_driver = None
+        self._write_driver = None
+        self.plc = None
+        self.initialized = False
+        self.logger.info(f"Disconnected from Allen Bradley PLC at {self.ip_address}")
         return closed
 
     async def is_connected(self) -> bool:
@@ -405,6 +413,7 @@ class AllenBradleyPLC(BasePLC):
                 results = await self._bounded("read", driver.read, *addresses)
                 tags = results if isinstance(results, list) else [results]
                 if len(tags) != len(addresses):
+                    await self._close_driver(driver, "read")
                     raise PLCTagReadError(
                         f"Allen Bradley PLC at {self.ip_address} returned {len(tags)} results "
                         f"for {len(addresses)} requested tags"
@@ -446,8 +455,9 @@ class AllenBradleyPLC(BasePLC):
         return results
 
     async def _slc_read_one(self, driver: Any, address: str) -> TagResult:
-        """One SLC data-file read; only per-tag driver errors stay per-tag — a
-        CommError is a whole-call failure and propagates to ``_read_tags``."""
+        """One SLC data-file read; pre-wire ``RequestError`` stays per-tag,
+        any other raised class is TREATED as an aborted exchange and propagates
+        to the ladder."""
         try:
             return tag_to_result(await self._bounded("read", driver.read, address))
         except PYCOMM3_TAG_ERRORS as e:
@@ -457,10 +467,18 @@ class AllenBradleyPLC(BasePLC):
         """One generic-CIP read, dispatched on the address form."""
         try:
             if address.startswith("Identity") or address == "DeviceInfo":
-                return TagResult(value=await self._bounded("read", driver.list_identity, self.ip_address))
+                # list_identity opens its own throwaway connection; its failures
+                # are never evidence about the channel.
+                try:
+                    return TagResult(value=await asyncio.to_thread(driver.list_identity, self.ip_address))
+                except Exception as e:
+                    return TagResult(error=TagError(kind=TagErrorKind.unknown, message=f"identity probe failed: {e}"))
 
             if address.startswith("Assembly"):
-                instance = int(address.split(":")[-1]) if ":" in address else 1
+                try:
+                    instance = int(address.split(":")[-1]) if ":" in address else 1
+                except ValueError:
+                    return _unsupported_cip_address(address)
                 result = await self._bounded(
                     "read",
                     driver.generic_message,
@@ -473,7 +491,10 @@ class AllenBradleyPLC(BasePLC):
                 return tag_to_result(result)
 
             if address.startswith("Module"):
-                slot = int(address.split(":")[-1]) if ":" in address else 0
+                try:
+                    slot = int(address.split(":")[-1]) if ":" in address else 0
+                except ValueError:
+                    return _unsupported_cip_address(address)
                 return TagResult(value=await self._bounded("read", driver.get_module_info, slot))
 
             if address.startswith("Connection"):
@@ -489,9 +510,12 @@ class AllenBradleyPLC(BasePLC):
 
             parts = address.split(":")
             if len(parts) >= 3:
-                class_code = int(parts[0], 16) if parts[0].startswith("0x") else int(parts[0])
-                instance = int(parts[1])
-                attribute = int(parts[2])
+                try:
+                    class_code = int(parts[0], 16) if parts[0].startswith("0x") else int(parts[0])
+                    instance = int(parts[1])
+                    attribute = int(parts[2])
+                except ValueError:
+                    return _unsupported_cip_address(address)
                 result = await self._bounded(
                     "read",
                     driver.generic_message,
@@ -503,7 +527,8 @@ class AllenBradleyPLC(BasePLC):
                 )
                 return tag_to_result(result)
 
-            return tag_to_result(await self._bounded("read", driver.read, address))
+            # CIPDriver has no read(); anything else is an unservable address.
+            return _unsupported_cip_address(address)
         except PYCOMM3_TAG_ERRORS as e:
             return TagResult(error=classify_tag_error(e))
 
@@ -518,6 +543,7 @@ class AllenBradleyPLC(BasePLC):
                 results = await self._bounded("write", driver.write, *writes)
                 tags = results if isinstance(results, list) else [results]
                 if len(tags) != len(writes):
+                    await self._close_driver(driver, "write")
                     raise PLCTagWriteError(
                         f"Allen Bradley PLC at {self.ip_address} returned {len(tags)} results "
                         f"for {len(writes)} requested writes"
@@ -558,8 +584,7 @@ class AllenBradleyPLC(BasePLC):
         return results_map
 
     async def _slc_write_one(self, driver: Any, address: str, value: Any) -> TagResult:
-        """One SLC data-file write; only per-tag driver errors stay per-tag — a
-        CommError is a whole-call failure and propagates to ``_write_tags``."""
+        """One SLC data-file write; same per-tag rule as ``_slc_read_one``."""
         try:
             result = await self._bounded("write", driver.write, (address, value))
             return tag_to_result(result, value_on_success=value, use_tag_value=False)
@@ -570,7 +595,10 @@ class AllenBradleyPLC(BasePLC):
         """One generic-CIP write, dispatched on the address form."""
         try:
             if address.startswith("Assembly"):
-                instance = int(address.split(":")[-1]) if ":" in address else 1
+                try:
+                    instance = int(address.split(":")[-1]) if ":" in address else 1
+                except ValueError:
+                    return _unsupported_cip_address(address)
                 result = await self._bounded(
                     "write",
                     driver.generic_message,
@@ -584,7 +612,10 @@ class AllenBradleyPLC(BasePLC):
                 return tag_to_result(result, value_on_success=value, use_tag_value=False)
 
             if address.startswith("Parameter"):
-                instance = int(address.split(":")[-1]) if ":" in address else 1
+                try:
+                    instance = int(address.split(":")[-1]) if ":" in address else 1
+                except ValueError:
+                    return _unsupported_cip_address(address)
                 result = await self._bounded(
                     "write",
                     driver.generic_message,
@@ -599,9 +630,12 @@ class AllenBradleyPLC(BasePLC):
 
             parts = address.split(":")
             if len(parts) >= 3:
-                class_code = int(parts[0], 16) if parts[0].startswith("0x") else int(parts[0])
-                instance = int(parts[1])
-                attribute = int(parts[2])
+                try:
+                    class_code = int(parts[0], 16) if parts[0].startswith("0x") else int(parts[0])
+                    instance = int(parts[1])
+                    attribute = int(parts[2])
+                except ValueError:
+                    return _unsupported_cip_address(address)
                 result = await self._bounded(
                     "write",
                     driver.generic_message,
@@ -614,8 +648,7 @@ class AllenBradleyPLC(BasePLC):
                 )
                 return tag_to_result(result, value_on_success=value, use_tag_value=False)
 
-            result = await self._bounded("write", driver.write, (address, value))
-            return tag_to_result(result, value_on_success=value, use_tag_value=False)
+            return _unsupported_cip_address(address)
         except PYCOMM3_TAG_ERRORS as e:
             return TagResult(error=classify_tag_error(e))
 
@@ -801,8 +834,13 @@ class AllenBradleyPLC(BasePLC):
                                     module_info = await asyncio.to_thread(driver.get_module_info, slot)
                                     if module_info:
                                         self._tags_cache.append(f"Module:{slot}")
+                            except (CommError, OSError) as e:
+                                await self._close_driver(driver, "read")
+                                raise PLCCommunicationError(
+                                    f"Tag discovery failed on Allen Bradley PLC at {self.ip_address}: {e}"
+                                ) from e
                             except Exception:
-                                pass
+                                pass  # an empty slot answers with an error reply
 
                         # PLC-specific tags (ControlLogix, CompactLogix via CIP)
                         elif product_type == "Programmable Logic Controller":
@@ -862,6 +900,11 @@ class AllenBradleyPLC(BasePLC):
                         # This would require parsing the CIP object list format
                         self.logger.debug("Successfully retrieved object list from device")
 
+                except (CommError, OSError) as e:
+                    await self._close_driver(driver, "read")
+                    raise PLCCommunicationError(
+                        f"Tag discovery failed on Allen Bradley PLC at {self.ip_address}: {e}"
+                    ) from e
                 except Exception as e:
                     self.logger.debug(f"Could not retrieve object list: {e}")
 
@@ -980,9 +1023,17 @@ class AllenBradleyPLC(BasePLC):
                     try:
                         program_name = await asyncio.to_thread(driver.get_plc_name)
                         info["program_name"] = program_name
+                    except PYCOMM3_EXCHANGE_ERRORS:
+                        raise
                     except Exception:
                         pass
 
+                except PYCOMM3_EXCHANGE_ERRORS as e:
+                    # A failed exchange on the channel driver: the stream is suspect.
+                    await self._close_driver(driver, "read")
+                    raise PLCCommunicationError(
+                        f"PLC info read failed on Allen Bradley PLC at {self.ip_address}: {e}"
+                    ) from e
                 except Exception as e:
                     self.logger.warning(f"Could not get detailed Logix PLC info: {e}")
 
@@ -1261,7 +1312,7 @@ class AllenBradleyPLC(BasePLC):
             "features": [
                 "Auto-detection of PLC type with fallback hierarchy",
                 "Multi-driver support with driver-specific optimizations",
-                "Enhanced device discovery with network scanning",
+                "Targeted unicast identity probes",
                 "Comprehensive tag reading/writing for all driver types",
                 "CIP object messaging for generic devices",
                 "SLC data file mapping with bit-level access",
@@ -1275,7 +1326,7 @@ class AllenBradleyPLC(BasePLC):
                 "I/O module configuration and diagnostics",
             ],
             "enhanced_capabilities": {
-                "discovery": "Multi-method device discovery including CIP broadcast and network scanning",
+                "discovery": "Unicast ListIdentity probes plus driver open attempts",
                 "tag_support": "Full tag support across all driver types with enhanced addressing",
                 "cip_messaging": "Complete CIP object messaging with service code support",
                 "error_handling": "Comprehensive error handling with driver-specific error codes",

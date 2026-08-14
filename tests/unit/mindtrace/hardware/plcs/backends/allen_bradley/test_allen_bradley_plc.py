@@ -895,7 +895,7 @@ class TestAllenBradleyPLCTagReading:
         )
 
         # First tag succeeds, second fails
-        mock_slc_driver.read.side_effect = [100, ResponseError("Read failed")]
+        mock_slc_driver.read.side_effect = [100, SimpleNamespace(value=None, error="Read failed")]
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="slc")
         SLCDriver.return_value = mock_slc_driver
@@ -936,7 +936,7 @@ class TestAllenBradleyPLCTagReading:
             SLCDriver,
         )
 
-        mock_slc_driver.read.side_effect = ResponseError("N99:0 does not exist")
+        mock_slc_driver.read.return_value = SimpleNamespace(value=None, error="N99:0 does not exist")
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="slc")
         SLCDriver.return_value = mock_slc_driver
@@ -1070,15 +1070,12 @@ class TestAllenBradleyPLCTagReading:
         assert result["4:1:3"] == TagResult(value=cip_value)
 
     @pytest.mark.asyncio
-    async def test_read_tag_cip_direct_read(self, mock_pycomm3_available, mock_cip_driver):
-        """Test reading CIP tag with direct read fallback."""
+    async def test_read_tag_cip_unsupported_form_is_a_verdict(self, mock_pycomm3_available, mock_cip_driver):
+        """CIPDriver has no read(); an unservable address form is a per-tag verdict."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             CIPDriver,
         )
-
-        direct_value = "test_value"
-        mock_cip_driver.read.return_value = direct_value
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
         CIPDriver.return_value = mock_cip_driver
@@ -1086,8 +1083,8 @@ class TestAllenBradleyPLCTagReading:
 
         result = await plc.read_tag(["SimpleTag"])
 
-        assert "SimpleTag" in result
-        assert result["SimpleTag"] == TagResult(value=direct_value)
+        assert result["SimpleTag"].error.kind is TagErrorKind.missing_tag
+        mock_cip_driver.read.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_read_tag_not_connected(self, mock_pycomm3_available, mock_logix_driver):
@@ -1226,7 +1223,8 @@ class TestAllenBradleyPLCTagReading:
 
     @pytest.mark.asyncio
     async def test_read_tag_cip_identity_exception(self, mock_pycomm3_available, mock_cip_driver):
-        """Test reading CIP Identity tag when list_identity raises exception."""
+        """list_identity opens its own throwaway connection: its failure is a
+        per-tag verdict, never evidence against the channel driver."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             CIPDriver,
@@ -1240,10 +1238,9 @@ class TestAllenBradleyPLCTagReading:
 
         result = await plc.read_tag(["Identity"])
 
-        assert "Identity" in result
-        assert result["Identity"].ok is False
         assert result["Identity"].error.kind is TagErrorKind.unknown
-        assert result["Identity"].error.message == "Identity read failed"
+        assert "identity probe failed" in result["Identity"].error.message
+        mock_cip_driver.close.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_read_tag_cip_assembly_exception(self, mock_pycomm3_available, mock_cip_driver):
@@ -1253,7 +1250,7 @@ class TestAllenBradleyPLCTagReading:
             CIPDriver,
         )
 
-        mock_cip_driver.generic_message.side_effect = ResponseError("Assembly read failed")
+        mock_cip_driver.generic_message.return_value = MagicMock(value=None, error="Assembly read failed")
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
         CIPDriver.return_value = mock_cip_driver
@@ -1268,7 +1265,7 @@ class TestAllenBradleyPLCTagReading:
 
     @pytest.mark.asyncio
     async def test_read_tag_cip_module_exception(self, mock_pycomm3_available, mock_cip_driver):
-        """Test reading CIP Module tag when get_module_info raises exception."""
+        """get_module_info raises (never stamps) in pycomm3: whole-call, channel closes."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             CIPDriver,
@@ -1280,12 +1277,10 @@ class TestAllenBradleyPLCTagReading:
         CIPDriver.return_value = mock_cip_driver
         await plc.connect()
 
-        result = await plc.read_tag(["Module:0"])
+        with pytest.raises(PLCCommunicationError, match="Module read failed"):
+            await plc.read_tag(["Module:0"])
 
-        assert "Module:0" in result
-        assert result["Module:0"].ok is False
-        assert result["Module:0"].error.kind is TagErrorKind.unknown
-        assert result["Module:0"].error.message == "Module read failed"
+        mock_cip_driver.close.assert_called()
 
     @pytest.mark.asyncio
     async def test_read_tag_cip_connection_exception(self, mock_pycomm3_available, mock_cip_driver):
@@ -1295,7 +1290,7 @@ class TestAllenBradleyPLCTagReading:
             CIPDriver,
         )
 
-        mock_cip_driver.generic_message.side_effect = ResponseError("Connection read failed")
+        mock_cip_driver.generic_message.return_value = MagicMock(value=None, error="Connection read failed")
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
         CIPDriver.return_value = mock_cip_driver
@@ -1316,7 +1311,7 @@ class TestAllenBradleyPLCTagReading:
             CIPDriver,
         )
 
-        mock_cip_driver.generic_message.side_effect = ResponseError("Generic read failed")
+        mock_cip_driver.generic_message.return_value = MagicMock(value=None, error="Generic read failed")
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
         CIPDriver.return_value = mock_cip_driver
@@ -1509,7 +1504,7 @@ class TestAllenBradleyPLCTagWriting:
         )
 
         # First write succeeds, second fails
-        mock_slc_driver.write.side_effect = [True, ResponseError("Write failed")]
+        mock_slc_driver.write.side_effect = [True, SimpleNamespace(value=None, error="Write failed")]
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="slc")
         SLCDriver.return_value = mock_slc_driver
@@ -1531,7 +1526,7 @@ class TestAllenBradleyPLCTagWriting:
             SLCDriver,
         )
 
-        mock_slc_driver.write.side_effect = DataError("Error packing -128 as USINT")
+        mock_slc_driver.write.side_effect = RequestError("Unable to create a writable value")
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="slc")
         SLCDriver.return_value = mock_slc_driver
@@ -1598,14 +1593,12 @@ class TestAllenBradleyPLCTagWriting:
         assert result["0x04:1:3"] == TagResult(value=[1500, 0, 255, 0])
 
     @pytest.mark.asyncio
-    async def test_write_tag_cip_direct_write(self, mock_pycomm3_available, mock_cip_driver):
-        """Test writing CIP tag with direct write fallback."""
+    async def test_write_tag_cip_unsupported_form_is_a_verdict(self, mock_pycomm3_available, mock_cip_driver):
+        """CIPDriver has no write(); an unservable address form is a per-tag verdict."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             CIPDriver,
         )
-
-        mock_cip_driver.write.return_value = True
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
         CIPDriver.return_value = mock_cip_driver
@@ -1613,7 +1606,8 @@ class TestAllenBradleyPLCTagWriting:
 
         result = await plc.write_tag([("SimpleTag", "value")])
 
-        assert result["SimpleTag"] == TagResult(value="value")
+        assert result["SimpleTag"].error.kind is TagErrorKind.missing_tag
+        mock_cip_driver.write.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_write_tag_cip_with_error(self, mock_pycomm3_available, mock_cip_driver):
@@ -1760,7 +1754,7 @@ class TestAllenBradleyPLCTagWriting:
             CIPDriver,
         )
 
-        mock_cip_driver.generic_message.side_effect = ResponseError("Assembly write failed")
+        mock_cip_driver.generic_message.return_value = MagicMock(value=None, error="Assembly write failed")
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
         CIPDriver.return_value = mock_cip_driver
@@ -1780,7 +1774,7 @@ class TestAllenBradleyPLCTagWriting:
             CIPDriver,
         )
 
-        mock_cip_driver.generic_message.side_effect = ResponseError("Parameter write failed")
+        mock_cip_driver.generic_message.return_value = MagicMock(value=None, error="Parameter write failed")
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
         CIPDriver.return_value = mock_cip_driver
@@ -1800,7 +1794,7 @@ class TestAllenBradleyPLCTagWriting:
             CIPDriver,
         )
 
-        mock_cip_driver.generic_message.side_effect = ResponseError("Generic write failed")
+        mock_cip_driver.generic_message.return_value = MagicMock(value=None, error="Generic write failed")
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
         CIPDriver.return_value = mock_cip_driver

@@ -405,7 +405,7 @@ class PLCSettings:
         connection_timeout: PLC connection timeout in seconds
         read_timeout: Tag read operation timeout in seconds
         write_timeout: Tag write operation timeout in seconds
-        retry_delay: Delay between retry attempts in seconds
+        retry_delay: Settle delay between close and reopen inside reconnect()
         max_concurrent_connections: Maximum number of concurrent PLC connections
         keep_alive_interval: Keep-alive ping interval in seconds
         reconnect_attempts: Number of reconnection attempts

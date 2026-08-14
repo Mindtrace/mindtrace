@@ -543,12 +543,15 @@ class TestErrorTaxonomy:
         assert results["Tag1"].ok is False
         assert results["Tag1"].error.kind is TagErrorKind.unknown
 
-    async def test_an_empty_batch_still_checks_the_channel(self):
+    async def test_an_empty_batch_still_checks_the_channel(self, monkeypatch):
         read_driver = FakeLogixDriver()
         read_driver.connected = False
+        dead = FakeLogixDriver()
+        dead.open = lambda: False
+        monkeypatch.setattr(ab_module, "LogixDriver", lambda ip_address: dead)
         plc = _allen_bradley(read_driver, FakeLogixDriver())
 
-        with pytest.raises(PLCCommunicationError):
+        with pytest.raises(PLCCommunicationError, match="Could not reopen"):
             await plc.read_tag([])
 
     async def test_an_empty_batch_on_an_open_channel_is_a_no_op(self):
@@ -561,13 +564,16 @@ class TestErrorTaxonomy:
         assert read_driver.read_calls == []
         assert write_driver.write_calls == []
 
-    async def test_closed_channel_raises_without_reconnecting(self):
+    async def test_closed_channel_raises_without_reconnecting(self, monkeypatch):
         read_driver = FakeLogixDriver()
         read_driver.connected = False
+        dead = FakeLogixDriver()
+        dead.open = lambda: False
+        monkeypatch.setattr(ab_module, "LogixDriver", lambda ip_address: dead)
         plc = _allen_bradley(read_driver, FakeLogixDriver())
         plc.reconnect = AsyncMock()
 
-        with pytest.raises(PLCCommunicationError):
+        with pytest.raises(PLCCommunicationError, match="Could not reopen"):
             await plc.read_tag(["Tag1"])
 
         plc.reconnect.assert_not_awaited()
@@ -575,17 +581,15 @@ class TestErrorTaxonomy:
 
 
 class TestPerTagNetsAreNarrow:
-    """The unbatched SLC/CIP paths classify per-tag driver errors and nothing else.
+    """The unbatched SLC/CIP paths keep exactly ONE raised class per-tag: the
+    pre-wire RequestError. Everything else aborted an exchange - the same
+    DataError/ResponseError that closes the channel on the Logix path must not
+    become a per-tag verdict here, or link death gets laundered into results
+    (the forward-open refusal wedge)."""
 
-    A dropped socket or a code bug hit halfway through a batch is a whole-call
-    failure; laundering it into per-tag transport errors would report the batch
-    as "mostly fine" while the session was already gone.
-    """
-
-    @pytest.mark.parametrize("driver_type", ["SLCDriver", "CIPDriver"])
-    async def test_a_comm_error_mid_batch_raises_typed(self, driver_type):
+    async def test_a_comm_error_mid_batch_raises_typed(self):
         read_driver = FakeLogixDriver(read_error=CommError("socket closed"))
-        plc = _allen_bradley(read_driver, FakeLogixDriver(), driver_type)
+        plc = _allen_bradley(read_driver, FakeLogixDriver(), "SLCDriver")
 
         with pytest.raises(PLCCommunicationError) as excinfo:
             await plc.read_tag(["Tag1", "Tag2"])
@@ -594,10 +598,9 @@ class TestPerTagNetsAreNarrow:
         # The batch stopped at the first address instead of marching on.
         assert len(read_driver.read_calls) == 1
 
-    @pytest.mark.parametrize("driver_type", ["SLCDriver", "CIPDriver"])
-    async def test_a_write_comm_error_mid_batch_raises_typed(self, driver_type):
+    async def test_a_write_comm_error_mid_batch_raises_typed(self):
         write_driver = FakeLogixDriver(write_error=CommError("socket closed"))
-        plc = _allen_bradley(FakeLogixDriver(), write_driver, driver_type)
+        plc = _allen_bradley(FakeLogixDriver(), write_driver, "SLCDriver")
 
         with pytest.raises(PLCCommunicationError) as excinfo:
             await plc.write_tag([("Tag1", 1), ("Tag2", 2)])
@@ -605,28 +608,92 @@ class TestPerTagNetsAreNarrow:
         assert isinstance(excinfo.value.__cause__, CommError)
         assert len(write_driver.write_calls) == 1
 
-    @pytest.mark.parametrize("driver_type", ["SLCDriver", "CIPDriver"])
-    async def test_a_programming_error_is_not_reported_as_a_tag_error(self, driver_type):
+    async def test_a_programming_error_is_not_reported_as_a_tag_error(self):
         """A code bug reaches the outer net chained, not a per-tag transport result."""
         boom = AttributeError("'NoneType' object has no attribute 'read'")
         read_driver = FakeLogixDriver(read_error=boom)
-        plc = _allen_bradley(read_driver, FakeLogixDriver(), driver_type)
+        plc = _allen_bradley(read_driver, FakeLogixDriver(), "SLCDriver")
 
         with pytest.raises(PLCTagReadError) as excinfo:
             await plc.read_tag(["Tag1"])
 
         assert excinfo.value.__cause__ is boom
 
-    @pytest.mark.parametrize("driver_type", ["SLCDriver", "CIPDriver"])
-    async def test_a_per_tag_driver_error_still_stays_per_tag(self, driver_type):
-        read_driver = FakeLogixDriver(read_error=DataError("Error packing -128 as USINT"))
-        plc = _allen_bradley(read_driver, FakeLogixDriver(), driver_type)
+    async def test_a_pre_wire_request_error_stays_per_tag(self):
+        read_driver = FakeLogixDriver(read_error=RequestError("Error parsing the tag passed to read() - N7:X"))
+        plc = _allen_bradley(read_driver, FakeLogixDriver(), "SLCDriver")
 
         results = await plc.read_tag(["Tag1", "Tag2"])
 
-        assert results["Tag1"].error.kind is TagErrorKind.encode
-        assert results["Tag2"].error.kind is TagErrorKind.encode
+        assert results["Tag1"].error.kind is TagErrorKind.missing_tag
+        assert results["Tag2"].error.kind is TagErrorKind.missing_tag
         assert len(read_driver.read_calls) == 2
+        assert read_driver.connected is True
+
+    async def test_a_raised_data_error_closes_like_any_aborted_exchange(self):
+        """The same class means the same policy on every driver family."""
+        read_driver = FakeLogixDriver(read_error=DataError("Error packing -128 as USINT"))
+        plc = _allen_bradley(read_driver, FakeLogixDriver(), "SLCDriver")
+
+        with pytest.raises(PLCCommunicationError):
+            await plc.read_tag(["Tag1", "Tag2"])
+
+        assert read_driver.connected is False
+        assert len(read_driver.read_calls) == 1
+
+    async def test_a_forward_open_refusal_closes_the_channel(self):
+        """with_forward_open raises ResponseError for a SESSION-level failure;
+        kept per-tag it would wedge the PLC (connected stays True, no reopen)."""
+        from pycomm3.exceptions import ResponseError
+
+        refusal = ResponseError("Target did not connected. read will not be executed.")
+        read_driver = FakeLogixDriver(read_error=refusal)
+        plc = _allen_bradley(read_driver, FakeLogixDriver(), "SLCDriver")
+
+        with pytest.raises(PLCCommunicationError) as excinfo:
+            await plc.read_tag(["N7:0", "N7:1"])
+
+        assert excinfo.value.__cause__ is refusal
+        assert read_driver.connected is False
+
+    async def test_echoed_caller_text_cannot_impersonate_the_session(self):
+        """Fabricated verdicts embed caller input; a junk address containing a
+        session-dead phrase must stay a config verdict, not close the channel."""
+        read_driver = FakeLogixDriver()
+        plc = _allen_bradley(read_driver, FakeLogixDriver(), "CIPDriver")
+
+        results = await plc.read_tag(["junk connection lost tag"])
+
+        assert results["junk connection lost tag"].error.kind is TagErrorKind.missing_tag
+        assert read_driver.connected is True
+
+    async def test_a_malformed_write_is_rejected_before_the_wire(self):
+        """The flat-list typo shape must never reach the driver: pycomm3 would
+        interpret ["Tag", value] as ONE valid write and issue it."""
+        write_driver = FakeLogixDriver(write_results=[_tag(value=1)])
+        plc = _allen_bradley(FakeLogixDriver(), write_driver)
+
+        with pytest.raises(PLCTagWriteError, match="pairs"):
+            await plc.write_tag(["Tag1", 1])
+
+        assert write_driver.write_calls == []
+        assert write_driver.connected is True
+
+    async def test_an_unsupported_cip_address_form_is_a_per_tag_verdict(self):
+        """CIPDriver has no read()/write(); unservable address forms come back
+        as per-tag config verdicts without touching the driver."""
+        read_driver = FakeLogixDriver()
+        plc = _allen_bradley(read_driver, FakeLogixDriver(), "CIPDriver")
+
+        results = await plc.read_tag(["Parameter:1", "Assembly:abc"])
+
+        assert results["Parameter:1"].error.kind is TagErrorKind.missing_tag
+        assert results["Assembly:abc"].error.kind is TagErrorKind.missing_tag
+        assert read_driver.read_calls == []
+        assert read_driver.connected is True
+
+        write_results = await plc.write_tag([("NotAForm", 1)])
+        assert write_results["NotAForm"].error.kind is TagErrorKind.missing_tag
 
 
 class TestTagResultHardening:
@@ -1023,6 +1090,33 @@ class TestAllenBradleyChannelLifecycle:
         assert constructed == []
         assert plc._write_driver is None
 
+    async def test_disconnect_forgets_drivers_even_when_close_raises(self):
+        """pycomm3's close() resets its own state before raising, so a failed
+        close is still closed - keeping the refs would let the next poll
+        silently reopen a PLC the operator just tore down."""
+        read_driver = FakeLogixDriver()
+
+        def _explode():
+            raise CommError("failed to send message")
+
+        read_driver.close = _explode
+        plc = _allen_bradley(read_driver, FakeLogixDriver())
+
+        assert await plc.disconnect() is False  # the failure is still reported
+        assert await plc.is_connected() is False
+        with pytest.raises(PLCConnectionError, match="call connect"):
+            await plc.read_tag(["Tag1"])
+
+    async def test_a_miscounted_reply_closes_the_channel(self):
+        """Delivered-but-miscounted is misalignment evidence like any other."""
+        read_driver = FakeLogixDriver(read_results=[_tag(value=1)])
+        plc = _allen_bradley(read_driver, FakeLogixDriver())
+
+        with pytest.raises(PLCTagReadError, match="returned 1 results"):
+            await plc.read_tag(["Tag1", "Tag2"])
+
+        assert read_driver.connected is False
+
     async def test_a_reopen_that_wont_open_raises_typed(self, monkeypatch):
         read_driver = FakeLogixDriver(read_error=_socket_death_comm_error())
         dead = FakeLogixDriver()
@@ -1117,6 +1211,52 @@ class TestAllenBradleyChannelLifecycle:
         results = await plc.read_tag(["Tag1"])  # entry opens a FRESH driver
         assert results["Tag1"].value == 42
         assert plc._read_driver is replacement
+
+    async def test_write_backstop_expiry_abandons_the_write_channel(self, monkeypatch):
+        import time as _time
+
+        stalled = FakeLogixDriver(write_results=[_tag(value=1)])
+        original_write = stalled.write
+        close_calls = []
+        stalled.close = lambda: close_calls.append(True)
+
+        def _slow_write(*writes):
+            _time.sleep(1.5)
+            return original_write(*writes)
+
+        stalled.write = _slow_write
+        replacement = FakeLogixDriver(write_results=[_tag(value=7)])
+        monkeypatch.setattr(ab_module, "LogixDriver", lambda ip_address: replacement)
+        plc = _allen_bradley(FakeLogixDriver(), stalled)
+        plc.write_timeout = 0.02
+
+        with pytest.raises(PLCTimeoutError, match="backstop"):
+            await plc.write_tag([("Tag1", 7)])
+
+        assert close_calls == []
+        assert plc._write_driver is not stalled
+        assert plc._read_driver.connected is True  # the other channel is untouched
+
+        results = await plc.write_tag([("Tag1", 7)])
+        assert results["Tag1"].value == 7
+
+    async def test_disconnect_tears_down_cleanly_with_an_abandoned_channel(self, monkeypatch):
+        """The sentinel's no-op close must make lifecycle teardown safe."""
+        import time as _time
+
+        stalled = FakeLogixDriver(read_results=[_tag(value=1)])
+        original_read = stalled.read
+        stalled.read = lambda *a: (_time.sleep(1.5), original_read(*a))[1]
+        plc = _allen_bradley(stalled, FakeLogixDriver())
+        plc.read_timeout = 0.02
+
+        with pytest.raises(PLCTimeoutError, match="backstop"):
+            await plc.read_tag(["Tag1"])
+
+        assert await plc.disconnect() is True
+        assert await plc.is_connected() is False
+        with pytest.raises(PLCConnectionError, match="call connect"):
+            await plc.read_tag(["Tag1"])
 
     async def test_caller_cancellation_abandons_the_channel(self, monkeypatch):
         """Cancellation mid-exchange (a plan push cancelling the poll task, an

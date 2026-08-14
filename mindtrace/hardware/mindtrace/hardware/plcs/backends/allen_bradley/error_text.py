@@ -35,9 +35,16 @@ _MISSING_TAG_PATTERNS = (
     "address out of range",  # 0xFF ext 0x2104
     "invalid symbol name",  # 0xFF ext 0x210A
     "request path for tag",  # packets stamp "Failed to build/create request path for tag"
+    "error parsing the tag passed to",  # slc_driver read()/write() address rejection
 )
 # logix_driver.py "Error encoding value" + cip/data_types.py "Error packing/unpacking ... as {type}"
-_ENCODE_PATTERNS = ("error encoding value", "error packing", "error unpacking")
+_ENCODE_PATTERNS = (
+    "error encoding value",
+    "error packing",
+    "error unpacking",
+    "unable to create a writable value",  # logix/slc write pack wrapper
+    "insufficient data for requested elements",  # array write with too few values
+)
 # The three type-refusal texts, verbatim - matched exactly so nothing else
 # mentioning types (e.g. "'NoneType' object ...") can drift in.
 _TYPE_PATTERNS = (
@@ -69,11 +76,16 @@ _SESSION_DEAD_PHRASES = (
 )
 
 
+# Config verdicts echo caller input (addresses, values); only text the classifier
+# could NOT attribute to the caller may testify about the session.
+_CONFIG_VERDICT_KINDS = frozenset({TagErrorKind.missing_tag, TagErrorKind.encode, TagErrorKind.type_mismatch})
+
+
 def session_dead_addresses(results) -> list:
     """Addresses whose error text says the SESSION died, not the address."""
     dead = []
     for address, result in results.items():
-        if result.error is not None:
+        if result.error is not None and result.error.kind not in _CONFIG_VERDICT_KINDS:
             if _matches(result.error.message.lower(), _SESSION_DEAD_PHRASES):
                 dead.append(address)
     return dead
