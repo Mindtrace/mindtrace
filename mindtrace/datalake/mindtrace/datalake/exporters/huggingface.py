@@ -133,9 +133,6 @@ def _semantic_segmentation_features(datasets_module: Any):
             "mask": datasets_module.Image(),
             "asset_id": datasets_module.Value("string"),
             "split": datasets_module.Value("string"),
-            "class_names": datasets_module.Sequence(datasets_module.Value("string")),
-            "background_id": datasets_module.Value("int32"),
-            "ignore_index": datasets_module.Value("int32"),
             "metadata_json": datasets_module.Value("string"),
             "asset_metadata_json": datasets_module.Value("string"),
         }
@@ -201,6 +198,7 @@ def _save_huggingface_rows(
     asset_count: int,
     annotation_count: int,
     files_written: list[str] | None = None,
+    artifact_metadata: dict[str, Any] | None = None,
 ) -> ExportResult:
     """Build, save, and summarize a split-aware Hugging Face artifact."""
     dataset_payload = {
@@ -212,13 +210,22 @@ def _save_huggingface_rows(
     else:
         hf_dataset = datasets_module.DatasetDict(dataset_payload)
     hf_dataset.save_to_disk(str(destination))
+    written = list(files_written or [])
+    if artifact_metadata is not None:
+        written.append(
+            write_export_file(
+                destination,
+                "mindtrace_metadata.json",
+                json.dumps({"schema_version": 1, "mindtrace": artifact_metadata}, sort_keys=True).encode("utf-8"),
+            )
+        )
     return ExportResult(
         format="huggingface",
         destination=destination,
         dataset_name=dataset.name,
         asset_count=asset_count,
         annotation_count=annotation_count,
-        files_written=[*(files_written or []), "."],
+        files_written=[*written, "."],
         warnings=list(dataset.warnings),
     )
 
@@ -518,9 +525,6 @@ def _export_semantic_segmentation_dataset(
                 ),
                 "asset_id": item.asset.asset_id,
                 "split": item.split or "",
-                "class_names": class_names,
-                "background_id": background_id,
-                "ignore_index": ignore_index,
                 "metadata_json": json.dumps(item.metadata or {}, sort_keys=True, default=str),
                 "asset_metadata_json": json.dumps(item.asset.metadata or {}, sort_keys=True, default=str),
             }
@@ -534,6 +538,12 @@ def _export_semantic_segmentation_dataset(
         features=features,
         asset_count=dataset.asset_count,
         annotation_count=dataset.asset_count,
+        artifact_metadata={
+            "profile": "semantic_segmentation",
+            "class_names": class_names,
+            "background_id": background_id,
+            "ignore_index": ignore_index,
+        },
     )
 
 

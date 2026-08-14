@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import random
 from collections.abc import Callable, Collection, Mapping, Sequence
 from pathlib import Path
@@ -119,6 +120,19 @@ def _class_names_from_feature(feature: Any) -> tuple[str, ...]:
     return tuple(getattr(element_feature, "names", ()) or ())
 
 
+def _artifact_metadata(dataset: Any, export_path: str | Path) -> Mapping[str, Any]:
+    info_metadata = getattr(getattr(dataset, "info", None), "metadata", None)
+    if isinstance(info_metadata, Mapping) and isinstance(info_metadata.get("mindtrace"), Mapping):
+        return info_metadata["mindtrace"]
+    metadata_path = Path(export_path) / "mindtrace_metadata.json"
+    if metadata_path.is_file():
+        payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+        metadata = payload.get("mindtrace", {})
+        if isinstance(metadata, Mapping):
+            return metadata
+    return {}
+
+
 def _xywh_to_xyxy(bbox: Sequence[float]) -> list[float]:
     x, y, width, height = bbox
     return [x, y, x + width, y + height]
@@ -198,14 +212,14 @@ class HuggingFaceSemanticSegmentationDataset:
         self.split = split
         self.transform = transform
 
-        required_columns = {"asset_id", "background_id", "class_names", "ignore_index", "image", "mask"}
+        required_columns = {"asset_id", "image", "mask"}
         missing = sorted(required_columns - set(self._dataset.column_names))
         if missing:
             raise ValueError(f"Hugging Face semantic segmentation export is missing required column(s): {missing}.")
-        metadata_row = self._dataset[0] if len(self._dataset) else {}
-        self.class_names = tuple(metadata_row.get("class_names", ()))
-        self.background_id = int(metadata_row.get("background_id", 0))
-        self.ignore_index = int(metadata_row.get("ignore_index", 255))
+        metadata = _artifact_metadata(self._dataset, export_path)
+        self.class_names = tuple(metadata.get("class_names", ()))
+        self.background_id = int(metadata.get("background_id", 0))
+        self.ignore_index = int(metadata.get("ignore_index", 255))
 
     def __len__(self) -> int:
         return len(self._dataset)
