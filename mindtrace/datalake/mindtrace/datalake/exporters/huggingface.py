@@ -207,7 +207,8 @@ def _save_huggingface_rows(
 ) -> ExportResult:
     """Build, save, and summarize a split-aware Hugging Face artifact."""
     dataset_payload = {
-        split: datasets_module.Dataset.from_list(rows, features=features) for split, rows in rows_by_split.items()
+        split: datasets_module.Dataset.from_generator(lambda rows=rows: iter(rows), features=features)
+        for split, rows in rows_by_split.items()
     }
     if len(dataset_payload) == 1 and "default" in dataset_payload:
         hf_dataset = dataset_payload["default"]
