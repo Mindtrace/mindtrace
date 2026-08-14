@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 from PIL import Image
 
+from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.importers import pascal_voc
 
 VOC_XML = """
@@ -77,7 +78,7 @@ def make_import_datalake_mock() -> MagicMock:
     """Create a mock datalake configured for a full Pascal VOC import."""
 
     datalake = MagicMock()
-    datalake.get_dataset_version.side_effect = RuntimeError("missing")
+    datalake.get_dataset_version.side_effect = DocumentNotFoundError("missing")
     datalake.get_annotation_schema_by_name_version.side_effect = RuntimeError("missing")
 
     schema_ids = iter(("schema_cls", "schema_det", "schema_seg"))

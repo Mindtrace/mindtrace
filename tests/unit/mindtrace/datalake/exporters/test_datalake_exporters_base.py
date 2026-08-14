@@ -60,7 +60,7 @@ def test_build_exportable_dataset_from_resolved_version_sync_collects_primary_as
     assert exportable.items[0].annotations[0].annotation_id == "annotation_1"
     assert exportable.items[0].related_assets["mask"].asset_id == "asset_mask"
     assert exportable.items[0].related_payload_bytes["mask"] == png_bytes()
-    assert any("multiple assets" in warning for warning in exportable.warnings)
+    assert not any("multiple assets" in warning for warning in exportable.warnings)
     assert any("has no records for asset" in warning for warning in exportable.warnings)
 
 

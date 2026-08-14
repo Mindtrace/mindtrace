@@ -44,10 +44,24 @@ def test_coco_export_writes_default_annotations_file_and_skips_invalid_polygon(t
 
 
 def test_coco_export_requires_image_payloads(tmp_path: Path):
+    bbox = AnnotationRecord(
+        annotation_id="ann_bbox",
+        kind="bbox",
+        label="object",
+        source={"type": "human", "name": "annotator"},
+        geometry={"type": "bbox", "x": 0, "y": 0, "width": 1, "height": 1},
+    )
     image_asset = sample_asset()
     no_payload_dataset = ExportableDataset(
         name="dataset-a",
-        items=[ExportableItem(asset=image_asset, payload_bytes=None, source_filename="asset_img.png")],
+        items=[
+            ExportableItem(
+                asset=image_asset,
+                annotations=[bbox],
+                payload_bytes=None,
+                source_filename="asset_img.png",
+            )
+        ],
     )
     non_image_asset = Asset(
         asset_id="asset_doc",
@@ -57,7 +71,14 @@ def test_coco_export_requires_image_payloads(tmp_path: Path):
     )
     non_image_dataset = ExportableDataset(
         name="dataset-a",
-        items=[ExportableItem(asset=non_image_asset, payload_bytes=b"pdf", source_filename="asset_doc.pdf")],
+        items=[
+            ExportableItem(
+                asset=non_image_asset,
+                annotations=[bbox],
+                payload_bytes=b"pdf",
+                source_filename="asset_doc.pdf",
+            )
+        ],
     )
 
     with pytest.raises(ValueError, match="requires payload bytes"):

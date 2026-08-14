@@ -296,17 +296,19 @@ def test_semantic_segmentation_dataset_returns_image_and_long_mask(monkeypatch):
         "asset_id": "voc-1",
         "image": image,
         "mask": mask,
-        "class_names": ["background", "person"],
-        "background_id": 0,
-        "ignore_index": 255,
     }
-    payload = _FakeDatasetDict(
-        train=_FakeSplitDataset(
-            [row],
-            column_names=list(row),
-            features={},
-        ),
+    split = _FakeSplitDataset([row], column_names=list(row), features={})
+    split.info = SimpleNamespace(
+        metadata={
+            "mindtrace": {
+                "profile": "semantic_segmentation",
+                "class_names": ["background", "person"],
+                "background_id": 0,
+                "ignore_index": 255,
+            }
+        }
     )
+    payload = _FakeDatasetDict(train=split)
     monkeypatch.setattr(
         dataloaders,
         "_require_huggingface_dataloader_dependencies",

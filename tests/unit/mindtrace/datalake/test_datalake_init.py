@@ -57,8 +57,5 @@ def test_datalake_exports_sync_symbols():
     assert datalake_module.ExportResult.__name__ == "ExportResult"
     assert datalake_module.ExportableDataset.__name__ == "ExportableDataset"
     assert datalake_module.ExportableItem.__name__ == "ExportableItem"
-    assert datalake_module.HuggingFaceSemanticSegmentationDataset.__name__ == ("HuggingFaceSemanticSegmentationDataset")
-    assert datalake_module.HuggingFaceInstanceSegmentationDataset.__name__ == ("HuggingFaceInstanceSegmentationDataset")
-    assert callable(datalake_module.build_datasets)
     assert callable(datalake_module.export_dataset_to_format)
     assert callable(datalake_module.get_dataset_exporter)

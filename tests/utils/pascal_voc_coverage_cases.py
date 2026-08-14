@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.importers import pascal_voc
 from mindtrace.datalake.types import AnnotationLabelDefinition, AnnotationSchema
 from tests.utils.pascal_voc_support import VOC_XML, build_tiny_voc_fixture, make_import_datalake_mock, make_schema_ref
@@ -429,7 +430,7 @@ def test_import_pascal_voc_raises_for_missing_payloads(tmp_path: Path, missing_n
         expected = "annotation XML not found"
 
     datalake = MagicMock()
-    datalake.get_dataset_version.side_effect = RuntimeError("missing")
+    datalake.get_dataset_version.side_effect = DocumentNotFoundError("missing")
 
     with patch.object(pascal_voc, "_ensure_voc_schemas", return_value={}):
         with pytest.raises(FileNotFoundError, match=expected):
@@ -448,7 +449,7 @@ def test_import_pascal_voc_raises_for_missing_payloads(tmp_path: Path, missing_n
 def test_import_pascal_voc_creates_classification_detection_and_segmentation_records(tmp_path: Path):
     build_tiny_voc_fixture(tmp_path)
     datalake = MagicMock()
-    datalake.get_dataset_version.side_effect = RuntimeError("missing")
+    datalake.get_dataset_version.side_effect = DocumentNotFoundError("missing")
     datalake.create_asset_from_object.side_effect = [
         SimpleNamespace(asset_id="image_asset"),
         SimpleNamespace(asset_id="mask_asset"),

@@ -64,6 +64,9 @@ def export_dataset_as_coco(
     options: dict[str, Any] | None = None,
 ) -> ExportResult:
     """Export a canonical dataset view to a COCO-style directory."""
+    destination_path = Path(destination)
+    if destination_path.exists() and not overwrite:
+        raise FileExistsError(f"Export destination already exists: {destination_path}")
     requested_task = (options or {}).get("task") or dataset.metadata.get("task_type")
     annotation_kinds = {annotation.kind for item in dataset.items for annotation in item.annotations}
     if requested_task == "classification":
@@ -73,7 +76,7 @@ def export_dataset_as_coco(
         )
     if not annotation_kinds.intersection({"bbox", "polygon"}):
         raise ValueError("COCO export requires at least one supported bbox or polygon annotation.")
-    destination_path = prepare_export_destination(destination, overwrite=overwrite)
+    destination_path = prepare_export_destination(destination_path, overwrite=overwrite)
     warnings = list(dataset.warnings)
     categories = _supported_category_records(dataset)
     category_ids = {pair: idx + 1 for idx, pair in enumerate(categories)}

@@ -23,6 +23,11 @@ class _FakeDataset:
     def from_list(cls, rows, features=None):
         return cls(rows, features=features)
 
+    @classmethod
+    def from_generator(cls, generator, features=None):
+        rows = generator() if callable(generator) else generator
+        return cls(list(rows), features=features)
+
     def save_to_disk(self, path: str):
         target = Path(path)
         target.mkdir(parents=True, exist_ok=True)
