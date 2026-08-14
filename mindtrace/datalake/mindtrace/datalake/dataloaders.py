@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import random
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -452,6 +452,8 @@ def build_dataloaders(
     persistent_workers: bool = False,
     prefetch_factor: int | None = None,
     drop_last: bool = False,
+    shuffle_splits: Collection[str] | None = None,
+    drop_last_splits: Collection[str] | None = None,
     seed: int = 0,
 ) -> dict[str, Any]:
     """Build split-aware PyTorch DataLoaders over a Mindtrace dataset export."""
@@ -473,6 +475,8 @@ def build_dataloaders(
         transforms=transforms,
     )
     _, torch, DataLoader, _ = _require_huggingface_dataloader_dependencies()
+    shuffled = {"train"} if shuffle_splits is None else set(shuffle_splits)
+    dropped = ({"train"} if drop_last else set()) if drop_last_splits is None else set(drop_last_splits)
 
     loaders: dict[str, Any] = {}
     for split, dataset in built_datasets.items():
@@ -480,10 +484,10 @@ def build_dataloaders(
         generator.manual_seed(seed)
         loader_kwargs: dict[str, Any] = {
             "batch_size": batch_size,
-            "shuffle": split == "train",
+            "shuffle": split in shuffled,
             "num_workers": num_workers,
             "pin_memory": pin_memory,
-            "drop_last": drop_last and split == "train",
+            "drop_last": split in dropped,
             "generator": generator,
             "worker_init_fn": _worker_init_fn,
         }
