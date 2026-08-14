@@ -381,9 +381,9 @@ async def test_reinit_replays_runtime_configure(monkeypatch, tmp_path):
 
     try:
         camera = await manager.open(name, test_connection=False)
-        assert await manager.configure_camera(name, {"exposure": 15000}) is True
+        assert (await manager.configure_camera(name, {"exposure": 15000})).success is True
         await camera.export_config(config_path)
-        assert await manager.configure_camera(name, {"exposure": 33333, "gain": 4.0}) is True
+        assert (await manager.configure_camera(name, {"exposure": 33333, "gain": 4.0})).success is True
         assert await camera.get_exposure() == 33333
         assert await camera.get_gain() == 4.0
 
@@ -427,7 +427,7 @@ async def test_apply_saved_config_updates_runtime_configure_for_reinit(monkeypat
 
     try:
         camera = await manager.open(name, test_connection=False)
-        assert await manager.configure_camera(name, {"exposure_time": 25000}) is True
+        assert (await manager.configure_camera(name, {"exposure_time": 25000})).success is True
         assert await camera.get_exposure() == 25000
         assert manager._runtime_configure[name] == {"exposure_time": 25000}
 

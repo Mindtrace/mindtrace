@@ -74,6 +74,8 @@ from mindtrace.hardware.services.cameras.models.responses import (
     CameraCapabilitiesResponse,
     CameraConfiguration,
     CameraConfigurationResponse,
+    ConfigurationApplyResponse,
+    ConfigurationApplyResultData,
     # Camera Information
     CameraInfo,
     CameraInfoResponse,
@@ -191,6 +193,8 @@ __all__ = [
     "CameraStatusResponse",
     "CameraCapabilitiesResponse",
     "CameraConfigurationResponse",
+    "ConfigurationApplyResponse",
+    "ConfigurationApplyResultData",
     "SavedCameraConfigurationResponse",
     "CameraPerformanceSettings",
     "CameraPerformanceSettingsResponse",

@@ -879,14 +879,14 @@ class AsyncCameraManager(Mindtrace):
             return
         self._runtime_configure.setdefault(camera_name, {}).update(settings)
 
-    async def configure_camera(self, camera_name: str, settings: Dict[str, Any]) -> bool:
+    async def configure_camera(self, camera_name: str, settings: Dict[str, Any]) -> ConfigurationApplyResult:
         """Configure a camera and record settings for auto-reinit replay."""
         if camera_name not in self._cameras:
             raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
         result = await self._cameras[camera_name].configure(**settings)
         if result.success:
             self._merge_runtime_configure(camera_name, settings)
-        return result.success
+        return result
 
     def _record_capture_success(self, camera_name: str) -> None:
         """Reset failure counter on successful capture."""
@@ -934,7 +934,7 @@ class AsyncCameraManager(Mindtrace):
                 self.logger.error(f"Configuration failed for '{camera_name}': {result}")
                 results[camera_name] = False
             else:
-                results[camera_name] = bool(result)
+                results[camera_name] = result.success
 
         return results
 

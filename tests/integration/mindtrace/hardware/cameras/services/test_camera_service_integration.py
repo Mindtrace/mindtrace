@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock
 import numpy as np
 import pytest
 
+from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
 from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
@@ -29,6 +30,7 @@ from mindtrace.hardware.services.cameras.models import (
     BoolResponse,
     CameraCloseRequest,
     CameraConfigureRequest,
+    ConfigurationApplyResponse,
     # Requests
     CameraOpenRequest,
     CameraPerformanceSettingsRequest,
@@ -334,7 +336,7 @@ class TestServiceConfigurationOperations:
         mock_proxy = AsyncMock()
         mock_camera_manager.active_cameras = {"MockBasler:TestCam1": mock_proxy}
         mock_camera_manager.open.return_value = mock_proxy
-        mock_camera_manager.configure_camera = AsyncMock(return_value=True)
+        mock_camera_manager.configure_camera = AsyncMock(return_value=ConfigurationApplyResult(applied=3, total=3))
 
         properties = {
             "exposure": 2000,
@@ -347,9 +349,11 @@ class TestServiceConfigurationOperations:
         )
         result = await camera_service.configure_camera(request)
 
-        assert isinstance(result, BoolResponse)
+        assert isinstance(result, ConfigurationApplyResponse)
         assert result.success is True
-        assert result.data is True
+        assert result.data.applied == 3
+        assert result.data.total == 3
+        assert result.data.success is True
 
         mock_camera_manager.configure_camera.assert_awaited_once_with("MockBasler:TestCam1", properties)
 
@@ -359,7 +363,7 @@ class TestServiceConfigurationOperations:
         mock_proxy = AsyncMock()
         mock_camera_manager.active_cameras = {"MockBasler:TestCam1": mock_proxy}
         mock_camera_manager.open.return_value = mock_proxy
-        mock_camera_manager.configure_camera = AsyncMock(return_value=True)
+        mock_camera_manager.configure_camera = AsyncMock(return_value=ConfigurationApplyResult(applied=1, total=1))
 
         properties = {"roi": [0, 0, 640, 480]}  # x, y, width, height
         request = CameraConfigureRequest(

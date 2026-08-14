@@ -172,7 +172,13 @@ class TestPostWrappers:
                 "/cameras/configure",
                 {"camera": "Basler:cam", "properties": {"ExposureTime": 1000}},
                 None,
-                True,
+                {
+                    "applied": 1,
+                    "total": 1,
+                    "failures": {},
+                    "skipped": [],
+                    "success": True,
+                },
             ),
             (
                 "configure_cameras_batch",

@@ -182,6 +182,22 @@ class CameraConfigurationResponse(BaseResponse):
     data: CameraConfiguration
 
 
+class ConfigurationApplyResultData(BaseModel):
+    """Result of applying one or more camera configuration settings."""
+
+    applied: int
+    total: int
+    failures: Dict[str, str] = Field(default_factory=dict)
+    skipped: List[str] = Field(default_factory=list)
+    success: bool
+
+
+class ConfigurationApplyResponse(BaseResponse):
+    """Response model for camera configure operations."""
+
+    data: ConfigurationApplyResultData
+
+
 class SavedCameraConfigurationResponse(BaseResponse):
     """Response model for persisted (on-disk) camera configuration."""
 

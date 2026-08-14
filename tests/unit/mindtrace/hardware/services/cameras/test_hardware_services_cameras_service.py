@@ -22,6 +22,7 @@ from mindtrace.hardware.core.exceptions import (
     CameraInitializationError,
     CameraNotFoundError,
 )
+from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult
 from mindtrace.hardware.core.types import ServiceStatus
 from mindtrace.hardware.services.cameras.models.requests import (
     BackendFilterRequest,
@@ -235,7 +236,7 @@ class TestCameraManagerServiceBusinessLogic:
                 raise CameraNotFoundError(f"Backend '{backend}' not available")
 
         mock_manager.validate_camera_name = Mock(side_effect=validate_camera_name)
-        mock_manager.configure_camera = AsyncMock(return_value=True)
+        mock_manager.configure_camera = AsyncMock(return_value=ConfigurationApplyResult(applied=1, total=1))
 
         service._camera_manager = mock_manager
         return service, mock_manager
@@ -466,7 +467,7 @@ class TestCameraManagerServiceBusinessLogic:
         # Set up active camera
         mock_manager.active_cameras = ["ActiveCamera"]
         mock_manager.open = AsyncMock()
-        mock_manager.configure_camera = AsyncMock(return_value=True)
+        mock_manager.configure_camera = AsyncMock(return_value=ConfigurationApplyResult(applied=1, total=1))
 
         request = CameraConfigureRequest(camera="ActiveCamera", properties={"exposure": 1000, "gain": 2.5})
 
@@ -475,7 +476,11 @@ class TestCameraManagerServiceBusinessLogic:
         # Test business logic: validation and response
         assert response.success is True
         assert "Camera 'ActiveCamera' configured successfully" in response.message
-        assert response.data is True
+        assert response.data.applied == 1
+        assert response.data.total == 1
+        assert response.data.success is True
+        assert response.data.failures == {}
+        assert response.data.skipped == []
 
         # Test business logic: properties passed correctly
         mock_manager.configure_camera.assert_awaited_once_with("ActiveCamera", {"exposure": 1000, "gain": 2.5})
@@ -488,13 +493,15 @@ class TestCameraManagerServiceBusinessLogic:
 
         request = CameraConfigureRequest(camera="InactiveCamera", properties={"exposure": 1000})
 
-        # Graceful error handling: returns BoolResponse instead of raising
+        # Graceful error handling: returns ConfigurationApplyResponse instead of raising
         response = await service.configure_camera(request)
 
         assert response.success is False
         assert "InactiveCamera" in response.message
         assert "not initialized" in response.message
-        assert response.data is False
+        assert response.data.applied == 0
+        assert response.data.total == 0
+        assert response.data.success is False
 
     @pytest.mark.asyncio
     async def test_get_active_cameras_response_format(self, service_with_mock_manager):
@@ -817,7 +824,9 @@ class TestCameraManagerServiceBusinessLogic:
         # Set up camera that fails configuration
         mock_manager.active_cameras = ["TestCamera"]
         mock_manager.open = AsyncMock()
-        mock_manager.configure_camera = AsyncMock(return_value=False)
+        mock_manager.configure_camera = AsyncMock(
+            return_value=ConfigurationApplyResult(applied=0, total=1, failures={"exposure_time": "invalid"})
+        )
 
         request = CameraConfigureRequest(camera="TestCamera", properties={"exposure": 1000})
 
@@ -826,7 +835,10 @@ class TestCameraManagerServiceBusinessLogic:
         # Test business logic: failure response
         assert response.success is False
         assert "Configuration failed for 'TestCamera'" in response.message
-        assert response.data is False
+        assert response.data.applied == 0
+        assert response.data.total == 1
+        assert response.data.success is False
+        assert "exposure_time" in response.data.failures
 
 
 class TestCameraManagerServiceErrorHandling:
@@ -876,12 +888,13 @@ class TestCameraManagerServiceErrorHandling:
 
         request = CameraConfigureRequest(camera="TestCamera", properties={"invalid_param": "bad_value"})
 
-        # Graceful error handling: returns BoolResponse instead of raising
+        # Graceful error handling: returns ConfigurationApplyResponse instead of raising
         response = await service.configure_camera(request)
 
         assert response.success is False
         assert "Invalid config" in response.message
-        assert response.data is False
+        assert response.data.success is False
+        assert response.data.failures == {"_error": "Invalid config"}
 
 
 class TestCameraManagerServiceResponseModels:

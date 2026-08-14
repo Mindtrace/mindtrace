@@ -212,7 +212,7 @@ class CameraManagerConnectionManager(ConnectionManager):
         return response["data"]
 
     # Configuration Operations
-    async def configure_camera(self, camera: str, properties: Dict[str, Any]) -> bool:
+    async def configure_camera(self, camera: str, properties: Dict[str, Any]) -> Dict[str, Any]:
         """Configure camera parameters.
 
         Args:
@@ -220,7 +220,7 @@ class CameraManagerConnectionManager(ConnectionManager):
             properties: Configuration properties
 
         Returns:
-            True if successful
+            Configuration apply result with applied/total counts, failures, and skipped keys.
         """
         request = CameraConfigureRequest(camera=camera, properties=properties)
         response = await self.post("/cameras/configure", request.model_dump())

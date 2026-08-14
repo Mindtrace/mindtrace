@@ -63,6 +63,17 @@ class ConfigurationApplyResult:
         return self.applied == self.total
 
 
+def configuration_apply_result_to_dict(result: ConfigurationApplyResult) -> Dict[str, Any]:
+    """Serialize a configure apply result for service and client responses."""
+    return {
+        "applied": result.applied,
+        "total": result.total,
+        "failures": dict(result.failures),
+        "skipped": list(result.skipped),
+        "success": result.success,
+    }
+
+
 def find_skipped_keys(data: Dict[str, Any]) -> tuple[str, ...]:
     """Return input keys that were not consumed by :func:`normalize_settings`.
 

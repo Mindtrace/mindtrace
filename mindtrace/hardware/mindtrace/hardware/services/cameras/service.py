@@ -20,6 +20,8 @@ from mindtrace.core import utcnow
 from mindtrace.core.utils.conversions import ndarray_to_pil
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
 from mindtrace.hardware.cameras.core.configuration import (
+    ConfigurationApplyResult,
+    configuration_apply_result_to_dict,
     settings_to_camera_configuration_dict,
 )
 from mindtrace.hardware.core.exceptions import (
@@ -52,6 +54,8 @@ from mindtrace.hardware.services.cameras.models import (
     CameraConfigurationResponse,
     CameraConfigureBatchRequest,
     CameraConfigureRequest,
+    ConfigurationApplyResponse,
+    ConfigurationApplyResultData,
     CameraInfo,
     CameraInfoResponse,
     CameraOpenBatchRequest,
@@ -115,6 +119,36 @@ from mindtrace.hardware.services.cameras.models import (
 )
 from mindtrace.hardware.services.cameras.schemas import ALL_SCHEMAS, HealthSchema
 from mindtrace.services import Service
+
+
+def _configuration_apply_response(
+    camera: str,
+    result: ConfigurationApplyResult,
+    *,
+    error_message: str | None = None,
+) -> ConfigurationApplyResponse:
+    """Build a configure response from a core apply result."""
+    payload = configuration_apply_result_to_dict(result)
+    if error_message is not None:
+        payload["success"] = False
+    data = ConfigurationApplyResultData(**payload)
+    if error_message is not None:
+        return ConfigurationApplyResponse(success=False, message=error_message, data=data)
+
+    if result.success:
+        message = f"Camera '{camera}' configured successfully"
+        if result.skipped:
+            message += f" (skipped unrecognized keys: {', '.join(result.skipped)})"
+        return ConfigurationApplyResponse(success=True, message=message, data=data)
+
+    parts = [f"Configuration failed for '{camera}'"]
+    if result.total:
+        parts.append(f"{result.applied}/{result.total} settings applied")
+    if result.failures:
+        parts.append(f"failures: {result.failures}")
+    if result.skipped:
+        parts.append(f"skipped keys: {', '.join(result.skipped)}")
+    return ConfigurationApplyResponse(success=False, message="; ".join(parts), data=data)
 
 
 class CameraManagerService(Service):
@@ -784,7 +818,7 @@ class CameraManagerService(Service):
             raise
 
     # Camera Configuration Operations
-    async def configure_camera(self, request: CameraConfigureRequest) -> BoolResponse:
+    async def configure_camera(self, request: CameraConfigureRequest) -> ConfigurationApplyResponse:
         """Configure camera parameters."""
         self.logger.info(f"Starting configure_camera for '{request.camera}' with properties: {request.properties}")
         try:
@@ -802,24 +836,25 @@ class CameraManagerService(Service):
             await manager.open(request.camera)
 
             self.logger.debug(f"Calling configure on camera proxy with properties: {request.properties}")
-            success = await manager.configure_camera(request.camera, request.properties)
-            self.logger.debug(f"Configure completed with success: {success}")
-
-            # Handle None return value (convert to False)
-            if success is None:
-                success = False
-
-            return BoolResponse(
-                success=success,
-                message=f"Camera '{request.camera}' configured successfully"
-                if success
-                else f"Configuration failed for '{request.camera}'",
-                data=success,
+            result = await manager.configure_camera(request.camera, request.properties)
+            self.logger.debug(
+                "Configure completed with success=%s applied=%s total=%s skipped=%s failures=%s",
+                result.success,
+                result.applied,
+                result.total,
+                result.skipped,
+                result.failures,
             )
+
+            return _configuration_apply_response(request.camera, result)
         except CameraNotFoundError as e:
             # Handle camera not found errors gracefully
             self.logger.warning(f"Camera not found: {e}")
-            return BoolResponse(success=False, message=str(e), data=False)
+            return _configuration_apply_response(
+                request.camera,
+                ConfigurationApplyResult(applied=0, total=0),
+                error_message=str(e),
+            )
         except Exception as e:
             self.logger.error(f"Failed to configure camera '{request.camera}': {e}")
             # Import the exception types
@@ -827,8 +862,11 @@ class CameraManagerService(Service):
 
             # Handle configuration errors gracefully
             if isinstance(e, (CameraConfigurationError, HardwareOperationError, TypeError)):
-                # Return a failure response with the error message instead of raising
-                return BoolResponse(success=False, message=str(e), data=False)
+                return _configuration_apply_response(
+                    request.camera,
+                    ConfigurationApplyResult(applied=0, total=0, failures={"_error": str(e)}),
+                    error_message=str(e),
+                )
             # For other exceptions, still raise them
             raise
 
