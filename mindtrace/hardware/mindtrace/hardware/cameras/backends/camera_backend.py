@@ -43,11 +43,16 @@ class CameraBackend(MindtraceABC):
 
     Subclass Requirements:
         - Set ``REQUIRES_THREAD_AFFINITY = True`` if the SDK requires thread affinity
+        - Set ``nested_merge_config_keys`` to configure keys whose dict values
+          should accumulate across sequential ``configure()`` calls (for example
+          ``genicam_nodes``)
         - Use ``_run_blocking()`` for all SDK calls that may block
         - Call ``await self._cleanup_executor()`` in ``close()`` to release thread resources
 
     Attributes:
         REQUIRES_THREAD_AFFINITY: Class attribute indicating thread affinity requirement
+        nested_merge_config_keys: Configure keys whose dict values are merged
+            key-by-key into runtime replay state instead of being replaced
         camera_name: Unique identifier for the camera
         img_quality_enhancement: Whether image quality enhancement is enabled
         retrieve_retry_count: Number of retries for image retrieval
@@ -57,6 +62,7 @@ class CameraBackend(MindtraceABC):
     """
 
     REQUIRES_THREAD_AFFINITY: bool = False
+    nested_merge_config_keys: frozenset[str] = frozenset()
 
     def __init__(
         self,

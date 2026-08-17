@@ -20,6 +20,7 @@ from mindtrace.hardware.cameras.core.configuration import (
     ConfigurationApplyResult,
     applied_settings_from_result,
     configuration_error_result,
+    merge_configure_settings,
 )
 from mindtrace.hardware.core.exceptions import (
     CameraConfigurationError,
@@ -822,7 +823,7 @@ class AsyncCameraManager(Mindtrace):
         if merge_runtime:
             applied = applied_settings_from_result(raw_config, result)
             if applied:
-                self._merge_runtime_configure(camera_name, applied)
+                self._merge_runtime_configure(camera_name, applied, camera.backend)
 
         if result.total > 0 and result.applied < result.total:
             self.logger.warning(
@@ -928,20 +929,34 @@ class AsyncCameraManager(Mindtrace):
                 # Reset counter to prevent immediate re-trigger on next capture
                 self._failure_counts[camera_name] = 0
 
-    def _merge_runtime_configure(self, camera_name: str, settings: Dict[str, Any]) -> None:
-        """Accumulate runtime configure settings to replay after auto-reinit."""
+    def _merge_runtime_configure(
+        self,
+        camera_name: str,
+        settings: Dict[str, Any],
+        backend: CameraBackend,
+    ) -> None:
+        """Accumulate runtime configure settings to replay after auto-reinit.
+
+        Nested maps listed in ``backend.nested_merge_config_keys`` are merged
+        key-by-key so sequential configure calls keep previously applied entries.
+        """
         if not settings:
             return
-        self._runtime_configure.setdefault(camera_name, {}).update(settings)
+        merge_configure_settings(
+            self._runtime_configure.setdefault(camera_name, {}),
+            settings,
+            nested_merge_keys=backend.nested_merge_config_keys,
+        )
 
     async def configure_camera(self, camera_name: str, settings: Dict[str, Any]) -> ConfigurationApplyResult:
         """Configure a camera and record settings for auto-reinit replay."""
         if camera_name not in self._cameras:
             raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
-        result = await self._cameras[camera_name].configure(**settings)
+        camera = self._cameras[camera_name]
+        result = await camera.configure(**settings)
         applied = applied_settings_from_result(settings, result)
         if applied:
-            self._merge_runtime_configure(camera_name, applied)
+            self._merge_runtime_configure(camera_name, applied, camera.backend)
         return result
 
     def _record_capture_success(self, camera_name: str) -> None:

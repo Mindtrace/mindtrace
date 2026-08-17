@@ -538,6 +538,9 @@ async def test_reinit_replays_partial_genicam_nodes_after_failed_nodes(monkeypat
         replayed.update(node_config)
 
     monkeypatch.setattr(MockBaslerCameraBackend, "apply_genicam_nodes", apply_genicam_nodes, raising=False)
+    monkeypatch.setattr(
+        MockBaslerCameraBackend, "nested_merge_config_keys", frozenset({"genicam_nodes"}), raising=False
+    )
 
     async def failing_capture(self, save_path=None, output_format="pil"):
         raise CameraConnectionError("simulated capture failure")
@@ -558,6 +561,54 @@ async def test_reinit_replays_partial_genicam_nodes_after_failed_nodes(monkeypat
             await manager.batch_capture([name])
 
         assert replayed == {"PixelFormat": "Mono8"}
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_reinit_replays_union_of_sequential_genicam_node_configures(monkeypatch, tmp_path):
+    """Later genicam_nodes configures must accumulate nodes for auto-reinit replay."""
+    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    manager._max_consecutive_failures = 3
+    manager._reinitialization_cooldown = 0
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    replayed: dict[str, object] = {}
+
+    async def apply_genicam_nodes(self, node_config):
+        replayed.clear()
+        replayed.update(node_config)
+
+    monkeypatch.setattr(MockBaslerCameraBackend, "apply_genicam_nodes", apply_genicam_nodes, raising=False)
+    monkeypatch.setattr(
+        MockBaslerCameraBackend, "nested_merge_config_keys", frozenset({"genicam_nodes"}), raising=False
+    )
+
+    async def failing_capture(self, save_path=None, output_format="pil"):
+        raise CameraConnectionError("simulated capture failure")
+
+    monkeypatch.setattr(
+        "mindtrace.hardware.cameras.core.async_camera.AsyncCamera.capture",
+        failing_capture,
+    )
+
+    try:
+        await manager.open(name, test_connection=False)
+        first = await manager.configure_camera(name, {"genicam_nodes": {"PixelFormat": "Mono8"}})
+        second = await manager.configure_camera(name, {"genicam_nodes": {"ReverseX": True}})
+
+        assert first.success is True
+        assert second.success is True
+        assert manager._runtime_configure[name] == {
+            "genicam_nodes": {"PixelFormat": "Mono8", "ReverseX": True},
+        }
+
+        for _ in range(3):
+            await manager.batch_capture([name])
+
+        assert replayed == {"PixelFormat": "Mono8", "ReverseX": True}
     finally:
         await manager.close(None)
 

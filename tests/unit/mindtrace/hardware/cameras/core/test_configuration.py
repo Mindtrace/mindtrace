@@ -6,6 +6,7 @@ from mindtrace.hardware.cameras.core.configuration import (
     applied_subset_from_exception,
     configuration_error_result,
     find_skipped_keys,
+    merge_configure_settings,
     normalize_settings,
     settings_to_camera_configuration_dict,
 )
@@ -113,6 +114,48 @@ def test_applied_settings_from_result_keeps_partial_nested_genicam_nodes():
     )
 
     assert applied_settings_from_result(raw, result) == {"genicam_nodes": {"PixelFormat": "Mono8"}}
+
+
+def test_merge_configure_settings_accumulates_nested_keys():
+    existing = {"exposure_time": 15000, "genicam_nodes": {"PixelFormat": "Mono8"}}
+
+    merge_configure_settings(
+        existing,
+        {"genicam_nodes": {"ReverseX": True}, "gain": 4.0},
+        nested_merge_keys=("genicam_nodes",),
+    )
+
+    assert existing == {
+        "exposure_time": 15000,
+        "gain": 4.0,
+        "genicam_nodes": {"PixelFormat": "Mono8", "ReverseX": True},
+    }
+
+
+def test_merge_configure_settings_overwrites_existing_nested_values():
+    existing = {"genicam_nodes": {"PixelFormat": "Mono8", "ReverseX": False}}
+
+    merge_configure_settings(
+        existing,
+        {"genicam_nodes": {"PixelFormat": "RGB8"}},
+        nested_merge_keys=("genicam_nodes",),
+    )
+
+    assert existing == {"genicam_nodes": {"PixelFormat": "RGB8", "ReverseX": False}}
+
+
+def test_merge_configure_settings_replaces_dicts_not_listed_for_nested_merge():
+    existing = {"focus_config": {"mode": "auto", "accuracy": "Normal"}, "genicam_nodes": {"PixelFormat": "Mono8"}}
+
+    merge_configure_settings(
+        existing,
+        {"focus_config": {"mode": "manual"}, "genicam_nodes": {"ReverseX": True}},
+    )
+
+    assert existing == {
+        "focus_config": {"mode": "manual"},
+        "genicam_nodes": {"ReverseX": True},
+    }
 
 
 def test_applied_subset_from_exception_reads_details_applied():

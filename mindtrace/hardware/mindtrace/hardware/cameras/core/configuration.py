@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
 
@@ -91,6 +92,35 @@ def applied_settings_from_result(
         if value:
             applied[key] = value
     return applied
+
+
+def merge_configure_settings(
+    existing: Dict[str, Any],
+    incoming: Dict[str, Any],
+    nested_merge_keys: Iterable[str] = (),
+) -> None:
+    """Merge applied configure settings into accumulated runtime replay state.
+
+    Scalar keys are overwritten. Keys listed in ``nested_merge_keys`` whose
+    values are dicts are updated key-by-key so later configure calls accumulate
+    independent nested entries instead of replacing the whole map.
+
+    Args:
+        existing: Runtime configure dict for one camera; mutated in place.
+        incoming: Newly applied canonical settings from a configure call.
+        nested_merge_keys: Configure keys declared by the backend as nested
+            maps that should accumulate (see
+            :attr:`~mindtrace.hardware.cameras.backends.camera_backend.CameraBackend.nested_merge_config_keys`).
+    """
+    nested = frozenset(nested_merge_keys)
+    for key, value in incoming.items():
+        current = existing.get(key)
+        if key in nested and isinstance(current, dict) and isinstance(value, dict):
+            current.update(value)
+        elif isinstance(value, dict):
+            existing[key] = dict(value)
+        else:
+            existing[key] = value
 
 
 def applied_subset_from_exception(exc: BaseException) -> Dict[str, Any]:
