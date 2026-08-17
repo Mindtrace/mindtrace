@@ -454,14 +454,10 @@ def test_import_pascal_voc_creates_classification_detection_and_segmentation_rec
         SimpleNamespace(asset_id="image_asset"),
         SimpleNamespace(asset_id="mask_asset"),
     ]
-    datalake.create_datum.side_effect = [
-        SimpleNamespace(datum_id="datum_1"),
-        SimpleNamespace(datum_id="region_datum_1"),
-    ]
+    datalake.create_datum.return_value = SimpleNamespace(datum_id="datum_1")
     datalake.create_annotation_set.side_effect = [
         SimpleNamespace(annotation_set_id="set_cls"),
         SimpleNamespace(annotation_set_id="set_det"),
-        SimpleNamespace(annotation_set_id="set_region"),
         SimpleNamespace(annotation_set_id="set_seg"),
     ]
     datalake.create_dataset_version.side_effect = [
@@ -492,20 +488,18 @@ def test_import_pascal_voc_creates_classification_detection_and_segmentation_rec
     assert summary.classification_record_count == 1
     assert summary.detection_record_count == 1
     assert summary.segmentation_record_count == 1
-    assert summary.derived_datum_count == 1
+    assert summary.derived_datum_count == 0
     assert datalake.create_asset_from_object.call_count == 2
     assert datalake.create_asset_from_object.call_args_list[1].kwargs["kind"] == "mask"
-    assert all("on_conflict" not in call.kwargs for call in datalake.create_asset_from_object.call_args_list)
+    assert all(call.kwargs["on_conflict"] == "overwrite" for call in datalake.create_asset_from_object.call_args_list)
 
+    assert datalake.create_datum.call_count == 1
     classification_records = datalake.add_annotation_records.call_args_list[0].args[0]
     detection_records = datalake.add_annotation_records.call_args_list[1].args[0]
-    region_records = datalake.add_annotation_records.call_args_list[2].args[0]
-    segmentation_records = datalake.add_annotation_records.call_args_list[3].args[0]
+    segmentation_records = datalake.add_annotation_records.call_args_list[2].args[0]
 
     assert classification_records[0]["kind"] == "classification"
     assert detection_records[0]["kind"] == "bbox"
-    assert region_records[0]["kind"] == "bbox"
-    assert region_records[0]["attributes"] == detection_records[0]["attributes"]
     assert segmentation_records[0]["kind"] == "mask"
     assert segmentation_records[0]["label"] == "semantic_mask"
     assert segmentation_records[0]["geometry"]["mask_asset_id"] == "mask_asset"
@@ -515,9 +509,6 @@ def test_import_pascal_voc_creates_classification_detection_and_segmentation_rec
         "image": "image_asset",
         "semantic_mask": "mask_asset",
     }
-    assert datalake.create_datum.call_args_list[1].kwargs["asset_refs"] == {"image": "image_asset"}
-    assert datalake.create_datum.call_args_list[1].kwargs["metadata"]["derivation"] == "bbox_crop"
-    assert datalake.create_datum.call_args_list[1].kwargs["metadata"]["source_datum_id"] == "datum_1"
     dataset_metadata = datalake.create_dataset_version.call_args_list[0].kwargs["metadata"]
     assert dataset_metadata["task_types"] == ["classification", "detection", "semantic_segmentation"]
     assert dataset_metadata["classification_type"] == "multi_label"
@@ -539,7 +530,7 @@ def test_import_pascal_voc_creates_classification_detection_and_segmentation_rec
     assert version_calls["pascal-voc-2012-train"]["manifest"] == ["datum_1"]
     assert version_calls["pascal-voc-2012-train-detection"]["manifest"] == ["datum_1"]
     assert version_calls["pascal-voc-2012-train-classification-multi-label"]["manifest"] == ["datum_1"]
-    assert version_calls["pascal-voc-2012-train-classification-single-label"]["manifest"] == ["region_datum_1"]
+    assert version_calls["pascal-voc-2012-train-classification-single-label"]["manifest"] == ["datum_1"]
     assert version_calls["pascal-voc-2012-train-semantic-segmentation"]["manifest"] == ["datum_1"]
     assert summary.dataset_names["classification_single_label"].endswith("classification-single-label")
     assert summary.dataset_version_ids["canonical"] == "dataset_version_1"

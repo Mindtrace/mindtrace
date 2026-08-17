@@ -463,13 +463,23 @@ def test_huggingface_semantic_segmentation_export_writes_typed_image_and_mask(tm
         options={"task": "semantic_segmentation"},
     )
     payload = json.loads((tmp_path / "voc-semantic-hf" / "dataset_dict.json").read_text())
+    metadata = json.loads((tmp_path / "voc-semantic-hf" / "mindtrace_metadata.json").read_text())
 
     assert result.annotation_count == 1
     assert payload["train"][0]["image"]["path"] == "voc.jpg"
     assert payload["train"][0]["mask"]["path"] == "asset_mask.png"
-    assert payload["train"][0]["class_names"] == ["background", "person"]
-    assert payload["train"][0]["background_id"] == 0
-    assert payload["train"][0]["ignore_index"] == 255
+    assert "class_names" not in payload["train"][0]
+    assert "background_id" not in payload["train"][0]
+    assert "ignore_index" not in payload["train"][0]
+    assert metadata == {
+        "schema_version": 1,
+        "mindtrace": {
+            "profile": "semantic_segmentation",
+            "class_names": ["background", "person"],
+            "background_id": 0,
+            "ignore_index": 255,
+        },
+    }
 
 
 @pytest.mark.parametrize("task", ["segmentation", "instance_segmentation"])
