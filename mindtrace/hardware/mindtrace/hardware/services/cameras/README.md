@@ -335,7 +335,7 @@ The camera manager tracks consecutive capture failures per camera. When a camera
 
 1. Checks the reinitialization cooldown (prevents thrashing)
 2. Closes the camera
-3. Re-opens with the original `open()` kwargs, restores the saved configuration (when restore is enabled), and replays accumulated runtime `/cameras/configure` settings
+3. Re-opens with the original `open()` kwargs, restores the saved configuration (when restore is enabled), and replays accumulated runtime `/cameras/configure` settings (in-process: `AsyncCameraManager.configure_camera`, not `camera.configure`)
 4. Resets the failure counter
 
 ### Configuration

@@ -57,11 +57,11 @@ class AsyncCameraManager(Mindtrace):
             camera = await manager.open(cameras[0])
             image = await camera.capture()
 
-        # With configuration
+        # With configuration (configure_camera records settings for auto-reinit replay)
         async with AsyncCameraManager(include_mocks=True) as manager:
             cameras = manager.discover(["MockBasler"])  # example mock backend
             cam = await manager.open(cameras[0])
-            result = await cam.configure(exposure=20000, gain=2.5)
+            result = await manager.configure_camera(cameras[0], {"exposure": 20000, "gain": 2.5})
             if not result.success:
                 raise RuntimeError(result.failures or result.skipped)
             image = await cam.capture("output.jpg")
@@ -952,6 +952,10 @@ class AsyncCameraManager(Mindtrace):
 
     async def configure_camera(self, camera_name: str, settings: Dict[str, Any]) -> ConfigurationApplyResult:
         """Configure a camera and record settings for auto-reinit replay.
+
+        Prefer this over :meth:`AsyncCamera.configure` when the camera was
+        opened through the manager. Direct ``camera.configure(...)`` applies
+        settings on the device but is not replayed after auto-reinit.
 
         Returns:
             ``ConfigurationApplyResult``. Check ``result.success``; per-key

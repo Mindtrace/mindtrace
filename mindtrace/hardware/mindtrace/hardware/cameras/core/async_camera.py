@@ -331,6 +331,11 @@ class AsyncCamera(Mindtrace):
             ``ConfigurationApplyResult`` with applied/total counts, ``failures``,
             ``skipped``, and ``success``. Check ``result.success``; the result
             object itself is always truthy.
+
+        Note:
+            When the camera is owned by :class:`AsyncCameraManager`, use
+            :meth:`AsyncCameraManager.configure_camera` so applied settings are
+            recorded for auto-reinit replay. This method only updates the device.
         """
         skipped = find_skipped_keys(settings)
         normalized, invalid = parse_configure_settings(settings)

@@ -162,14 +162,14 @@ camera.close()
 
 ```python
 import asyncio
-from mindtrace.hardware import CameraManager
+from mindtrace.hardware.cameras import AsyncCameraManager
 
 async def capture_with_bandwidth_limit():
-    async with CameraManager(max_concurrent_captures=2) as manager:
+    async with AsyncCameraManager(max_concurrent_captures=2) as manager:
         cameras = manager.discover()
         proxy = await manager.open(cameras[0])
         image = await proxy.capture()
-        result = await proxy.configure(exposure=15000)
+        result = await manager.configure_camera(cameras[0], {"exposure": 15000})
         if not result.success:
             raise RuntimeError(result.failures or result.skipped)
 
