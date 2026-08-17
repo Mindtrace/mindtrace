@@ -244,6 +244,12 @@ RabbitMQ `auto_ack=True` acknowledges deliveries before `run()` executes, so
 it is only valid with `failure_policy=ConsumerFailurePolicy.DISCARD`.
 Combining auto-acknowledgement with `REQUEUE` or `DEAD_LETTER` raises
 `ValueError` during consumer backend configuration.
+Auto-acknowledged deliveries have at-most-once semantics: process failure,
+connection loss, or shutdown may discard deliveries that RabbitMQ acknowledged
+or Pika buffered but `Consumer.run()` did not complete. `prefetch_count` does
+not bound auto-acknowledged deliveries. Use `auto_ack=False` for production
+workloads that require acknowledgement after processing and redelivery after a
+failure.
 
 Local and Redis consumers support only `DISCARD`. Connecting either backend
 with `REQUEUE` or `DEAD_LETTER` raises `NotImplementedError`; those policies
