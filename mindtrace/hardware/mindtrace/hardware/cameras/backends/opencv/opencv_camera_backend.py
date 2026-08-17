@@ -909,20 +909,10 @@ class OpenCVCameraBackend(CameraBackend):
     async def get_ROI(self) -> Dict[str, int]:
         """Get current Region of Interest (ROI).
 
-        Returns:
-            Dictionary with full frame dimensions (ROI not supported)
+        Raises:
+            NotImplementedError: ROI is not supported by the OpenCV backend
         """
-        if not self.initialized or not self.cap or not await self._run_blocking(self.cap.isOpened):
-            return {"x": 0, "y": 0, "width": 0, "height": 0}
-        else:
-            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
-        try:
-            width = int(await self._run_blocking(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(await self._run_blocking(self.cap.get, cv2.CAP_PROP_FRAME_HEIGHT))
-            return {"x": 0, "y": 0, "width": width, "height": height}
-        except Exception as e:
-            self.logger.error(f"Failed to get ROI for camera '{self.camera_name}': {str(e)}")
-            return {"x": 0, "y": 0, "width": 0, "height": 0}
+        raise NotImplementedError(f"ROI query not supported by OpenCV backend for camera '{self.camera_name}'")
 
     async def reset_ROI(self):
         """Reset ROI to full sensor size.

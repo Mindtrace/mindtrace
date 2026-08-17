@@ -863,6 +863,27 @@ async def test_async_camera_additional_methods():
 
 
 @pytest.mark.asyncio
+async def test_get_configuration_omits_roi_when_backend_cannot_query_it():
+    """Unsettable keys whose get raises must not be written into exported JSON."""
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        async def unsupported_roi():
+            raise NotImplementedError("ROI query not supported")
+
+        cam.backend.get_ROI = unsupported_roi  # type: ignore[method-assign]
+
+        config = await cam.get_configuration()
+
+        assert "roi" not in config
+        assert "exposure_time" in config
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_get_configuration_includes_white_balance_from_backend():
     """get_configuration() must read white balance via backend get_wb(), not get_white_balance()."""
     manager = AsyncCameraManager(include_mocks=True)

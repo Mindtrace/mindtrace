@@ -180,8 +180,8 @@ async def test_roi_and_pixel_format_and_enhancement(fake_cv):
     # ROI methods
     with pytest.raises(NotImplementedError, match="ROI setting not supported"):
         await cam.set_ROI(0, 0, 10, 10)
-    roi = await cam.get_ROI()
-    assert set(roi.keys()) == {"x", "y", "width", "height"}
+    with pytest.raises(NotImplementedError, match="ROI query not supported"):
+        await cam.get_ROI()
     with pytest.raises(NotImplementedError, match="ROI reset not supported"):
         await cam.reset_ROI()
 
@@ -1443,35 +1443,14 @@ class TestOpenCVCameraBackendROI:
     """Test suite for ROI-related methods."""
 
     @pytest.mark.asyncio
-    async def test_get_roi_not_initialized(self, fake_cv):
-        """Test get_ROI when camera is not initialized."""
+    async def test_get_roi_raises_not_implemented(self, fake_cv):
+        """OpenCV has no hardware ROI; get_ROI must raise so export omits the key."""
         cam = OpenCVCameraBackend("0")
         cam.initialized = False
         cam.cap = None
 
-        roi = await cam.get_ROI()
-        assert roi == {"x": 0, "y": 0, "width": 0, "height": 0}
-
-    @pytest.mark.asyncio
-    async def test_get_roi_exception(self, fake_cv, monkeypatch):
-        """Test get_ROI exception handling."""
-        cam = OpenCVCameraBackend("0")
-        await cam.initialize()
-
-        original_run_blocking = cam._run_blocking
-
-        async def failing_run_blocking(func, *args, **kwargs):
-            if func == cam.cap.get:
-                raise RuntimeError("Get failed")
-            return await original_run_blocking(func, *args, **kwargs)
-
-        monkeypatch.setattr(cam, "_run_blocking", failing_run_blocking, raising=False)
-
-        # Should return default ROI on exception
-        roi = await cam.get_ROI()
-        assert roi == {"x": 0, "y": 0, "width": 0, "height": 0}
-
-        await cam.close()
+        with pytest.raises(NotImplementedError, match="ROI query not supported"):
+            await cam.get_ROI()
 
 
 class TestOpenCVCameraBackendWhiteBalance:
