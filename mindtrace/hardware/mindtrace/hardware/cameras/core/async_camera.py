@@ -320,12 +320,17 @@ class AsyncCamera(Mindtrace):
     async def configure(self, **settings) -> ConfigurationApplyResult:
         """Configure multiple camera settings with per-key apply reporting.
 
+        Unrecognized keys are skipped. Invalid or backend-rejected values are
+        recorded as per-key failures and do not abort the rest of the payload.
+
         Args:
             **settings: Canonical configuration keys (see ``CONFIGURABLE_KEYS``).
                 Legacy aliases (``exposure``, ``triggermode``, etc.) are normalized.
 
         Returns:
-            ConfigurationApplyResult with applied/total counts and any skipped keys.
+            ``ConfigurationApplyResult`` with applied/total counts, ``failures``,
+            ``skipped``, and ``success``. Check ``result.success``; the result
+            object itself is always truthy.
         """
         skipped = find_skipped_keys(settings)
         normalized, invalid = parse_configure_settings(settings)

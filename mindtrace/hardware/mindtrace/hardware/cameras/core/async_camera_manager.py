@@ -61,7 +61,9 @@ class AsyncCameraManager(Mindtrace):
         async with AsyncCameraManager(include_mocks=True) as manager:
             cameras = manager.discover(["MockBasler"])  # example mock backend
             cam = await manager.open(cameras[0])
-            await cam.configure(exposure=20000, gain=2.5)
+            result = await cam.configure(exposure=20000, gain=2.5)
+            if not result.success:
+                raise RuntimeError(result.failures or result.skipped)
             image = await cam.capture("output.jpg")
     """
 
@@ -949,7 +951,12 @@ class AsyncCameraManager(Mindtrace):
         )
 
     async def configure_camera(self, camera_name: str, settings: Dict[str, Any]) -> ConfigurationApplyResult:
-        """Configure a camera and record settings for auto-reinit replay."""
+        """Configure a camera and record settings for auto-reinit replay.
+
+        Returns:
+            ``ConfigurationApplyResult``. Check ``result.success``; per-key
+            failures are reported on the result rather than raised.
+        """
         if camera_name not in self._cameras:
             raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
         camera = self._cameras[camera_name]
@@ -992,7 +999,12 @@ class AsyncCameraManager(Mindtrace):
                 await self._close_locked(camera_name)
 
     async def batch_configure(self, configurations: Dict[str, Dict[str, Any]]) -> Dict[str, ConfigurationApplyResult]:
-        """Configure multiple cameras simultaneously."""
+        """Configure multiple cameras simultaneously.
+
+        Returns:
+            Mapping of camera name to ``ConfigurationApplyResult``. Check
+            ``result.success`` per camera; the result object is always truthy.
+        """
         items = list(configurations.items())
         config_results = await asyncio.gather(
             *(self.configure_camera(name, settings) for name, settings in items),

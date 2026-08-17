@@ -164,16 +164,13 @@ class Camera(Mindtrace):
         """Configure multiple camera settings with per-key apply reporting.
 
         Args:
-            **settings: Supported keys include exposure, gain, roi=(x, y, w, h), trigger_mode, pixel_format,
-                white_balance, image_enhancement.
+            **settings: Canonical configuration keys (see ``CONFIGURABLE_KEYS``).
+                Legacy aliases (``exposure``, ``triggermode``, etc.) are normalized.
 
         Returns:
-            A ``ConfigurationApplyResult`` describing how many recognized settings
-            were applied, plus any per-key failures or skipped keys.
-
-        Raises:
-            CameraConfigurationError: If a provided value is invalid for the backend.
-            CameraConnectionError: If the camera cannot be configured.
+            A ``ConfigurationApplyResult``. Check ``result.success`` rather than
+            treating the object as a boolean. Per-key failures and unrecognized
+            keys are reported on ``failures`` / ``skipped``; they are not raised.
         """
         return self._submit(self._backend.configure(**settings))
 
