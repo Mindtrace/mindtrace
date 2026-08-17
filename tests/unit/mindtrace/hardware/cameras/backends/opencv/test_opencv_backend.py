@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 
 import numpy as np
@@ -213,8 +212,6 @@ async def test_white_balance_get_and_set(fake_cv):
 
 
 @pytest.mark.asyncio
-
-
 @pytest.mark.asyncio
 async def test_capture_timeout_and_generic_errors(fake_cv, monkeypatch):
     cam = OpenCVCameraBackend("0", timeout_ms=200)
@@ -345,8 +342,6 @@ async def test_check_connection_failure_branches(monkeypatch):
 
 
 @pytest.mark.asyncio
-
-
 def test_discovery_error_returns_empty(monkeypatch):
     import cv2
 
@@ -934,7 +929,6 @@ class TestOpenCVCameraBackendGetAvailableCameras:
 
     def test_get_available_cameras_max_probe_env_var(self, fake_cv, monkeypatch):
         """Test get_available_cameras respects MINDTRACE_OPENCV_MAX_PROBE environment variable."""
-        import os
         import sys
 
         original_platform = sys.platform
@@ -1011,7 +1005,6 @@ class TestOpenCVCameraBackendGetAvailableCameras:
 
     def test_get_available_cameras_full_execution_path(self, fake_cv, monkeypatch):
         """Test get_available_cameras executes the full code path when OpenCV is available."""
-        import os
         import sys
 
         original_platform = sys.platform
@@ -1613,10 +1606,6 @@ class TestOpenCVCameraBackendImageEnhancement:
             pass
 
         cam.logger.error = original_error
-
-
-
-
 
 
 class TestOpenCVCameraBackendNetworkMethods:

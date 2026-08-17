@@ -1,4 +1,3 @@
-import json
 from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
@@ -896,7 +895,6 @@ class TestDiscoveryAndHelperMethods:
 
 class TestAdditionalGenICamOperations:
     @pytest.mark.asyncio
-
     @pytest.mark.asyncio
     async def test_get_width_and_height_ranges_default_when_nodes_missing(self, genicam_backend_uninitialized):
         backend = attach_mock_acquirer(genicam_backend_uninitialized, MockNodeMap())
@@ -1009,9 +1007,7 @@ class TestAdditionalGenICamOperations:
         assert wb_node.value == "Once"
 
     @pytest.mark.asyncio
-
     @pytest.mark.asyncio
-
     @pytest.mark.asyncio
     async def test_apply_and_export_genicam_nodes_use_available_values(self, genicam_backend_uninitialized):
         reverse_x = MockGenICamNode(False)

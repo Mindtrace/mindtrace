@@ -5,7 +5,6 @@ Supports GigE Vision and USB3 Vision cameras with full feature control.
 """
 
 import asyncio
-import os
 import re
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -88,7 +87,6 @@ class DahengCameraBackend(CameraBackend):
     def __init__(
         self,
         camera_name: str,
-        camera_config: Optional[str] = None,
         img_quality_enhancement: Optional[bool] = None,
         retrieve_retry_count: Optional[int] = None,
         **backend_kwargs,
@@ -97,7 +95,6 @@ class DahengCameraBackend(CameraBackend):
 
         Args:
             camera_name: Camera identifier (serial number, IP address, or user-defined name)
-            camera_config: Path to JSON configuration file (optional)
             img_quality_enhancement: Enable CLAHE image enhancement (uses config default if None)
             retrieve_retry_count: Number of capture retry attempts (uses config default if None)
             **backend_kwargs: Backend-specific parameters:
@@ -120,7 +117,7 @@ class DahengCameraBackend(CameraBackend):
         else:
             assert gx is not None, "gxipy SDK is available but gx is not initialized"
 
-        super().__init__(camera_name, camera_config, img_quality_enhancement, retrieve_retry_count)
+        super().__init__(camera_name, img_quality_enhancement, retrieve_retry_count)
 
         # Get backend-specific configuration with fallbacks
         pixel_format = backend_kwargs.get("pixel_format")
@@ -141,7 +138,6 @@ class DahengCameraBackend(CameraBackend):
             raise CameraConfigurationError("Timeout must be at least 100ms")
 
         # Store configuration
-        self.camera_config_path = camera_config
         self.default_pixel_format = pixel_format
         self.buffer_count = buffer_count
         self.timeout_ms = timeout_ms

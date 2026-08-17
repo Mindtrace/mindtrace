@@ -1,7 +1,6 @@
 """Mock GenICam Camera Backend Module"""
 
 import asyncio
-import json
 import os
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -73,7 +72,6 @@ class MockGenICamCameraBackend(CameraBackend):
     def __init__(
         self,
         camera_name: str,
-        camera_config: Optional[str] = None,
         img_quality_enhancement: Optional[bool] = None,
         retrieve_retry_count: Optional[int] = None,
         **backend_kwargs,
@@ -82,7 +80,6 @@ class MockGenICamCameraBackend(CameraBackend):
 
         Args:
             camera_name: Camera identifier
-            camera_config: Path to configuration file (simulated)
             img_quality_enhancement: Enable image enhancement simulation (uses config default if None)
             retrieve_retry_count: Number of capture retry attempts (uses config default if None)
             **backend_kwargs: Backend-specific parameters:
@@ -104,7 +101,7 @@ class MockGenICamCameraBackend(CameraBackend):
             CameraConfigurationError: If configuration is invalid
             CameraInitializationError: If initialization fails (when simulated)
         """
-        super().__init__(camera_name, camera_config, img_quality_enhancement, retrieve_retry_count)
+        super().__init__(camera_name, img_quality_enhancement, retrieve_retry_count)
 
         # Get backend-specific configuration with fallbacks
         self.vendor = backend_kwargs.get("vendor", "KEYENCE")
@@ -125,7 +122,6 @@ class MockGenICamCameraBackend(CameraBackend):
             raise CameraConfigurationError("Timeout must be at least 100ms")
 
         # Store configuration
-        self.camera_config_path = camera_config
         self.timeout_ms = timeout_ms
         self.buffer_count = buffer_count
 

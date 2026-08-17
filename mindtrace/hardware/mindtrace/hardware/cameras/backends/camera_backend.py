@@ -49,7 +49,6 @@ class CameraBackend(MindtraceABC):
     Attributes:
         REQUIRES_THREAD_AFFINITY: Class attribute indicating thread affinity requirement
         camera_name: Unique identifier for the camera
-        camera_config_file: Path to camera configuration file
         img_quality_enhancement: Whether image quality enhancement is enabled
         retrieve_retry_count: Number of retries for image retrieval
         camera: The initialized camera object (implementation-specific)
@@ -62,7 +61,6 @@ class CameraBackend(MindtraceABC):
     def __init__(
         self,
         camera_name: Optional[str] = None,
-        camera_config: Optional[str] = None,
         img_quality_enhancement: Optional[bool] = None,
         retrieve_retry_count: Optional[int] = None,
     ):
@@ -70,7 +68,6 @@ class CameraBackend(MindtraceABC):
 
         Args:
             camera_name: Unique identifier for the camera (auto-generated if None)
-            camera_config: Path to camera configuration file
             img_quality_enhancement: Whether to apply image quality enhancement (uses config default if None)
             retrieve_retry_count: Number of retries for image retrieval (uses config default if None)
         """
@@ -81,7 +78,6 @@ class CameraBackend(MindtraceABC):
         self._setup_camera_logger_formatting()
 
         self.camera_name = camera_name or str(uuid.uuid4())
-        self.camera_config_file = camera_config
 
         if img_quality_enhancement is None:
             self.img_quality_enhancement = self.camera_config.cameras.image_quality_enhancement

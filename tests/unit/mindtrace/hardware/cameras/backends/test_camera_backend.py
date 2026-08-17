@@ -162,7 +162,6 @@ class TestCameraBackendConstructor:
         # Should use config defaults
         assert backend.img_quality_enhancement is True
         assert backend.retrieve_retry_count == 3
-        assert backend.camera_config_file is None
         assert backend.camera is None
         assert backend.device_manager is None
         assert backend.initialized is False
@@ -178,14 +177,12 @@ class TestCameraBackendConstructor:
 
         backend = MinimalConcreteBackend(
             camera_name="test_camera",
-            camera_config="/path/to/config.json",
             img_quality_enhancement=False,
             retrieve_retry_count=5,
         )
 
         # Should use explicit values
         assert backend.camera_name == "test_camera"
-        assert backend.camera_config_file == "/path/to/config.json"
         assert backend.img_quality_enhancement is False
         assert backend.retrieve_retry_count == 5
 

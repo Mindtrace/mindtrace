@@ -3,7 +3,6 @@
 import asyncio
 import os
 import platform
-import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
@@ -96,7 +95,6 @@ class GenICamCameraBackend(CameraBackend):
     def __init__(
         self,
         camera_name: str,
-        camera_config: Optional[str] = None,
         img_quality_enhancement: Optional[bool] = None,
         retrieve_retry_count: Optional[int] = None,
         **backend_kwargs,
@@ -105,7 +103,6 @@ class GenICamCameraBackend(CameraBackend):
 
         Args:
             camera_name: Camera identifier (serial number, device ID, or user-defined name)
-            camera_config: Path to JSON configuration file (optional)
             img_quality_enhancement: Enable CLAHE image enhancement (uses config default if None)
             retrieve_retry_count: Number of capture retry attempts (uses config default if None)
             **backend_kwargs: Backend-specific parameters:
@@ -130,7 +127,7 @@ class GenICamCameraBackend(CameraBackend):
         else:
             assert Harvester is not None, "Harvesters is available but Harvester class is not initialized"
 
-        super().__init__(camera_name, camera_config, img_quality_enhancement, retrieve_retry_count)
+        super().__init__(camera_name, img_quality_enhancement, retrieve_retry_count)
 
         # Get backend-specific configuration with fallbacks
         cti_path = backend_kwargs.get("cti_path")
@@ -156,7 +153,6 @@ class GenICamCameraBackend(CameraBackend):
             raise CameraConfigurationError(f"GenTL Producer file not found: {cti_path}")
 
         # Store configuration
-        self.camera_config_path = camera_config
         self.cti_path = cti_path
         self.timeout_ms = timeout_ms
         self.buffer_count = buffer_count

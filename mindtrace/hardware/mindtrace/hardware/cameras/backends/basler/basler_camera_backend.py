@@ -2,7 +2,6 @@
 
 import asyncio
 import functools
-import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -55,7 +54,6 @@ class BaslerCameraBackend(CameraBackend):
         - Region of Interest (ROI) control
         - Automatic and manual exposure/gain control
         - CLAHE image quality enhancement
-        - Pylon Feature Stream (.pfs) configuration import/export
         - Multicast streaming support for GigE cameras
 
     Requirements:
@@ -87,7 +85,6 @@ class BaslerCameraBackend(CameraBackend):
     def __init__(
         self,
         camera_name: str,
-        camera_config: Optional[str] = None,
         img_quality_enhancement: Optional[bool] = None,
         retrieve_retry_count: Optional[int] = None,
         multicast_enabled: Optional[bool] = None,
@@ -100,7 +97,6 @@ class BaslerCameraBackend(CameraBackend):
 
         Args:
             camera_name: Camera identifier (serial number, IP, or user-defined name)
-            camera_config: Path to Pylon Feature Stream (.pfs) file (optional)
             img_quality_enhancement: Enable CLAHE image enhancement (uses config default if None)
             retrieve_retry_count: Number of capture retry attempts (uses config default if None)
             multicast_enabled: Enable multicast streaming mode (uses config default if None)
@@ -128,7 +124,7 @@ class BaslerCameraBackend(CameraBackend):
         else:
             assert pylon is not None, "pypylon SDK is available but pylon is not initialized"
 
-        super().__init__(camera_name, camera_config, img_quality_enhancement, retrieve_retry_count)
+        super().__init__(camera_name, img_quality_enhancement, retrieve_retry_count)
 
         # Get backend-specific configuration with fallbacks
         pixel_format = backend_kwargs.get("pixel_format")
@@ -159,7 +155,6 @@ class BaslerCameraBackend(CameraBackend):
             raise CameraConfigurationError("Timeout must be at least 100ms")
 
         # Store configuration
-        self.camera_config_path = camera_config
         self.default_pixel_format = pixel_format
         self.buffer_count = buffer_count
         self.timeout_ms = timeout_ms

@@ -5,7 +5,6 @@ covering initialization, capture, configuration, error simulation, and lifecycle
 """
 
 import asyncio
-import json
 import os
 import tempfile
 
@@ -419,8 +418,6 @@ class TestMockDahengPixelFormat:
 # ═══════════════════════════════════════════════════════════════════════════════
 # Configuration Import/Export Tests
 # ═══════════════════════════════════════════════════════════════════════════════
-
-
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

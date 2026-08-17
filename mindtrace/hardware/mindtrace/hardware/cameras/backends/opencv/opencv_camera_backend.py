@@ -5,7 +5,6 @@ import concurrent.futures
 import contextlib
 import os
 import sys
-import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -91,7 +90,6 @@ class OpenCVCameraBackend(CameraBackend):
     def __init__(
         self,
         camera_name: str,
-        camera_config: Optional[str] = None,
         img_quality_enhancement: Optional[bool] = None,
         retrieve_retry_count: Optional[int] = None,
         **backend_kwargs,
@@ -100,7 +98,6 @@ class OpenCVCameraBackend(CameraBackend):
 
         Args:
             camera_name: Camera identifier (index number or device path)
-            camera_config: Path to camera config file (not used for OpenCV)
             img_quality_enhancement: Whether to apply image quality enhancement (uses config default if None)
             retrieve_retry_count: Number of times to retry capture (uses config default if None)
             **backend_kwargs: Backend-specific parameters:
@@ -122,7 +119,7 @@ class OpenCVCameraBackend(CameraBackend):
         else:
             assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
 
-        super().__init__(camera_name, camera_config, img_quality_enhancement, retrieve_retry_count)
+        super().__init__(camera_name, img_quality_enhancement, retrieve_retry_count)
 
         # Get backend-specific configuration with fallbacks
         width = backend_kwargs.get("width")
@@ -383,7 +380,6 @@ class OpenCVCameraBackend(CameraBackend):
             return {} if include_details else []
         assert cv2 is not None
 
-        import os
         from typing import Iterable, Optional
 
         @contextlib.contextmanager

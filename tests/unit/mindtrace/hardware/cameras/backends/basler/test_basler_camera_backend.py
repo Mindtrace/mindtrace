@@ -1,8 +1,4 @@
 import asyncio
-import builtins
-import json
-import os
-import tempfile
 import time
 from unittest.mock import MagicMock, Mock, patch
 
@@ -460,21 +456,6 @@ async def basler_camera(mock_pypylon):
         await camera.close()
 
 
-@pytest.fixture
-def temp_config_file():
-    """Create a temporary configuration file."""
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".pfs", delete=False) as f:
-        f.write('{"camera_type": "basler", "exposure_time": 10000, "gain": 1.0}\n')
-        temp_path = f.name
-    try:
-        yield temp_path
-    finally:
-        try:
-            os.unlink(temp_path)
-        except Exception:
-            pass
-
-
 class TestBaslerCameraBackendInitialization:
     """Test camera initialization and configuration."""
 
@@ -610,14 +591,6 @@ class TestBaslerCameraBackendConnection:
 
         with pytest.raises(CameraConnectionError, match="Failed to open camera"):
             await basler_camera.initialize()
-
-    @pytest.mark.asyncio
-    async def test_initialize_with_config_file(self, basler_camera, temp_config_file):
-        """Test initialization with configuration file."""
-        basler_camera.camera_config_path = temp_config_file
-
-        success, cam_obj, remote_obj = await basler_camera.initialize()
-        assert success is True
 
     @pytest.mark.asyncio
     async def test_check_connection_success(self, basler_camera):
@@ -1274,8 +1247,6 @@ class TestBaslerCameraBackendImageEnhancement:
         assert enhanced_image.dtype == test_image.dtype
 
 
-
-
 class TestBaslerCameraBackendCleanup:
     """Test camera cleanup and resource management."""
 
@@ -1524,8 +1495,6 @@ class TestBaslerCameraBackendConcurrentOperations:
 
         # Final state should be consistent
         assert isinstance(basler_camera.camera.IsGrabbing(), bool)
-
-
 
 
 class TestBaslerCameraBackendMissingCoverageLines:
@@ -2759,6 +2728,8 @@ class TestBaslerCameraBackendSpecificLineCoverage:
 
         # After all retries exhausted with grab failures, raises CameraCaptureError
         assert "Grab failed" in str(exc_info.value)
+
+
 # --- Liquid Lens / Focus Control Mocks & Fixtures ---
 
 

@@ -1,7 +1,6 @@
 """Focused tests for MockGenICamCameraBackend behavior."""
 
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import numpy as np
 import pytest
@@ -317,5 +316,3 @@ class TestConnectionAndLifecycle:
         cam = make_camera("MOCK_KEYENCE_001")
         await cam.close()
         assert cam.initialized is False
-
-

@@ -470,9 +470,7 @@ class AsyncCameraManager(Mindtrace):
                 except Exception as e:
                     self.logger.warning(f"Failed to apply camera_config for '{camera_name}': {e}")
             else:
-                self.logger.warning(
-                    f"camera_config path not found for '{camera_name}': {explicit_config_path}"
-                )
+                self.logger.warning(f"camera_config path not found for '{camera_name}': {explicit_config_path}")
 
         if test_connection:
             self.logger.info(f"Testing connection for camera '{camera_name}'...")
@@ -1203,6 +1201,8 @@ class AsyncCameraManager(Mindtrace):
             kwargs["timeout_ms"] = self._timeout_ms
         if "retrieve_retry_count" not in kwargs:
             kwargs["retrieve_retry_count"] = self._retrieve_retry_count
+        # Profile JSON is applied after construction via configure(); do not forward to backends.
+        kwargs.pop("camera_config", None)
 
         try:
             if backend in ["Basler", "OpenCV", "GenICam", "Daheng"]:

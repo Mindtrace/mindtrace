@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 import tempfile
 from unittest.mock import patch
@@ -21,7 +20,7 @@ from mindtrace.hardware.core.exceptions import (
 
 @pytest_asyncio.fixture
 async def mock_basler_camera():
-    camera = MockBaslerCameraBackend(camera_name="mock_basler_1", camera_config=None)
+    camera = MockBaslerCameraBackend(camera_name="mock_basler_1")
     yield camera
     try:
         await camera.close()
@@ -62,34 +61,6 @@ async def test_get_current_pixel_format():
     await camera.close()
 
 
-@pytest_asyncio.fixture
-async def temp_config_file():
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-        config_data = {
-            "camera_type": "mock_basler",
-            "camera_name": "test_camera",
-            "timestamp": 1234567890.123,
-            "exposure_time": 15000.0,
-            "gain": 2.5,
-            "trigger_mode": "continuous",
-            "white_balance": "auto",
-            "width": 1920,
-            "height": 1080,
-            "roi": {"x": 0, "y": 0, "width": 1920, "height": 1080},
-            "pixel_format": "BGR8",
-            "image_enhancement": True,
-        }
-        json.dump(config_data, f, indent=2)
-        temp_path = f.name
-    try:
-        yield temp_path
-    finally:
-        try:
-            os.unlink(temp_path)
-        except Exception:
-            pass
-
-
 @pytest.mark.asyncio
 async def test_camera_initialization(mock_basler_camera):
     camera = mock_basler_camera
@@ -120,14 +91,8 @@ async def test_basler_specific_features(mock_basler_camera):
 
 
 @pytest.mark.asyncio
-
-
 @pytest.mark.asyncio
-
-
 @pytest.mark.asyncio
-
-
 class TestMockBaslerErrorSimulation:
     """Test error simulation capabilities."""
 
@@ -355,8 +320,6 @@ class TestMockBaslerImageGeneration:
         await camera.close()
 
 
-
-
 class TestMockBaslerConfigurationValidation:
     """Test configuration parameter validation."""
 
@@ -557,8 +520,6 @@ class TestMockBaslerStateManagement:
 
         with pytest.raises(CameraConnectionError, match="is not initialized"):
             await camera.capture()
-
-
 
 
 class TestMockBaslerWhiteBalance:
@@ -1098,26 +1059,6 @@ class TestMockBaslerExceptionHandling:
                 await camera3.initialize()
 
     @pytest.mark.asyncio
-    async def test_initialize_does_not_auto_import_config_file(self):
-        """Config restore on open is handled by AsyncCameraManager, not backend init."""
-        camera = MockBaslerCameraBackend("test_cam")
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            config_data = {"exposure_time": 30000.0}
-            json.dump(config_data, f)
-            config_path = f.name
-
-        try:
-            camera.camera_config_path = config_path
-            success, _, _ = await camera.initialize()
-            assert success is True
-            assert await camera.get_exposure() != 30000.0
-        finally:
-            os.unlink(config_path)
-
-        await camera.close()
-
-    @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
@@ -1243,9 +1184,7 @@ class TestMockBaslerExceptionHandling:
         await camera.close()
 
     @pytest.mark.asyncio
-
     @pytest.mark.asyncio
-
     @pytest.mark.asyncio
     async def test_set_roi_exception_handling(self):
         """Test exception handling in set_ROI."""
