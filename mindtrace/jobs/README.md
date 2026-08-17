@@ -272,8 +272,9 @@ count has not been reached. `consume_until_empty()` drains only currently
 available RabbitMQ messages and does not wait for new work to arrive.
 
 RabbitMQ invokes `Consumer.run()` synchronously on Pika's I/O thread during
-broker-pushed consumption. Keep processing bounded or hand work to another
-execution layer if the worker must continue servicing broker I/O concurrently.
+broker-pushed consumption. `Consumer.run()` must not return until processing is
+complete because its return or exception determines whether the delivery is
+acknowledged or rejected.
 A channel or connection failure ends the current consume operation; callers
 remain responsible for retry and backoff. Push and pull calls both return the
 same attempted-delivery count described above.
