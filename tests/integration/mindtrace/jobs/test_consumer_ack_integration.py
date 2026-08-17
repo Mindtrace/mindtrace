@@ -177,6 +177,57 @@ def test_push_stop_does_not_process_deliveries_buffered_for_other_queues():
 
 
 @pytest.mark.rabbitmq
+def test_broker_cancelled_push_consumer_ends_multi_queue_operation():
+    delivery_processed = threading.Event()
+
+    class SignallingConsumer(SampleConsumer):
+        def run(self, job_dict):
+            result = super().run(job_dict)
+            delivery_processed.set()
+            return result
+
+    client = rabbitmq_client()
+    orchestrator = Orchestrator(backend=client)
+    cancelled_queue = unique_queue("consumer-cancelled")
+    surviving_queue = unique_queue("consumer-surviving")
+    for queue in (cancelled_queue, surviving_queue):
+        orchestrator.register(JobSchema(name=queue, input_schema=SampleJobInput, output_schema=SampleJobOutput))
+    orchestrator.publish(surviving_queue, create_test_job("consumer-ready", surviving_queue))
+
+    consumer = SignallingConsumer(cancelled_queue)
+    consumer.connect_to_orchestrator(orchestrator, cancelled_queue)
+    consume_errors = []
+    cancelled_queue_deleted = False
+
+    def consume_and_capture_error():
+        try:
+            consumer.consume(queues=[cancelled_queue, surviving_queue])
+        except Exception as exc:
+            consume_errors.append(exc)
+
+    thread = threading.Thread(target=consume_and_capture_error)
+    thread.start()
+
+    try:
+        assert delivery_processed.wait(timeout=5)
+        client.delete_queue(cancelled_queue)
+        cancelled_queue_deleted = True
+        thread.join(timeout=5)
+
+        assert thread.is_alive() is False
+        assert len(consume_errors) == 1
+        assert isinstance(consume_errors[0], RuntimeError)
+        assert "RabbitMQ broker cancelled" in str(consume_errors[0])
+        assert cancelled_queue in str(consume_errors[0])
+    finally:
+        consumer.stop()
+        thread.join(timeout=5)
+        if not cancelled_queue_deleted:
+            client.delete_queue(cancelled_queue)
+        client.delete_queue(surviving_queue)
+
+
+@pytest.mark.rabbitmq
 def test_finite_consume_continues_same_queue_after_poison_delivery():
     client = rabbitmq_client()
     orchestrator = Orchestrator(backend=client)

@@ -1005,6 +1005,26 @@ def test_push_operation_error_closes_resources_without_replacing_error(backend):
     backend.connection.close.assert_called_once_with()
 
 
+def test_broker_cancelled_push_consumer_stops_all_queues_and_raises(backend):
+    channel = MagicMock(is_open=True)
+    backend.connection.get_channel.return_value = channel
+    channel.basic_consume.side_effect = ["consumer-q1", "consumer-q2"]
+    cancel = MagicMock()
+    cancel.method.consumer_tag = "consumer-q1"
+
+    def cancel_first_consumer():
+        on_cancel = channel.add_on_cancel_callback.call_args.args[0]
+        on_cancel(cancel)
+
+    channel.start_consuming.side_effect = cancel_first_consumer
+
+    with pytest.raises(RuntimeError, match="RabbitMQ broker cancelled.*q1"):
+        backend.consume(num_messages=0, queues=["q1", "q2"], block=True)
+
+    channel.add_on_cancel_callback.assert_called_once()
+    channel.stop_consuming.assert_called_once_with()
+
+
 def test_stop_schedules_active_push_cancellation(backend):
     channel = MagicMock(is_open=True)
     backend.connection.add_callback_threadsafe = MagicMock(return_value=True)
