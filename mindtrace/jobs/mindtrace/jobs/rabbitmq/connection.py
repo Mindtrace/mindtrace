@@ -73,10 +73,11 @@ class RabbitMQConnection(BrokerConnectionBase):
 
     def add_callback_threadsafe(self, callback: Callable[[], None]) -> bool:
         """Schedule a callback on the Pika I/O thread when connected."""
-        if not self.is_connected():
+        connection = self.connection
+        if connection is None or not connection.is_open:
             return False
         try:
-            self.connection.add_callback_threadsafe(callback)
+            connection.add_callback_threadsafe(callback)
         except exceptions.ConnectionWrongStateError:
             return False
         return True
