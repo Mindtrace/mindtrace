@@ -992,6 +992,32 @@ async def test_configure_records_partial_genicam_nodes_that_applied():
 
 
 @pytest.mark.asyncio
+async def test_configure_records_partial_focus_config_that_applied():
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        async def mixed_set_focus_config(**settings):
+            raise CameraConfigurationError(
+                "Failed to set stepper=0.2",
+                details={"applied": {"accuracy": "Accurate"}},
+            )
+
+        cam.backend.set_focus_config = mixed_set_focus_config  # type: ignore[method-assign]
+
+        result = await cam.configure(focus_config={"accuracy": "Accurate", "stepper": 0.2})
+
+        assert result.success is False
+        assert result.applied == 0
+        assert result.total == 1
+        assert "focus_config" in result.failures
+        assert result.partial == {"focus_config": {"accuracy": "Accurate"}}
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_configure_and_get_configuration_use_one_backend_session():
     """configure() and get_configuration() should enter configuration_session once each."""
     from contextlib import asynccontextmanager

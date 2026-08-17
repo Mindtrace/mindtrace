@@ -3369,6 +3369,23 @@ class TestBaslerCameraBackendFocusConfig:
         await basler_camera_with_lens.set_focus_config(nonexistent_param=42)
 
     @pytest.mark.asyncio
+    async def test_set_focus_config_records_applied_keys_before_failure(self, basler_camera_with_lens):
+        """Keys that applied before a later failure are stored on the exception."""
+        await basler_camera_with_lens.initialize()
+
+        def failing_set(_value):
+            raise RuntimeError("stepper rejected")
+
+        basler_camera_with_lens.camera.FocusStepper.SetValue = failing_set
+
+        with pytest.raises(CameraConfigurationError, match="stepper") as exc_info:
+            await basler_camera_with_lens.set_focus_config(accuracy="Accurate", stepper=0.2)
+
+        assert exc_info.value.details["applied"] == {"accuracy": "Accurate"}
+        config = await basler_camera_with_lens.get_focus_config()
+        assert config["accuracy"] == "Accurate"
+
+    @pytest.mark.asyncio
     async def test_set_focus_config_no_lens_raises(self, basler_camera_no_lens):
         """Raises CameraConfigurationError on camera without lens."""
         await basler_camera_no_lens.initialize()

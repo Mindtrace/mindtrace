@@ -46,7 +46,7 @@ class CameraBackend(MindtraceABC):
         - Set ``REQUIRES_THREAD_AFFINITY = True`` if the SDK requires thread affinity
         - Set ``nested_merge_config_keys`` to configure keys whose dict values
           should accumulate across sequential ``configure()`` calls (for example
-          ``genicam_nodes``)
+          ``genicam_nodes``). ``focus_config`` is nested-merged by default.
         - Use ``_run_blocking()`` for all SDK calls that may block
         - Call ``await self._cleanup_executor()`` in ``close()`` to release thread resources
         - Override ``configuration_session`` if a multi-key configure/GET must
@@ -65,7 +65,7 @@ class CameraBackend(MindtraceABC):
     """
 
     REQUIRES_THREAD_AFFINITY: bool = False
-    nested_merge_config_keys: frozenset[str] = frozenset()
+    nested_merge_config_keys: frozenset[str] = frozenset({"focus_config"})
 
     def __init__(
         self,

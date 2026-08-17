@@ -69,7 +69,7 @@ class MockGenICamCameraBackend(CameraBackend):
         simulate_timeout: Whether to simulate timeout errors
     """
 
-    nested_merge_config_keys = frozenset({"genicam_nodes"})
+    nested_merge_config_keys = frozenset({"genicam_nodes", "focus_config"})
 
     def __init__(
         self,

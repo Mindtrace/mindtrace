@@ -459,20 +459,22 @@ class AsyncCameraManager(Mindtrace):
         if self._restore_saved_config_on_open:
             await self._auto_import_config(camera_name, proxy)
 
+        pending_runtime: Dict[str, Any] = {}
         explicit_config_path = kwargs.get("camera_config")
         if explicit_config_path:
             config_path = Path(explicit_config_path)
             if config_path.exists():
                 try:
-                    await self._apply_config_from_path(
+                    _result, pending_runtime = await self._apply_config_from_path(
                         camera_name,
                         proxy,
                         str(config_path),
-                        merge_runtime=True,
+                        merge_runtime=False,
                         source_label="open camera_config",
                     )
                 except Exception as e:
                     self.logger.warning(f"Failed to apply camera_config for '{camera_name}': {e}")
+                    pending_runtime = {}
             else:
                 self.logger.warning(f"camera_config path not found for '{camera_name}': {explicit_config_path}")
 
@@ -496,6 +498,10 @@ class AsyncCameraManager(Mindtrace):
 
         self._cameras[camera_name] = proxy
         self._open_kwargs[camera_name] = dict(kwargs)
+        # Record camera_config for auto-reinit only after the camera is registered.
+        # Merging earlier would leak replay state if the connection test fails.
+        if pending_runtime:
+            self._merge_runtime_configure(camera_name, pending_runtime, proxy.backend)
         self.logger.info(f"Camera '{camera_name}' initialized successfully")
 
         return proxy
@@ -814,18 +820,23 @@ class AsyncCameraManager(Mindtrace):
         *,
         merge_runtime: bool,
         source_label: str,
-    ) -> ConfigurationApplyResult:
-        """Read JSON from disk and apply via ``AsyncCamera.configure()``."""
+    ) -> tuple[ConfigurationApplyResult, Dict[str, Any]]:
+        """Read JSON from disk and apply via ``AsyncCamera.configure()``.
+
+        Returns:
+            Tuple of ``(apply result, applied settings)``. Applied settings are
+            the canonical keys that landed and should be recorded for replay
+            when ``merge_runtime`` is True, or when the caller defers that merge.
+        """
         path = Path(config_path)
         if not path.exists():
             raise CameraConfigurationError(f"Configuration file not found: {config_path}")
 
         raw_config = json.loads(path.read_text(encoding="utf-8"))
         result = await camera.configure(**raw_config)
-        if merge_runtime:
-            applied = applied_settings_from_result(raw_config, result)
-            if applied:
-                self._merge_runtime_configure(camera_name, applied, camera.backend)
+        applied = applied_settings_from_result(raw_config, result)
+        if merge_runtime and applied:
+            self._merge_runtime_configure(camera_name, applied, camera.backend)
 
         if result.total > 0 and result.applied < result.total:
             self.logger.warning(
@@ -835,7 +846,7 @@ class AsyncCameraManager(Mindtrace):
         elif result.total > 0:
             self.logger.info(f"Applied {source_label} for '{camera_name}' from {path}")
 
-        return result
+        return result, applied
 
     async def _auto_import_config(self, camera_name: str, camera: AsyncCamera) -> None:
         """Restore camera config from the managed per-camera profile."""
@@ -867,13 +878,14 @@ class AsyncCameraManager(Mindtrace):
         if camera_name not in self._cameras:
             raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
         path = config_path or self.get_camera_config_path(camera_name)
-        return await self._apply_config_from_path(
+        result, _applied = await self._apply_config_from_path(
             camera_name,
             self._cameras[camera_name],
             path,
             merge_runtime=True,
             source_label="Saved config",
         )
+        return result
 
     async def persist_camera_config(self, camera_name: str, config_path: Optional[str] = None) -> str:
         """Export current camera settings to a JSON file.

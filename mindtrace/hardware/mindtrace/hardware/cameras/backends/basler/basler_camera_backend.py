@@ -81,6 +81,7 @@ class BaslerCameraBackend(CameraBackend):
     """
 
     REQUIRES_THREAD_AFFINITY = True
+    nested_merge_config_keys = frozenset({"focus_config"})
 
     def __init__(
         self,
@@ -2135,7 +2136,14 @@ class BaslerCameraBackend(CameraBackend):
         return config
 
     async def set_focus_config(self, **settings):
-        """Set focus/autofocus parameters."""
+        """Set focus/autofocus parameters.
+
+        Raises:
+            CameraConnectionError: If the camera is not initialized.
+            CameraConfigurationError: If the camera has no connected liquid lens,
+                or a recognized key fails to apply. When some keys applied before
+                a failure, the successful subset is stored as ``details["applied"]``.
+        """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
         if not self._has_liquid_lens() or not self._is_lens_connected():
@@ -2143,6 +2151,7 @@ class BaslerCameraBackend(CameraBackend):
 
         await self._ensure_open()
 
+        applied: Dict[str, Any] = {}
         for key, value in settings.items():
             node_name = self._FOCUS_CONFIG_NODE_MAP.get(key)
             if node_name is None:
@@ -2153,9 +2162,13 @@ class BaslerCameraBackend(CameraBackend):
                 continue
             try:
                 await self._run_blocking(getattr(self.camera, node_name).SetValue, value, timeout=self._op_timeout_s)
+                applied[key] = value
                 self.logger.debug(f"Set {node_name}={value} for camera '{self.camera_name}'")
             except Exception as e:
-                raise CameraConfigurationError(f"Failed to set {key}={value} for camera '{self.camera_name}': {e}")
+                raise CameraConfigurationError(
+                    f"Failed to set {key}={value} for camera '{self.camera_name}': {e}",
+                    details={"applied": applied},
+                ) from e
 
     async def close(self):
         """Close the camera and release resources.

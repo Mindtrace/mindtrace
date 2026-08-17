@@ -86,7 +86,7 @@ class GenICamCameraBackend(CameraBackend):
     """
 
     REQUIRES_THREAD_AFFINITY = True
-    nested_merge_config_keys = frozenset({"genicam_nodes"})
+    nested_merge_config_keys = frozenset({"genicam_nodes", "focus_config"})
 
     # Class-level singleton Harvester instance shared across all backend instances
     _shared_harvester: Optional[Harvester] = None

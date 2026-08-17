@@ -133,6 +133,18 @@ def test_merge_configure_settings_accumulates_nested_keys():
     }
 
 
+def test_merge_configure_settings_accumulates_focus_config():
+    existing = {"focus_config": {"accuracy": "Normal"}}
+
+    merge_configure_settings(
+        existing,
+        {"focus_config": {"roi_size": "Large"}},
+        nested_merge_keys=("focus_config",),
+    )
+
+    assert existing == {"focus_config": {"accuracy": "Normal", "roi_size": "Large"}}
+
+
 def test_merge_configure_settings_overwrites_existing_nested_values():
     existing = {"genicam_nodes": {"PixelFormat": "Mono8", "ReverseX": False}}
 
