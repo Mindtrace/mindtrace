@@ -14,8 +14,8 @@ from typing import Any, Dict, List, Optional, Union
 from mindtrace.core import Mindtrace
 from mindtrace.hardware.cameras.core.async_camera import AsyncCamera
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
-from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult
 from mindtrace.hardware.cameras.core.camera import Camera
+from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult
 
 
 class CameraManager(Mindtrace):

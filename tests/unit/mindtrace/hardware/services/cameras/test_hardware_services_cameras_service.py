@@ -16,13 +16,13 @@ import numpy as np
 import pytest
 from PIL import Image as PILImage
 
+from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult
 from mindtrace.hardware.core.exceptions import (
     CameraConfigurationError,
     CameraConnectionError,
     CameraInitializationError,
     CameraNotFoundError,
 )
-from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult
 from mindtrace.hardware.core.types import ServiceStatus
 from mindtrace.hardware.services.cameras.models.requests import (
     BackendFilterRequest,
