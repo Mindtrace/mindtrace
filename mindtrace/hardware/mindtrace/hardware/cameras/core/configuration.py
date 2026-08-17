@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Tuple
 
 # Keys accepted by AsyncCamera.configure() / returned by get_configuration().
 CONFIGURABLE_KEYS: tuple[str, ...] = (
@@ -197,41 +197,51 @@ def find_skipped_keys(data: Dict[str, Any]) -> tuple[str, ...]:
     return tuple(skipped)
 
 
-def _normalize_roi(value: Any) -> Optional[Tuple[int, int, int, int]]:
-    if value is None:
-        return None
+_ROI_DICT_KEYS = ("x", "y", "width", "height")
+_LEGACY_ROI_KEYS = ("roi_x", "roi_y", "width", "height")
+
+
+def _normalize_roi(value: Any) -> Tuple[int, int, int, int]:
+    """Parse a canonical ROI value into ``(x, y, width, height)``.
+
+    Raises:
+        ValueError: If ``value`` is not a complete 4-int rectangle.
+    """
     if isinstance(value, dict):
+        missing = [key for key in _ROI_DICT_KEYS if key not in value]
+        if missing:
+            raise ValueError(f"roi dict missing keys: {', '.join(missing)}")
         return (
-            int(value.get("x", 0)),
-            int(value.get("y", 0)),
-            int(value.get("width", 0)),
-            int(value.get("height", 0)),
+            int(value["x"]),
+            int(value["y"]),
+            int(value["width"]),
+            int(value["height"]),
         )
     if isinstance(value, (list, tuple)) and len(value) == 4:
         return tuple(int(v) for v in value)  # type: ignore[return-value]
-    return None
+    raise ValueError("roi must be a 4-int (x, y, width, height) tuple or {x, y, width, height} dict")
 
 
-def normalize_settings(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Normalize persisted or legacy export JSON into a configure() payload.
+def parse_configure_settings(data: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, str]]:
+    """Normalize a configure payload and collect recognized keys with invalid values.
 
     Args:
-        data: Raw JSON dict from disk or legacy backend export.
+        data: Raw configure payload or legacy JSON dict.
 
     Returns:
-        Dict containing only recognized configuration keys in canonical form.
+        Tuple of ``(normalized, invalid)`` where ``invalid`` maps canonical keys
+        to error messages. Invalid values are omitted from ``normalized``.
     """
     if not isinstance(data, dict):
-        return {}
+        return {}, {}
 
-    # Support legacy nested OpenCV format
     source = data.get("settings", data)
     if not isinstance(source, dict):
         source = data
 
     normalized: Dict[str, Any] = {}
+    invalid: Dict[str, str] = {}
 
-    # Aliases
     if "exposure_time" in source:
         normalized["exposure_time"] = source["exposure_time"]
     elif "exposure" in source:
@@ -248,22 +258,41 @@ def normalize_settings(data: Dict[str, Any]) -> Dict[str, Any]:
         normalized["image_enhancement"] = source["img_quality_enhancement"]
 
     if "roi" in source:
-        roi = _normalize_roi(source["roi"])
-        if roi is not None:
-            normalized["roi"] = roi
-    elif all(k in source for k in ("roi_x", "roi_y", "width", "height")):
-        normalized["roi"] = (
-            int(source["roi_x"]),
-            int(source["roi_y"]),
-            int(source["width"]),
-            int(source["height"]),
-        )
+        try:
+            normalized["roi"] = _normalize_roi(source["roi"])
+        except (TypeError, ValueError) as exc:
+            invalid["roi"] = str(exc)
+    elif all(key in source for key in _LEGACY_ROI_KEYS):
+        try:
+            normalized["roi"] = (
+                int(source["roi_x"]),
+                int(source["roi_y"]),
+                int(source["width"]),
+                int(source["height"]),
+            )
+        except (TypeError, ValueError) as exc:
+            invalid["roi"] = str(exc)
 
     passthrough_keys = set(CONFIGURABLE_KEYS) - {"exposure_time", "trigger_mode", "image_enhancement", "roi"}
     for key in passthrough_keys:
         if key in source:
             normalized[key] = source[key]
 
+    return normalized, invalid
+
+
+def normalize_settings(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize persisted or legacy export JSON into a configure() payload.
+
+    Args:
+        data: Raw JSON dict from disk or legacy backend export.
+
+    Returns:
+        Dict containing only recognized configuration keys in canonical form.
+        Keys whose values cannot be parsed (for example a malformed ``roi``)
+        are omitted.
+    """
+    normalized, _invalid = parse_configure_settings(data)
     return normalized
 
 

@@ -8,6 +8,7 @@ from mindtrace.hardware.cameras.core.configuration import (
     find_skipped_keys,
     merge_configure_settings,
     normalize_settings,
+    parse_configure_settings,
     settings_to_camera_configuration_dict,
 )
 
@@ -202,3 +203,29 @@ def test_find_skipped_keys_treats_legacy_aliases_as_consumed():
     }
 
     assert find_skipped_keys(data) == ()
+
+
+def test_parse_configure_settings_rejects_malformed_roi():
+    normalized, invalid = parse_configure_settings({"roi": "full", "gain": 2.0})
+
+    assert normalized == {"gain": 2.0}
+    assert "roi" in invalid
+    assert "roi" not in normalized
+    assert normalize_settings({"roi": "full"}) == {}
+
+
+def test_parse_configure_settings_rejects_incomplete_roi_dict():
+    normalized, invalid = parse_configure_settings({"roi": {"x": 10}})
+
+    assert "roi" not in normalized
+    assert "missing keys" in invalid["roi"]
+
+
+def test_parse_configure_settings_rejects_roi_with_wrong_length():
+    _, invalid = parse_configure_settings({"roi": [1, 2, 3]})
+
+    assert "roi" in invalid
+
+
+def test_find_skipped_keys_treats_malformed_roi_as_consumed():
+    assert find_skipped_keys({"roi": "full", "gain": 2.0}) == ()

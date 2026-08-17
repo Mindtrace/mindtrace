@@ -13,7 +13,7 @@ from mindtrace.hardware.cameras.core.configuration import (
     ConfigurationApplyResult,
     applied_subset_from_exception,
     find_skipped_keys,
-    normalize_settings,
+    parse_configure_settings,
 )
 from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
@@ -328,10 +328,10 @@ class AsyncCamera(Mindtrace):
             ConfigurationApplyResult with applied/total counts and any skipped keys.
         """
         skipped = find_skipped_keys(settings)
-        normalized = normalize_settings(settings)
+        normalized, invalid = parse_configure_settings(settings)
         applied = 0
-        total = 0
-        failures: Dict[str, str] = {}
+        total = len(invalid)
+        failures: Dict[str, str] = dict(invalid)
         partial: Dict[str, Any] = {}
 
         async with self._lock:
@@ -367,15 +367,7 @@ class AsyncCamera(Mindtrace):
         elif key == "gain":
             await self._backend.set_gain(value)
         elif key == "roi":
-            if isinstance(value, dict):
-                x, y, w, h = (
-                    int(value.get("x", 0)),
-                    int(value.get("y", 0)),
-                    int(value.get("width", 0)),
-                    int(value.get("height", 0)),
-                )
-            else:
-                x, y, w, h = value
+            x, y, w, h = value
             await self._backend.set_ROI(x, y, w, h)
         elif key == "trigger_mode":
             await self._backend.set_triggermode(value)

@@ -918,6 +918,31 @@ async def test_configure_reports_skipped_unknown_keys():
 
 
 @pytest.mark.asyncio
+async def test_configure_reports_malformed_roi_as_failure():
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        malformed = await cam.configure(roi="full")
+        incomplete = await cam.configure(roi={"x": 10}, gain=2.0)
+
+        assert malformed.success is False
+        assert malformed.applied == 0
+        assert malformed.total == 1
+        assert "roi" in malformed.failures
+        assert malformed.skipped == ()
+
+        assert incomplete.success is False
+        assert incomplete.applied == 1
+        assert incomplete.total == 2
+        assert "roi" in incomplete.failures
+        assert "gain" not in incomplete.failures
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_configure_reports_genicam_node_failures():
     manager = AsyncCameraManager(include_mocks=True)
     try:
