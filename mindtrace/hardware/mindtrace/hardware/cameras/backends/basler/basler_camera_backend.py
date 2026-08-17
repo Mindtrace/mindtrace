@@ -169,6 +169,10 @@ class BaslerCameraBackend(CameraBackend):
         self.converter = None
         self.grabbing_mode = pylon.GrabStrategy_LatestImageOnly
         self.triggermode = self.camera_config.cameras.trigger_mode
+        self._grabbing_suspend_depth = 0
+        self._config_session_depth = 0
+        self._session_suspended = False
+        self._session_was_grabbing = False
 
         # Derived operation timeout for non-capture SDK calls
         self._op_timeout_s = max(1.0, float(self.timeout_ms) / 1000.0)
@@ -591,20 +595,54 @@ class BaslerCameraBackend(CameraBackend):
             raise CameraConnectionError(f"Failed to ensure camera '{self.camera_name}' stopped grabbing: {e}") from e
 
     @asynccontextmanager
-    async def _grabbing_suspended(self):
-        """Context manager that temporarily suspends grabbing.
+    async def configuration_session(self):
+        """Defer grabbing resume until the configure/GET scope exits.
 
-        Useful for configuration operations that require grabbing to be stopped.
+        Entering the session does not stop grabbing. The first
+        :meth:`_grabbing_suspended` inside stops it; further suspends are
+        no-ops; grabbing resumes only when this session exits. A session with
+        no suspend calls leaves streaming running.
         """
-        was_grabbing = False
+        self._config_session_depth += 1
         try:
-            if self.camera is not None:
+            yield
+        finally:
+            self._config_session_depth -= 1
+            if self._config_session_depth == 0 and self._session_suspended:
+                was_grabbing = self._session_was_grabbing
+                self._session_suspended = False
+                self._session_was_grabbing = False
+                if was_grabbing and self.camera is not None:
+                    await self._ensure_grabbing()
+
+    @asynccontextmanager
+    async def _grabbing_suspended(self):
+        """Temporarily suspend grabbing. Nested calls share one stop/start.
+
+        Inside :meth:`configuration_session`, the first suspend stops grabbing
+        and resume is owned by the session exit. Outside a session, outermost
+        exit restores grabbing as before.
+        """
+        in_session = self._config_session_depth > 0
+        nested = self._grabbing_suspend_depth > 0
+        was_grabbing = False
+        self._grabbing_suspend_depth += 1
+        try:
+            if in_session:
+                if not self._session_suspended and self.camera is not None:
+                    was_grabbing = await self._run_blocking(self.camera.IsGrabbing, timeout=self._op_timeout_s)
+                    if was_grabbing:
+                        await self._ensure_stopped_grabbing()
+                    self._session_was_grabbing = was_grabbing
+                    self._session_suspended = True
+            elif not nested and self.camera is not None:
                 was_grabbing = await self._run_blocking(self.camera.IsGrabbing, timeout=self._op_timeout_s)
                 if was_grabbing:
                     await self._ensure_stopped_grabbing()
             yield
         finally:
-            if was_grabbing and self.camera is not None:
+            self._grabbing_suspend_depth -= 1
+            if not in_session and not nested and was_grabbing and self.camera is not None:
                 await self._ensure_grabbing()
 
     async def _configure_camera(self):

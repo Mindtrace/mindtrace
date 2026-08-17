@@ -350,20 +350,21 @@ class AsyncCamera(Mindtrace):
                 self.logger.warning(
                     f"Skipped unrecognized configuration keys for camera '{self._full_name}': {skipped}"
                 )
-            for key in CONFIGURABLE_KEYS:
-                if key not in normalized:
-                    continue
-                total += 1
-                value = normalized[key]
-                try:
-                    await self._apply_config_key(key, value)
-                    applied += 1
-                except Exception as exc:
-                    failures[key] = str(exc)
-                    applied_subset = applied_subset_from_exception(exc)
-                    if applied_subset:
-                        partial[key] = applied_subset
-                    self.logger.warning(f"Could not set '{key}' for camera '{self._full_name}': {exc}")
+            async with self._backend.configuration_session():
+                for key in CONFIGURABLE_KEYS:
+                    if key not in normalized:
+                        continue
+                    total += 1
+                    value = normalized[key]
+                    try:
+                        await self._apply_config_key(key, value)
+                        applied += 1
+                    except Exception as exc:
+                        failures[key] = str(exc)
+                        applied_subset = applied_subset_from_exception(exc)
+                        if applied_subset:
+                            partial[key] = applied_subset
+                        self.logger.warning(f"Could not set '{key}' for camera '{self._full_name}': {exc}")
 
         self.logger.debug(f"Configuration completed for camera '{self._full_name}': {applied}/{total} settings applied")
         return ConfigurationApplyResult(
@@ -420,14 +421,15 @@ class AsyncCamera(Mindtrace):
 
     async def _collect_configuration(self) -> Dict[str, Any]:
         config: Dict[str, Any] = {}
-        for key in CONFIGURABLE_KEYS:
-            try:
-                value = await self._read_config_key(key)
-            except Exception as exc:
-                self.logger.debug(f"Could not read '{key}' for camera '{self._full_name}': {exc}")
-                continue
-            if value is not None:
-                config[key] = value
+        async with self._backend.configuration_session():
+            for key in CONFIGURABLE_KEYS:
+                try:
+                    value = await self._read_config_key(key)
+                except Exception as exc:
+                    self.logger.debug(f"Could not read '{key}' for camera '{self._full_name}': {exc}")
+                    continue
+                if value is not None:
+                    config[key] = value
         return config
 
     async def _read_config_key(self, key: str) -> Any:

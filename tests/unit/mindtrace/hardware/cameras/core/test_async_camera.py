@@ -989,3 +989,35 @@ async def test_configure_records_partial_genicam_nodes_that_applied():
         assert result.partial == {"genicam_nodes": {"PixelFormat": "Mono8"}}
     finally:
         await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_configure_and_get_configuration_use_one_backend_session():
+    """configure() and get_configuration() should enter configuration_session once each."""
+    from contextlib import asynccontextmanager
+
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        sessions: list[str] = []
+
+        @asynccontextmanager
+        async def tracking_session():
+            sessions.append("enter")
+            yield
+            sessions.append("exit")
+
+        cam.backend.configuration_session = tracking_session  # type: ignore[method-assign]
+
+        result = await cam.configure(exposure=15000, gain=2.0)
+        assert result.success is True
+        assert sessions == ["enter", "exit"]
+
+        sessions.clear()
+        config = await cam.get_configuration()
+        assert "exposure_time" in config
+        assert sessions == ["enter", "exit"]
+    finally:
+        await manager.close(None)

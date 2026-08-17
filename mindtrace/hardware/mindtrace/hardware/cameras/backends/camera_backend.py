@@ -5,7 +5,8 @@ import functools
 import uuid
 from abc import abstractmethod
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Optional, Tuple, Union
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -48,6 +49,8 @@ class CameraBackend(MindtraceABC):
           ``genicam_nodes``)
         - Use ``_run_blocking()`` for all SDK calls that may block
         - Call ``await self._cleanup_executor()`` in ``close()`` to release thread resources
+        - Override ``configuration_session`` if a multi-key configure/GET must
+          hold streaming stopped once for the whole payload (for example Basler GigE)
 
     Attributes:
         REQUIRES_THREAD_AFFINITY: Class attribute indicating thread affinity requirement
@@ -236,6 +239,17 @@ class CameraBackend(MindtraceABC):
                 self.logger.warning(f"Error shutting down executor for camera '{self.camera_name}': {e}")
             finally:
                 self._sdk_executor = None
+
+    @asynccontextmanager
+    async def configuration_session(self) -> AsyncIterator[None]:
+        """Scope for a multi-key configure or GET.
+
+        Default is a no-op. Basler overrides this so the first
+        ``_grabbing_suspended()`` inside the scope stops grabbing, further
+        suspends are no-ops, and grabbing resumes only when the session exits.
+        Keys that never suspend leave streaming uninterrupted.
+        """
+        yield
 
     async def setup_camera(self):
         """Common setup method for camera initialization.

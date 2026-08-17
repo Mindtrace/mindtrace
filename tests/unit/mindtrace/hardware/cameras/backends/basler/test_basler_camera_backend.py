@@ -2205,6 +2205,96 @@ class TestBaslerCameraBackendGrabbingSuspendedContextManager:
 
         # No grabbing operations should have been called when not currently grabbing
 
+    @pytest.mark.asyncio
+    async def test_nested_grabbing_suspended_stops_once(self, basler_camera):
+        """Session + nested suspends and GigE setters share a single StopGrabbing/StartGrabbing."""
+        await basler_camera.initialize()
+        await basler_camera._ensure_grabbing()
+        camera = basler_camera.camera
+
+        stops: list[int] = []
+        starts: list[int] = []
+        original_stop = camera.StopGrabbing
+        original_start = camera.StartGrabbing
+
+        def stop():
+            stops.append(1)
+            return original_stop()
+
+        def start(strategy=None):
+            starts.append(1)
+            return original_start(strategy)
+
+        camera.StopGrabbing = stop
+        camera.StartGrabbing = start
+
+        async with basler_camera.configuration_session():
+            assert camera.IsGrabbing() is True
+            assert stops == []
+            async with basler_camera._grabbing_suspended():
+                await basler_camera.set_packet_size(8164)
+                await basler_camera.set_inter_packet_delay(1000)
+            # Still suspended until session exits
+            assert camera.IsGrabbing() is False
+            assert starts == []
+
+        assert stops == [1]
+        assert starts == [1]
+        assert camera.IsGrabbing() is True
+        assert basler_camera._grabbing_suspend_depth == 0
+        assert basler_camera._config_session_depth == 0
+        assert basler_camera._session_suspended is False
+
+    @pytest.mark.asyncio
+    async def test_configuration_session_without_suspend_keeps_grabbing(self, basler_camera):
+        """A configure/GET session with no suspend-needing keys must not stop grabbing."""
+        await basler_camera.initialize()
+        await basler_camera._ensure_grabbing()
+        camera = basler_camera.camera
+
+        stops: list[int] = []
+        original_stop = camera.StopGrabbing
+
+        def stop():
+            stops.append(1)
+            return original_stop()
+
+        camera.StopGrabbing = stop
+
+        async with basler_camera.configuration_session():
+            assert camera.IsGrabbing() is True
+
+        assert stops == []
+        assert camera.IsGrabbing() is True
+
+    @pytest.mark.asyncio
+    async def test_configuration_session_restores_after_error(self, basler_camera):
+        await basler_camera.initialize()
+        await basler_camera._ensure_grabbing()
+
+        with pytest.raises(RuntimeError, match="boom"):
+            async with basler_camera.configuration_session():
+                async with basler_camera._grabbing_suspended():
+                    raise RuntimeError("boom")
+
+        assert basler_camera.camera.IsGrabbing() is True
+        assert basler_camera._grabbing_suspend_depth == 0
+        assert basler_camera._config_session_depth == 0
+        assert basler_camera._session_suspended is False
+
+    @pytest.mark.asyncio
+    async def test_nested_grabbing_suspended_restores_after_error(self, basler_camera):
+        await basler_camera.initialize()
+        await basler_camera._ensure_grabbing()
+
+        with pytest.raises(RuntimeError, match="boom"):
+            async with basler_camera._grabbing_suspended():
+                async with basler_camera._grabbing_suspended():
+                    raise RuntimeError("boom")
+
+        assert basler_camera.camera.IsGrabbing() is True
+        assert basler_camera._grabbing_suspend_depth == 0
+
 
 class TestBaslerCameraBackendGigESettings:
     """GigE transport setters must suspend grabbing, matching profile import."""
