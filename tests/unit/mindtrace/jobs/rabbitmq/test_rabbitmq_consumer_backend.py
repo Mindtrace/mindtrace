@@ -931,6 +931,52 @@ def test_push_consumer_counts_failed_job_and_applies_policy(backend):
     channel.basic_nack.assert_called_once_with(delivery_tag=42, requeue=True)
 
 
+def test_push_callback_stops_consuming_before_returning_after_inflight_stop(backend):
+    channel = MagicMock(is_open=True)
+    backend.connection.get_channel.return_value = channel
+    backend.connection.add_callback_threadsafe = MagicMock(return_value=True)
+    method = MagicMock(delivery_tag=42, redelivered=False)
+
+    def process_and_stop(_message):
+        backend.stop()
+        return True
+
+    backend.process_message = MagicMock(side_effect=process_and_stop)
+
+    def deliver_one_message():
+        callback = channel.basic_consume.call_args.kwargs["on_message_callback"]
+        callback(channel, method, MagicMock(), b'{"id": 7}')
+
+    channel.start_consuming.side_effect = deliver_one_message
+
+    attempted = backend.consume(num_messages=0, queues="q", block=True)
+
+    assert attempted == 1
+    channel.basic_ack.assert_called_once_with(delivery_tag=42)
+    channel.stop_consuming.assert_called_once_with()
+
+
+def test_push_callback_does_not_start_buffered_job_after_stop_request(backend):
+    channel = MagicMock(is_open=True)
+    backend.connection.get_channel.return_value = channel
+    backend.process_message = MagicMock(return_value=True)
+    method = MagicMock(delivery_tag=42, redelivered=False)
+
+    def deliver_after_stop_request():
+        callback = channel.basic_consume.call_args.kwargs["on_message_callback"]
+        backend._stop_event.set()
+        callback(channel, method, MagicMock(), b'{"id": 7}')
+
+    channel.start_consuming.side_effect = deliver_after_stop_request
+
+    attempted = backend.consume(num_messages=0, queues="q", block=True)
+
+    assert attempted == 0
+    backend.process_message.assert_not_called()
+    channel.basic_nack.assert_called_once_with(delivery_tag=42, requeue=True)
+    channel.stop_consuming.assert_called_once_with()
+
+
 def test_push_registration_forwards_auto_ack(backend):
     channel = MagicMock(is_open=True)
     backend.connection.get_channel.return_value = channel

@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 from pika.exceptions import AMQPConnectionError, ChannelClosedByBroker, ConnectionWrongStateError
@@ -109,6 +109,22 @@ class TestRabbitMQConnection:
         rabbitmq_conn.connection = mock_conn
 
         assert rabbitmq_conn.add_callback_threadsafe(callback) is False
+
+    def test_add_callback_threadsafe_uses_one_connection_reference_during_cleanup_race(self, rabbitmq_conn):
+        callback = MagicMock()
+        active_connection = MagicMock(is_open=True)
+
+        with patch.object(
+            RabbitMQConnection,
+            "connection",
+            new_callable=PropertyMock,
+            create=True,
+        ) as connection:
+            connection.side_effect = [active_connection, active_connection, None]
+
+            assert rabbitmq_conn.add_callback_threadsafe(callback) is True
+
+        active_connection.add_callback_threadsafe.assert_called_once_with(callback)
 
     def test_count_queue_messages_success(self, rabbitmq_conn):
         mock_channel = MagicMock()

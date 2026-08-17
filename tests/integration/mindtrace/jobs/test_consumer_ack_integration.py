@@ -144,6 +144,39 @@ def test_push_consume_processes_later_queue_after_poison_and_stops():
 
 
 @pytest.mark.rabbitmq
+def test_push_stop_does_not_process_deliveries_buffered_for_other_queues():
+    class StopAfterFirstConsumer(SampleConsumer):
+        def run(self, job_dict):
+            result = super().run(job_dict)
+            self.stop()
+            return result
+
+    client = rabbitmq_client()
+    orchestrator = Orchestrator(backend=client)
+    queues = [unique_queue(f"consumer-buffered-{index}") for index in range(6)]
+    for index, queue in enumerate(queues):
+        orchestrator.register(JobSchema(name=queue, input_schema=SampleJobInput, output_schema=SampleJobOutput))
+        orchestrator.publish(queue, create_test_job(f"buffered-{index}", queue))
+
+    consumer = StopAfterFirstConsumer(queues[0])
+    consumer.connect_to_orchestrator(orchestrator, queues[0], prefetch_count=1)
+    thread = threading.Thread(target=consumer.consume, kwargs={"queues": queues})
+    thread.start()
+
+    try:
+        thread.join(timeout=5)
+
+        assert thread.is_alive() is False
+        assert len(consumer.processed_jobs) == 1
+        assert sum(client.count_queue_messages(queue) for queue in queues) == len(queues) - 1
+    finally:
+        consumer.stop()
+        thread.join(timeout=5)
+        for queue in queues:
+            client.delete_queue(queue)
+
+
+@pytest.mark.rabbitmq
 def test_finite_consume_continues_same_queue_after_poison_delivery():
     client = rabbitmq_client()
     orchestrator = Orchestrator(backend=client)
