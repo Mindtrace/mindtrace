@@ -1054,7 +1054,14 @@ class TestCameraManagerServiceCaptureAndHomography:
     @pytest.mark.asyncio
     async def test_configure_cameras_batch_formats_partial_results(self, service_with_mock_manager):
         service, mock_manager = service_with_mock_manager
-        mock_manager.batch_configure.return_value = {"Basler:cam1": True, "Basler:cam2": False}
+        mock_manager.batch_configure.return_value = {
+            "Basler:cam1": ConfigurationApplyResult(applied=1, total=1),
+            "Basler:cam2": ConfigurationApplyResult(
+                applied=0,
+                total=1,
+                failures={"gain": "invalid"},
+            ),
+        }
 
         response = await service.configure_cameras_batch(
             CameraConfigureBatchRequest(configurations={"Basler:cam1": {"gain": 1.0}, "Basler:cam2": {"gain": 2.0}})
@@ -1063,7 +1070,10 @@ class TestCameraManagerServiceCaptureAndHomography:
         assert response.success is False
         assert response.data.successful == ["Basler:cam1"]
         assert response.data.failed == ["Basler:cam2"]
-        assert response.data.results == {"Basler:cam1": True, "Basler:cam2": False}
+        assert response.data.results["Basler:cam1"].success is True
+        assert response.data.results["Basler:cam1"].applied == 1
+        assert response.data.results["Basler:cam2"].success is False
+        assert response.data.results["Basler:cam2"].failures == {"gain": "invalid"}
 
     @pytest.mark.asyncio
     async def test_import_export_config_inactive_camera_raise(self, service_with_mock_manager):

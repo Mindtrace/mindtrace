@@ -925,7 +925,7 @@ class AsyncCameraManager(Mindtrace):
             async with self._get_open_lock(camera_name):
                 await self._close_locked(camera_name)
 
-    async def batch_configure(self, configurations: Dict[str, Dict[str, Any]]) -> Dict[str, bool]:
+    async def batch_configure(self, configurations: Dict[str, Dict[str, Any]]) -> Dict[str, ConfigurationApplyResult]:
         """Configure multiple cameras simultaneously."""
         items = list(configurations.items())
         config_results = await asyncio.gather(
@@ -933,13 +933,17 @@ class AsyncCameraManager(Mindtrace):
             return_exceptions=True,
         )
 
-        results: Dict[str, bool] = {}
+        results: Dict[str, ConfigurationApplyResult] = {}
         for (camera_name, _), result in zip(items, config_results):
             if isinstance(result, BaseException):
                 self.logger.error(f"Configuration failed for '{camera_name}': {result}")
-                results[camera_name] = False
+                results[camera_name] = ConfigurationApplyResult(
+                    applied=0,
+                    total=0,
+                    failures={"_error": str(result)},
+                )
             else:
-                results[camera_name] = result.success
+                results[camera_name] = result
 
         return results
 

@@ -198,6 +198,22 @@ class ConfigurationApplyResponse(BaseResponse):
     data: ConfigurationApplyResultData
 
 
+class ConfigureCamerasBatchResult(BaseModel):
+    """Batch configure result with per-camera apply details."""
+
+    successful: List[str]
+    failed: List[str]
+    results: Dict[str, ConfigurationApplyResultData]
+    successful_count: int
+    failed_count: int
+
+
+class ConfigureCamerasBatchResponse(BaseResponse):
+    """Response model for batch camera configure operations."""
+
+    data: ConfigureCamerasBatchResult
+
+
 class SavedCameraConfigurationResponse(BaseResponse):
     """Response model for persisted (on-disk) camera configuration."""
 

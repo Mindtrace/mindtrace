@@ -11,7 +11,7 @@ import io
 import logging
 import os
 import time
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image as PILImage
@@ -54,8 +54,6 @@ from mindtrace.hardware.services.cameras.models import (
     CameraConfigurationResponse,
     CameraConfigureBatchRequest,
     CameraConfigureRequest,
-    ConfigurationApplyResponse,
-    ConfigurationApplyResultData,
     CameraInfo,
     CameraInfoResponse,
     CameraOpenBatchRequest,
@@ -79,6 +77,10 @@ from mindtrace.hardware.services.cameras.models import (
     ConfigFileOperationResult,
     ConfigFileResetRequest,
     ConfigFileResponse,
+    ConfigurationApplyResponse,
+    ConfigurationApplyResultData,
+    ConfigureCamerasBatchResponse,
+    ConfigureCamerasBatchResult,
     ConfigureCaptureGroupsRequest,
     DictResponse,
     FocusConfigRequest,
@@ -870,24 +872,30 @@ class CameraManagerService(Service):
             # For other exceptions, still raise them
             raise
 
-    async def configure_cameras_batch(self, request: CameraConfigureBatchRequest) -> BatchOperationResponse:
+    async def configure_cameras_batch(self, request: CameraConfigureBatchRequest) -> ConfigureCamerasBatchResponse:
         """Configure multiple cameras in batch."""
         try:
             manager = await self._get_camera_manager()
             results = await manager.batch_configure(request.configurations)
 
-            successful = [name for name, success in results.items() if success]
-            failed = [name for name, success in results.items() if not success]
+            result_data: Dict[str, ConfigurationApplyResultData] = {}
+            for camera_name, apply_result in results.items():
+                result_data[camera_name] = ConfigurationApplyResultData(
+                    **configuration_apply_result_to_dict(apply_result)
+                )
 
-            result = BatchOperationResult(
+            successful = [name for name, data in result_data.items() if data.success]
+            failed = [name for name, data in result_data.items() if not data.success]
+
+            result = ConfigureCamerasBatchResult(
                 successful=successful,
                 failed=failed,
-                results=results,
+                results=result_data,
                 successful_count=len(successful),
                 failed_count=len(failed),
             )
 
-            return BatchOperationResponse(
+            return ConfigureCamerasBatchResponse(
                 success=len(failed) == 0,
                 message=f"Batch configure completed: {len(successful)} successful, {len(failed)} failed",
                 data=result,

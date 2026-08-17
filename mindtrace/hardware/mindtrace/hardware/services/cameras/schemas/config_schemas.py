@@ -2,7 +2,6 @@
 
 from mindtrace.core import TaskSchema
 from mindtrace.hardware.services.cameras.models import (
-    BatchOperationResponse,
     CameraConfigurationResponse,
     CameraConfigureBatchRequest,
     CameraConfigureRequest,
@@ -12,6 +11,7 @@ from mindtrace.hardware.services.cameras.models import (
     ConfigFileResetRequest,
     ConfigFileResponse,
     ConfigurationApplyResponse,
+    ConfigureCamerasBatchResponse,
     SavedCameraConfigurationResponse,
 )
 
@@ -23,7 +23,9 @@ ConfigureCameraSchema = TaskSchema(
 )
 
 ConfigureCamerasBatchSchema = TaskSchema(
-    name="configure_cameras_batch", input_schema=CameraConfigureBatchRequest, output_schema=BatchOperationResponse
+    name="configure_cameras_batch",
+    input_schema=CameraConfigureBatchRequest,
+    output_schema=ConfigureCamerasBatchResponse,
 )
 
 GetCameraConfigurationSchema = TaskSchema(

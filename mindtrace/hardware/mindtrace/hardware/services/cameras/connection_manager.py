@@ -233,7 +233,8 @@ class CameraManagerConnectionManager(ConnectionManager):
             configurations: Dictionary mapping camera names to their configurations
 
         Returns:
-            Batch operation results
+            Batch configure result with successful/failed camera lists and per-camera
+            apply details (applied, total, failures, skipped, success).
         """
         request = CameraConfigureBatchRequest(configurations=configurations)
         response = await self.post("/cameras/configure/batch", request.model_dump())

@@ -1165,8 +1165,9 @@ async def test_batch_configure_and_capture_with_unknown():
         }
         cfg_res = await mgr.batch_configure(cfg)
         assert set(cfg_res.keys()) == {name, "UnknownBackend:dev"}
-        # Unknown should be False
-        assert cfg_res["UnknownBackend:dev"] is False
+        assert cfg_res[name].success is True
+        assert cfg_res["UnknownBackend:dev"].success is False
+        assert "_error" in cfg_res["UnknownBackend:dev"].failures
 
         # Capture known + unknown
         cap_res = await mgr.batch_capture([name, "UnknownBackend:dev"])
