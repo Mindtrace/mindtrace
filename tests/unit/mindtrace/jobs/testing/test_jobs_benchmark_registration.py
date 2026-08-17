@@ -61,9 +61,7 @@ def test_jobs_benchmark_profiles_have_expected_defaults_and_resources() -> None:
         assert schema.resource_json_schema is not None
         properties = schema.resource_json_schema["properties"]
         assert {"local_base_dir", "redis_host", "redis_port", "redis_db"}.issubset(properties)
-        assert {"rabbitmq_host", "rabbitmq_port", "rabbitmq_username", "rabbitmq_password"}.issubset(
-            properties
-        )
+        assert {"rabbitmq_host", "rabbitmq_port", "rabbitmq_username", "rabbitmq_password"}.issubset(properties)
         assert properties["rabbitmq_password"]["secret"] is True
 
     consume_schema = runner.get_suite_schema("jobs.stress.consume_ceiling")

@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 import mindtrace.jobs.testing.suites._common as common
 from mindtrace.jobs.redis.connection import RedisConnection
 from mindtrace.jobs.testing.suites._common import WorkerStats, merge_worker_stats, redis_background_errors
-from mindtrace.jobs.testing.suites.consume import _ConsumeOutcome, _consume_worker
+from mindtrace.jobs.testing.suites.consume import _consume_worker, _ConsumeOutcome
 
 
 def test_worker_stats_bounds_latency_samples_and_detects_duplicates() -> None:
