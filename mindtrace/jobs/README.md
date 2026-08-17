@@ -281,7 +281,10 @@ RabbitMQ invokes `Consumer.run()` synchronously on Pika's I/O thread during
 broker-pushed consumption. `Consumer.run()` must not return until processing is
 complete because its return or exception determines whether the delivery is
 acknowledged or rejected.
-A channel or connection failure ends the current consume operation; callers
+An unexpected broker cancellation, such as a queue being deleted or becoming
+unavailable, ends the entire push-consume operation and raises
+`RabbitMQConsumerCancelledError` with the affected queue and consumer tag.
+Channel and connection failures also end the current consume operation. Callers
 remain responsible for retry and backoff. Push and pull calls both return the
 same attempted-delivery count described above.
 

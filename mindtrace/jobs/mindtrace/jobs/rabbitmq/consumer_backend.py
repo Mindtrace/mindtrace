@@ -40,8 +40,7 @@ class RabbitMQConsumerCancelledError(RuntimeError):
         self.queue_name = queue_name
         self.consumer_tag = consumer_tag
         super().__init__(
-            f"RabbitMQ broker cancelled consumer for queue '{queue_name}' "
-            f"(consumer tag '{consumer_tag}')."
+            f"RabbitMQ broker cancelled consumer for queue '{queue_name}' (consumer tag '{consumer_tag}')."
         )
 
 
