@@ -1089,6 +1089,20 @@ def test_failed_push_cancellation_defers_cleanup_to_operation_owner(backend):
     )
 
 
+def test_stop_after_push_setup_skips_consumer_registration_and_start(backend):
+    channel = MagicMock(is_open=True)
+    backend.connection.get_channel.return_value = channel
+    backend.connection.add_callback_threadsafe = MagicMock(return_value=True)
+    channel.basic_qos.side_effect = lambda **_kwargs: backend.stop()
+
+    attempted = backend.consume(num_messages=0, queues=["q1", "q2"], block=True)
+
+    assert attempted == 0
+    channel.add_on_cancel_callback.assert_not_called()
+    channel.basic_consume.assert_not_called()
+    channel.start_consuming.assert_not_called()
+
+
 def test_stop_during_push_registration_skips_remaining_queues_and_start(backend):
     channel = MagicMock(is_open=True)
     backend.connection.get_channel.return_value = channel
