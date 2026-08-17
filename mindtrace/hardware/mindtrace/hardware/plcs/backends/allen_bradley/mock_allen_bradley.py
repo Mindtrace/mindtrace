@@ -578,65 +578,52 @@ class MockAllenBradleyPLC(BasePLC):
         """
         await self._channel("read")
 
-        try:
-            base_info = {
-                "name": self.plc_name,
-                "ip_address": self.ip_address,
-                "driver_type": self.driver_type,
-                "plc_type": self.plc_type,
-                "connected": self._ever_connected,
-                "read_channel_open": self._channels_open["read"],
-                "write_channel_open": self._channels_open["write"],
-                "mock": True,
-            }
+        base_info = {
+            "name": self.plc_name,
+            "ip_address": self.ip_address,
+            "driver_type": self.driver_type,
+            "plc_type": self.plc_type,
+            "connected": self._ever_connected,
+            "read_channel_open": self._channels_open["read"],
+            "write_channel_open": self._channels_open["write"],
+            "mock": True,
+        }
 
-            # Add driver-specific info
-            if self.driver_type == "LogixDriver":
-                base_info.update(
-                    {
-                        "product_name": "Mock ControlLogix 5580",
-                        "product_type": "Programmable Logic Controller",
-                        "vendor": "Mock Allen Bradley",
-                        "revision": "32.011",
-                        "serial": f"MOCK{hash(self.plc_name) % 10000:04d}",
-                        "program_name": "MockProgram",
-                    }
-                )
-            elif self.driver_type == "SLCDriver":
-                base_info.update(
-                    {
-                        "product_type": "Mock SLC 5/05 PLC",
-                        "vendor": "Mock Allen Bradley",
-                        "description": "Mock SLC500 series PLC",
-                        "processor": "SLC 5/05",
-                    }
-                )
-            elif self.driver_type == "CIPDriver":
-                base_info.update(
-                    {
-                        "product_name": "Mock PowerFlex 755",
-                        "product_type": "AC Drive",
-                        "vendor": "Mock Allen Bradley",
-                        "product_code": 55,
-                        "revision": {"major": 1, "minor": 1},
-                        "serial": f"MOCK{hash(self.ip_address) % 10000:04d}",
-                        "status": b"\x20\x00",  # Mock status word
-                    }
-                )
+        # Add driver-specific info
+        if self.driver_type == "LogixDriver":
+            base_info.update(
+                {
+                    "product_name": "Mock ControlLogix 5580",
+                    "product_type": "Programmable Logic Controller",
+                    "vendor": "Mock Allen Bradley",
+                    "revision": "32.011",
+                    "serial": f"MOCK{hash(self.plc_name) % 10000:04d}",
+                    "program_name": "MockProgram",
+                }
+            )
+        elif self.driver_type == "SLCDriver":
+            base_info.update(
+                {
+                    "product_type": "Mock SLC 5/05 PLC",
+                    "vendor": "Mock Allen Bradley",
+                    "description": "Mock SLC500 series PLC",
+                    "processor": "SLC 5/05",
+                }
+            )
+        elif self.driver_type == "CIPDriver":
+            base_info.update(
+                {
+                    "product_name": "Mock PowerFlex 755",
+                    "product_type": "AC Drive",
+                    "vendor": "Mock Allen Bradley",
+                    "product_code": 55,
+                    "revision": {"major": 1, "minor": 1},
+                    "serial": f"MOCK{hash(self.ip_address) % 10000:04d}",
+                    "status": b"\x20\x00",  # Mock status word
+                }
+            )
 
-            return base_info
-
-        except Exception as e:
-            self.logger.error(f"Mock failed to get PLC info: {e}")
-            return {
-                "name": self.plc_name,
-                "ip_address": self.ip_address,
-                "driver_type": self.driver_type,
-                "plc_type": self.plc_type,
-                "connected": False,
-                "error": str(e),
-                "mock": True,
-            }
+        return base_info
 
     @staticmethod
     def get_available_plcs() -> List[str]:

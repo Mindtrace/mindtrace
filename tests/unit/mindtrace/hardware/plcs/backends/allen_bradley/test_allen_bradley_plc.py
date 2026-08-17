@@ -1982,6 +1982,47 @@ class TestAllenBradleyPLCTagDiscovery:
         assert any("0x04:" in tag for tag in tags)
 
     @pytest.mark.asyncio
+    async def test_get_all_tags_wire_death_escapes_typed(self, mock_pycomm3_available, mock_cip_driver):
+        """A CommError during discovery closes the channel and ESCAPES as
+        PLCCommunicationError - the outer catch-all must not rewrap it."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            CIPDriver,
+        )
+
+        CIPDriver.list_identity.return_value = {}
+        mock_cip_driver.generic_message.side_effect = CommError("socket closed")
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
+        CIPDriver.return_value = mock_cip_driver
+        await plc.connect()
+
+        with pytest.raises(PLCCommunicationError, match="Tag discovery failed"):
+            await plc.get_all_tags()
+
+        mock_cip_driver.close.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_get_plc_info_wire_death_escapes_typed(self, mock_pycomm3_available, mock_logix_driver):
+        """An exchange failure in the info probe closes the channel and ESCAPES -
+        the outer catch-all must not turn it into a returned dict."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            LogixDriver,
+        )
+
+        mock_logix_driver.get_plc_info.side_effect = CommError("socket closed")
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        LogixDriver.return_value = mock_logix_driver
+        await plc.connect()
+
+        with pytest.raises(PLCCommunicationError, match="PLC info read failed"):
+            await plc.get_plc_info()
+
+        mock_logix_driver.close.assert_called()
+
+    @pytest.mark.asyncio
     async def test_get_all_tags_cache_valid(self, mock_pycomm3_available, mock_logix_driver):
         """Test tag cache is used when still valid."""
         import time
@@ -2457,9 +2498,11 @@ class TestAllenBradleyPLCPLCInfo:
         # Device info exception should be caught and logged, but basic info should still be returned
         assert "product_name" not in info or info.get("product_name") == "Unknown"
 
+
     @pytest.mark.asyncio
     async def test_get_plc_info_outer_exception(self, mock_pycomm3_available, mock_logix_driver):
-        """An unexpected failure is reported as the in-band error dict, as before."""
+        """An unexpected failure is reported in-band — with only honest fields:
+        no fabricated ``connected``."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
@@ -2476,8 +2519,8 @@ class TestAllenBradleyPLCPLCInfo:
         info = await plc.get_plc_info()
 
         assert info["name"] == "TestPLC"
-        assert info["connected"] is False
         assert "Connection check failed" in info["error"]
+        assert "connected" not in info  # absent is honest; fabricated is not
 
 
 class TestAllenBradleyPLCStaticMethods:

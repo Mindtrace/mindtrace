@@ -1207,10 +1207,12 @@ class TestAllenBradleyChannelLifecycle:
         assert close_calls == []  # never called into the live-thread driver
         assert stalled.connected is True  # untouched
         assert plc._read_driver is not stalled  # abandoned
+        assert plc.plc is not stalled  # the alias must not keep the driver alive
 
         results = await plc.read_tag(["Tag1"])  # entry opens a FRESH driver
         assert results["Tag1"].value == 42
         assert plc._read_driver is replacement
+        assert plc.plc is replacement
 
     async def test_write_backstop_expiry_abandons_the_write_channel(self, monkeypatch):
         import time as _time
@@ -1288,6 +1290,7 @@ class TestAllenBradleyChannelLifecycle:
 
         assert stalled.connected is True  # never touched
         assert plc._read_driver is not stalled  # abandoned
+        assert plc.plc is not stalled  # the alias must not keep the driver alive
 
         results = await plc.read_tag(["Tag1"])  # lock is free; a fresh driver serves
         assert results["Tag1"].value == 42

@@ -104,7 +104,6 @@ from mindtrace.hardware.core.config import get_hardware_config
 from mindtrace.hardware.core.exceptions import (
     PLCConnectionError,
     PLCNotFoundError,
-    PLCTagError,
 )
 from mindtrace.hardware.plcs.backends.base import BasePLC
 from mindtrace.hardware.plcs.types import TagResult
@@ -586,47 +585,35 @@ class PLCManager(Mindtrace):
         return results
 
     async def get_plc_status(self, plc_name: str) -> Dict[str, Any]:
-        """
-        Get status information for a specific PLC.
+        """The manager's OWN knowledge of the PLC: lifecycle state, local facts.
 
-        Args:
-            plc_name: Name of the PLC
-
-        Returns:
-            Dictionary with PLC status information
+        Zero wire I/O, so it is total and safe to poll; the only raise is
+        ``PLCNotFoundError``. For the device's testimony, use ``get_plc_info``.
         """
         if plc_name not in self.plcs:
             raise PLCNotFoundError(f"PLC '{plc_name}' not registered")
 
-        try:
-            plc = self.plcs[plc_name]
+        plc = self.plcs[plc_name]
+        return {
+            "name": plc_name,
+            "ip_address": plc.ip_address,
+            "connected": await plc.is_connected(),
+            "initialized": plc.initialized,
+            "backend": plc.__class__.__name__,
+            "plc_type": getattr(plc, "plc_type", None),
+            "driver_type": getattr(plc, "driver_type", None),
+        }
 
-            status = {
-                "name": plc_name,
-                "ip_address": plc.ip_address,
-                "connected": await plc.is_connected(),
-                "initialized": plc.initialized,
-                "backend": plc.__class__.__name__,
-            }
+    async def get_plc_info(self, plc_name: str) -> Dict[str, Any]:
+        """The DEVICE's testimony: a wire probe on the read channel.
 
-            # Get additional info if available
-            if hasattr(plc, "get_plc_info"):
-                try:
-                    plc_info = await plc.get_plc_info()
-                    status.update(plc_info)
-                except Exception as e:
-                    status["info_error"] = str(e)
+        Thin passthrough; typed exceptions propagate unwrapped (an exchange
+        failure closes the channel in the backend and heals at the next call).
+        """
+        if plc_name not in self.plcs:
+            raise PLCNotFoundError(f"PLC '{plc_name}' not registered")
 
-            return status
-
-        except Exception as e:
-            self.logger.error(f"Failed to get status for PLC '{plc_name}': {e}")
-            return {
-                "name": plc_name,
-                "error": str(e),
-                "connected": False,
-                "initialized": False,
-            }
+        return await self.plcs[plc_name].get_plc_info()
 
     async def get_all_plc_status(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -643,12 +630,7 @@ class PLCManager(Mindtrace):
                 results[plc_name] = await self.get_plc_status(plc_name)
             except Exception as e:
                 self.logger.error(f"Failed to get status for PLC '{plc_name}': {e}")
-                results[plc_name] = {
-                    "name": plc_name,
-                    "error": str(e),
-                    "connected": False,
-                    "initialized": False,
-                }
+                results[plc_name] = {"name": plc_name, "error": str(e)}
 
         return results
 
@@ -665,13 +647,7 @@ class PLCManager(Mindtrace):
         if plc_name not in self.plcs:
             raise PLCNotFoundError(f"PLC '{plc_name}' not registered")
 
-        try:
-            plc = self.plcs[plc_name]
-            return await plc.get_all_tags()
-
-        except Exception as e:
-            self.logger.error(f"Failed to get tags for PLC '{plc_name}': {e}")
-            raise PLCTagError(f"Failed to get tags for PLC '{plc_name}': {e}")
+        return await self.plcs[plc_name].get_all_tags()
 
     def get_registered_plcs(self) -> List[str]:
         """

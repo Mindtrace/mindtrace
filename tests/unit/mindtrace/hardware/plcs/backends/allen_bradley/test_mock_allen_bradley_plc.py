@@ -1000,30 +1000,6 @@ class TestMockAllenBradleyPLCPLCInfo:
         with pytest.raises(PLCConnectionError, match="never opened"):
             await mock_plc.get_plc_info()
 
-    @pytest.mark.asyncio
-    async def test_get_plc_info_exception_handling(self, mock_plc):
-        """An unexpected failure is reported as the in-band error dict, as before."""
-        await mock_plc.connect()
-
-        original_plc_name = mock_plc.plc_name
-
-        # hash(plc_name) is taken for the simulated serial number.
-        class HashError:
-            def __hash__(self):
-                raise RuntimeError("Hash failed")
-
-        mock_plc.plc_name = HashError()
-
-        info = await mock_plc.get_plc_info()
-
-        assert info["connected"] is False
-        assert "Hash failed" in info["error"]
-        assert info["mock"] is True
-
-        # Restore
-        mock_plc.plc_name = original_plc_name
-
-
 class TestMockAllenBradleyPLCStaticMethods:
     """Test suite for static methods."""
 

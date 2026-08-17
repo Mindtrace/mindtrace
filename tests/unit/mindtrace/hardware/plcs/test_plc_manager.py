@@ -16,7 +16,6 @@ from mindtrace.hardware.core.exceptions import (
     PLCCommunicationError,
     PLCConnectionError,
     PLCNotFoundError,
-    PLCTagError,
     PLCTagReadError,
     PLCTagWriteError,
 )
@@ -739,10 +738,9 @@ class TestPLCManagerStatus:
 
     @pytest.mark.asyncio
     async def test_get_plc_status_success(self, mock_plc_manager, mock_plc_instance):
-        """Test getting PLC status successfully."""
+        """Status is the manager's LOCAL knowledge: no wire probe is made."""
         mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
         mock_plc_instance.is_connected.return_value = True
-        mock_plc_instance.get_plc_info.return_value = {"name": "TestPLC", "connected": True, "product_name": "Mock PLC"}
 
         status = await mock_plc_manager.get_plc_status("TestPLC")
 
@@ -751,7 +749,7 @@ class TestPLCManagerStatus:
         assert status["connected"] is True
         assert status["initialized"] is False
         assert status["backend"] == "MockAllenBradleyPLC"
-        assert "product_name" in status
+        mock_plc_instance.get_plc_info.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_get_plc_status_not_registered(self, mock_plc_manager):
@@ -771,27 +769,28 @@ class TestPLCManagerStatus:
         assert "product_name" not in status
 
     @pytest.mark.asyncio
-    async def test_get_plc_status_get_plc_info_exception(self, mock_plc_manager, mock_plc_instance):
-        """Test getting PLC status when get_plc_info raises exception."""
+    async def test_get_plc_info_is_a_typed_passthrough(self, mock_plc_manager, mock_plc_instance):
+        """Info is the device's testimony: typed failures propagate unwrapped."""
         mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
-        mock_plc_instance.get_plc_info.side_effect = Exception("Info failed")
+        mock_plc_instance.get_plc_info.side_effect = PLCCommunicationError("PLC info read failed")
 
-        status = await mock_plc_manager.get_plc_status("TestPLC")
+        with pytest.raises(PLCCommunicationError, match="PLC info read failed"):
+            await mock_plc_manager.get_plc_info("TestPLC")
 
-        assert status["name"] == "TestPLC"
-        assert "info_error" in status
+        with pytest.raises(PLCNotFoundError):
+            await mock_plc_manager.get_plc_info("Ghost")
 
     @pytest.mark.asyncio
-    async def test_get_plc_status_exception(self, mock_plc_manager, mock_plc_instance):
-        """Test getting PLC status when exception is raised."""
+    async def test_get_all_plc_status_shields_the_fleet_view(self, mock_plc_manager, mock_plc_instance):
+        """One broken backend must not take down the aggregate report; its entry
+        carries only honest fields."""
         mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
         mock_plc_instance.is_connected.side_effect = Exception("Status failed")
 
-        status = await mock_plc_manager.get_plc_status("TestPLC")
+        results = await mock_plc_manager.get_all_plc_status()
 
-        assert "error" in status
-        assert status["connected"] is False
-        assert status["initialized"] is False
+        assert "Status failed" in results["TestPLC"]["error"]
+        assert "connected" not in results["TestPLC"]  # never fabricated
 
     @pytest.mark.asyncio
     async def test_get_all_plc_status_success(self, mock_plc_manager):
@@ -864,12 +863,13 @@ class TestPLCManagerTagListing:
             await mock_plc_manager.get_plc_tags("NonExistentPLC")
 
     @pytest.mark.asyncio
-    async def test_get_plc_tags_exception(self, mock_plc_manager, mock_plc_instance):
-        """Test getting tags when exception is raised."""
+    async def test_get_plc_tags_is_a_typed_passthrough(self, mock_plc_manager, mock_plc_instance):
+        """Backend exceptions propagate unwrapped: link trouble must never be
+        re-labelled as a tag error by the manager."""
         mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
-        mock_plc_instance.get_all_tags.side_effect = Exception("Get tags failed")
+        mock_plc_instance.get_all_tags.side_effect = PLCCommunicationError("Tag discovery failed")
 
-        with pytest.raises(PLCTagError):
+        with pytest.raises(PLCCommunicationError, match="Tag discovery failed"):
             await mock_plc_manager.get_plc_tags("TestPLC")
 
 

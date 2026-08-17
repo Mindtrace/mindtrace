@@ -363,6 +363,16 @@ class AllenBradleyPLC(BasePLC):
             return False
         return not getattr(driver, "connected", False)
 
+    async def _close_and_raise(self, driver: Any, channel: str, what: str, e: BaseException) -> None:
+        """A failed exchange: close the channel (the stream is suspect) and raise
+        typed — ``PLCTimeoutError`` when the cause chain says timeout."""
+        await self._close_driver(driver, channel)
+        if _chain_has_timeout(e):
+            raise PLCTimeoutError(
+                f"{what} timed out after {self._channel_timeout(channel)}s on Allen Bradley PLC at {self.ip_address}"
+            ) from e
+        raise PLCCommunicationError(f"{what} failed on Allen Bradley PLC at {self.ip_address}: {e}") from e
+
     async def _raise_if_session_dead(self, driver: Any, channel: str, results: Dict[str, TagResult]) -> None:
         """Session-dead statuses in a delivered reply close the channel and raise."""
         dead = session_dead_addresses(results)
@@ -430,21 +440,18 @@ class AllenBradleyPLC(BasePLC):
         except TimeoutError as e:
             # Backstop expiry: the worker thread is STILL inside the driver.
             self._read_driver = _ABANDONED_DRIVER
+            self.plc = _ABANDONED_DRIVER  # the alias must not keep the driver alive
             raise PLCTimeoutError(
                 f"Read gave no reply within the backstop on Allen Bradley PLC at {self.ip_address}"
             ) from e
         except asyncio.CancelledError:
             # Caller cancelled mid-exchange: same live-thread situation.
             self._read_driver = _ABANDONED_DRIVER
+            self.plc = _ABANDONED_DRIVER
             raise
         except PYCOMM3_EXCHANGE_ERRORS as e:
             # The thread finished (it raised), so closing is single-threaded and safe.
-            await self._close_driver(driver, "read")
-            if _chain_has_timeout(e):
-                raise PLCTimeoutError(
-                    f"Read timed out after {self.read_timeout}s on Allen Bradley PLC at {self.ip_address}"
-                ) from e
-            raise PLCCommunicationError(f"Read failed on Allen Bradley PLC at {self.ip_address}: {e}") from e
+            await self._close_and_raise(driver, "read", "Read", e)
         except PYCOMM3_ERRORS as e:
             # What's left is RequestError, hit before the exchange.
             raise PLCTagReadError(f"Driver rejected the read on Allen Bradley PLC at {self.ip_address}: {e}") from e
@@ -568,12 +575,7 @@ class AllenBradleyPLC(BasePLC):
             self._write_driver = _ABANDONED_DRIVER
             raise
         except PYCOMM3_EXCHANGE_ERRORS as e:
-            await self._close_driver(driver, "write")
-            if _chain_has_timeout(e):
-                raise PLCTimeoutError(
-                    f"Write timed out after {self.write_timeout}s on Allen Bradley PLC at {self.ip_address}"
-                ) from e
-            raise PLCCommunicationError(f"Write failed on Allen Bradley PLC at {self.ip_address}: {e}") from e
+            await self._close_and_raise(driver, "write", "Write", e)
         except PYCOMM3_ERRORS as e:
             # RequestError: raised before anything hit the wire; the session is untouched.
             raise PLCTagWriteError(f"Driver rejected the write on Allen Bradley PLC at {self.ip_address}: {e}") from e
@@ -835,10 +837,7 @@ class AllenBradleyPLC(BasePLC):
                                     if module_info:
                                         self._tags_cache.append(f"Module:{slot}")
                             except (CommError, OSError) as e:
-                                await self._close_driver(driver, "read")
-                                raise PLCCommunicationError(
-                                    f"Tag discovery failed on Allen Bradley PLC at {self.ip_address}: {e}"
-                                ) from e
+                                await self._close_and_raise(driver, "read", "Tag discovery", e)
                             except Exception:
                                 pass  # an empty slot answers with an error reply
 
@@ -901,19 +900,15 @@ class AllenBradleyPLC(BasePLC):
                         self.logger.debug("Successfully retrieved object list from device")
 
                 except (CommError, OSError) as e:
-                    await self._close_driver(driver, "read")
-                    raise PLCCommunicationError(
-                        f"Tag discovery failed on Allen Bradley PLC at {self.ip_address}: {e}"
-                    ) from e
+                    await self._close_and_raise(driver, "read", "Tag discovery", e)
                 except Exception as e:
                     self.logger.debug(f"Could not retrieve object list: {e}")
 
             self._cache_timestamp = current_time
             return self._tags_cache
 
-        except PLCTagError:
-            # Already a clear, intentional error (e.g. empty tag-list upload) —
-            # don't re-wrap it.
+        except (PLCTagError, PLCCommunicationError):
+            # Already a clear, intentional error — don't re-wrap it.
             raise
         except Exception as e:
             self.logger.error(f"Failed to get tags: {e}")
@@ -1029,11 +1024,7 @@ class AllenBradleyPLC(BasePLC):
                         pass
 
                 except PYCOMM3_EXCHANGE_ERRORS as e:
-                    # A failed exchange on the channel driver: the stream is suspect.
-                    await self._close_driver(driver, "read")
-                    raise PLCCommunicationError(
-                        f"PLC info read failed on Allen Bradley PLC at {self.ip_address}: {e}"
-                    ) from e
+                    await self._close_and_raise(driver, "read", "PLC info read", e)
                 except Exception as e:
                     self.logger.warning(f"Could not get detailed Logix PLC info: {e}")
 
@@ -1060,9 +1051,13 @@ class AllenBradleyPLC(BasePLC):
                             module_info = await asyncio.to_thread(driver.get_module_info, 0)
                             if module_info:
                                 info["module_info"] = module_info
+                        except PYCOMM3_EXCHANGE_ERRORS as e:
+                            await self._close_and_raise(driver, "read", "PLC info read", e)
                         except Exception:
                             pass
 
+                except PLCCommunicationError:
+                    raise
                 except Exception as e:
                     self.logger.warning(f"Could not get CIP device info: {e}")
 
@@ -1078,6 +1073,8 @@ class AllenBradleyPLC(BasePLC):
 
             return info
 
+        except PLCCommunicationError:
+            raise
         except Exception as e:
             self.logger.error(f"Failed to get PLC info: {e}")
             return {
@@ -1085,7 +1082,6 @@ class AllenBradleyPLC(BasePLC):
                 "ip_address": self.ip_address,
                 "driver_type": self.driver_type,
                 "plc_type": self.plc_type,
-                "connected": False,
                 "error": str(e),
             }
 

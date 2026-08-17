@@ -527,24 +527,24 @@ class PLCManagerService(Service):
             raise
 
     async def get_plc_info(self, request: PLCQueryRequest) -> PLCInfoResponse:
-        """Get detailed PLC information."""
+        """Get detailed PLC information (a live device probe; typed failures propagate)."""
         try:
             manager = self._get_plc_manager()
-            status_dict = await manager.get_plc_status(request.plc)
+            info_dict = await manager.get_plc_info(request.plc)
 
             info = PLCInfo(
                 name=request.plc,
-                backend=status_dict.get("backend", "Unknown"),
-                ip_address=status_dict.get("ip_address", ""),
-                plc_type=status_dict.get("plc_type"),
+                backend=manager.plcs[request.plc].__class__.__name__,
+                ip_address=info_dict.get("ip_address", ""),
+                plc_type=info_dict.get("plc_type"),
                 active=True,
-                connected=status_dict.get("connected", False),
-                driver_type=status_dict.get("driver_type"),
-                product_name=status_dict.get("product_name"),
-                product_type=status_dict.get("product_type"),
-                vendor=status_dict.get("vendor"),
-                revision=status_dict.get("revision"),
-                serial=status_dict.get("serial"),
+                connected=info_dict.get("connected", False),
+                driver_type=info_dict.get("driver_type"),
+                product_name=info_dict.get("product_name"),
+                product_type=info_dict.get("product_type"),
+                vendor=info_dict.get("vendor"),
+                revision=info_dict.get("revision"),
+                serial=info_dict.get("serial"),
             )
 
             return PLCInfoResponse(success=True, message=f"Retrieved information for PLC '{request.plc}'", data=info)
