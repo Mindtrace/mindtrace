@@ -16,7 +16,10 @@ from mindtrace.hardware.cameras.core.capture_groups import (
     get_semaphore_for_capture,
     validate_stage_set_configs,
 )
-from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult, normalize_settings
+from mindtrace.hardware.cameras.core.configuration import (
+    ConfigurationApplyResult,
+    applied_settings_from_result,
+)
 from mindtrace.hardware.core.exceptions import (
     CameraConfigurationError,
     CameraConnectionError,
@@ -813,8 +816,9 @@ class AsyncCameraManager(Mindtrace):
             raise CameraConfigurationError(f"Configuration file not found: {path}")
         raw_config = json.loads(path.read_text(encoding="utf-8"))
         result = await self._cameras[camera_name].configure(**raw_config)
-        if result.success and result.total > 0:
-            self._merge_runtime_configure(camera_name, normalize_settings(raw_config))
+        applied = applied_settings_from_result(raw_config, result)
+        if applied:
+            self._merge_runtime_configure(camera_name, applied)
         return result
 
     async def persist_camera_config(self, camera_name: str, config_path: Optional[str] = None) -> str:
@@ -884,8 +888,9 @@ class AsyncCameraManager(Mindtrace):
         if camera_name not in self._cameras:
             raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
         result = await self._cameras[camera_name].configure(**settings)
-        if result.success:
-            self._merge_runtime_configure(camera_name, settings)
+        applied = applied_settings_from_result(settings, result)
+        if applied:
+            self._merge_runtime_configure(camera_name, applied)
         return result
 
     def _record_capture_success(self, camera_name: str) -> None:

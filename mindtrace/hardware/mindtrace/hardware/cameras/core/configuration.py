@@ -63,6 +63,26 @@ class ConfigurationApplyResult:
         return self.applied == self.total
 
 
+def applied_settings_from_result(
+    raw_settings: Dict[str, Any],
+    result: ConfigurationApplyResult,
+) -> Dict[str, Any]:
+    """Return normalized settings that were successfully applied in a configure call.
+
+    Args:
+        raw_settings: Original configure payload (may include legacy aliases).
+        result: Apply result from :meth:`AsyncCamera.configure`.
+
+    Returns:
+        Canonical key/value pairs to merge into runtime configure replay state.
+    """
+    normalized = normalize_settings(raw_settings)
+    if not normalized or result.applied <= 0:
+        return {}
+    failed = set(result.failures)
+    return {key: value for key, value in normalized.items() if key not in failed}
+
+
 def configuration_apply_result_to_dict(result: ConfigurationApplyResult) -> Dict[str, Any]:
     """Serialize a configure apply result for service and client responses."""
     return {

@@ -393,11 +393,59 @@ async def test_reinit_replays_runtime_configure(monkeypatch, tmp_path):
         reopened = manager._cameras[name]
         assert await reopened.get_exposure() == 33333
         assert await reopened.get_gain() == 4.0
-        assert manager._runtime_configure[name] == {"exposure": 33333, "gain": 4.0}
+        assert manager._runtime_configure[name] == {"exposure_time": 33333, "gain": 4.0}
 
         with open(config_path) as f:
             saved = json.load(f)
         assert saved["exposure_time"] == 15000
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_reinit_replays_partial_runtime_configure_after_failed_keys(monkeypatch, tmp_path):
+    """Successfully applied keys must be merged and replayed even when other keys in the same configure fail."""
+    from mindtrace.hardware.core.exceptions import CameraConfigurationError
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    manager._max_consecutive_failures = 3
+    manager._reinitialization_cooldown = 0
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    async def failing_capture(self, save_path=None, output_format="pil"):
+        raise CameraConnectionError("simulated capture failure")
+
+    monkeypatch.setattr(
+        "mindtrace.hardware.cameras.core.async_camera.AsyncCamera.capture",
+        failing_capture,
+    )
+
+    try:
+        camera = await manager.open(name, test_connection=False)
+        original_set_gain = camera.backend.set_gain
+
+        async def failing_set_gain(gain):
+            raise CameraConfigurationError("gain out of range")
+
+        camera.backend.set_gain = failing_set_gain
+
+        result = await manager.configure_camera(name, {"exposure": 28000, "gain": 99.0})
+        assert result.success is False
+        assert result.applied == 1
+        assert result.total == 2
+        assert await camera.get_exposure() == 28000
+        assert manager._runtime_configure[name] == {"exposure_time": 28000}
+        assert "gain" not in manager._runtime_configure[name]
+
+        camera.backend.set_gain = original_set_gain
+
+        for _ in range(3):
+            await manager.batch_capture([name])
+
+        reopened = manager._cameras[name]
+        assert await reopened.get_exposure() == 28000
+        assert await reopened.get_gain() == 1.0
     finally:
         await manager.close(None)
 

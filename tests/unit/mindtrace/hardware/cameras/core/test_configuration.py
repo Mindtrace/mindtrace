@@ -2,6 +2,7 @@
 
 from mindtrace.hardware.cameras.core.configuration import (
     ConfigurationApplyResult,
+    applied_settings_from_result,
     find_skipped_keys,
     normalize_settings,
     settings_to_camera_configuration_dict,
@@ -59,6 +60,27 @@ def test_configuration_apply_result_success_property():
     assert ConfigurationApplyResult(applied=2, total=5).success is False
     assert ConfigurationApplyResult(applied=0, total=0, skipped=("exposre_time",)).success is False
     assert ConfigurationApplyResult(applied=1, total=1, skipped=("camera_type",)).success is True
+
+
+def test_applied_settings_from_result_returns_only_successful_keys():
+    raw = {"exposure": 15000, "gain": 4.0, "camera_type": "basler"}
+    result = ConfigurationApplyResult(
+        applied=1,
+        total=2,
+        failures={"gain": "out of range"},
+    )
+
+    applied = applied_settings_from_result(raw, result)
+
+    assert applied == {"exposure_time": 15000}
+    assert "gain" not in applied
+
+
+def test_applied_settings_from_result_empty_when_nothing_applied():
+    raw = {"exposure_time": 15000, "gain": 4.0}
+    result = ConfigurationApplyResult(applied=0, total=2, failures={"exposure_time": "bad", "gain": "bad"})
+
+    assert applied_settings_from_result(raw, result) == {}
 
 
 def test_find_skipped_keys_reports_unknown_top_level_keys():
