@@ -515,6 +515,54 @@ async def test_reinit_replays_partial_runtime_configure_after_failed_keys(monkey
 
 
 @pytest.mark.asyncio
+async def test_reinit_replays_partial_genicam_nodes_after_failed_nodes(monkeypatch, tmp_path):
+    """Nodes that applied before a genicam_nodes failure must still replay after reinit."""
+    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+    from mindtrace.hardware.core.exceptions import CameraConfigurationError
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    manager._max_consecutive_failures = 3
+    manager._reinitialization_cooldown = 0
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    replayed: dict[str, object] = {}
+
+    async def apply_genicam_nodes(self, node_config):
+        if node_config.get("ReverseX") is True:
+            applied = {key: value for key, value in node_config.items() if key != "ReverseX"}
+            raise CameraConfigurationError(
+                "Failed to apply GenICam nodes: ReverseX: not writable",
+                details={"applied": applied},
+            )
+        replayed.clear()
+        replayed.update(node_config)
+
+    monkeypatch.setattr(MockBaslerCameraBackend, "apply_genicam_nodes", apply_genicam_nodes, raising=False)
+
+    async def failing_capture(self, save_path=None, output_format="pil"):
+        raise CameraConnectionError("simulated capture failure")
+
+    monkeypatch.setattr(
+        "mindtrace.hardware.cameras.core.async_camera.AsyncCamera.capture",
+        failing_capture,
+    )
+
+    try:
+        await manager.open(name, test_connection=False)
+        result = await manager.configure_camera(name, {"genicam_nodes": {"PixelFormat": "Mono8", "ReverseX": True}})
+        assert result.success is False
+        assert result.partial == {"genicam_nodes": {"PixelFormat": "Mono8"}}
+        assert manager._runtime_configure[name] == {"genicam_nodes": {"PixelFormat": "Mono8"}}
+
+        for _ in range(3):
+            await manager.batch_capture([name])
+
+        assert replayed == {"PixelFormat": "Mono8"}
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_apply_saved_config_updates_runtime_configure_for_reinit(monkeypatch, tmp_path):
     """apply_saved_config must refresh runtime configure so reinit does not replay stale settings."""
     import json

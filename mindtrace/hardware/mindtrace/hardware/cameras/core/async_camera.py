@@ -11,6 +11,7 @@ from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
 from mindtrace.hardware.cameras.core.configuration import (
     CONFIGURABLE_KEYS,
     ConfigurationApplyResult,
+    applied_subset_from_exception,
     find_skipped_keys,
     normalize_settings,
 )
@@ -331,6 +332,7 @@ class AsyncCamera(Mindtrace):
         applied = 0
         total = 0
         failures: Dict[str, str] = {}
+        partial: Dict[str, Any] = {}
 
         async with self._lock:
             self.logger.debug(f"Configuring camera '{self._full_name}' with settings: {normalized}")
@@ -348,10 +350,15 @@ class AsyncCamera(Mindtrace):
                     applied += 1
                 except Exception as exc:
                     failures[key] = str(exc)
+                    applied_subset = applied_subset_from_exception(exc)
+                    if applied_subset:
+                        partial[key] = applied_subset
                     self.logger.warning(f"Could not set '{key}' for camera '{self._full_name}': {exc}")
 
         self.logger.debug(f"Configuration completed for camera '{self._full_name}': {applied}/{total} settings applied")
-        return ConfigurationApplyResult(applied=applied, total=total, failures=failures, skipped=skipped)
+        return ConfigurationApplyResult(
+            applied=applied, total=total, failures=failures, skipped=skipped, partial=partial
+        )
 
     async def _apply_config_key(self, key: str, value: Any) -> None:
         """Apply a single normalized configuration key."""

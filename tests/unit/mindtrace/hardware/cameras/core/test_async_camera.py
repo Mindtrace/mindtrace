@@ -935,5 +935,32 @@ async def test_configure_reports_genicam_node_failures():
         assert result.applied == 0
         assert result.total == 1
         assert "genicam_nodes" in result.failures
+        assert result.partial == {}
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_configure_records_partial_genicam_nodes_that_applied():
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        async def mixed_apply_genicam_nodes(_node_config):
+            raise CameraConfigurationError(
+                "Failed to apply GenICam nodes for camera 'test': ReverseX: not writable",
+                details={"applied": {"PixelFormat": "Mono8"}},
+            )
+
+        cam.backend.apply_genicam_nodes = mixed_apply_genicam_nodes  # type: ignore[attr-defined]
+
+        result = await cam.configure(genicam_nodes={"PixelFormat": "Mono8", "ReverseX": True})
+
+        assert result.success is False
+        assert result.applied == 0
+        assert result.total == 1
+        assert "genicam_nodes" in result.failures
+        assert result.partial == {"genicam_nodes": {"PixelFormat": "Mono8"}}
     finally:
         await manager.close(None)

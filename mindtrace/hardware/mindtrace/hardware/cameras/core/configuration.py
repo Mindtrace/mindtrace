@@ -39,6 +39,7 @@ class ConfigurationApplyResult:
     total: int
     failures: Dict[str, str] = field(default_factory=dict)
     skipped: tuple[str, ...] = ()
+    partial: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def success(self) -> bool:
@@ -71,6 +72,9 @@ def applied_settings_from_result(
 ) -> Dict[str, Any]:
     """Return normalized settings that were successfully applied in a configure call.
 
+    Nested keys that partially applied (for example ``genicam_nodes``) are taken
+    from ``result.partial`` so auto-reinit can replay only the values that landed.
+
     Args:
         raw_settings: Original configure payload (may include legacy aliases).
         result: Apply result from :meth:`AsyncCamera.configure`.
@@ -79,10 +83,27 @@ def applied_settings_from_result(
         Canonical key/value pairs to merge into runtime configure replay state.
     """
     normalized = normalize_settings(raw_settings)
-    if not normalized or result.applied <= 0:
-        return {}
     failed = set(result.failures)
-    return {key: value for key, value in normalized.items() if key not in failed}
+    applied: Dict[str, Any] = {}
+    if normalized and result.applied > 0:
+        applied = {key: value for key, value in normalized.items() if key not in failed}
+    for key, value in result.partial.items():
+        if value:
+            applied[key] = value
+    return applied
+
+
+def applied_subset_from_exception(exc: BaseException) -> Dict[str, Any]:
+    """Return nested values that applied before ``exc`` was raised, if recorded.
+
+    :class:`~mindtrace.hardware.core.exceptions.CameraConfigurationError` stores
+    that subset under ``details["applied"]``.
+    """
+    details = getattr(exc, "details", None)
+    if not isinstance(details, dict):
+        return {}
+    applied = details.get("applied")
+    return applied if isinstance(applied, dict) else {}
 
 
 def configuration_apply_result_to_dict(result: ConfigurationApplyResult) -> Dict[str, Any]:
@@ -92,6 +113,7 @@ def configuration_apply_result_to_dict(result: ConfigurationApplyResult) -> Dict
         "total": result.total,
         "failures": dict(result.failures),
         "skipped": list(result.skipped),
+        "partial": dict(result.partial),
         "success": result.success,
     }
 

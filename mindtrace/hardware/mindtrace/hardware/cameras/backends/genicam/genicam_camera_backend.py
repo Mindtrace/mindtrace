@@ -1540,14 +1540,16 @@ class GenICamCameraBackend(CameraBackend):
 
         Raises:
             CameraConfigurationError: If any writable node fails to apply, or no
-                configured nodes match writable nodes on the camera.
+                configured nodes match writable nodes on the camera. When some
+                nodes applied before a failure, the successful subset is stored
+                on the exception as ``details["applied"]``.
         """
         try:
             await self._ensure_connected()
 
-            def _apply_nodes() -> tuple[int, Dict[str, str]]:
+            def _apply_nodes() -> tuple[Dict[str, Any], Dict[str, str]]:
                 node_map = self.image_acquirer.remote_device.node_map
-                applied_count = 0
+                applied_nodes: Dict[str, Any] = {}
                 failures: Dict[str, str] = {}
 
                 for node_name, value in node_config.items():
@@ -1556,28 +1558,29 @@ class GenICamCameraBackend(CameraBackend):
                         continue
                     try:
                         node.value = value
-                        applied_count += 1
+                        applied_nodes[node_name] = value
                         self.logger.debug(f"Applied GenICam node '{node_name}' = {value}")
                     except Exception as e:
                         failures[node_name] = str(e)
 
-                return applied_count, failures
+                return applied_nodes, failures
 
-            applied_count, failures = await self._run_blocking(_apply_nodes, timeout=self._op_timeout_s)
+            applied_nodes, failures = await self._run_blocking(_apply_nodes, timeout=self._op_timeout_s)
 
             if failures:
                 details = "; ".join(f"{name}: {error}" for name, error in failures.items())
                 raise CameraConfigurationError(
-                    f"Failed to apply GenICam nodes for camera '{self.camera_name}': {details}"
+                    f"Failed to apply GenICam nodes for camera '{self.camera_name}': {details}",
+                    details={"applied": applied_nodes},
                 )
 
-            if node_config and applied_count == 0:
+            if node_config and not applied_nodes:
                 raise CameraConfigurationError(
                     f"No GenICam nodes from config matched writable nodes on camera '{self.camera_name}'"
                 )
 
             self.logger.debug(
-                f"Applied {applied_count}/{len(node_config)} GenICam nodes for camera '{self.camera_name}'"
+                f"Applied {len(applied_nodes)}/{len(node_config)} GenICam nodes for camera '{self.camera_name}'"
             )
 
         except CameraConfigurationError:

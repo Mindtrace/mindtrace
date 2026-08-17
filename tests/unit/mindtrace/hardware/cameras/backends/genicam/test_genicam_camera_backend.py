@@ -1033,6 +1033,19 @@ class TestAdditionalGenICamOperations:
             await backend.apply_genicam_nodes({"PixelFormat": "NotARealFormat"})
 
     @pytest.mark.asyncio
+    async def test_apply_genicam_nodes_records_applied_subset_on_partial_failure(self, genicam_backend_uninitialized):
+        reverse_x = MockGenICamNode(False, writable=False)
+        pixel_format = MockEnumNode("RGB8", ["RGB8", "Mono8"])
+        node_map = MockNodeMap(PixelFormat=pixel_format, ReverseX=reverse_x)
+        backend = attach_mock_acquirer(genicam_backend_uninitialized, node_map)
+
+        with pytest.raises(CameraConfigurationError, match="Failed to apply GenICam nodes") as exc_info:
+            await backend.apply_genicam_nodes({"PixelFormat": "Mono8", "ReverseX": True})
+
+        assert pixel_format.value == "Mono8"
+        assert exc_info.value.details["applied"] == {"PixelFormat": "Mono8"}
+
+    @pytest.mark.asyncio
     async def test_apply_genicam_nodes_raises_when_no_nodes_match(self, genicam_backend_uninitialized):
         backend = attach_mock_acquirer(genicam_backend_uninitialized, MockNodeMap())
 

@@ -3,6 +3,7 @@
 from mindtrace.hardware.cameras.core.configuration import (
     ConfigurationApplyResult,
     applied_settings_from_result,
+    applied_subset_from_exception,
     configuration_error_result,
     find_skipped_keys,
     normalize_settings,
@@ -100,6 +101,27 @@ def test_applied_settings_from_result_empty_when_nothing_applied():
     result = ConfigurationApplyResult(applied=0, total=2, failures={"exposure_time": "bad", "gain": "bad"})
 
     assert applied_settings_from_result(raw, result) == {}
+
+
+def test_applied_settings_from_result_keeps_partial_nested_genicam_nodes():
+    raw = {"genicam_nodes": {"PixelFormat": "Mono8", "ReverseX": True}}
+    result = ConfigurationApplyResult(
+        applied=0,
+        total=1,
+        failures={"genicam_nodes": "ReverseX: not writable"},
+        partial={"genicam_nodes": {"PixelFormat": "Mono8"}},
+    )
+
+    assert applied_settings_from_result(raw, result) == {"genicam_nodes": {"PixelFormat": "Mono8"}}
+
+
+def test_applied_subset_from_exception_reads_details_applied():
+    from mindtrace.hardware.core.exceptions import CameraConfigurationError
+
+    exc = CameraConfigurationError("partial", details={"applied": {"PixelFormat": "Mono8"}})
+    assert applied_subset_from_exception(exc) == {"PixelFormat": "Mono8"}
+    assert applied_subset_from_exception(CameraConfigurationError("none")) == {}
+    assert applied_subset_from_exception(RuntimeError("plain")) == {}
 
 
 def test_find_skipped_keys_reports_unknown_top_level_keys():
