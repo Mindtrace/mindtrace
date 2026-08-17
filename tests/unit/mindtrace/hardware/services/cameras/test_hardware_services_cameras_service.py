@@ -627,6 +627,41 @@ class TestCameraManagerServiceBusinessLogic:
         assert response.data.brightness == 0.5
         assert response.data.contrast is None
 
+        serialized = response.model_dump(mode="json")["data"]
+        assert serialized == {
+            "exposure_time": 1500,
+            "roi": [1, 2, 640, 480],
+            "trigger_mode": "continuous",
+            "white_balance": "auto",
+            "bandwidth_limit": 800.0,
+            "inter_packet_delay": 100,
+            "genicam_nodes": {"PixelFormat": "Mono8"},
+            "focus_config": {"mode": "auto"},
+            "brightness": 0.5,
+        }
+        assert None not in serialized.values()
+
+    @pytest.mark.asyncio
+    async def test_get_camera_configuration_serializes_false_and_zero_values(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+        mock_manager.active_cameras = ["MockBasler:Camera1"]
+        mock_camera = AsyncMock()
+        mock_camera.get_configuration.return_value = {
+            "gain": 0.0,
+            "image_enhancement": False,
+            "bandwidth_limit": 0.0,
+        }
+        mock_manager.open = AsyncMock(return_value=mock_camera)
+
+        response = await service.get_camera_configuration(CameraQueryRequest(camera="MockBasler:Camera1"))
+
+        serialized = response.model_dump(mode="json")["data"]
+        assert serialized == {
+            "gain": 0.0,
+            "image_enhancement": False,
+            "bandwidth_limit": 0.0,
+        }
+
     @pytest.mark.asyncio
     async def test_import_and_export_camera_config_delegate_to_manager(self, service_with_mock_manager):
         from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult
@@ -634,9 +669,7 @@ class TestCameraManagerServiceBusinessLogic:
         service, mock_manager = service_with_mock_manager
         mock_manager.active_cameras = ["MockBasler:Camera1"]
         mock_manager.open = AsyncMock()
-        mock_manager.apply_saved_config = AsyncMock(
-            return_value=ConfigurationApplyResult(applied=1, total=1)
-        )
+        mock_manager.apply_saved_config = AsyncMock(return_value=ConfigurationApplyResult(applied=1, total=1))
         mock_manager.persist_camera_config = AsyncMock(return_value="/tmp/camera.json")
 
         import_response = await service.import_camera_config(
@@ -665,15 +698,15 @@ class TestCameraManagerServiceBusinessLogic:
         mock_manager.active_cameras = ["MockBasler:Camera1"]
         mock_manager.get_camera_config_path = Mock(return_value="/default/MockBasler_Camera1.json")
         mock_manager.open = AsyncMock()
-        mock_manager.apply_saved_config = AsyncMock(
-            return_value=ConfigurationApplyResult(applied=1, total=1)
-        )
+        mock_manager.apply_saved_config = AsyncMock(return_value=ConfigurationApplyResult(applied=1, total=1))
         mock_manager.persist_camera_config = AsyncMock(return_value="/default/MockBasler_Camera1.json")
 
         import_response = await service.import_camera_config(ConfigFileImportRequest(camera="MockBasler:Camera1"))
         export_response = await service.export_camera_config(ConfigFileExportRequest(camera="MockBasler:Camera1"))
 
-        mock_manager.apply_saved_config.assert_awaited_once_with("MockBasler:Camera1", "/default/MockBasler_Camera1.json")
+        mock_manager.apply_saved_config.assert_awaited_once_with(
+            "MockBasler:Camera1", "/default/MockBasler_Camera1.json"
+        )
         mock_manager.persist_camera_config.assert_awaited_once_with(
             "MockBasler:Camera1", "/default/MockBasler_Camera1.json"
         )
@@ -689,9 +722,7 @@ class TestCameraManagerServiceBusinessLogic:
         service, mock_manager = service_with_mock_manager
         mock_manager.active_cameras = ["MockBasler:Camera1"]
         mock_manager.open = AsyncMock()
-        mock_manager.apply_saved_config = AsyncMock(
-            return_value=ConfigurationApplyResult(applied=3, total=7)
-        )
+        mock_manager.apply_saved_config = AsyncMock(return_value=ConfigurationApplyResult(applied=3, total=7))
 
         response = await service.import_camera_config(
             ConfigFileImportRequest(camera="MockBasler:Camera1", config_path="/tmp/camera.json")
@@ -792,6 +823,7 @@ class TestCameraManagerServiceBusinessLogic:
         assert response.data.focus_config == {"accuracy": "Normal"}
         assert response.data.brightness == 0.25
         assert "Retrieved saved configuration" in response.message
+        assert "contrast" not in response.model_dump(mode="json")["data"]
 
     @pytest.mark.asyncio
     async def test_get_saved_camera_configuration_when_file_missing(self, service_with_mock_manager):
@@ -803,6 +835,7 @@ class TestCameraManagerServiceBusinessLogic:
         assert response.success is True
         assert response.data is None
         assert "No saved configuration found" in response.message
+        assert response.model_dump()["data"] is None
 
     @pytest.mark.asyncio
     async def test_get_saved_camera_configuration_works_when_camera_not_open(self, service_with_mock_manager):

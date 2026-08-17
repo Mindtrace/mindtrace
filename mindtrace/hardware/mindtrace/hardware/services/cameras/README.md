@@ -305,9 +305,10 @@ the `/cameras/config/get` and `/cameras/config/saved/get` responses
 (`exposure_time`, `gain`, `roi`, `trigger_mode`, `pixel_format`, `white_balance`,
 `image_enhancement`, `optical_power`, `packet_size`, `inter_packet_delay`,
 `bandwidth_limit`, plus backend-specific keys such as `focus_config`,
-`genicam_nodes`, or OpenCV properties). Legacy export files with metadata keys
-(`camera_type`, `timestamp`, etc.) still import successfully; unknown keys are
-ignored.
+`genicam_nodes`, or OpenCV properties). GET responses omit unset keys rather
+than serializing them as ``null``, so the ``data`` object can be posted back to
+configure. Legacy export files with metadata keys (`camera_type`, `timestamp`,
+etc.) still import successfully; unknown keys are ignored.
 
 Saved profiles restore **imaging settings** (exposure, gain, trigger, ROI, etc.)
 and **per-camera GigE transport settings** (`packet_size`, `inter_packet_delay`,

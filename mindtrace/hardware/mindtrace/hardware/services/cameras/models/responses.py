@@ -8,7 +8,7 @@ response formatting across all camera management endpoints.
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 from mindtrace.core import utcnow
 from mindtrace.hardware.core.types import ServiceStatus
@@ -127,7 +127,13 @@ class CameraCapabilities(BaseModel):
 
 
 class CameraConfiguration(BaseModel):
-    """Camera configuration model matching ``CONFIGURABLE_KEYS``."""
+    """Camera configuration model matching ``CONFIGURABLE_KEYS``.
+
+    Unset fields stay ``None`` on the in-memory model so callers can inspect
+    what the camera actually reported. Serialization omits those keys
+    (``exclude_none=True``) so GET JSON matches a configure payload and is
+    safe to round-trip.
+    """
 
     exposure_time: Optional[float] = None
     gain: Optional[float] = None
@@ -149,6 +155,12 @@ class CameraConfiguration(BaseModel):
     auto_exposure: Optional[float] = None
     white_balance_blue_u: Optional[float] = None
     white_balance_red_v: Optional[float] = None
+
+    @model_serializer(mode="wrap")
+    def _serialize_exclude_none(self, serializer):
+        """Omit unset configure keys from JSON and ``model_dump()`` output."""
+        serialized = serializer(self)
+        return {key: value for key, value in serialized.items() if value is not None}
 
 
 # Liquid Lens

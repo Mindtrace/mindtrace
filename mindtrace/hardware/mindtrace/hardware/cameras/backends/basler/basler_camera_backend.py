@@ -1398,7 +1398,11 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
-            if hasattr(self.camera, "DeviceLinkThroughputLimitMode"):
+            if not hasattr(self.camera, "DeviceLinkThroughputLimitMode"):
+                self.logger.error(f"Bandwidth limiting not supported for camera '{self.camera_name}'")
+                raise NotImplementedError(f"Bandwidth limiting not supported for camera '{self.camera_name}'")
+
+            async with self._grabbing_suspended():
                 if limit_mbps is not None and hasattr(self.camera, "DeviceLinkThroughputLimit"):
                     # Enable bandwidth limiting and set limit
                     await self._run_blocking(
@@ -1416,9 +1420,6 @@ class BaslerCameraBackend(CameraBackend):
                         self.camera.DeviceLinkThroughputLimitMode.SetValue, "Off", timeout=self._op_timeout_s
                     )
                     self.logger.debug(f"Disabled bandwidth limit for camera '{self.camera_name}'")
-            else:
-                self.logger.error(f"Bandwidth limiting not supported for camera '{self.camera_name}'")
-                raise NotImplementedError(f"Bandwidth limiting not supported for camera '{self.camera_name}'")
 
         except Exception as e:
             self.logger.error(f"Error setting bandwidth limit for camera '{self.camera_name}': {str(e)}")
@@ -1461,12 +1462,13 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
-            if hasattr(self.camera, "GevSCPSPacketSize"):
-                await self._run_blocking(self.camera.GevSCPSPacketSize.SetValue, size, timeout=self._op_timeout_s)
-                self.logger.debug(f"Set packet size to {size} bytes for camera '{self.camera_name}'")
-            else:
+            if not hasattr(self.camera, "GevSCPSPacketSize"):
                 self.logger.error(f"Packet size control not supported for camera '{self.camera_name}'")
                 raise NotImplementedError(f"Packet size control not supported for camera '{self.camera_name}'")
+
+            async with self._grabbing_suspended():
+                await self._run_blocking(self.camera.GevSCPSPacketSize.SetValue, size, timeout=self._op_timeout_s)
+            self.logger.debug(f"Set packet size to {size} bytes for camera '{self.camera_name}'")
 
         except Exception as e:
             self.logger.error(f"Error setting packet size for camera '{self.camera_name}': {str(e)}")
@@ -1498,12 +1500,13 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
-            if hasattr(self.camera, "GevSCPD"):
-                await self._run_blocking(self.camera.GevSCPD.SetValue, delay_ticks, timeout=self._op_timeout_s)
-                self.logger.debug(f"Set inter-packet delay to {delay_ticks} ticks for camera '{self.camera_name}'")
-            else:
+            if not hasattr(self.camera, "GevSCPD"):
                 self.logger.error(f"Inter-packet delay control not supported for camera '{self.camera_name}'")
                 raise NotImplementedError(f"Inter-packet delay control not supported for camera '{self.camera_name}'")
+
+            async with self._grabbing_suspended():
+                await self._run_blocking(self.camera.GevSCPD.SetValue, delay_ticks, timeout=self._op_timeout_s)
+            self.logger.debug(f"Set inter-packet delay to {delay_ticks} ticks for camera '{self.camera_name}'")
 
         except Exception as e:
             self.logger.error(f"Error setting inter-packet delay for camera '{self.camera_name}': {str(e)}")

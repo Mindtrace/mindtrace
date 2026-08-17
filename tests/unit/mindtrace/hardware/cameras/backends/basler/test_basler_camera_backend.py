@@ -127,6 +127,22 @@ class MockPylonCamera:
         )
         self._offset_x_param = MockParameter(0, min_val=0, max_val=1920, camera_attr="offset_x", camera_obj=self)
         self._offset_y_param = MockParameter(0, min_val=0, max_val=1080, camera_attr="offset_y", camera_obj=self)
+        self.packet_size = 1500
+        self.inter_packet_delay = 0
+        self.bandwidth_limit_mode = "Off"
+        self.bandwidth_limit_bps = 0
+        self._packet_size_param = MockParameter(
+            1500, min_val=220, max_val=16000, camera_attr="packet_size", camera_obj=self
+        )
+        self._inter_packet_delay_param = MockParameter(
+            0, min_val=0, max_val=65535, camera_attr="inter_packet_delay", camera_obj=self
+        )
+        self._bandwidth_limit_mode_param = MockEnumParameter(
+            "Off", ["Off", "On"], camera_attr="bandwidth_limit_mode", camera_obj=self
+        )
+        self._bandwidth_limit_param = MockParameter(
+            0, min_val=0, max_val=125000000, camera_attr="bandwidth_limit_bps", camera_obj=self
+        )
 
     def Attach(self, device_info):
         self.device_info = device_info
@@ -233,6 +249,22 @@ class MockPylonCamera:
     @property
     def OffsetY(self):
         return self._offset_y_param
+
+    @property
+    def GevSCPSPacketSize(self):
+        return self._packet_size_param
+
+    @property
+    def GevSCPD(self):
+        return self._inter_packet_delay_param
+
+    @property
+    def DeviceLinkThroughputLimitMode(self):
+        return self._bandwidth_limit_mode_param
+
+    @property
+    def DeviceLinkThroughputLimit(self):
+        return self._bandwidth_limit_param
 
 
 class MockParameter:
@@ -2172,6 +2204,92 @@ class TestBaslerCameraBackendGrabbingSuspendedContextManager:
             pass
 
         # No grabbing operations should have been called when not currently grabbing
+
+
+class TestBaslerCameraBackendGigESettings:
+    """GigE transport setters must suspend grabbing, matching profile import."""
+
+    @pytest.mark.asyncio
+    async def test_set_packet_size_suspends_grabbing(self, basler_camera):
+        await basler_camera.initialize()
+        await basler_camera._ensure_grabbing()
+        assert basler_camera.camera.IsGrabbing() is True
+
+        grabbing_during_set = {}
+        original_set = basler_camera.camera.GevSCPSPacketSize.SetValue
+
+        def set_and_record(value):
+            grabbing_during_set["grabbing"] = basler_camera.camera.IsGrabbing()
+            return original_set(value)
+
+        basler_camera.camera.GevSCPSPacketSize.SetValue = set_and_record
+
+        await basler_camera.set_packet_size(8164)
+
+        assert grabbing_during_set["grabbing"] is False
+        assert basler_camera.camera.IsGrabbing() is True
+        assert basler_camera.camera.packet_size == 8164
+
+    @pytest.mark.asyncio
+    async def test_set_inter_packet_delay_suspends_grabbing(self, basler_camera):
+        await basler_camera.initialize()
+        await basler_camera._ensure_grabbing()
+
+        grabbing_during_set = {}
+        original_set = basler_camera.camera.GevSCPD.SetValue
+
+        def set_and_record(value):
+            grabbing_during_set["grabbing"] = basler_camera.camera.IsGrabbing()
+            return original_set(value)
+
+        basler_camera.camera.GevSCPD.SetValue = set_and_record
+
+        await basler_camera.set_inter_packet_delay(1000)
+
+        assert grabbing_during_set["grabbing"] is False
+        assert basler_camera.camera.IsGrabbing() is True
+        assert basler_camera.camera.inter_packet_delay == 1000
+
+    @pytest.mark.asyncio
+    async def test_set_bandwidth_limit_suspends_grabbing(self, basler_camera):
+        await basler_camera.initialize()
+        await basler_camera._ensure_grabbing()
+
+        grabbing_during_set = {}
+        original_set = basler_camera.camera.DeviceLinkThroughputLimit.SetValue
+
+        def set_and_record(value):
+            grabbing_during_set["grabbing"] = basler_camera.camera.IsGrabbing()
+            return original_set(value)
+
+        basler_camera.camera.DeviceLinkThroughputLimit.SetValue = set_and_record
+
+        await basler_camera.set_bandwidth_limit(100.0)
+
+        assert grabbing_during_set["grabbing"] is False
+        assert basler_camera.camera.IsGrabbing() is True
+        assert basler_camera.camera.bandwidth_limit_mode == "On"
+        assert basler_camera.camera.bandwidth_limit_bps == int(100.0 * 1024 * 1024 / 8)
+
+    @pytest.mark.asyncio
+    async def test_set_bandwidth_limit_none_disables_while_suspended(self, basler_camera):
+        await basler_camera.initialize()
+        await basler_camera._ensure_grabbing()
+
+        grabbing_during_set = {}
+        original_set = basler_camera.camera.DeviceLinkThroughputLimitMode.SetValue
+
+        def set_and_record(value):
+            grabbing_during_set["grabbing"] = basler_camera.camera.IsGrabbing()
+            return original_set(value)
+
+        basler_camera.camera.DeviceLinkThroughputLimitMode.SetValue = set_and_record
+
+        await basler_camera.set_bandwidth_limit(None)
+
+        assert grabbing_during_set["grabbing"] is False
+        assert basler_camera.camera.IsGrabbing() is True
+        assert basler_camera.camera.bandwidth_limit_mode == "Off"
 
 
 class TestBaslerCameraBackendConfigureCameraPypylonCheck:
