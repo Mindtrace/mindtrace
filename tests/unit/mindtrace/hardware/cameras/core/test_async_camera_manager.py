@@ -700,11 +700,11 @@ async def test_camera_proxy_operations(camera_manager):
         await camera_proxy.set_exposure(1000)
         image = await camera_proxy.capture()
         assert image is not None
-        success = await camera_proxy.configure(exposure=20000, gain=2.0, trigger_mode="continuous")
-        assert success is True
+        result = await camera_proxy.configure(exposure=20000, gain=2.0, trigger_mode="continuous")
+        assert result.success is True
         exposure = await camera_proxy.get_exposure()
         assert exposure == 20000
-        gain = camera_proxy.get_gain()
+        gain = await camera_proxy.get_gain()
         assert gain == 2.0
         tm = await camera_proxy.get_trigger_mode()
         assert isinstance(tm, str)
