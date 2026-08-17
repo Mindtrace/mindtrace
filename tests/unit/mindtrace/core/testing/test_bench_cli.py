@@ -18,8 +18,7 @@ def test_format_bench_summary_includes_comparable_throughput_and_duration() -> N
     }
 
     assert _format_bench_summary(summary) == (
-        "example.stress.throughput: passed ops=250 failures=0 "
-        "rate=25.00 ops/s duration=10.00s"
+        "example.stress.throughput: passed ops=250 failures=0 rate=25.00 ops/s duration=10.00s"
     )
 
 
@@ -51,6 +50,4 @@ def test_format_progress_event_includes_failure_detail() -> None:
         detail="connection refused",
     )
 
-    assert _format_progress_event(event) == (
-        "[suite_failed] jobs.stress.consume_ceiling: connection refused"
-    )
+    assert _format_progress_event(event) == ("[suite_failed] jobs.stress.consume_ceiling: connection refused")

@@ -183,9 +183,7 @@ class JobsConsumeCeilingSuite(BenchTestSuite):
             elapsed = time.perf_counter() - measurement_start
 
             if thread.is_alive():
-                validation_errors.append(
-                    f"Consumer thread did not stop within {parameters.join_timeout_seconds}s"
-                )
+                validation_errors.append(f"Consumer thread did not stop within {parameters.join_timeout_seconds}s")
             if outcome.error is not None:
                 validation_errors.append(f"Consumer raised {type(outcome.error).__name__}: {outcome.error}")
             if outcome.attempted != stats.operations:
@@ -200,8 +198,7 @@ class JobsConsumeCeilingSuite(BenchTestSuite):
                 expected_remaining = parameters.backlog_messages - outcome.attempted
                 if remaining_messages != expected_remaining:
                     validation_errors.append(
-                        f"Queue count mismatch: expected {expected_remaining} remaining, "
-                        f"observed {remaining_messages}"
+                        f"Queue count mismatch: expected {expected_remaining} remaining, observed {remaining_messages}"
                     )
                 if remaining_messages == 0:
                     validation_errors.append(

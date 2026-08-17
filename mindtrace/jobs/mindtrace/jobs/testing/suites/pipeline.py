@@ -189,12 +189,10 @@ class JobsPipelineScalingSuite(BenchTestSuite):
         producer_clients = [runtime.client] if parameters.backend == "local" else []
         producer_orchestrators = [runtime.orchestrator] if parameters.backend == "local" else []
         producer_stats = [
-            WorkerStats(latency_sample_limit=parameters.latency_sample_limit)
-            for _ in range(parameters.producer_count)
+            WorkerStats(latency_sample_limit=parameters.latency_sample_limit) for _ in range(parameters.producer_count)
         ]
         consumer_stats = [
-            WorkerStats(latency_sample_limit=parameters.latency_sample_limit)
-            for _ in range(parameters.consumer_count)
+            WorkerStats(latency_sample_limit=parameters.latency_sample_limit) for _ in range(parameters.consumer_count)
         ]
         api_calls = [0] * parameters.producer_count
         consumers: list[_PipelineConsumer] = []
@@ -285,9 +283,7 @@ class JobsPipelineScalingSuite(BenchTestSuite):
 
             for index, outcome in enumerate(consume_outcomes):
                 if outcome.error is not None:
-                    validation_errors.append(
-                        f"Consumer {index} raised {type(outcome.error).__name__}: {outcome.error}"
-                    )
+                    validation_errors.append(f"Consumer {index} raised {type(outcome.error).__name__}: {outcome.error}")
                 if outcome.attempted != consumer_stats[index].operations:
                     validation_errors.append(
                         f"Consumer {index} attempted {outcome.attempted} deliveries but recorded "

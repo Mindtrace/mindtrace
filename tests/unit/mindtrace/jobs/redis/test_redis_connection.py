@@ -70,14 +70,17 @@ def test_connect_with_password(monkeypatch):
         mock_redis_cls.return_value = instance
         conn = RedisConnection(host="localhost", port=6381, db=0, password="pw")
         assert conn.is_connected()
-        assert call(
-            host="localhost",
-            port=6381,
-            db=0,
-            socket_timeout=5.0,
-            socket_connect_timeout=2.0,
-            password="pw",
-        ) in mock_redis_cls.call_args_list
+        assert (
+            call(
+                host="localhost",
+                port=6381,
+                db=0,
+                socket_timeout=5.0,
+                socket_connect_timeout=2.0,
+                password="pw",
+            )
+            in mock_redis_cls.call_args_list
+        )
 
 
 def test_event_listener_uses_dedicated_connection_without_read_timeout():

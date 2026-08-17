@@ -353,8 +353,7 @@ def make_jobs(queue_name: str, *, start: int, count: int, payload: str) -> list[
 
     sent_at_ns = time.perf_counter_ns()
     return [
-        make_job(queue_name, sequence=start + offset, payload=payload, sent_at_ns=sent_at_ns)
-        for offset in range(count)
+        make_job(queue_name, sequence=start + offset, payload=payload, sent_at_ns=sent_at_ns) for offset in range(count)
     ]
 
 

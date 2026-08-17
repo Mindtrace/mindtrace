@@ -146,8 +146,7 @@ class JobsPublishCeilingSuite(BenchTestSuite):
             raise
         orchestrators = [Orchestrator(client) for client in clients]
         worker_stats = [
-            WorkerStats(latency_sample_limit=parameters.latency_sample_limit)
-            for _ in range(parameters.producer_count)
+            WorkerStats(latency_sample_limit=parameters.latency_sample_limit) for _ in range(parameters.producer_count)
         ]
         worker_batches = [
             make_jobs(
