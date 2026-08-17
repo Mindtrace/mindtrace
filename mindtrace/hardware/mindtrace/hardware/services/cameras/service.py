@@ -22,6 +22,7 @@ from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraMana
 from mindtrace.hardware.cameras.core.configuration import (
     ConfigurationApplyResult,
     configuration_apply_result_to_dict,
+    configuration_error_result,
     settings_to_camera_configuration_dict,
 )
 from mindtrace.hardware.core.exceptions import (
@@ -854,7 +855,7 @@ class CameraManagerService(Service):
             self.logger.warning(f"Camera not found: {e}")
             return _configuration_apply_response(
                 request.camera,
-                ConfigurationApplyResult(applied=0, total=0),
+                configuration_error_result(str(e), request.properties),
                 error_message=str(e),
             )
         except Exception as e:
@@ -866,7 +867,7 @@ class CameraManagerService(Service):
             if isinstance(e, (CameraConfigurationError, HardwareOperationError, TypeError)):
                 return _configuration_apply_response(
                     request.camera,
-                    ConfigurationApplyResult(applied=0, total=0, failures={"_error": str(e)}),
+                    configuration_error_result(str(e), request.properties),
                     error_message=str(e),
                 )
             # For other exceptions, still raise them

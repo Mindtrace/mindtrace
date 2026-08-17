@@ -19,6 +19,7 @@ from mindtrace.hardware.cameras.core.capture_groups import (
 from mindtrace.hardware.cameras.core.configuration import (
     ConfigurationApplyResult,
     applied_settings_from_result,
+    configuration_error_result,
 )
 from mindtrace.hardware.core.exceptions import (
     CameraConfigurationError,
@@ -984,14 +985,10 @@ class AsyncCameraManager(Mindtrace):
         )
 
         results: Dict[str, ConfigurationApplyResult] = {}
-        for (camera_name, _), result in zip(items, config_results):
+        for (camera_name, settings), result in zip(items, config_results):
             if isinstance(result, BaseException):
                 self.logger.error(f"Configuration failed for '{camera_name}': {result}")
-                results[camera_name] = ConfigurationApplyResult(
-                    applied=0,
-                    total=0,
-                    failures={"_error": str(result)},
-                )
+                results[camera_name] = configuration_error_result(str(result), settings)
             else:
                 results[camera_name] = result
 

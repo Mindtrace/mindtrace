@@ -63,6 +63,23 @@ class ConfigurationApplyResult:
         return self.applied == self.total
 
 
+def configuration_error_result(
+    error: str,
+    settings: Dict[str, Any] | None = None,
+) -> ConfigurationApplyResult:
+    """Build a failed apply result when configure cannot run per-key apply.
+
+    ``total`` is the number of keys in ``settings``, or 1 when the payload is
+    empty, so ``success`` is False even for ``configure(camera, {})``.
+    """
+    total = max(len(settings or {}), 1)
+    return ConfigurationApplyResult(
+        applied=0,
+        total=total,
+        failures={"_error": str(error)},
+    )
+
+
 def applied_settings_from_result(
     raw_settings: Dict[str, Any],
     result: ConfigurationApplyResult,

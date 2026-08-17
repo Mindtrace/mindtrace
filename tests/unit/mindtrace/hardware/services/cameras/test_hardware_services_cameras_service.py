@@ -500,8 +500,9 @@ class TestCameraManagerServiceBusinessLogic:
         assert "InactiveCamera" in response.message
         assert "not initialized" in response.message
         assert response.data.applied == 0
-        assert response.data.total == 0
+        assert response.data.total == 1
         assert response.data.success is False
+        assert response.data.failures == {"_error": "Camera 'InactiveCamera' is not initialized"}
 
     @pytest.mark.asyncio
     async def test_get_active_cameras_response_format(self, service_with_mock_manager):
@@ -894,6 +895,7 @@ class TestCameraManagerServiceErrorHandling:
         assert response.success is False
         assert "Invalid config" in response.message
         assert response.data.success is False
+        assert response.data.total == 1
         assert response.data.failures == {"_error": "Invalid config"}
 
 

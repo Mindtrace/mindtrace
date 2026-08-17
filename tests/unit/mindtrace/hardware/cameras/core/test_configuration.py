@@ -3,6 +3,7 @@
 from mindtrace.hardware.cameras.core.configuration import (
     ConfigurationApplyResult,
     applied_settings_from_result,
+    configuration_error_result,
     find_skipped_keys,
     normalize_settings,
     settings_to_camera_configuration_dict,
@@ -60,6 +61,22 @@ def test_configuration_apply_result_success_property():
     assert ConfigurationApplyResult(applied=2, total=5).success is False
     assert ConfigurationApplyResult(applied=0, total=0, skipped=("exposre_time",)).success is False
     assert ConfigurationApplyResult(applied=1, total=1, skipped=("camera_type",)).success is True
+
+
+def test_configuration_error_result_uses_payload_size_with_floor_of_one():
+    two_keys = configuration_error_result("not initialized", {"exposure": 1000, "gain": 2.0})
+    assert two_keys.applied == 0
+    assert two_keys.total == 2
+    assert two_keys.success is False
+    assert two_keys.failures == {"_error": "not initialized"}
+
+    empty = configuration_error_result("not initialized", {})
+    assert empty.total == 1
+    assert empty.success is False
+
+    missing = configuration_error_result("not initialized")
+    assert missing.total == 1
+    assert missing.success is False
 
 
 def test_applied_settings_from_result_returns_only_successful_keys():
