@@ -876,6 +876,7 @@ def test_infinite_consume_waits_on_stop_event_when_all_queues_idle(backend):
 
 def test_blocking_unlimited_consume_uses_push_delivery_and_returns_attempted_count(backend):
     channel = MagicMock(is_open=True)
+    channel.basic_consume.side_effect = ["consumer-q1", "consumer-q2"]
     backend.connection.get_channel.return_value = channel
     backend.process_message = MagicMock(return_value=True)
     valid_method = MagicMock(delivery_tag=42, redelivered=False)
@@ -931,6 +932,52 @@ def test_push_consumer_counts_failed_job_and_applies_policy(backend):
     channel.basic_nack.assert_called_once_with(delivery_tag=42, requeue=True)
 
 
+def test_push_callback_stops_consuming_before_returning_after_inflight_stop(backend):
+    channel = MagicMock(is_open=True)
+    backend.connection.get_channel.return_value = channel
+    backend.connection.add_callback_threadsafe = MagicMock(return_value=True)
+    method = MagicMock(delivery_tag=42, redelivered=False)
+
+    def process_and_stop(_message):
+        backend.stop()
+        return True
+
+    backend.process_message = MagicMock(side_effect=process_and_stop)
+
+    def deliver_one_message():
+        callback = channel.basic_consume.call_args.kwargs["on_message_callback"]
+        callback(channel, method, MagicMock(), b'{"id": 7}')
+
+    channel.start_consuming.side_effect = deliver_one_message
+
+    attempted = backend.consume(num_messages=0, queues="q", block=True)
+
+    assert attempted == 1
+    channel.basic_ack.assert_called_once_with(delivery_tag=42)
+    channel.stop_consuming.assert_called_once_with()
+
+
+def test_push_callback_does_not_start_buffered_job_after_stop_request(backend):
+    channel = MagicMock(is_open=True)
+    backend.connection.get_channel.return_value = channel
+    backend.process_message = MagicMock(return_value=True)
+    method = MagicMock(delivery_tag=42, redelivered=False)
+
+    def deliver_after_stop_request():
+        callback = channel.basic_consume.call_args.kwargs["on_message_callback"]
+        backend._stop_event.set()
+        callback(channel, method, MagicMock(), b'{"id": 7}')
+
+    channel.start_consuming.side_effect = deliver_after_stop_request
+
+    attempted = backend.consume(num_messages=0, queues="q", block=True)
+
+    assert attempted == 0
+    backend.process_message.assert_not_called()
+    channel.basic_nack.assert_called_once_with(delivery_tag=42, requeue=True)
+    channel.stop_consuming.assert_called_once_with()
+
+
 def test_push_registration_forwards_auto_ack(backend):
     channel = MagicMock(is_open=True)
     backend.connection.get_channel.return_value = channel
@@ -957,6 +1004,26 @@ def test_push_operation_error_closes_resources_without_replacing_error(backend):
 
     channel.close.assert_called_once_with()
     backend.connection.close.assert_called_once_with()
+
+
+def test_broker_cancelled_push_consumer_stops_all_queues_and_raises(backend):
+    channel = MagicMock(is_open=True)
+    backend.connection.get_channel.return_value = channel
+    channel.basic_consume.side_effect = ["consumer-q1", "consumer-q2"]
+    cancel = MagicMock()
+    cancel.method.consumer_tag = "consumer-q1"
+
+    def cancel_first_consumer():
+        on_cancel = channel.add_on_cancel_callback.call_args.args[0]
+        on_cancel(cancel)
+
+    channel.start_consuming.side_effect = cancel_first_consumer
+
+    with pytest.raises(RuntimeError, match="RabbitMQ broker cancelled.*q1"):
+        backend.consume(num_messages=0, queues=["q1", "q2"], block=True)
+
+    channel.add_on_cancel_callback.assert_called_once()
+    channel.stop_consuming.assert_called_once_with()
 
 
 def test_stop_schedules_active_push_cancellation(backend):
@@ -1020,6 +1087,20 @@ def test_failed_push_cancellation_defers_cleanup_to_operation_owner(backend):
     backend.logger.warning.assert_called_once_with(
         "RabbitMQ push cancellation could not be scheduled; operation cleanup will close resources."
     )
+
+
+def test_stop_after_push_setup_skips_consumer_registration_and_start(backend):
+    channel = MagicMock(is_open=True)
+    backend.connection.get_channel.return_value = channel
+    backend.connection.add_callback_threadsafe = MagicMock(return_value=True)
+    channel.basic_qos.side_effect = lambda **_kwargs: backend.stop()
+
+    attempted = backend.consume(num_messages=0, queues=["q1", "q2"], block=True)
+
+    assert attempted == 0
+    channel.add_on_cancel_callback.assert_not_called()
+    channel.basic_consume.assert_not_called()
+    channel.start_consuming.assert_not_called()
 
 
 def test_stop_during_push_registration_skips_remaining_queues_and_start(backend):

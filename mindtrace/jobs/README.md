@@ -244,6 +244,12 @@ RabbitMQ `auto_ack=True` acknowledges deliveries before `run()` executes, so
 it is only valid with `failure_policy=ConsumerFailurePolicy.DISCARD`.
 Combining auto-acknowledgement with `REQUEUE` or `DEAD_LETTER` raises
 `ValueError` during consumer backend configuration.
+Auto-acknowledged deliveries have at-most-once semantics: process failure,
+connection loss, or shutdown may discard deliveries that RabbitMQ acknowledged
+or Pika buffered but `Consumer.run()` did not complete. `prefetch_count` does
+not bound auto-acknowledged deliveries. Use `auto_ack=False` for production
+workloads that require acknowledgement after processing and redelivery after a
+failure.
 
 Local and Redis consumers support only `DISCARD`. Connecting either backend
 with `REQUEUE` or `DEAD_LETTER` raises `NotImplementedError`; those policies
@@ -272,9 +278,13 @@ count has not been reached. `consume_until_empty()` drains only currently
 available RabbitMQ messages and does not wait for new work to arrive.
 
 RabbitMQ invokes `Consumer.run()` synchronously on Pika's I/O thread during
-broker-pushed consumption. Keep processing bounded or hand work to another
-execution layer if the worker must continue servicing broker I/O concurrently.
-A channel or connection failure ends the current consume operation; callers
+broker-pushed consumption. `Consumer.run()` must not return until processing is
+complete because its return or exception determines whether the delivery is
+acknowledged or rejected.
+An unexpected broker cancellation, such as a queue being deleted or becoming
+unavailable, ends the entire push-consume operation and raises
+`RabbitMQConsumerCancelledError` with the affected queue and consumer tag.
+Channel and connection failures also end the current consume operation. Callers
 remain responsible for retry and backoff. Push and pull calls both return the
 same attempted-delivery count described above.
 

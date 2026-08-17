@@ -33,6 +33,17 @@ class RabbitMQSettlementError(RuntimeError):
     """Raised when RabbitMQ cannot confirm delivery settlement."""
 
 
+class RabbitMQConsumerCancelledError(RuntimeError):
+    """Raised when RabbitMQ unexpectedly cancels an active consumer."""
+
+    def __init__(self, queue_name: str, consumer_tag: str):
+        self.queue_name = queue_name
+        self.consumer_tag = consumer_tag
+        super().__init__(
+            f"RabbitMQ broker cancelled consumer for queue '{queue_name}' (consumer tag '{consumer_tag}')."
+        )
+
+
 def _validate_auto_ack_failure_policy(
     auto_ack: bool, failure_policy: ConsumerFailurePolicy | str
 ) -> ConsumerFailurePolicy:
@@ -155,27 +166,47 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         """Register broker-pushed consumers and block until shutdown."""
         self.logger.info(f"Started broker-pushed consumption from queues: {queues}.")
         attempted = 0
+        queues_by_consumer_tag: dict[str, str] = {}
+        cancellation_error: RabbitMQConsumerCancelledError | None = None
+
+        def on_consumer_cancelled(method_frame) -> None:
+            nonlocal cancellation_error
+            consumer_tag = method_frame.method.consumer_tag
+            queue_name = queues_by_consumer_tag.get(consumer_tag, "<unknown>")
+            if not self.stopped and cancellation_error is None:
+                cancellation_error = RabbitMQConsumerCancelledError(queue_name, consumer_tag)
+            self._stop_consuming(channel)
 
         def callback_for(queue_name: str):
             def on_message(callback_channel, method, _properties, body) -> None:
                 nonlocal attempted
+                if self.stopped:
+                    self._requeue_stopped_push_delivery(callback_channel, method)
+                    self._stop_consuming(callback_channel)
+                    return
                 attempted += self._process_push_delivery(callback_channel, method, body, queue_name)
+                if self.stopped:
+                    self._stop_consuming(callback_channel)
 
             return on_message
 
         try:
             if self.stopped:
                 return 0
+            channel.add_on_cancel_callback(on_consumer_cancelled)
             for queue in queues:
                 if self.stopped:
                     break
-                channel.basic_consume(
+                consumer_tag = channel.basic_consume(
                     queue=queue,
                     on_message_callback=callback_for(queue),
                     auto_ack=self.auto_ack,
                 )
+                queues_by_consumer_tag[consumer_tag] = queue
             if not self.stopped:
                 channel.start_consuming()
+            if cancellation_error is not None:
+                raise cancellation_error
             return attempted
         finally:
             with self._active_lock:
@@ -188,6 +219,11 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         if delivery is not _SETTLED_NO_MESSAGE:
             self._process_delivery(channel, delivery)
         return 1
+
+    def _requeue_stopped_push_delivery(self, channel, method) -> None:
+        """Return an unprocessed delivery that was dispatched after shutdown."""
+        if not self.auto_ack:
+            channel.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
 
     def _consume_infinite_messages(self, channel, queues: list[str], *, block: bool = True) -> int:
         """Consume available messages, waiting for new work only when requested."""
@@ -331,9 +367,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             self.logger.error(f"Error receiving message from queue '{queue_name}': {exc}")
             raise RuntimeError(f"Error receiving message from queue '{queue_name}': {exc}") from exc
 
-    def _decode_delivery(
-        self, channel, method, body, queue_name: str
-    ) -> RabbitMQDelivery | _SettledNoMessage:
+    def _decode_delivery(self, channel, method, body, queue_name: str) -> RabbitMQDelivery | _SettledNoMessage:
         """Decode a delivery, settling malformed payloads as local failures."""
         try:
             message = json.loads(body.decode("utf-8"))
