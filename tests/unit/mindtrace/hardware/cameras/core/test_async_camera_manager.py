@@ -103,6 +103,70 @@ async def test_open_restores_saved_config_before_connection_test(monkeypatch, tm
 
 
 @pytest.mark.asyncio
+async def test_open_camera_config_overrides_saved_profile(tmp_path):
+    """open(camera_config=...) applies after saved profile and wins on overlapping keys."""
+    import json
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    saved_path = manager.get_camera_config_path(name)
+    override_path = tmp_path / "override.json"
+
+    Path(saved_path).parent.mkdir(parents=True, exist_ok=True)
+    with open(saved_path, "w", encoding="utf-8") as f:
+        json.dump({"exposure_time": 15000, "gain": 1.0}, f)
+    with open(override_path, "w", encoding="utf-8") as f:
+        json.dump({"exposure_time": 28000}, f)
+
+    try:
+        camera = await manager.open(name, test_connection=False, camera_config=str(override_path))
+        assert await camera.get_exposure() == 28000
+        assert await camera.get_gain() == 1.0
+        assert manager._runtime_configure[name] == {"exposure_time": 28000}
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_open_camera_config_applies_when_restore_disabled(tmp_path):
+    """camera_config still applies when restore_saved_config_on_open is disabled."""
+    import json
+
+    manager = AsyncCameraManager(include_mocks=True, restore_saved_config_on_open=False)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    override_path = tmp_path / "session.json"
+
+    with open(override_path, "w", encoding="utf-8") as f:
+        json.dump({"exposure_time": 22000}, f)
+
+    try:
+        camera = await manager.open(name, test_connection=False, camera_config=str(override_path))
+        assert await camera.get_exposure() == 22000
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_open_missing_camera_config_path_still_opens(tmp_path):
+    """A missing camera_config path logs a warning but does not fail open."""
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    try:
+        camera = await manager.open(
+            name,
+            test_connection=False,
+            camera_config=str(tmp_path / "does_not_exist.json"),
+        )
+        assert camera.is_connected
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_open_restore_preserves_manager_performance_settings(tmp_path):
     """Saved profiles must not overwrite manager-owned timeout and retry settings."""
     import json

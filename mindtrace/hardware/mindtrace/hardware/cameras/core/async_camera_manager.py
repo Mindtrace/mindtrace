@@ -455,6 +455,25 @@ class AsyncCameraManager(Mindtrace):
         if self._restore_saved_config_on_open:
             await self._auto_import_config(camera_name, proxy)
 
+        explicit_config_path = kwargs.get("camera_config")
+        if explicit_config_path:
+            config_path = Path(explicit_config_path)
+            if config_path.exists():
+                try:
+                    await self._apply_config_from_path(
+                        camera_name,
+                        proxy,
+                        str(config_path),
+                        merge_runtime=True,
+                        source_label="open camera_config",
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Failed to apply camera_config for '{camera_name}': {e}")
+            else:
+                self.logger.warning(
+                    f"camera_config path not found for '{camera_name}': {explicit_config_path}"
+                )
+
         if test_connection:
             self.logger.info(f"Testing connection for camera '{camera_name}'...")
             try:
@@ -503,17 +522,21 @@ class AsyncCameraManager(Mindtrace):
         """Open one or more cameras with optional connection testing.
 
         When ``restore_saved_config_on_open`` is enabled (default), a saved profile
-        is loaded after backend construction. Profile import restores imaging and
+        is loaded after backend construction. If ``camera_config`` is passed in
+        ``**kwargs``, that JSON file is applied afterward and overrides overlapping
+        keys from the saved profile. Profile import restores imaging and
         per-camera GigE settings only. Manager-owned performance settings
         (``timeout_ms``, ``retrieve_retry_count``) and OpenCV open-time settings
         (``width``, ``height``, ``fps``) come from explicit ``**kwargs``, then the
-        manager's current values or hardware config — never from the saved profile
-        file.
+        manager's current values or hardware config — never from saved profile
+        files or ``camera_config`` JSON.
 
         Args:
             names: Camera name or list of names in the form "Backend:device_name". If None, opens the first available camera (preferring OpenCV).
             test_connection: Whether to test camera connection(s) after opening.
             **kwargs: Backend constructor parameters forwarded to the camera backend.
+                ``camera_config``: Optional path to a JSON profile applied after any
+                saved-profile restore on open (and recorded for auto-reinit replay).
 
         Returns:
             AsyncCamera if a single name was provided, otherwise a dict mapping names to AsyncCamera.
@@ -781,21 +804,51 @@ class AsyncCameraManager(Mindtrace):
         except json.JSONDecodeError as exc:
             raise CameraConfigurationError(f"Invalid saved config JSON at {path}: {exc}") from exc
 
+    async def _apply_config_from_path(
+        self,
+        camera_name: str,
+        camera: AsyncCamera,
+        config_path: str,
+        *,
+        merge_runtime: bool,
+        source_label: str,
+    ) -> ConfigurationApplyResult:
+        """Read JSON from disk and apply via ``AsyncCamera.configure()``."""
+        path = Path(config_path)
+        if not path.exists():
+            raise CameraConfigurationError(f"Configuration file not found: {config_path}")
+
+        raw_config = json.loads(path.read_text(encoding="utf-8"))
+        result = await camera.configure(**raw_config)
+        if merge_runtime:
+            applied = applied_settings_from_result(raw_config, result)
+            if applied:
+                self._merge_runtime_configure(camera_name, applied)
+
+        if result.total > 0 and result.applied < result.total:
+            self.logger.warning(
+                f"{source_label} for '{camera_name}' only partially applied "
+                f"({result.applied}/{result.total} settings) from {path}"
+            )
+        elif result.total > 0:
+            self.logger.info(f"Applied {source_label} for '{camera_name}' from {path}")
+
+        return result
+
     async def _auto_import_config(self, camera_name: str, camera: AsyncCamera) -> None:
-        """Restore camera config from previously saved file."""
+        """Restore camera config from the managed per-camera profile."""
         try:
-            raw_config = self.read_saved_config(camera_name)
-            if raw_config is None:
+            path = self.get_camera_config_path(camera_name)
+            if not Path(path).exists():
                 self.logger.debug(f"No saved config for '{camera_name}'")
                 return
-            result = await camera.configure(**raw_config)
-            if result.total > 0 and result.applied < result.total:
-                self.logger.warning(
-                    f"Saved config for '{camera_name}' only partially applied "
-                    f"({result.applied}/{result.total} settings)"
-                )
-            else:
-                self.logger.info(f"Auto-imported config for '{camera_name}'")
+            await self._apply_config_from_path(
+                camera_name,
+                camera,
+                path,
+                merge_runtime=False,
+                source_label="Saved config",
+            )
         except Exception as e:
             self.logger.warning(f"Failed to auto-import config for '{camera_name}': {e}")
 
@@ -811,15 +864,14 @@ class AsyncCameraManager(Mindtrace):
         """
         if camera_name not in self._cameras:
             raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
-        path = Path(config_path) if config_path else Path(self.get_camera_config_path(camera_name))
-        if not path.exists():
-            raise CameraConfigurationError(f"Configuration file not found: {path}")
-        raw_config = json.loads(path.read_text(encoding="utf-8"))
-        result = await self._cameras[camera_name].configure(**raw_config)
-        applied = applied_settings_from_result(raw_config, result)
-        if applied:
-            self._merge_runtime_configure(camera_name, applied)
-        return result
+        path = config_path or self.get_camera_config_path(camera_name)
+        return await self._apply_config_from_path(
+            camera_name,
+            self._cameras[camera_name],
+            path,
+            merge_runtime=True,
+            source_label="Saved config",
+        )
 
     async def persist_camera_config(self, camera_name: str, config_path: Optional[str] = None) -> str:
         """Export current camera settings to a JSON file.

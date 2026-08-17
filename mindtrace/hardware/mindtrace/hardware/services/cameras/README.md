@@ -296,6 +296,7 @@ pick up that file on (re)open.
 | `/cameras/config/export` | Yes — writes per-camera JSON under `MINDTRACE_HW_CAMERA_CONFIG_DIR` |
 | `/cameras/config/import` | Reads per-camera JSON and applies to live camera |
 | `open()` (when restore enabled) | Reads per-camera JSON and applies to live camera before connection test |
+| `open(camera_config=path)` | Applies JSON from `path` after any saved-profile restore; overrides overlapping keys |
 | `/cameras/config/reset` | Deletes the managed per-camera profile; next close/open uses backend defaults |
 | Auto-reinit after capture failures | No — closes and reopens only; does not rewrite the saved file. Replays the original `open()` kwargs and accumulated runtime `/cameras/configure` settings. |
 
