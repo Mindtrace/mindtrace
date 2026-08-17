@@ -876,6 +876,7 @@ def test_infinite_consume_waits_on_stop_event_when_all_queues_idle(backend):
 
 def test_blocking_unlimited_consume_uses_push_delivery_and_returns_attempted_count(backend):
     channel = MagicMock(is_open=True)
+    channel.basic_consume.side_effect = ["consumer-q1", "consumer-q2"]
     backend.connection.get_channel.return_value = channel
     backend.process_message = MagicMock(return_value=True)
     valid_method = MagicMock(delivery_tag=42, redelivered=False)
