@@ -159,7 +159,13 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         def callback_for(queue_name: str):
             def on_message(callback_channel, method, _properties, body) -> None:
                 nonlocal attempted
+                if self.stopped:
+                    self._requeue_stopped_push_delivery(callback_channel, method)
+                    self._stop_consuming(callback_channel)
+                    return
                 attempted += self._process_push_delivery(callback_channel, method, body, queue_name)
+                if self.stopped:
+                    self._stop_consuming(callback_channel)
 
             return on_message
 
@@ -188,6 +194,11 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         if delivery is not _SETTLED_NO_MESSAGE:
             self._process_delivery(channel, delivery)
         return 1
+
+    def _requeue_stopped_push_delivery(self, channel, method) -> None:
+        """Return an unprocessed delivery that was dispatched after shutdown."""
+        if not self.auto_ack:
+            channel.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
 
     def _consume_infinite_messages(self, channel, queues: list[str], *, block: bool = True) -> int:
         """Consume available messages, waiting for new work only when requested."""
@@ -331,9 +342,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             self.logger.error(f"Error receiving message from queue '{queue_name}': {exc}")
             raise RuntimeError(f"Error receiving message from queue '{queue_name}': {exc}") from exc
 
-    def _decode_delivery(
-        self, channel, method, body, queue_name: str
-    ) -> RabbitMQDelivery | _SettledNoMessage:
+    def _decode_delivery(self, channel, method, body, queue_name: str) -> RabbitMQDelivery | _SettledNoMessage:
         """Decode a delivery, settling malformed payloads as local failures."""
         try:
             message = json.loads(body.decode("utf-8"))
