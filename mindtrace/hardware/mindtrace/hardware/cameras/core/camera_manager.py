@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Union
 from mindtrace.core import Mindtrace
 from mindtrace.hardware.cameras.core.async_camera import AsyncCamera
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
+from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult
 from mindtrace.hardware.cameras.core.camera import Camera
 
 
@@ -116,7 +117,9 @@ class CameraManager(Mindtrace):
     def diagnostics(self) -> Dict[str, Any]:
         return self._manager.diagnostics()
 
-    def batch_configure(self, configurations: Dict[str, Dict[str, Any]]) -> Dict[str, bool]:
+    def batch_configure(
+        self, configurations: Dict[str, Dict[str, Any]]
+    ) -> Dict[str, ConfigurationApplyResult]:
         """Configure multiple cameras simultaneously."""
         return self._submit_coro(self._manager.batch_configure(configurations))
 

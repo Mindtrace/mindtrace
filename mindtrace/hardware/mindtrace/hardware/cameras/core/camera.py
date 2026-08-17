@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from mindtrace.core import Mindtrace
 from mindtrace.hardware.cameras.core.async_camera import AsyncCamera
+from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult
 
 
 class Camera(Mindtrace):
@@ -159,18 +160,22 @@ class Camera(Mindtrace):
         """
         return self._submit(self._backend.capture(save_path, output_format=output_format))
 
-    def configure(self, **settings):
-        """Configure multiple camera settings atomically.
+    def configure(self, **settings) -> ConfigurationApplyResult:
+        """Configure multiple camera settings with per-key apply reporting.
 
         Args:
             **settings: Supported keys include exposure, gain, roi=(x, y, w, h), trigger_mode, pixel_format,
                 white_balance, image_enhancement.
 
+        Returns:
+            A ``ConfigurationApplyResult`` describing how many recognized settings
+            were applied, plus any per-key failures or skipped keys.
+
         Raises:
             CameraConfigurationError: If a provided value is invalid for the backend.
             CameraConnectionError: If the camera cannot be configured.
         """
-        self._submit(self._backend.configure(**settings))
+        return self._submit(self._backend.configure(**settings))
 
     def set_exposure(self, exposure: Union[int, float]):
         """Set the camera exposure.
