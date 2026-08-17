@@ -30,21 +30,6 @@ CONFIGURABLE_KEYS: tuple[str, ...] = (
     "white_balance_red_v",
 )
 
-# Subset mapped to the service-layer CameraConfiguration response model.
-CAMERA_CONFIGURATION_FIELDS: tuple[str, ...] = (
-    "exposure_time",
-    "gain",
-    "roi",
-    "trigger_mode",
-    "pixel_format",
-    "white_balance",
-    "image_enhancement",
-    "optical_power",
-    "packet_size",
-    "inter_packet_delay",
-    "bandwidth_limit",
-)
-
 
 @dataclass
 class ConfigurationApplyResult:
@@ -159,6 +144,7 @@ def find_skipped_keys(data: Dict[str, Any]) -> tuple[str, ...]:
     skipped.extend(key for key in source if key not in consumed)
     return tuple(skipped)
 
+
 def _normalize_roi(value: Any) -> Optional[Tuple[int, int, int, int]]:
     if value is None:
         return None
@@ -230,10 +216,10 @@ def normalize_settings(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def settings_to_camera_configuration_dict(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Map normalized settings to CameraConfiguration field values."""
+    """Map normalized settings to CameraConfiguration field values.
+
+    Includes every canonical configure key present in ``data`` so GET
+    endpoints return the same payload shape as configure/export.
+    """
     normalized = normalize_settings(data)
-    result: Dict[str, Any] = {}
-    for key in CAMERA_CONFIGURATION_FIELDS:
-        if key in normalized:
-            result[key] = normalized[key]
-    return result
+    return {key: normalized[key] for key in CONFIGURABLE_KEYS if key in normalized}

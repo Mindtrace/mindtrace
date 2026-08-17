@@ -300,12 +300,14 @@ pick up that file on (re)open.
 | `/cameras/config/reset` | Deletes the managed per-camera profile; next close/open uses backend defaults |
 | Auto-reinit after capture failures | No — closes and reopens only; does not rewrite the saved file. Replays the original `open()` kwargs and accumulated runtime `/cameras/configure` settings. |
 
-Saved profiles use the same JSON payload shape as `/cameras/configure`
+Saved profiles use the same JSON payload shape as `/cameras/configure` and
+the `/cameras/config/get` and `/cameras/config/saved/get` responses
 (`exposure_time`, `gain`, `roi`, `trigger_mode`, `pixel_format`, `white_balance`,
 `image_enhancement`, `optical_power`, `packet_size`, `inter_packet_delay`,
-`bandwidth_limit`, plus backend-specific keys such as `focus_config` or
-`genicam_nodes`). Legacy export files with metadata keys (`camera_type`,
-`timestamp`, etc.) still import successfully; unknown keys are ignored.
+`bandwidth_limit`, plus backend-specific keys such as `focus_config`,
+`genicam_nodes`, or OpenCV properties). Legacy export files with metadata keys
+(`camera_type`, `timestamp`, etc.) still import successfully; unknown keys are
+ignored.
 
 Saved profiles restore **imaging settings** (exposure, gain, trigger, ROI, etc.)
 and **per-camera GigE transport settings** (`packet_size`, `inter_packet_delay`,

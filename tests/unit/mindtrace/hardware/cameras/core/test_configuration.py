@@ -39,8 +39,9 @@ def test_normalize_settings_supports_roi_x_y_fallback():
     assert normalized["gain"] == 2.0
 
 
-def test_settings_to_camera_configuration_dict_filters_api_fields():
+def test_settings_to_camera_configuration_dict_includes_backend_specific_keys():
     data = {
+        "camera_type": "basler",
         "exposure_time": 1000.0,
         "focus_config": {"mode": "auto"},
         "genicam_nodes": {"PixelFormat": "Mono8"},
@@ -50,9 +51,10 @@ def test_settings_to_camera_configuration_dict_filters_api_fields():
     mapped = settings_to_camera_configuration_dict(data)
 
     assert mapped["exposure_time"] == 1000.0
-    assert "focus_config" not in mapped
-    assert "genicam_nodes" not in mapped
-    assert "brightness" not in mapped
+    assert mapped["focus_config"] == {"mode": "auto"}
+    assert mapped["genicam_nodes"] == {"PixelFormat": "Mono8"}
+    assert mapped["brightness"] == 0.5
+    assert "camera_type" not in mapped
 
 
 def test_configuration_apply_result_success_property():

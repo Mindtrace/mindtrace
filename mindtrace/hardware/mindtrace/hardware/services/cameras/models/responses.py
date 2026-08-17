@@ -127,7 +127,7 @@ class CameraCapabilities(BaseModel):
 
 
 class CameraConfiguration(BaseModel):
-    """Camera configuration model."""
+    """Camera configuration model matching ``CONFIGURABLE_KEYS``."""
 
     exposure_time: Optional[float] = None
     gain: Optional[float] = None
@@ -140,6 +140,15 @@ class CameraConfiguration(BaseModel):
     packet_size: Optional[int] = None
     inter_packet_delay: Optional[float] = None
     optical_power: Optional[float] = None
+    focus_config: Optional[Dict[str, Any]] = None
+    genicam_nodes: Optional[Dict[str, Any]] = None
+    brightness: Optional[float] = None
+    contrast: Optional[float] = None
+    saturation: Optional[float] = None
+    hue: Optional[float] = None
+    auto_exposure: Optional[float] = None
+    white_balance_blue_u: Optional[float] = None
+    white_balance_red_v: Optional[float] = None
 
 
 # Liquid Lens

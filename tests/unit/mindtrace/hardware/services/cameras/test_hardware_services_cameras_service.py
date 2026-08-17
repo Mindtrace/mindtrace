@@ -603,6 +603,9 @@ class TestCameraManagerServiceBusinessLogic:
             "white_balance": "auto",
             "bandwidth_limit": 800.0,
             "inter_packet_delay": 100,
+            "genicam_nodes": {"PixelFormat": "Mono8"},
+            "focus_config": {"mode": "auto"},
+            "brightness": 0.5,
         }
         mock_manager.open = AsyncMock(return_value=mock_camera)
 
@@ -619,6 +622,10 @@ class TestCameraManagerServiceBusinessLogic:
         assert response.data.bandwidth_limit == 800.0
         assert response.data.packet_size is None
         assert response.data.inter_packet_delay == 100
+        assert response.data.genicam_nodes == {"PixelFormat": "Mono8"}
+        assert response.data.focus_config == {"mode": "auto"}
+        assert response.data.brightness == 0.5
+        assert response.data.contrast is None
 
     @pytest.mark.asyncio
     async def test_import_and_export_camera_config_delegate_to_manager(self, service_with_mock_manager):
@@ -761,6 +768,9 @@ class TestCameraManagerServiceBusinessLogic:
                 "inter_packet_delay": 100,
                 "bandwidth_limit": 800.0,
                 "optical_power": 1.5,
+                "genicam_nodes": {"GainAuto": "Off"},
+                "focus_config": {"accuracy": "Normal"},
+                "brightness": 0.25,
             }
         )
 
@@ -778,6 +788,9 @@ class TestCameraManagerServiceBusinessLogic:
         assert response.data.inter_packet_delay == 100
         assert response.data.bandwidth_limit == 800.0
         assert response.data.optical_power == 1.5
+        assert response.data.genicam_nodes == {"GainAuto": "Off"}
+        assert response.data.focus_config == {"accuracy": "Normal"}
+        assert response.data.brightness == 0.25
         assert "Retrieved saved configuration" in response.message
 
     @pytest.mark.asyncio
