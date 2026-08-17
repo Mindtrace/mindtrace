@@ -395,10 +395,14 @@ class Camera(Mindtrace):
         self._submit(self._backend.set_focus_config(**settings))
 
     def export_config(self, path: str) -> bool:
-        """Export current camera configuration to a file via backend.
+        """Export current camera configuration to a canonical JSON file.
+
+        The file uses the same keys as ``/cameras/configure`` and
+        ``AsyncCamera.get_configuration()`` (see ``CONFIGURABLE_KEYS``).
+        Legacy metadata keys from older exports are not written.
 
         Args:
-            path: Destination file path (backend-specific JSON).
+            path: Destination file path.
 
         Returns:
             bool: True if export succeeds, raises exception on failure.
@@ -407,13 +411,17 @@ class Camera(Mindtrace):
         return True
 
     def import_config(self, path: str) -> Tuple[int, int]:
-        """Import camera configuration from a file via backend.
+        """Import camera configuration from JSON via ``AsyncCamera.configure()``.
+
+        Accepts canonical configure keys and legacy aliases (``exposure``,
+        ``triggermode``, ``img_quality_enhancement``, etc.). Unknown keys are
+        skipped; per-key failures are logged and do not abort the import.
 
         Args:
-            path: Configuration file path (backend-specific JSON).
+            path: Configuration file path.
 
         Returns:
-            Tuple of (applied_settings, total_settings) from the backend import.
+            Tuple of (applied_settings, total_settings) attempted by configure().
         """
         return self._submit(self._backend.import_config(path))
 

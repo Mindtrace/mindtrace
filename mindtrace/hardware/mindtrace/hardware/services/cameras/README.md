@@ -361,7 +361,7 @@ Can be changed dynamically without reinitialization:
 - `gain` - Camera gain value
 - `trigger_mode` - Trigger mode (continuous/trigger)
 - `white_balance` - White balance setting
-- `image_quality_enhancement` - Enable CLAHE enhancement
+- `image_enhancement` - Enable CLAHE enhancement (legacy alias: `img_quality_enhancement`)
 - `pixel_format` - Pixel format (BGR8, RGB8, Mono8, etc.)
 - `packet_size` - GigE packet size in bytes (set to match NIC MTU, e.g., 8164 for jumbo frames)
 - `inter_packet_delay` - Ticks between GigE packets (e.g., 1000 = ~8us gap)
