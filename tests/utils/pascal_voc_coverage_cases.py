@@ -534,6 +534,8 @@ def test_import_pascal_voc_creates_classification_detection_and_segmentation_rec
     assert version_calls["pascal-voc-2012-train-semantic-segmentation"]["manifest"] == ["datum_1"]
     assert summary.dataset_names["classification_single_label"].endswith("classification-single-label")
     assert summary.dataset_version_ids["canonical"] == "dataset_version_1"
+    assert not hasattr(summary, "dataset_name")
+    assert not hasattr(summary, "dataset_version_id")
 
 
 def test_import_pascal_voc_can_create_only_the_canonical_version(tmp_path: Path):
@@ -638,7 +640,6 @@ def test_build_cli_parses_expected_arguments():
 def test_main_calls_importer_prints_summary_and_closes_datalake(capsys: pytest.CaptureFixture[str]):
     datalake = MagicMock()
     summary = pascal_voc.PascalVocImportSummary(
-        dataset_name="tiny-pascal-voc-train",
         dataset_version="1.0.0",
         split="train",
         datum_count=1,
@@ -647,7 +648,6 @@ def test_main_calls_importer_prints_summary_and_closes_datalake(capsys: pytest.C
         classification_record_count=1,
         detection_record_count=1,
         segmentation_record_count=1,
-        dataset_version_id="dataset_version_1",
         derived_datum_count=1,
         dataset_names={"canonical": "tiny-pascal-voc-train"},
         dataset_version_ids={"canonical": "dataset_version_1"},

@@ -29,6 +29,8 @@ def test_pascal_voc_importer_end_to_end_with_tiny_fixture(sync_datalake: Datalak
     assert summary.segmentation_record_count == 1
 
     dataset_version = sync_datalake.get_dataset_version("tiny-pascal-voc-train", "1.0.0")
+    assert summary.dataset_names["canonical"] == "tiny-pascal-voc-train"
+    assert summary.dataset_version_ids["canonical"] == dataset_version.dataset_version_id
     resolved = sync_datalake.resolve_datum(dataset_version.manifest[0])
 
     assert list(resolved.assets.keys()) == ["image", "semantic_mask"]

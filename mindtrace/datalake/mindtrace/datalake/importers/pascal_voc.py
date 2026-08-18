@@ -68,7 +68,6 @@ class PascalVocImportConfig:
 class PascalVocImportSummary:
     """Counts and identifiers produced during a Pascal VOC import."""
 
-    dataset_name: str
     dataset_version: str
     split: str
     datum_count: int
@@ -77,7 +76,6 @@ class PascalVocImportSummary:
     classification_record_count: int
     detection_record_count: int
     segmentation_record_count: int
-    dataset_version_id: str
     derived_datum_count: int
     dataset_names: dict[str, str]
     dataset_version_ids: dict[str, str]
@@ -696,7 +694,6 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
         )
         dataset_version_ids[view_name] = dataset_version.dataset_version_id
     return PascalVocImportSummary(
-        dataset_name=dataset_name,
         dataset_version=config.dataset_version,
         split=config.split,
         datum_count=len(manifest),
@@ -705,7 +702,6 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
         classification_record_count=classification_record_count,
         detection_record_count=detection_record_count,
         segmentation_record_count=segmentation_record_count,
-        dataset_version_id=dataset_version_ids["canonical"],
         derived_datum_count=0,
         dataset_names=dataset_names,
         dataset_version_ids=dataset_version_ids,
@@ -772,7 +768,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(
         "Imported "
-        f"{summary.dataset_name}@{summary.dataset_version} "
+        f"{summary.dataset_names['canonical']}@{summary.dataset_version} "
         f"({summary.split}) with {summary.datum_count} datums, "
         f"{summary.image_asset_count} image assets, {summary.mask_asset_count} mask assets, "
         f"{summary.classification_record_count} classification records, "
