@@ -31,6 +31,31 @@ CONFIGURABLE_KEYS: tuple[str, ...] = (
     "white_balance_red_v",
 )
 
+# Legacy export_config metadata; may appear beside real settings in saved profiles.
+CONFIGURE_METADATA_KEYS: frozenset[str] = frozenset(
+    {
+        "camera_type",
+        "camera_name",
+        "timestamp",
+        "vendor",
+        "model",
+        "serial_number",
+        # Top-level duplicates when a legacy export also includes a canonical ``roi`` dict.
+        "width",
+        "height",
+    }
+)
+
+
+def skipped_metadata_keys(skipped: tuple[str, ...]) -> tuple[str, ...]:
+    """Return skipped input keys that are known legacy export metadata."""
+    return tuple(key for key in skipped if key in CONFIGURE_METADATA_KEYS)
+
+
+def skipped_unexpected_keys(skipped: tuple[str, ...]) -> tuple[str, ...]:
+    """Return skipped input keys that are not recognized settings or known metadata."""
+    return tuple(key for key in skipped if key not in CONFIGURE_METADATA_KEYS)
+
 
 @dataclass
 class ConfigurationApplyResult:
@@ -43,9 +68,21 @@ class ConfigurationApplyResult:
     partial: Dict[str, Any] = field(default_factory=dict)
 
     @property
+    def skipped_metadata(self) -> tuple[str, ...]:
+        """Skipped keys that are known legacy export metadata."""
+        return skipped_metadata_keys(self.skipped)
+
+    @property
+    def skipped_unexpected(self) -> tuple[str, ...]:
+        """Skipped keys that are neither configurable settings nor known metadata."""
+        return skipped_unexpected_keys(self.skipped)
+
+    @property
     def success(self) -> bool:
-        """True when every recognized key applied and input was not exclusively unrecognized keys."""
-        if self.skipped and self.total == 0:
+        """True when every recognized key applied and no unexpected keys were skipped."""
+        if self.failures:
+            return False
+        if self.skipped_unexpected:
             return False
         return self.applied == self.total
 
@@ -54,15 +91,10 @@ def configuration_error_result(
     error: str,
     settings: Dict[str, Any] | None = None,
 ) -> ConfigurationApplyResult:
-    """Build a failed apply result when configure cannot run per-key apply.
-
-    ``total`` is the number of keys in ``settings``, or 1 when the payload is
-    empty, so ``success`` is False even for ``configure(camera, {})``.
-    """
-    total = max(len(settings or {}), 1)
+    """Build a failed apply result when configure cannot run per-key apply."""
     return ConfigurationApplyResult(
         applied=0,
-        total=total,
+        total=len(settings or {}),
         failures={"_error": str(error)},
     )
 
@@ -143,6 +175,8 @@ def configuration_apply_result_to_dict(result: ConfigurationApplyResult) -> Dict
         "total": result.total,
         "failures": dict(result.failures),
         "skipped": list(result.skipped),
+        "skipped_metadata": list(result.skipped_metadata),
+        "skipped_unexpected": list(result.skipped_unexpected),
         "partial": dict(result.partial),
         "success": result.success,
     }

@@ -10,6 +10,8 @@ from mindtrace.hardware.cameras.core.configuration import (
     normalize_settings,
     parse_configure_settings,
     settings_to_camera_configuration_dict,
+    skipped_metadata_keys,
+    skipped_unexpected_keys,
 )
 
 
@@ -65,10 +67,30 @@ def test_configuration_apply_result_success_property():
     assert ConfigurationApplyResult(applied=0, total=0).success is True
     assert ConfigurationApplyResult(applied=2, total=5).success is False
     assert ConfigurationApplyResult(applied=0, total=0, skipped=("exposre_time",)).success is False
+    assert ConfigurationApplyResult(applied=0, total=0, skipped=("camera_type",)).success is True
     assert ConfigurationApplyResult(applied=1, total=1, skipped=("camera_type",)).success is True
+    assert ConfigurationApplyResult(applied=1, total=1, skipped=("gan",)).success is False
+    assert ConfigurationApplyResult(applied=1, total=1, skipped=("camera_type", "gan")).success is False
+    assert ConfigurationApplyResult(applied=1, total=1, skipped=("unknown_flag",)).success is False
+    assert ConfigurationApplyResult(
+        applied=7,
+        total=7,
+        skipped=("camera_type", "camera_name", "timestamp", "width", "height"),
+    ).success is True
 
 
-def test_configuration_error_result_uses_payload_size_with_floor_of_one():
+def test_skipped_metadata_and_unexpected_partition():
+    skipped = ("camera_type", "timestamp", "gan", "unknown_flag")
+    assert skipped_metadata_keys(skipped) == ("camera_type", "timestamp")
+    assert skipped_unexpected_keys(skipped) == ("gan", "unknown_flag")
+
+    result = ConfigurationApplyResult(applied=1, total=1, skipped=skipped)
+    assert result.skipped_metadata == ("camera_type", "timestamp")
+    assert result.skipped_unexpected == ("gan", "unknown_flag")
+    assert result.success is False
+
+
+def test_configuration_error_result_uses_payload_size():
     two_keys = configuration_error_result("not initialized", {"exposure": 1000, "gain": 2.0})
     assert two_keys.applied == 0
     assert two_keys.total == 2
@@ -76,11 +98,11 @@ def test_configuration_error_result_uses_payload_size_with_floor_of_one():
     assert two_keys.failures == {"_error": "not initialized"}
 
     empty = configuration_error_result("not initialized", {})
-    assert empty.total == 1
+    assert empty.total == 0
     assert empty.success is False
 
     missing = configuration_error_result("not initialized")
-    assert missing.total == 1
+    assert missing.total == 0
     assert missing.success is False
 
 

@@ -210,6 +210,8 @@ class ConfigurationApplyResultData(BaseModel):
     total: int
     failures: Dict[str, str] = Field(default_factory=dict)
     skipped: List[str] = Field(default_factory=list)
+    skipped_metadata: List[str] = Field(default_factory=list)
+    skipped_unexpected: List[str] = Field(default_factory=list)
     partial: Dict[str, Any] = Field(default_factory=dict)
     success: bool
 

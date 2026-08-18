@@ -918,6 +918,43 @@ async def test_configure_reports_skipped_unknown_keys():
 
 
 @pytest.mark.asyncio
+async def test_configure_fails_when_unexpected_keys_are_skipped_with_valid_settings():
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        result = await cam.configure(exposure_time=15000, gan=2.0)
+
+        assert result.applied == 1
+        assert result.total == 1
+        assert result.skipped == ("gan",)
+        assert result.skipped_unexpected == ("gan",)
+        assert result.success is False
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_configure_succeeds_when_only_metadata_keys_are_skipped():
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        result = await cam.configure(exposure_time=15000, camera_type="basler", timestamp=1.0)
+
+        assert result.applied == 1
+        assert result.total == 1
+        assert result.skipped == ("camera_type", "timestamp")
+        assert result.skipped_metadata == ("camera_type", "timestamp")
+        assert result.skipped_unexpected == ()
+        assert result.success is True
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_configure_reports_malformed_roi_as_failure():
     manager = AsyncCameraManager(include_mocks=True)
     try:
