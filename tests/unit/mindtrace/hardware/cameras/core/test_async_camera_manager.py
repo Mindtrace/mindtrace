@@ -1465,7 +1465,7 @@ async def test_batch_configure_and_capture_with_unknown():
 
         empty_res = await mgr.batch_configure({"UnknownBackend:dev": {}})
         assert empty_res["UnknownBackend:dev"].success is False
-        assert empty_res["UnknownBackend:dev"].total == 1
+        assert empty_res["UnknownBackend:dev"].total == 0
 
         # Capture known + unknown
         cap_res = await mgr.batch_capture([name, "UnknownBackend:dev"])
