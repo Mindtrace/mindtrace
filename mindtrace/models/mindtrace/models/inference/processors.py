@@ -26,6 +26,15 @@ class HuggingFaceImageProcessor:
     def __call__(self, inputs: _ImageInput) -> Tensor:
         """Return a ``(B, C, H, W)`` pixel-value tensor."""
         if isinstance(inputs, Tensor):
+            if inputs.ndim == 3:
+                inputs = inputs.unsqueeze(0)
+            elif inputs.ndim != 4:
+                raise ValueError(
+                    "preprocessed image tensors must have shape (C, H, W) or (B, C, H, W), "
+                    f"got {tuple(inputs.shape)}"
+                )
+            if not inputs.is_floating_point():
+                raise TypeError("preprocessed image tensors must use a floating-point dtype")
             return inputs
 
         if isinstance(inputs, (str, bytes)):
@@ -49,12 +58,5 @@ class HuggingFaceImageProcessor:
 
         encoded = self._processor(images=images, return_tensors="pt")
         return encoded["pixel_values"]
-
-    def __getstate__(self) -> dict[str, Any]:
-        """Persist configuration, not the populated third-party processor."""
-        state = self.__dict__.copy()
-        state["_processor"] = None
-        return state
-
 
 __all__ = ["HuggingFaceImageProcessor"]

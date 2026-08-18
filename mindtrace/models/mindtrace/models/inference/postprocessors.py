@@ -21,10 +21,13 @@ class ClassificationPostprocessor:
         logits: Tensor,
         *,
         include_probabilities: bool = False,
-        **_: Any,
     ) -> list[ClassificationResult]:
         if logits.ndim != 2:
             raise ValueError(f"classification logits must have shape (B, C), got {tuple(logits.shape)}")
+        if self.labels is not None and logits.shape[-1] != len(self.labels):
+            raise ValueError(
+                f"classification logits contain {logits.shape[-1]} classes, but {len(self.labels)} labels were provided"
+            )
 
         probabilities = logits.softmax(dim=-1).detach().cpu()
         class_ids = probabilities.argmax(dim=-1)
@@ -32,8 +35,6 @@ class ClassificationPostprocessor:
 
         for index, class_id_tensor in enumerate(class_ids):
             class_id = int(class_id_tensor.item())
-            if self.labels is not None and class_id >= len(self.labels):
-                raise ValueError(f"class index {class_id} has no corresponding label")
 
             extra: dict[str, Any] = {"class_id": class_id}
             if include_probabilities:

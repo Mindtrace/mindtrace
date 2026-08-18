@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from itertools import chain
 from typing import Any, Generic, TypeVar
 
 import torch
@@ -31,6 +32,7 @@ class TorchModel(nn.Module, Generic[InputT, OutputT]):
         self.network = network
         self.processor = processor
         self.postprocessor = postprocessor
+        self.register_buffer("_device_anchor", torch.empty(0), persistent=False)
 
         if device is not None:
             resolved_device = (
@@ -41,29 +43,40 @@ class TorchModel(nn.Module, Generic[InputT, OutputT]):
             self.to(resolved_device)
 
     def forward(self, inputs: Tensor) -> Any:
-        """Run the wrapped network on a preprocessed tensor batch."""
+        """Run the wrapped network on a preprocessed tensor batch.
+
+        Use :meth:`predict` for task-level inputs that still require processing.
+        """
+        if not isinstance(inputs, Tensor):
+            raise TypeError(f"forward inputs must be torch.Tensor, got {type(inputs).__name__}")
         return self.network(inputs)
 
     def predict(self, inputs: InputT, **params: Any) -> OutputT:
-        """Preprocess inputs, run inference, and postprocess the outputs."""
+        """Run the full prediction pipeline.
+
+        ``params`` are task-specific options forwarded to the postprocessor.
+        """
         batch = self.processor(inputs)
         if not isinstance(batch, Tensor):
             raise TypeError(f"processor must return torch.Tensor, got {type(batch).__name__}")
 
-        batch = batch.to(self._network_device())
-        self.eval()
-        with torch.inference_mode():
-            outputs = self(batch)
-        return self.postprocessor(outputs, **params)
+        batch = batch.to(self.device)
+        training_states = [(module, module.training) for module in self.modules()]
 
-    def _network_device(self) -> torch.device:
+        self.eval()
         try:
-            return next(self.network.parameters()).device
-        except StopIteration:
-            try:
-                return next(self.network.buffers()).device
-            except StopIteration:
-                return torch.device("cpu")
+            with torch.inference_mode():
+                outputs = self(batch)
+            return self.postprocessor(outputs, **params)
+        finally:
+            for module, training in training_states:
+                module.training = training
+
+    @property
+    def device(self) -> torch.device:
+        """Return the network device, or the wrapper device for stateless networks."""
+        network_state = chain(self.network.parameters(), self.network.buffers())
+        return next(network_state, self._device_anchor).device
 
 
 __all__ = ["TorchModel"]
