@@ -320,6 +320,70 @@ class TestMockBaslerImageGeneration:
         await camera.close()
 
 
+class TestMockBaslerROIOperations:
+    """Test Region of Interest (ROI) functionality."""
+
+    @pytest.mark.asyncio
+    async def test_roi_validation(self):
+        """Test ROI parameter validation."""
+        camera = MockBaslerCameraBackend("test_cam")
+        await camera.initialize()
+
+        with pytest.raises(CameraConfigurationError, match="Invalid ROI dimensions"):
+            await camera.set_ROI(0, 0, 0, 480)
+
+        with pytest.raises(CameraConfigurationError, match="Invalid ROI dimensions"):
+            await camera.set_ROI(0, 0, 640, -10)
+
+        with pytest.raises(CameraConfigurationError, match="Invalid ROI offset"):
+            await camera.set_ROI(-10, 0, 640, 480)
+
+        with pytest.raises(CameraConfigurationError, match="Invalid ROI offset"):
+            await camera.set_ROI(0, -5, 640, 480)
+
+        await camera.close()
+
+    @pytest.mark.asyncio
+    async def test_roi_get_set_cycle(self):
+        """Test ROI set and get operations."""
+        camera = MockBaslerCameraBackend("test_cam")
+        await camera.initialize()
+
+        initial_roi = await camera.get_ROI()
+        _initial_width, _initial_height = initial_roi["width"], initial_roi["height"]
+
+        roi_params = (100, 50, 800, 600)
+        await camera.set_ROI(*roi_params)
+
+        roi = await camera.get_ROI()
+        assert roi["x"] == 100
+        assert roi["y"] == 50
+        assert roi["width"] == 800
+        assert roi["height"] == 600
+
+        image = await camera.capture()
+        assert image.shape == (600, 800, 3), f"Expected (600, 800, 3) for custom ROI, got {image.shape}"
+
+        await camera.close()
+
+    @pytest.mark.asyncio
+    async def test_roi_reset(self):
+        """Test ROI reset functionality."""
+        camera = MockBaslerCameraBackend("test_cam")
+        await camera.initialize()
+
+        await camera.set_ROI(100, 100, 640, 480)
+        await camera.reset_ROI()
+
+        roi = await camera.get_ROI()
+        assert roi["x"] == 0
+        assert roi["y"] == 0
+        assert roi["width"] == 1920
+        assert roi["height"] == 1080
+
+        await camera.close()
+
+
 class TestMockBaslerConfigurationValidation:
     """Test configuration parameter validation."""
 
