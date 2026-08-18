@@ -100,7 +100,7 @@ def export_dataset_as_coco(
     split_bundles: dict[str, dict[str, Any]] = defaultdict(lambda: {"images": [], "annotations": []})
     files_written: list[str] = []
     next_annotation_id = 1
-    for image_id, (item, annotations) in enumerate(prepared_items, start=1):
+    for image_id, (item, supported_annotations) in enumerate(prepared_items, start=1):
         split_name = item.split or "default"
         image_filename = item.source_filename or f"{item.asset.asset_id}.bin"
         image_relative_path = (
@@ -111,7 +111,7 @@ def export_dataset_as_coco(
         image_row = _image_info(item, image_id, image_relative_path.as_posix())
         split_bundles[split_name]["images"].append(image_row)
 
-        for annotation in annotations:
+        for annotation in supported_annotations:
             category_key = (annotation.kind, annotation.label)
             if annotation.kind == "bbox":
                 geometry = annotation.geometry or {}
