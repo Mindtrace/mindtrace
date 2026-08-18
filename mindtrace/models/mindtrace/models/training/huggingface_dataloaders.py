@@ -179,12 +179,15 @@ class HuggingFaceDetectionDataset:
         if hasattr(image, "convert"):
             image = image.convert("RGB")
         objects = _object_rows(row["objects"])
+        difficult = [bool(obj.get("difficult", False)) for obj in objects]
         target = {
             "boxes": torch.tensor([_xywh_to_xyxy(obj["bbox"]) for obj in objects], dtype=torch.float32).reshape(-1, 4),
             "labels": torch.tensor([obj["category"] for obj in objects], dtype=torch.long),
             "area": torch.tensor([obj["area"] for obj in objects], dtype=torch.float32),
-            "iscrowd": torch.zeros(len(objects), dtype=torch.long),
-            "difficult": torch.tensor([bool(obj.get("difficult", False)) for obj in objects], dtype=torch.bool),
+            # Torchvision's COCO-style evaluators use iscrowd as the ignore channel.
+            # Preserve VOC difficult separately while projecting it for evaluator compatibility.
+            "iscrowd": torch.tensor(difficult, dtype=torch.long),
+            "difficult": torch.tensor(difficult, dtype=torch.bool),
         }
         if self.transform is not None:
             image, target = self.transform(image, target)

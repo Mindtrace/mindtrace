@@ -632,6 +632,8 @@ def test_detection_target_preserves_voc_difficult_flags(monkeypatch):
     _, target = dataloaders.HuggingFaceDetectionDataset("/export", split="train")[0]
 
     assert target["difficult"].value == [True]
+    assert target["iscrowd"].value == [True]
+    assert target["iscrowd"].dtype == "long"
 
 
 def test_build_dataloaders_accepts_explicit_per_split_shuffle_and_drop_last(monkeypatch):

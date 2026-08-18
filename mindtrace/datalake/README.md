@@ -500,15 +500,17 @@ aligned. Semantic mask resizing must use nearest-neighbour interpolation.
 
 - Single-label classification: `(image, scalar LongTensor)`.
 - Multi-label classification: `(image, FloatTensor[num_classes])`.
-- Detection: `(image, target)` where `target` contains `boxes`, `labels`, `area`, and `iscrowd`.
+- Detection: `(image, target)` where `target` contains `boxes`, `labels`, `area`, `iscrowd`, and `difficult`.
 - Semantic segmentation: `(image, LongTensor[H, W])`.
 - Instance segmentation: `(image, target)` where `target` contains `boxes`, `labels`, `masks`, `area`, and
   `iscrowd`.
 
 Detection and instance targets follow torchvision conventions. The detection adapter is source-dataset-generic but
 expects the canonical Mindtrace HF detection schema: embedded image media, absolute pixel-space `xywh` boxes, and
-contiguous category IDs. The instance adapter similarly consumes the canonical Mindtrace HF objects-with-masks
-schema.
+contiguous category IDs. VOC `difficult` remains available as its own boolean tensor and is also projected into the
+torchvision/COCO-compatible `iscrowd` ignore channel; this is an evaluator compatibility mapping, not an assertion
+that the source concepts are identical. The instance adapter similarly consumes the canonical Mindtrace HF
+objects-with-masks schema.
 
 COCO support is outside the current scope.
 
