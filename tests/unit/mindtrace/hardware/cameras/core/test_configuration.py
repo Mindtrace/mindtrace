@@ -72,11 +72,14 @@ def test_configuration_apply_result_success_property():
     assert ConfigurationApplyResult(applied=1, total=1, skipped=("gan",)).success is False
     assert ConfigurationApplyResult(applied=1, total=1, skipped=("camera_type", "gan")).success is False
     assert ConfigurationApplyResult(applied=1, total=1, skipped=("unknown_flag",)).success is False
-    assert ConfigurationApplyResult(
-        applied=7,
-        total=7,
-        skipped=("camera_type", "camera_name", "timestamp", "width", "height"),
-    ).success is True
+    assert (
+        ConfigurationApplyResult(
+            applied=7,
+            total=7,
+            skipped=("camera_type", "camera_name", "timestamp", "width", "height"),
+        ).success
+        is True
+    )
 
 
 def test_skipped_metadata_and_unexpected_partition():
