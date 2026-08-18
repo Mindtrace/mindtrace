@@ -2498,7 +2498,6 @@ class TestAllenBradleyPLCPLCInfo:
         # Device info exception should be caught and logged, but basic info should still be returned
         assert "product_name" not in info or info.get("product_name") == "Unknown"
 
-
     @pytest.mark.asyncio
     async def test_get_plc_info_outer_exception(self, mock_pycomm3_available, mock_logix_driver):
         """An unexpected failure is reported in-band — with only honest fields:

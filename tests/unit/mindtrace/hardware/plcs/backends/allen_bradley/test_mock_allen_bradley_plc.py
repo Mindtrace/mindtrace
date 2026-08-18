@@ -1000,6 +1000,7 @@ class TestMockAllenBradleyPLCPLCInfo:
         with pytest.raises(PLCConnectionError, match="never opened"):
             await mock_plc.get_plc_info()
 
+
 class TestMockAllenBradleyPLCStaticMethods:
     """Test suite for static methods."""
 
