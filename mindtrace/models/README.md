@@ -12,6 +12,7 @@ The Mindtrace Models module provides a complete ML lifecycle library: assemble m
 - [Architecture](#architecture)
 - [Installation](#installation)
 - [Architectures](#architectures)
+- [Inference](#inference)
 - [Training](#training)
 - [Tracking](#tracking)
 - [Evaluation](#evaluation)
@@ -24,9 +25,10 @@ The Mindtrace Models module provides a complete ML lifecycle library: assemble m
 
 ## Overview
 
-The models module consists of seven sub-packages:
+The models module consists of eight sub-packages:
 
 - **Architectures**: Backbone + head assembly with factory pattern, 33 registered backbones, 6 head types, LoRA fine-tuning
+- **Inference**: Task-level model contracts and composable local PyTorch prediction
 - **Training**: Supervised training loop with AMP, DDP, gradient accumulation, 7 callbacks, 9 loss functions, optimizer/scheduler factories
 - **Tracking**: Unified experiment tracking with MLflow, WandB, TensorBoard backends and framework bridges
 - **Evaluation**: Framework-agnostic metric computation (pure NumPy) with EvaluationRunner for orchestrated inference
@@ -34,9 +36,9 @@ The models module consists of seven sub-packages:
 - **Serving**: Model inference services via ONNX Runtime and TorchServe with a common ModelService base
 - **Archivers**: ML model serialization that self-registers with the Mindtrace Registry at import time
 
-Each sub-package provides:
+Across these sub-packages, the module provides:
 - Typed interfaces with Pydantic schemas
-- Integration with the Mindtrace Registry for artifact persistence
+- Integration with the Mindtrace Registry where artifact persistence is supported
 - Structured logging via the Mindtrace base classes
 - Optional dependency guards so missing extras do not break imports
 
@@ -53,6 +55,7 @@ mindtrace/models/
 │   └── backends/                # MLflow, WandB, TensorBoard
 ├── evaluation/                  # Evaluation orchestration
 │   └── metrics/                 # Classification, detection, segmentation, regression
+├── inference/                   # Task-level local inference composition
 ├── lifecycle/                   # Model stage management and promotion
 ├── serving/                     # Inference services
 │   ├── onnx/                    # ONNX Runtime backend
@@ -170,6 +173,59 @@ model.backbone.print_trainable_parameters()
 ```
 
 See [Architectures Documentation](mindtrace/models/architectures/README.md) for details.
+
+## Inference
+
+The generic `Model[InputT, OutputT]` protocol defines task-level prediction without coupling models to HTTP requests,
+queue payloads, or another transport. Implementations own preprocessing, inference, and postprocessing; serving and
+backend integrations remain responsible for transport, scheduling, and backend-specific behavior.
+
+`TorchModel` composes a processor, an `nn.Module`, and a postprocessor:
+
+```python
+from PIL import Image
+
+from mindtrace.models import (
+    ClassificationPostprocessor,
+    HuggingFaceImageProcessor,
+    TorchModel,
+    build_model_from_hf,
+)
+
+model_id = "microsoft/swin-tiny-patch4-window7-224"
+labels = ["airplane", "automobile", "bird"]
+
+network = build_model_from_hf(
+    model_id,
+    head="linear",
+    num_classes=len(labels),
+)
+model = TorchModel(
+    network=network,
+    processor=HuggingFaceImageProcessor(model_id),
+    postprocessor=ClassificationPostprocessor(labels=labels),
+    device="auto",
+)
+
+image = Image.open("tests/resources/hopper.png").convert("RGB")
+predictions = model.predict(image, include_probabilities=True)
+```
+
+`model.predict(input, **params)` runs the complete task-level pipeline and forwards prediction options to the
+postprocessor. Calling `model(tensor)` invokes standard `nn.Module.forward` behavior and accepts only a preprocessed
+Tensor batch. `HuggingFaceImageProcessor` also accepts floating-point CHW or BCHW tensors, treating them as already
+normalized and adding a batch dimension to CHW input.
+
+When loading a state dict saved from the bare network, load it through the child module before prediction:
+
+```python
+model.network.load_state_dict(network_state_dict)
+```
+
+Complete `TorchModel` Registry persistence is intentionally outside this API. See
+[the composite archiver design issue](https://github.com/Mindtrace/mindtrace/issues/544).
+
+See [`samples/models/09_model_protocol.py`](../../samples/models/09_model_protocol.py) for a complete local example.
 
 ## Training
 

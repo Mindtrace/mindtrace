@@ -3,6 +3,7 @@
 Sub-packages
 ------------
 serving       Model inference services and request/response schemas.
+inference     Task-level contracts and composable local inference.
 tracking      Unified experiment tracking (MLflow, WandB, TensorBoard).
 training      Training loop, loss functions, optimizer/scheduler builders.
 architectures Reusable backbones, task heads, and model factory.
