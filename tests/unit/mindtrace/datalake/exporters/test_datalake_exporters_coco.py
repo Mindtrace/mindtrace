@@ -141,3 +141,50 @@ def test_coco_export_rejects_dataset_without_bbox_or_polygon_annotations(tmp_pat
 
     with pytest.raises(ValueError, match="bbox.*polygon"):
         export_dataset_as_coco(dataset, destination=tmp_path / "coco")
+
+
+def test_coco_export_prepares_source_annotations_once_for_validation_categories_and_counts(tmp_path: Path):
+    class _CountingList(list):
+        def __init__(self, values):
+            super().__init__(values)
+            self.iterations = 0
+
+        def __iter__(self):
+            self.iterations += 1
+            return super().__iter__()
+
+    bbox = AnnotationRecord(
+        annotation_id="bbox-1",
+        kind="bbox",
+        label="person",
+        source={"type": "human", "name": "annotator"},
+        geometry={"type": "bbox", "x": 0, "y": 0, "width": 1, "height": 1},
+    )
+    unsupported = AnnotationRecord(
+        annotation_id="mask-1",
+        kind="mask",
+        label="person",
+        source={"type": "human", "name": "annotator"},
+        geometry={"type": "mask", "mask_asset_id": "asset_img"},
+    )
+    annotations = _CountingList([bbox, unsupported])
+    item = ExportableItem.model_construct(
+        asset=sample_asset(),
+        split=None,
+        metadata={},
+        annotations=annotations,
+        annotation_sets=[],
+        payload_bytes=png_bytes(),
+        source_filename="asset_img.png",
+        related_assets={},
+        related_payload_bytes={},
+    )
+    items = _CountingList([item])
+    dataset = ExportableDataset.model_construct(name="single-pass", metadata={}, items=items, warnings=[])
+
+    result = export_dataset_as_coco(dataset, destination=tmp_path / "coco", include_media=False)
+
+    assert items.iterations == 1
+    assert annotations.iterations == 1
+    assert result.annotation_count == 1
+    assert any("unsupported COCO annotation kind 'mask'" in warning for warning in result.warnings)

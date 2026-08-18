@@ -8,6 +8,7 @@ from typing import Any
 
 from PIL import Image
 
+from ..types import AnnotationRecord
 from .base import prepare_export_destination, write_export_file
 from .types import ExportableDataset, ExportableItem, ExportResult
 
@@ -29,13 +30,28 @@ def _polygon_area(vertices: list[list[float]]) -> float:
     return abs(area) / 2.0
 
 
-def _supported_category_records(dataset: ExportableDataset) -> list[tuple[str, str]]:
-    pairs: set[tuple[str, str]] = set()
+def _prepare_coco_items(
+    dataset: ExportableDataset,
+    warnings: list[str],
+) -> tuple[list[tuple[ExportableItem, list[AnnotationRecord]]], list[tuple[str, str]], set[str]]:
+    prepared: list[tuple[ExportableItem, list[AnnotationRecord]]] = []
+    categories: set[tuple[str, str]] = set()
+    named_splits: set[str] = set()
     for item in dataset.items:
+        if item.split is not None:
+            named_splits.add(item.split)
+        supported_annotations: list[AnnotationRecord] = []
         for annotation in item.annotations:
             if annotation.kind in {"bbox", "polygon"}:
-                pairs.add((annotation.kind, annotation.label))
-    return sorted(pairs, key=lambda pair: (pair[0], pair[1]))
+                supported_annotations.append(annotation)
+                categories.add((annotation.kind, annotation.label))
+            else:
+                warnings.append(
+                    f"Skipped unsupported COCO annotation kind {annotation.kind!r} "
+                    f"for annotation {annotation.annotation_id}."
+                )
+        prepared.append((item, supported_annotations))
+    return prepared, sorted(categories, key=lambda pair: (pair[0], pair[1])), named_splits
 
 
 def _image_info(item: ExportableItem, image_id: int, file_name: str) -> dict[str, Any]:
@@ -68,24 +84,23 @@ def export_dataset_as_coco(
     if destination_path.exists() and not overwrite:
         raise FileExistsError(f"Export destination already exists: {destination_path}")
     requested_task = (options or {}).get("task") or dataset.metadata.get("task_type")
-    annotation_kinds = {annotation.kind for item in dataset.items for annotation in item.annotations}
     if requested_task == "classification":
         raise ValueError(
             "COCO export does not support image classification datasets. "
             "Export this dataset with format='huggingface' instead."
         )
-    if not annotation_kinds.intersection({"bbox", "polygon"}):
+    warnings = list(dataset.warnings)
+    prepared_items, categories, named_splits = _prepare_coco_items(dataset, warnings)
+    if not categories:
         raise ValueError("COCO export requires at least one supported bbox or polygon annotation.")
     destination_path = prepare_export_destination(destination_path, overwrite=overwrite)
-    warnings = list(dataset.warnings)
-    categories = _supported_category_records(dataset)
     category_ids = {pair: idx + 1 for idx, pair in enumerate(categories)}
     category_rows = [{"id": category_ids[pair], "name": pair[1], "supercategory": pair[0]} for pair in categories]
 
     split_bundles: dict[str, dict[str, Any]] = defaultdict(lambda: {"images": [], "annotations": []})
     files_written: list[str] = []
     next_annotation_id = 1
-    for image_id, item in enumerate(dataset.items, start=1):
+    for image_id, (item, annotations) in enumerate(prepared_items, start=1):
         split_name = item.split or "default"
         image_filename = item.source_filename or f"{item.asset.asset_id}.bin"
         image_relative_path = (
@@ -96,7 +111,7 @@ def export_dataset_as_coco(
         image_row = _image_info(item, image_id, image_relative_path.as_posix())
         split_bundles[split_name]["images"].append(image_row)
 
-        for annotation in item.annotations:
+        for annotation in annotations:
             category_key = (annotation.kind, annotation.label)
             if annotation.kind == "bbox":
                 geometry = annotation.geometry or {}
@@ -132,15 +147,9 @@ def export_dataset_as_coco(
                     "iscrowd": 0,
                     "segmentation": [flattened],
                 }
-            else:
-                warnings.append(
-                    f"Skipped unsupported COCO annotation kind {annotation.kind!r} for annotation {annotation.annotation_id}."
-                )
-                continue
             split_bundles[split_name]["annotations"].append(coco_annotation)
             next_annotation_id += 1
 
-    multiple_splits = {item.split for item in dataset.items if item.split is not None}
     for split_name, payload in split_bundles.items():
         coco_payload = {
             "info": {"description": dataset.description or dataset.name},
@@ -149,7 +158,7 @@ def export_dataset_as_coco(
             "images": payload["images"],
             "annotations": payload["annotations"],
         }
-        if multiple_splits:
+        if named_splits:
             relative_path = Path("annotations") / f"{split_name}.json"
         else:
             relative_path = Path("annotations.json")
@@ -161,11 +170,12 @@ def export_dataset_as_coco(
             )
         )
 
+    exported_annotation_count = next_annotation_id - 1
     summary = {
         "format": "coco",
         "dataset_name": dataset.name,
         "asset_count": dataset.asset_count,
-        "annotation_count": dataset.annotation_count,
+        "annotation_count": exported_annotation_count,
         "warnings": warnings,
     }
     files_written.append(
@@ -178,7 +188,7 @@ def export_dataset_as_coco(
         destination=destination_path,
         dataset_name=dataset.name,
         asset_count=dataset.asset_count,
-        annotation_count=dataset.annotation_count,
+        annotation_count=exported_annotation_count,
         files_written=files_written,
         warnings=warnings,
     )
