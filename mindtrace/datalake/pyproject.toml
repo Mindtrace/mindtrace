@@ -16,6 +16,7 @@ dependencies = [
     "mindtrace-registry>=0.14.1.dev0",
     "mindtrace-database>=0.14.1.dev0",
     "mindtrace-services>=0.14.1.dev0",
+    "numpy>=1.24.0",
     "Pillow>=10.0.0",
     "tqdm>=4.66.0",
 ]

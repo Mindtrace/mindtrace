@@ -7,6 +7,7 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
@@ -159,32 +160,27 @@ def _instances_from_mask(mask_path: Path) -> list[_Instance]:
             raise ValueError(
                 f"Penn-Fudan mask {mask_path} must be an indexed single-channel PNG; received mode {mask.mode!r}."
             )
-        width, height = mask.size
-        bounds: dict[int, list[int]] = {}
-        areas: dict[int, int] = {}
-        for offset, raw_value in enumerate(mask.getdata()):
-            instance_id = int(raw_value)
-            if instance_id == 0:
-                continue
-            x = offset % width
-            y = offset // width
-            if instance_id not in bounds:
-                bounds[instance_id] = [x, y, x, y]
-                areas[instance_id] = 0
-            box = bounds[instance_id]
-            box[0] = min(box[0], x)
-            box[1] = min(box[1], y)
-            box[2] = max(box[2], x)
-            box[3] = max(box[3], y)
-            areas[instance_id] += 1
-    return [
-        _Instance(
-            instance_id=instance_id,
-            bbox_xywh=(box[0], box[1], box[2] - box[0] + 1, box[3] - box[1] + 1),
-            area=areas[instance_id],
+        indexed_mask = np.asarray(mask)
+
+    instances: list[_Instance] = []
+    for raw_instance_id in np.unique(indexed_mask):
+        instance_id = int(raw_instance_id)
+        if instance_id == 0:
+            continue
+        ys, xs = np.nonzero(indexed_mask == instance_id)
+        instances.append(
+            _Instance(
+                instance_id=instance_id,
+                bbox_xywh=(
+                    int(xs.min()),
+                    int(ys.min()),
+                    int(xs.max() - xs.min() + 1),
+                    int(ys.max() - ys.min() + 1),
+                ),
+                area=int(xs.size),
+            )
         )
-        for instance_id, box in sorted(bounds.items())
-    ]
+    return instances
 
 
 def _validate_schema(schema: AnnotationSchema) -> AnnotationSchema:

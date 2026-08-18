@@ -557,6 +557,22 @@ def _binary_instance_mask(item, annotation, *, include_media: bool) -> tuple[dic
     instance_id = annotation.geometry.get("instance_id")
     if instance_id is None:
         raise ValueError(f"Instance mask annotation {annotation.annotation_id!r} does not define instance_id.")
+    attributes = annotation.attributes or {}
+    raw_bbox = attributes.get("bbox_xywh")
+    if not isinstance(raw_bbox, (list, tuple)) or len(raw_bbox) != 4:
+        raise ValueError(
+            f"Instance mask annotation {annotation.annotation_id!r} must define attributes.bbox_xywh with 4 values."
+        )
+    bbox = [float(value) for value in raw_bbox]
+    if bbox[2] <= 0 or bbox[3] <= 0:
+        raise ValueError(f"Instance mask annotation {annotation.annotation_id!r} has an empty bbox_xywh.")
+    raw_area = attributes.get("area")
+    if raw_area is None or float(raw_area) <= 0:
+        raise ValueError(f"Instance mask annotation {annotation.annotation_id!r} must define a positive area.")
+    area = float(raw_area)
+    if not include_media:
+        return None, bbox, area
+
     payload = item.related_payload_bytes.get("instance_mask")
     if payload is None:
         raise ValueError(f"Instance segmentation export requires mask payload bytes for asset {item.asset.asset_id!r}.")
@@ -574,27 +590,17 @@ def _binary_instance_mask(item, annotation, *, include_media: bool) -> tuple[dic
             )
         expected_id = int(instance_id)
         selected = np.asarray(indexed_mask) == expected_id
-        ys, xs = np.nonzero(selected)
-        if xs.size == 0:
+        if not selected.any():
             raise ValueError(
                 f"Instance id {instance_id!r} for annotation {annotation.annotation_id!r} is absent from its mask."
             )
-        bbox = [
-            float(xs.min()),
-            float(ys.min()),
-            float(xs.max() - xs.min() + 1),
-            float(ys.max() - ys.min() + 1),
-        ]
-        area = float(selected.sum())
-        embedded_mask = None
-        if include_media:
-            binary_mask = Image.fromarray(selected.astype(np.uint8) * 255, mode="L")
-            output = io.BytesIO()
-            binary_mask.save(output, format="PNG")
-            embedded_mask = {
-                "bytes": output.getvalue(),
-                "path": f"{item.asset.asset_id}-{annotation.annotation_id}.png",
-            }
+        binary_mask = Image.fromarray(selected.astype(np.uint8) * 255, mode="L")
+        output = io.BytesIO()
+        binary_mask.save(output, format="PNG")
+        embedded_mask = {
+            "bytes": output.getvalue(),
+            "path": f"{item.asset.asset_id}-{annotation.annotation_id}.png",
+        }
     return embedded_mask, bbox, area
 
 

@@ -521,7 +521,11 @@ def test_huggingface_instance_segmentation_export_writes_typed_objects(tmp_path:
                             "instance_id": instance_id,
                             "encoding": {"type": "indexed_png"},
                         },
-                        attributes={"iscrowd": False},
+                        attributes={
+                            "bbox_xywh": [1, instance_id - 1, 2, 1],
+                            "area": 2,
+                            "iscrowd": False,
+                        },
                         source={"type": "human", "name": "penn-fudan"},
                     )
                     for instance_id in (1, 2)
@@ -647,7 +651,10 @@ def test_huggingface_detection_export_traverses_items_once_for_rows_and_counts(t
     assert items.iterations == 1
 
 
-def test_instance_mask_export_does_not_use_deprecated_per_pixel_pillow_iteration(tmp_path: Path, monkeypatch):
+def test_instance_mask_export_uses_stored_geometry_without_loading_mask_when_media_is_excluded(
+    tmp_path: Path,
+    monkeypatch,
+):
     from mindtrace.datalake.exporters import huggingface as huggingface_exporter
     from mindtrace.datalake.types import AnnotationRecord
 
@@ -657,10 +664,10 @@ def test_instance_mask_export_does_not_use_deprecated_per_pixel_pillow_iteration
         lambda name: _fake_datasets_module(),
     )
 
-    def reject_getdata(_image):
-        raise AssertionError("instance-mask export must use a vectorized pixel path")
+    def reject_open(*_args, **_kwargs):
+        raise AssertionError("media-free instance export must not decode the indexed mask")
 
-    monkeypatch.setattr(Image.Image, "getdata", reject_getdata)
+    monkeypatch.setattr(Image, "open", reject_open)
     mask_asset = sample_asset()
     mask_asset.asset_id = "instance_mask_asset"
     mask_asset.kind = "mask"
@@ -673,9 +680,7 @@ def test_instance_mask_export_does_not_use_deprecated_per_pixel_pillow_iteration
         items=[
             ExportableItem(
                 asset=sample_asset(),
-                payload_bytes=png_bytes(),
                 related_assets={"instance_mask": mask_asset},
-                related_payload_bytes={"instance_mask": _indexed_instance_mask_bytes()},
                 annotations=[
                     AnnotationRecord(
                         annotation_id="instance-1",
@@ -683,7 +688,7 @@ def test_instance_mask_export_does_not_use_deprecated_per_pixel_pillow_iteration
                         label="person",
                         label_id=1,
                         geometry={"mask_asset_id": "instance_mask_asset", "instance_id": 1},
-                        attributes={"iscrowd": False},
+                        attributes={"bbox_xywh": [1, 0, 2, 1], "area": 2, "iscrowd": False},
                         source={"type": "human", "name": "pytest"},
                     )
                 ],
@@ -699,3 +704,48 @@ def test_instance_mask_export_does_not_use_deprecated_per_pixel_pillow_iteration
     )
 
     assert result.annotation_count == 1
+    payload = json.loads((tmp_path / "instance-without-media" / "dataset.json").read_text())
+    assert payload[0]["objects"]["bbox"] == [[1.0, 0.0, 2.0, 1.0]]
+    assert payload[0]["objects"]["area"] == [2.0]
+    assert payload[0]["objects"]["mask"] == [None]
+
+
+def test_instance_mask_export_requires_stored_bbox_and_area(tmp_path: Path, monkeypatch):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+    from mindtrace.datalake.types import AnnotationRecord
+
+    monkeypatch.setattr(huggingface_exporter.importlib, "import_module", lambda name: _fake_datasets_module())
+    mask_asset = sample_asset()
+    mask_asset.asset_id = "instance_mask_asset"
+    dataset = ExportableDataset(
+        name="penn-fudan",
+        metadata={
+            "task_type": "instance_segmentation",
+            "instance_segmentation_class_names": ["background", "person"],
+        },
+        items=[
+            ExportableItem(
+                asset=sample_asset(),
+                related_assets={"instance_mask": mask_asset},
+                annotations=[
+                    AnnotationRecord(
+                        annotation_id="instance-1",
+                        kind="instance_mask",
+                        label="person",
+                        label_id=1,
+                        geometry={"mask_asset_id": "instance_mask_asset", "instance_id": 1},
+                        attributes={"iscrowd": False},
+                        source={"type": "human", "name": "pytest"},
+                    )
+                ],
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="bbox_xywh"):
+        export_dataset_as_huggingface(
+            dataset,
+            destination=tmp_path / "missing-instance-geometry",
+            include_media=False,
+            options={"task": "instance_segmentation"},
+        )

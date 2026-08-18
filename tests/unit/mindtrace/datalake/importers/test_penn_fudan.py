@@ -39,8 +39,16 @@ def _mock_datalake() -> MagicMock:
     return datalake
 
 
-def test_instances_from_indexed_mask_derives_boxes_and_areas(tmp_path: Path):
+def test_instances_from_indexed_mask_derives_boxes_and_areas_without_pillow_pixel_iteration(
+    tmp_path: Path,
+    monkeypatch,
+):
     _, mask_path = _write_sample(tmp_path)
+
+    def reject_getdata(_image):
+        raise AssertionError("Penn-Fudan import must use vectorized indexed-mask operations")
+
+    monkeypatch.setattr(Image.Image, "getdata", reject_getdata)
 
     instances = penn_fudan._instances_from_mask(mask_path)
 
