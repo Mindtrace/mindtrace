@@ -101,9 +101,9 @@ def test_huggingface_export_writes_media_for_default_split(tmp_path: Path, monke
         name="dataset-a",
         items=[
             ExportableItem(
-                asset=sample_asset(),
-                payload_bytes=png_bytes(),
-                source_filename="asset_img.png",
+                assets={"image": sample_asset()},
+                primary_role="image",
+                payloads={"image": png_bytes()},
             )
         ],
     )
@@ -132,10 +132,10 @@ def test_huggingface_classification_export_writes_typed_split_dataset(tmp_path: 
         },
         items=[
             ExportableItem(
-                asset=sample_asset(),
+                assets={"image": sample_asset()},
+                primary_role="image",
                 split="train",
-                payload_bytes=png_bytes(),
-                source_filename="flower.png",
+                payloads={"image": png_bytes()},
                 annotations=[
                     AnnotationRecord(
                         annotation_id="annotation_1",
@@ -156,7 +156,7 @@ def test_huggingface_classification_export_writes_typed_split_dataset(tmp_path: 
     assert payload["train"][0]["asset_id"] == "asset_img"
     assert payload["train"][0]["label"] == 1
     assert payload["train"][0]["label_name"] == "hard-leaved pocket orchid"
-    assert payload["train"][0]["image"]["path"] == "flower.png"
+    assert payload["train"][0]["image"]["path"] == "asset_img.png"
 
 
 def test_huggingface_classification_export_requires_one_label_per_image(tmp_path: Path, monkeypatch):
@@ -170,7 +170,13 @@ def test_huggingface_classification_export_requires_one_label_per_image(tmp_path
     dataset = ExportableDataset(
         name="flowers-102",
         metadata={"task_type": "classification", "class_names": ["flower"]},
-        items=[ExportableItem(asset=sample_asset(), payload_bytes=png_bytes())],
+        items=[
+            ExportableItem(
+                assets={"image": sample_asset()},
+                primary_role="image",
+                payloads={"image": png_bytes()},
+            )
+        ],
     )
 
     with pytest.raises(ValueError, match="exactly one classification annotation"):
@@ -191,8 +197,9 @@ def test_huggingface_classification_export_rejects_label_name_mismatch(tmp_path:
         metadata={"task_type": "classification", "class_names": ["pink primrose"]},
         items=[
             ExportableItem(
-                asset=sample_asset(),
-                payload_bytes=png_bytes(),
+                assets={"image": sample_asset()},
+                primary_role="image",
+                payloads={"image": png_bytes()},
                 annotations=[
                     AnnotationRecord(
                         annotation_id="annotation_1",
@@ -228,9 +235,10 @@ def test_huggingface_multi_label_classification_export_writes_multi_hot_targets(
         },
         items=[
             ExportableItem(
-                asset=sample_asset(),
+                assets={"image": sample_asset()},
+                primary_role="image",
                 split="train",
-                payload_bytes=png_bytes(),
+                payloads={"image": png_bytes()},
                 annotations=[
                     AnnotationRecord(
                         annotation_id="classification_1",
@@ -291,9 +299,10 @@ def test_huggingface_bbox_crop_classification_export_preserves_lineage(tmp_path:
         },
         items=[
             ExportableItem(
-                asset=sample_asset(),
+                assets={"image": sample_asset()},
+                primary_role="image",
                 split="val",
-                payload_bytes=png_bytes(),
+                payloads={"image": png_bytes()},
                 annotations=[
                     AnnotationRecord(
                         annotation_id="detection_1",
@@ -355,10 +364,10 @@ def test_huggingface_detection_export_writes_typed_objects_and_remaps_labels(tmp
         },
         items=[
             ExportableItem(
-                asset=sample_asset(),
+                assets={"image": sample_asset()},
+                primary_role="image",
                 split="train",
-                payload_bytes=png_bytes(),
-                source_filename="voc.jpg",
+                payloads={"image": png_bytes()},
                 annotations=[
                     AnnotationRecord(
                         annotation_id="detection_1",
@@ -383,7 +392,7 @@ def test_huggingface_detection_export_writes_typed_objects_and_remaps_labels(tmp
 
     assert result.annotation_count == 1
     assert payload["train"][0]["asset_id"] == "asset_img"
-    assert payload["train"][0]["image"]["path"] == "voc.jpg"
+    assert payload["train"][0]["image"]["path"] == "asset_img.png"
     assert payload["train"][0]["objects"] == {
         "area": [1200.0],
         "bbox": [[10.0, 20.0, 30.0, 40.0]],
@@ -410,8 +419,9 @@ def test_huggingface_detection_export_rejects_degenerate_boxes(tmp_path: Path, m
         metadata={"detection_class_names": ["object"]},
         items=[
             ExportableItem(
-                asset=sample_asset(),
-                payload_bytes=png_bytes(),
+                assets={"image": sample_asset()},
+                primary_role="image",
+                payloads={"image": png_bytes()},
                 annotations=[
                     AnnotationRecord(
                         annotation_id="detection_1",
@@ -457,12 +467,10 @@ def test_huggingface_semantic_segmentation_export_writes_typed_image_and_mask(tm
         },
         items=[
             ExportableItem(
-                asset=sample_asset(),
+                assets={"image": sample_asset(), "semantic_mask": mask_asset},
+                primary_role="image",
                 split="train",
-                payload_bytes=png_bytes(),
-                source_filename="voc.jpg",
-                related_assets={"semantic_mask": mask_asset},
-                related_payload_bytes={"semantic_mask": png_bytes()},
+                payloads={"image": png_bytes(), "semantic_mask": png_bytes()},
                 annotations=[
                     AnnotationRecord(
                         annotation_id="mask_1",
@@ -486,7 +494,7 @@ def test_huggingface_semantic_segmentation_export_writes_typed_image_and_mask(tm
     metadata = json.loads((tmp_path / "voc-semantic-hf" / "mindtrace_metadata.json").read_text())
 
     assert result.annotation_count == 1
-    assert payload["train"][0]["image"]["path"] == "voc.jpg"
+    assert payload["train"][0]["image"]["path"] == "asset_img.png"
     assert payload["train"][0]["mask"]["path"] == "asset_mask.png"
     assert "class_names" not in payload["train"][0]
     assert "background_id" not in payload["train"][0]
@@ -524,12 +532,10 @@ def test_huggingface_instance_segmentation_export_writes_typed_objects(tmp_path:
         },
         items=[
             ExportableItem(
-                asset=sample_asset(),
+                assets={"image": sample_asset(), "instance_mask": mask_asset},
+                primary_role="image",
                 split="train",
-                payload_bytes=png_bytes(),
-                source_filename="pedestrian.png",
-                related_assets={"instance_mask": mask_asset},
-                related_payload_bytes={"instance_mask": _indexed_instance_mask_bytes()},
+                payloads={"image": png_bytes(), "instance_mask": _indexed_instance_mask_bytes()},
                 annotations=[
                     AnnotationRecord(
                         annotation_id=f"instance_{instance_id}",
@@ -596,8 +602,9 @@ def test_huggingface_export_consumes_rows_through_streaming_constructor(tmp_path
         metadata={"classification_class_names": ["healthy"]},
         items=[
             ExportableItem(
-                asset=sample_asset(),
-                payload_bytes=png_bytes(),
+                assets={"image": sample_asset()},
+                primary_role="image",
+                payloads={"image": png_bytes()},
                 annotations=[
                     AnnotationRecord(
                         annotation_id="classification-1",
@@ -640,8 +647,9 @@ def test_huggingface_detection_export_traverses_items_once_for_rows_and_counts(t
         lambda name: _fake_datasets_module(),
     )
     item = ExportableItem(
-        asset=sample_asset(),
-        payload_bytes=png_bytes(),
+        assets={"image": sample_asset()},
+        primary_role="image",
+        payloads={"image": png_bytes()},
         annotations=[
             AnnotationRecord(
                 annotation_id="detection-1",
@@ -699,8 +707,8 @@ def test_instance_mask_export_uses_stored_geometry_without_loading_mask_when_med
         },
         items=[
             ExportableItem(
-                asset=sample_asset(),
-                related_assets={"instance_mask": mask_asset},
+                assets={"image": sample_asset(), "instance_mask": mask_asset},
+                primary_role="image",
                 annotations=[
                     AnnotationRecord(
                         annotation_id="instance-1",
@@ -745,8 +753,8 @@ def test_instance_mask_export_requires_stored_bbox_and_area(tmp_path: Path, monk
         },
         items=[
             ExportableItem(
-                asset=sample_asset(),
-                related_assets={"instance_mask": mask_asset},
+                assets={"image": sample_asset(), "instance_mask": mask_asset},
+                primary_role="image",
                 annotations=[
                     AnnotationRecord(
                         annotation_id="instance-1",

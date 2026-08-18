@@ -17,9 +17,9 @@ from mindtrace.datalake.exporters.base import (
     _primary_asset_entry,
     build_exportable_dataset_from_resolved_version_async,
     build_exportable_dataset_from_resolved_version_sync,
-    default_export_filename,
     prepare_export_destination,
 )
+from mindtrace.datalake.exporters.types import ExportableItem, default_export_filename
 from mindtrace.datalake.types import (
     AnnotationRecord,
     AnnotationSet,
@@ -56,12 +56,40 @@ def test_build_exportable_dataset_from_resolved_version_sync_collects_primary_as
     assert exportable.asset_count == 1
     assert exportable.annotation_count == 1
     assert exportable.items[0].split == "train"
+    assert exportable.items[0].primary_role == "image"
     assert exportable.items[0].source_filename == "asset_img.png"
     assert exportable.items[0].annotations[0].annotation_id == "annotation_1"
-    assert exportable.items[0].related_assets["mask"].asset_id == "asset_mask"
-    assert exportable.items[0].related_payload_bytes["mask"] == png_bytes()
+    assert exportable.items[0].assets["mask"].asset_id == "asset_mask"
+    assert exportable.items[0].payloads["mask"] == png_bytes()
     assert not any("multiple assets" in warning for warning in exportable.warnings)
     assert any("has no records for asset" in warning for warning in exportable.warnings)
+
+
+@pytest.mark.asyncio
+async def test_async_builder_preserves_role_indexed_assets_and_payloads():
+    image_asset = sample_asset()
+    mask_asset = Asset(
+        asset_id="asset_mask",
+        kind="mask",
+        media_type="image/png",
+        storage_ref=StorageRef(mount="assets", name="asset_mask", version="1"),
+    )
+    rdv = resolved_dataset_version(asset=image_asset, extra_assets={"mask": mask_asset})
+    payloads_by_asset_id = {
+        image_asset.asset_id: b"image-payload",
+        mask_asset.asset_id: b"mask-payload",
+    }
+    datalake = AsyncMock()
+    datalake.get_asset_payload = AsyncMock(side_effect=payloads_by_asset_id.__getitem__)
+
+    exportable = await build_exportable_dataset_from_resolved_version_async(datalake, rdv)
+
+    item = exportable.items[0]
+    assert item.primary_role == "image"
+    assert item.assets == {"image": image_asset, "mask": mask_asset}
+    assert item.payloads == {"image": b"image-payload", "mask": b"mask-payload"}
+    assert item.asset == image_asset
+    assert item.payload_bytes == b"image-payload"
 
 
 def test_export_snapshot_helper_handles_non_asset_subjects_and_fallback_roles():
@@ -85,12 +113,14 @@ def test_export_snapshot_helper_handles_non_asset_subjects_and_fallback_roles():
         geometry={"x": 1, "y": 2, "width": 3, "height": 4},
     )
 
-    export_item, warnings = _build_exportable_item(datum, payload_bytes=b"payload")
+    export_item, warnings = _build_exportable_item(datum, payloads={"thumbnail": b"payload"})
 
     assert _annotation_subject_asset_id(record) is None
     assert _primary_asset_entry(datum) == ("thumbnail", asset)
     assert export_item is not None
+    assert export_item.primary_role == "thumbnail"
     assert export_item.asset.asset_id == "asset_other"
+    assert export_item.payload_bytes == b"payload"
     assert warnings == []
 
 
@@ -134,7 +164,7 @@ def test_export_snapshot_helper_rejects_datums_without_assets():
             annotation_sets=[],
             annotation_records={},
         ),
-        payload_bytes=b"",
+        payloads={},
     )
 
     assert export_item is None
@@ -173,7 +203,7 @@ def test_export_snapshot_helper_warns_for_non_primary_records_in_same_set():
         },
     )
 
-    export_item, warnings = _build_exportable_item(resolved_datum, payload_bytes=png_bytes())
+    export_item, warnings = _build_exportable_item(resolved_datum, payloads={"image": png_bytes()})
 
     assert export_item is not None
     assert [record.annotation_id for record in export_item.annotations] == ["annotation_1"]
@@ -266,10 +296,25 @@ def test_export_without_media_does_not_load_asset_payloads():
     )
 
     datalake.get_asset_payload.assert_not_called()
+    assert exportable.items[0].payloads == {}
     assert exportable.items[0].payload_bytes is None
 
 
-def test_related_assets_do_not_emit_false_primary_only_warning():
+def test_exportable_item_validates_primary_and_payload_roles():
+    asset = sample_asset()
+
+    with pytest.raises(ValueError, match="primary_role .* is not present in assets"):
+        ExportableItem(assets={"image": asset}, primary_role="mask")
+
+    with pytest.raises(ValueError, match="payload roles do not reference known assets"):
+        ExportableItem(
+            assets={"image": asset},
+            primary_role="image",
+            payloads={"mask": png_bytes()},
+        )
+
+
+def test_multiple_asset_roles_do_not_emit_false_primary_only_warning():
     primary = sample_asset()
     related = Asset(
         asset_id="asset_mask",

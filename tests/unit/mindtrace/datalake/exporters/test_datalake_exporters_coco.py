@@ -28,10 +28,10 @@ def test_coco_export_writes_default_annotations_file_and_skips_invalid_polygon(t
         name="dataset-a",
         items=[
             ExportableItem(
-                asset=asset,
+                assets={"image": asset},
+                primary_role="image",
                 annotations=[polygon],
-                payload_bytes=png_bytes(),
-                source_filename="asset_img.png",
+                payloads={"image": png_bytes()},
             )
         ],
     )
@@ -56,10 +56,9 @@ def test_coco_export_requires_image_payloads(tmp_path: Path):
         name="dataset-a",
         items=[
             ExportableItem(
-                asset=image_asset,
+                assets={"image": image_asset},
+                primary_role="image",
                 annotations=[bbox],
-                payload_bytes=None,
-                source_filename="asset_img.png",
             )
         ],
     )
@@ -73,10 +72,10 @@ def test_coco_export_requires_image_payloads(tmp_path: Path):
         name="dataset-a",
         items=[
             ExportableItem(
-                asset=non_image_asset,
+                assets={"asset": non_image_asset},
+                primary_role="asset",
                 annotations=[bbox],
-                payload_bytes=b"pdf",
-                source_filename="asset_doc.pdf",
+                payloads={"asset": b"pdf"},
             )
         ],
     )
@@ -108,9 +107,10 @@ def test_coco_export_rejects_classification_dataset_with_hf_guidance(tmp_path: P
         metadata={"task_type": "classification"},
         items=[
             ExportableItem(
-                asset=sample_asset(),
+                assets={"image": sample_asset()},
+                primary_role="image",
                 annotations=[annotation],
-                payload_bytes=png_bytes(),
+                payloads={"image": png_bytes()},
             )
         ],
     )
@@ -132,8 +132,9 @@ def test_coco_export_rejects_dataset_without_bbox_or_polygon_annotations(tmp_pat
         name="mask-only",
         items=[
             ExportableItem(
-                asset=sample_asset(),
-                payload_bytes=png_bytes(),
+                assets={"image": sample_asset()},
+                primary_role="image",
+                payloads={"image": png_bytes()},
                 annotations=[annotation],
             )
         ],
@@ -169,15 +170,13 @@ def test_coco_export_prepares_source_annotations_once_for_validation_categories_
     )
     annotations = _CountingList([bbox, unsupported])
     item = ExportableItem.model_construct(
-        asset=sample_asset(),
+        assets={"image": sample_asset()},
+        primary_role="image",
         split=None,
         metadata={},
         annotations=annotations,
         annotation_sets=[],
-        payload_bytes=png_bytes(),
-        source_filename="asset_img.png",
-        related_assets={},
-        related_payload_bytes={},
+        payloads={"image": png_bytes()},
     )
     items = _CountingList([item])
     dataset = ExportableDataset.model_construct(name="single-pass", metadata={}, items=items, warnings=[])

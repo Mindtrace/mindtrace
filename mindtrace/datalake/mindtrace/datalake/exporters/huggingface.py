@@ -173,18 +173,17 @@ def _embedded_image(item, *, include_media: bool, task: str):
     }
 
 
-def _embedded_related_image(item, role: str, *, include_media: bool, task: str):
-    if role not in item.related_assets:
-        raise ValueError(f"Hugging Face {task} export requires related asset role {role!r}.")
+def _embedded_role_image(item, role: str, *, include_media: bool, task: str):
+    if role not in item.assets:
+        raise ValueError(f"Hugging Face {task} export requires asset role {role!r}.")
     if not include_media:
         return None
-    payload_bytes = item.related_payload_bytes.get(role)
+    payload_bytes = item.payloads.get(role)
     if payload_bytes is None:
         raise ValueError(
-            f"Hugging Face {task} export requires payload bytes for related asset role {role!r} "
-            f"on asset {item.asset.asset_id}."
+            f"Hugging Face {task} export requires payload bytes for asset role {role!r} on asset {item.asset.asset_id}."
         )
-    asset = item.related_assets[role]
+    asset = item.assets[role]
     return {"bytes": payload_bytes, "path": f"{asset.asset_id}.png"}
 
 
@@ -517,17 +516,16 @@ def _export_semantic_segmentation_dataset(
                 f"asset {item.asset.asset_id!r} has {len(mask_annotations)}."
             )
         mask_asset_id = mask_annotations[0].geometry.get("mask_asset_id")
-        semantic_mask_asset = item.related_assets.get("semantic_mask")
+        semantic_mask_asset = item.assets.get("semantic_mask")
         if semantic_mask_asset is None or semantic_mask_asset.asset_id != mask_asset_id:
             raise ValueError(
-                f"Semantic mask annotation for asset {item.asset.asset_id!r} does not match "
-                "related asset role 'semantic_mask'."
+                f"Semantic mask annotation for asset {item.asset.asset_id!r} does not match asset role 'semantic_mask'."
             )
         split_name = item.split or "default"
         rows_by_split.setdefault(split_name, []).append(
             {
                 "image": _embedded_image(item, include_media=include_media, task="semantic segmentation"),
-                "mask": _embedded_related_image(
+                "mask": _embedded_role_image(
                     item,
                     "semantic_mask",
                     include_media=include_media,
@@ -558,11 +556,11 @@ def _export_semantic_segmentation_dataset(
 
 
 def _binary_instance_mask(item, annotation, *, include_media: bool) -> tuple[dict[str, Any] | None, list[float], float]:
-    mask_asset = item.related_assets.get("instance_mask")
+    mask_asset = item.assets.get("instance_mask")
     mask_asset_id = annotation.geometry.get("mask_asset_id")
     if mask_asset is None or mask_asset.asset_id != mask_asset_id:
         raise ValueError(
-            f"Instance mask annotation {annotation.annotation_id!r} does not match related asset role 'instance_mask'."
+            f"Instance mask annotation {annotation.annotation_id!r} does not match asset role 'instance_mask'."
         )
     instance_id = annotation.geometry.get("instance_id")
     if instance_id is None:
@@ -583,7 +581,7 @@ def _binary_instance_mask(item, annotation, *, include_media: bool) -> tuple[dic
     if not include_media:
         return None, bbox, area
 
-    payload = item.related_payload_bytes.get("instance_mask")
+    payload = item.payloads.get("instance_mask")
     if payload is None:
         raise ValueError(f"Instance segmentation export requires mask payload bytes for asset {item.asset.asset_id!r}.")
     try:

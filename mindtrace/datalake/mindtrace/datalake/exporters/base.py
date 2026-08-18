@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import mimetypes
 import shutil
 from pathlib import Path
 from typing import Any
@@ -8,20 +7,6 @@ from typing import Any
 from mindtrace.datalake.types import AnnotationRecord, AnnotationSet, Asset, ResolvedDatasetVersion, ResolvedDatum
 
 from .types import ExportableDataset, ExportableItem
-
-
-def media_suffix_for_asset(asset: Asset) -> str:
-    """Return a best-effort filename suffix for an asset media type."""
-    media_type = asset.media_type or "application/octet-stream"
-    if media_type == "image/jpeg":
-        return ".jpg"
-    guessed = mimetypes.guess_extension(media_type)
-    return guessed or ".bin"
-
-
-def default_export_filename(asset: Asset) -> str:
-    """Return a stable export filename for an asset."""
-    return f"{asset.asset_id}{media_suffix_for_asset(asset)}"
 
 
 def prepare_export_destination(destination: str | Path, *, overwrite: bool) -> Path:
@@ -103,8 +88,7 @@ def _annotation_sets_for_asset(
 def _build_exportable_item(
     resolved_datum: ResolvedDatum,
     *,
-    payload_bytes: bytes | None,
-    payload_bytes_by_role: dict[str, bytes] | None = None,
+    payloads: dict[str, bytes] | None = None,
     split_map: dict[str, str] | None = None,
 ) -> tuple[ExportableItem | None, list[str]]:
     warnings: list[str] = []
@@ -115,24 +99,14 @@ def _build_exportable_item(
     annotation_sets, annotations, annotation_warnings = _annotation_sets_for_asset(resolved_datum, asset.asset_id)
     warnings.extend(annotation_warnings)
     return (
-        ExportableItem.model_construct(
-            asset=asset,
+        ExportableItem(
+            assets=dict(resolved_datum.assets),
+            primary_role=role,
             split=_mapped_split(resolved_datum.datum.split, split_map),
             metadata=dict(resolved_datum.datum.metadata or {}),
             annotations=annotations,
             annotation_sets=annotation_sets,
-            payload_bytes=payload_bytes,
-            source_filename=default_export_filename(asset),
-            related_assets={
-                related_role: related_asset
-                for related_role, related_asset in resolved_datum.assets.items()
-                if related_role != role
-            },
-            related_payload_bytes={
-                related_role: related_payload
-                for related_role, related_payload in (payload_bytes_by_role or {}).items()
-                if related_role != role
-            },
+            payloads=dict(payloads or {}),
         ),
         warnings,
     )
@@ -167,8 +141,7 @@ def build_exportable_dataset_from_resolved_version_sync(
         if primary_entry is None:
             warnings.append(f"Skipped datum {resolved_datum.datum.datum_id} because it does not reference any assets.")
             continue
-        primary_role, _ = primary_entry
-        payload_bytes_by_role = (
+        payloads = (
             {
                 role: _load_asset_payload_sync(object_loader, related_asset)
                 for role, related_asset in resolved_datum.assets.items()
@@ -178,8 +151,7 @@ def build_exportable_dataset_from_resolved_version_sync(
         )
         export_item, item_warnings = _build_exportable_item(
             resolved_datum,
-            payload_bytes=payload_bytes_by_role.get(primary_role),
-            payload_bytes_by_role=payload_bytes_by_role,
+            payloads=payloads,
             split_map=split_map,
         )
         warnings.extend(item_warnings)
@@ -210,8 +182,7 @@ async def build_exportable_dataset_from_resolved_version_async(
         if primary_entry is None:
             warnings.append(f"Skipped datum {resolved_datum.datum.datum_id} because it does not reference any assets.")
             continue
-        primary_role, _ = primary_entry
-        payload_bytes_by_role = (
+        payloads = (
             {
                 role: await _load_asset_payload_async(object_loader, related_asset)
                 for role, related_asset in resolved_datum.assets.items()
@@ -221,8 +192,7 @@ async def build_exportable_dataset_from_resolved_version_async(
         )
         export_item, item_warnings = _build_exportable_item(
             resolved_datum,
-            payload_bytes=payload_bytes_by_role.get(primary_role),
-            payload_bytes_by_role=payload_bytes_by_role,
+            payloads=payloads,
             split_map=split_map,
         )
         warnings.extend(item_warnings)

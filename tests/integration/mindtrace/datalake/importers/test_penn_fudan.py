@@ -19,7 +19,7 @@ def _build_tiny_penn_fudan_fixture(root: Path) -> None:
     mask.save(mask_dir / "FudanPed00001_mask.png")
 
 
-def test_penn_fudan_import_and_media_free_huggingface_export_preserve_instance_geometry(
+def test_penn_fudan_import_and_huggingface_export_preserve_instance_geometry_and_media_roles(
     sync_datalake: Datalake,
     tmp_path: Path,
 ):
@@ -50,3 +50,17 @@ def test_penn_fudan_import_and_media_free_huggingface_export_preserve_instance_g
     assert exported[0]["objects"]["mask"] == [None, None]
     assert exported[0]["objects"]["bbox"] == [[1.0, 0.0, 2.0, 1.0], [1.0, 1.0, 2.0, 1.0]]
     assert exported[0]["objects"]["area"] == [2.0, 2.0]
+
+    media_destination = tmp_path / "export-with-media"
+    sync_datalake.export_dataset_version_to_format(
+        summary.dataset_name,
+        summary.dataset_version,
+        format="huggingface",
+        destination=media_destination,
+        include_media=True,
+        exporter_options={"task": "instance_segmentation"},
+    )
+    exported_with_media = load_from_disk(str(media_destination))["train"]
+
+    assert exported_with_media[0]["image"].size == (3, 2)
+    assert [mask.size for mask in exported_with_media[0]["objects"]["mask"]] == [(3, 2), (3, 2)]
