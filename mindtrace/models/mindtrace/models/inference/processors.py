@@ -30,8 +30,7 @@ class HuggingFaceImageProcessor:
                 inputs = inputs.unsqueeze(0)
             elif inputs.ndim != 4:
                 raise ValueError(
-                    "preprocessed image tensors must have shape (C, H, W) or (B, C, H, W), "
-                    f"got {tuple(inputs.shape)}"
+                    f"preprocessed image tensors must have shape (C, H, W) or (B, C, H, W), got {tuple(inputs.shape)}"
                 )
             if not inputs.is_floating_point():
                 raise TypeError("preprocessed image tensors must use a floating-point dtype")
@@ -58,5 +57,6 @@ class HuggingFaceImageProcessor:
 
         encoded = self._processor(images=images, return_tensors="pt")
         return encoded["pixel_values"]
+
 
 __all__ = ["HuggingFaceImageProcessor"]
