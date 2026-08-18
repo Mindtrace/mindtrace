@@ -1,4 +1,4 @@
-"""Postprocessors for runnable Mindtrace models."""
+"""Output postprocessors for task-level models."""
 
 from __future__ import annotations
 

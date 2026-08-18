@@ -1,35 +1,19 @@
-"""Composable PyTorch image model with task-level prediction behavior."""
+"""Composable PyTorch model with task-level prediction behavior."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Protocol, TypeAlias
+from collections.abc import Callable
+from typing import Any, Generic, TypeVar
 
 import torch
 from torch import Tensor, nn
 
-if TYPE_CHECKING:
-    from PIL.Image import Image as PILImage
-
-    ImageInput: TypeAlias = PILImage | Sequence[PILImage] | Tensor
-else:
-    ImageInput: TypeAlias = Any
+InputT = TypeVar("InputT", contravariant=True)
+OutputT = TypeVar("OutputT", covariant=True)
 
 
-class ImageProcessor(Protocol):
-    """Convert user-facing image inputs into a batched tensor."""
-
-    def __call__(self, inputs: ImageInput) -> Tensor: ...
-
-
-class ImagePostprocessor(Protocol):
-    """Convert raw network outputs into task-level image predictions."""
-
-    def __call__(self, outputs: Any, **params: Any) -> Any: ...
-
-
-class TorchImageModel(nn.Module):
-    """Compose image preprocessing, a PyTorch network, and postprocessing.
+class TorchModel(nn.Module, Generic[InputT, OutputT]):
+    """Compose preprocessing, a PyTorch network, and postprocessing.
 
     ``forward`` preserves normal ``nn.Module`` tensor semantics, while
     ``predict`` provides the higher-level Mindtrace model contract.
@@ -38,8 +22,8 @@ class TorchImageModel(nn.Module):
     def __init__(
         self,
         network: nn.Module,
-        processor: ImageProcessor,
-        postprocessor: ImagePostprocessor,
+        processor: Callable[[InputT], Tensor],
+        postprocessor: Callable[..., OutputT],
         *,
         device: str | torch.device | None = None,
     ) -> None:
@@ -60,8 +44,8 @@ class TorchImageModel(nn.Module):
         """Run the wrapped network on a preprocessed tensor batch."""
         return self.network(inputs)
 
-    def predict(self, inputs: ImageInput, **params: Any) -> Any:
-        """Preprocess images, run inference, and postprocess the outputs."""
+    def predict(self, inputs: InputT, **params: Any) -> OutputT:
+        """Preprocess inputs, run inference, and postprocess the outputs."""
         batch = self.processor(inputs)
         if not isinstance(batch, Tensor):
             raise TypeError(f"processor must return torch.Tensor, got {type(batch).__name__}")
@@ -82,4 +66,4 @@ class TorchImageModel(nn.Module):
                 return torch.device("cpu")
 
 
-__all__ = ["ImageInput", "ImagePostprocessor", "ImageProcessor", "TorchImageModel"]
+__all__ = ["TorchModel"]

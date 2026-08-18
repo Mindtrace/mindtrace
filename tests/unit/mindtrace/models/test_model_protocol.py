@@ -13,8 +13,7 @@ from torch import Tensor, nn
 from mindtrace.models import (
     ClassificationPostprocessor,
     HuggingFaceImageProcessor,
-    Model,
-    TorchImageModel,
+    TorchModel,
 )
 from mindtrace.registry import Registry
 
@@ -48,16 +47,12 @@ class _PassthroughPostprocessor:
         return {"outputs": outputs.cpu().tolist(), "params": params}
 
 
-def _build_test_model() -> TorchImageModel:
-    return TorchImageModel(
+def _build_test_model() -> TorchModel[Any, dict[str, Any]]:
+    return TorchModel(
         network=_RecordingNetwork(),
         processor=_ImageSizeProcessor(),
         postprocessor=_PassthroughPostprocessor(),
     )
-
-
-def test_torch_image_model_satisfies_model_protocol() -> None:
-    assert isinstance(_build_test_model(), Model)
 
 
 def test_forward_delegates_to_wrapped_network() -> None:
@@ -105,7 +100,7 @@ def test_predict_rejects_non_tensor_processor_output() -> None:
         def __call__(self, inputs: Any) -> list[Any]:
             return [inputs]
 
-    model = TorchImageModel(
+    model = TorchModel(
         network=nn.Identity(),
         processor=InvalidProcessor(),
         postprocessor=_PassthroughPostprocessor(),
@@ -169,7 +164,7 @@ def test_registry_round_trip_preserves_runnable_model(tmp_path: Path) -> None:
     loaded = registry.load("my-model")
     result = loaded.predict(Image.new("RGB", (7, 9)), source="registry")
 
-    assert isinstance(loaded, TorchImageModel)
+    assert isinstance(loaded, TorchModel)
     assert result == {
         "outputs": [[8.0, 8.0]],
         "params": {"source": "registry"},

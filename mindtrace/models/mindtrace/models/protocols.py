@@ -1,12 +1,11 @@
 """Structural contracts for runnable Mindtrace models."""
 
-from typing import Any, Protocol, TypeVar, runtime_checkable
+from typing import Any, Protocol, TypeVar
 
 InputT = TypeVar("InputT", contravariant=True)
 OutputT = TypeVar("OutputT", covariant=True)
 
 
-@runtime_checkable
 class Model(Protocol[InputT, OutputT]):
     """A model that exposes task-level prediction behavior.
 

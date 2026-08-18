@@ -31,15 +31,12 @@ from mindtrace.models.architectures.backbones import (
     BackboneFeatures,
     BackboneProtocol,
 )
-from mindtrace.models.protocols import Model
-from mindtrace.models.runtime import (
+from mindtrace.models.inference import (
     ClassificationPostprocessor,
     HuggingFaceImageProcessor,
-    ImageInput,
-    ImagePostprocessor,
-    ImageProcessor,
-    TorchImageModel,
+    TorchModel,
 )
+from mindtrace.models.protocols import Model
 from mindtrace.models.serving import (
     ClassificationResult,
     DetectionResult,
@@ -127,10 +124,7 @@ from mindtrace.models.lifecycle import (
 __all__ = [
     # runnable models
     "Model",
-    "TorchImageModel",
-    "ImageInput",
-    "ImageProcessor",
-    "ImagePostprocessor",
+    "TorchModel",
     "HuggingFaceImageProcessor",
     "ClassificationPostprocessor",
     # serving

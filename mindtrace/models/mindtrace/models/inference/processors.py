@@ -1,13 +1,18 @@
-"""Image processors for runnable Mindtrace models."""
+"""Input processors for task-level models."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 from torch import Tensor
 
-from mindtrace.models.runtime.image import ImageInput
+if TYPE_CHECKING:
+    from PIL.Image import Image as PILImage
+
+    _ImageInput: TypeAlias = PILImage | Sequence[PILImage] | Tensor
+else:
+    _ImageInput: TypeAlias = Any
 
 
 class HuggingFaceImageProcessor:
@@ -18,7 +23,7 @@ class HuggingFaceImageProcessor:
         self.cache_dir = cache_dir
         self._processor: Any = None
 
-    def __call__(self, inputs: ImageInput) -> Tensor:
+    def __call__(self, inputs: _ImageInput) -> Tensor:
         """Return a ``(B, C, H, W)`` pixel-value tensor."""
         if isinstance(inputs, Tensor):
             return inputs
