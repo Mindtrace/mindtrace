@@ -273,6 +273,15 @@ def test_huggingface_bbox_crop_classification_export_preserves_lineage(tmp_path:
         "import_module",
         lambda name: _fake_datasets_module(),
     )
+    original_open = Image.open
+    decoded_payloads = 0
+
+    def count_decode(*args, **kwargs):
+        nonlocal decoded_payloads
+        decoded_payloads += 1
+        return original_open(*args, **kwargs)
+
+    monkeypatch.setattr(Image, "open", count_decode)
     dataset = ExportableDataset(
         name="pascal-voc",
         metadata={
@@ -293,7 +302,15 @@ def test_huggingface_bbox_crop_classification_export_preserves_lineage(tmp_path:
                         label_id=2,
                         geometry={"type": "bbox", "x": 0, "y": 0, "width": 1, "height": 1},
                         source={"type": "human", "name": "pascal-voc"},
-                    )
+                    ),
+                    AnnotationRecord(
+                        annotation_id="detection_2",
+                        kind="bbox",
+                        label="aeroplane",
+                        label_id=1,
+                        geometry={"type": "bbox", "x": 1, "y": 1, "width": 2, "height": 2},
+                        source={"type": "human", "name": "pascal-voc"},
+                    ),
                 ],
             )
         ],
@@ -307,15 +324,18 @@ def test_huggingface_bbox_crop_classification_export_preserves_lineage(tmp_path:
         },
     )
     payload = json.loads((tmp_path / "voc-crops-hf" / "dataset_dict.json").read_text())
-    row = payload["val"][0]
+    first_row, second_row = payload["val"]
 
-    assert result.asset_count == 1
-    assert row["label"] == 1
-    assert row["label_name"] == "bicycle"
-    assert row["source_image_asset_id"] == "asset_img"
-    assert row["source_annotation_id"] == "detection_1"
-    assert row["source_bbox"] == [0.0, 0.0, 1.0, 1.0]
-    assert row["image"]["path"] == "asset_img-detection_1.jpg"
+    assert result.asset_count == 2
+    assert decoded_payloads == 1
+    assert first_row["label"] == 1
+    assert first_row["label_name"] == "bicycle"
+    assert first_row["source_image_asset_id"] == "asset_img"
+    assert first_row["source_annotation_id"] == "detection_1"
+    assert first_row["source_bbox"] == [0.0, 0.0, 1.0, 1.0]
+    assert first_row["image"]["path"] == "asset_img-detection_1.jpg"
+    assert second_row["source_annotation_id"] == "detection_2"
+    assert second_row["image"]["path"] == "asset_img-detection_2.jpg"
 
 
 def test_huggingface_detection_export_writes_typed_objects_and_remaps_labels(tmp_path: Path, monkeypatch):

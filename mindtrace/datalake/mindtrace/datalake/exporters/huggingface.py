@@ -330,32 +330,34 @@ def _export_multi_label_classification_dataset(
     )
 
 
-def _crop_image_for_classification(item, annotation) -> dict[str, Any]:
+def _decode_classification_crop_image(item):
     if item.payload_bytes is None:
         raise ValueError(
             f"Hugging Face bbox-crop classification export requires payload bytes for asset {item.asset.asset_id}."
         )
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise ImportError("Bounding-box classification crops require Pillow.") from exc
+    with Image.open(io.BytesIO(item.payload_bytes)) as image:
+        return image.convert("RGB")
+
+
+def _crop_image_for_classification(image, item, annotation) -> dict[str, Any]:
     geometry = annotation.geometry
     if geometry.get("type") != "bbox":
         raise ValueError(f"Classification crop annotation {annotation.annotation_id!r} must use bbox geometry.")
     x, y, width, height = (float(geometry.get(key, 0)) for key in ("x", "y", "width", "height"))
     if width <= 0 or height <= 0:
         raise ValueError(f"Classification crop annotation {annotation.annotation_id!r} has an empty bbox.")
-    try:
-        from PIL import Image
-    except ImportError as exc:
-        raise ImportError("Bounding-box classification crops require Pillow.") from exc
-    with Image.open(io.BytesIO(item.payload_bytes)) as image:
-        left = max(0, int(x))
-        top = max(0, int(y))
-        right = min(image.width, int(x + width))
-        bottom = min(image.height, int(y + height))
-        if right <= left or bottom <= top:
-            raise ValueError(
-                f"Classification crop annotation {annotation.annotation_id!r} lies outside its source image."
-            )
-        crop = image.convert("RGB").crop((left, top, right, bottom))
-        payload = io.BytesIO()
+    left = max(0, int(x))
+    top = max(0, int(y))
+    right = min(image.width, int(x + width))
+    bottom = min(image.height, int(y + height))
+    if right <= left or bottom <= top:
+        raise ValueError(f"Classification crop annotation {annotation.annotation_id!r} lies outside its source image.")
+    payload = io.BytesIO()
+    with image.crop((left, top, right, bottom)) as crop:
         crop.save(payload, format="JPEG")
     return {
         "bytes": payload.getvalue(),
@@ -377,25 +379,33 @@ def _export_bbox_crop_classification_dataset(
     crop_count = 0
 
     for item in dataset.items:
-        for annotation in item.annotations:
-            if annotation.kind != "bbox":
-                continue
-            split_name = item.split or "default"
-            rows_by_split.setdefault(split_name, []).append(
-                {
-                    "image": _crop_image_for_classification(item, annotation) if include_media else None,
-                    "asset_id": f"{item.asset.asset_id}:{annotation.annotation_id}",
-                    "label": class_ids[annotation.label],
-                    "label_name": annotation.label,
-                    "split": item.split or "",
-                    "source_image_asset_id": item.asset.asset_id,
-                    "source_annotation_id": annotation.annotation_id,
-                    "source_bbox": [float(annotation.geometry.get(key, 0)) for key in ("x", "y", "width", "height")],
-                    "metadata_json": json.dumps(item.metadata or {}, sort_keys=True, default=str),
-                    "asset_metadata_json": json.dumps(item.asset.metadata or {}, sort_keys=True, default=str),
-                }
-            )
-            crop_count += 1
+        annotations = [annotation for annotation in item.annotations if annotation.kind == "bbox"]
+        source_image = _decode_classification_crop_image(item) if include_media and annotations else None
+        try:
+            for annotation in annotations:
+                split_name = item.split or "default"
+                rows_by_split.setdefault(split_name, []).append(
+                    {
+                        "image": (
+                            _crop_image_for_classification(source_image, item, annotation) if source_image else None
+                        ),
+                        "asset_id": f"{item.asset.asset_id}:{annotation.annotation_id}",
+                        "label": class_ids[annotation.label],
+                        "label_name": annotation.label,
+                        "split": item.split or "",
+                        "source_image_asset_id": item.asset.asset_id,
+                        "source_annotation_id": annotation.annotation_id,
+                        "source_bbox": [
+                            float(annotation.geometry.get(key, 0)) for key in ("x", "y", "width", "height")
+                        ],
+                        "metadata_json": json.dumps(item.metadata or {}, sort_keys=True, default=str),
+                        "asset_metadata_json": json.dumps(item.asset.metadata or {}, sort_keys=True, default=str),
+                    }
+                )
+                crop_count += 1
+        finally:
+            if source_image is not None:
+                source_image.close()
 
     if not crop_count:
         raise ValueError("Bounding-box classification crop export requires at least one bbox annotation.")
