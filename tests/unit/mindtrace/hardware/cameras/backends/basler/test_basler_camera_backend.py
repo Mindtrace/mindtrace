@@ -2889,6 +2889,7 @@ class TestBaslerCameraBackendErrorHandlingAndFallbackPaths:
 class TestBaslerCameraBackendROIOperations:
     """Test ROI (Region of Interest) operations including setting, getting, and validation."""
 
+    @pytest.mark.asyncio
     async def test_set_roi_parameter_validation(self, mock_pypylon):
         """Test set_ROI method parameter validation and bounds checking."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
@@ -3147,6 +3148,7 @@ class TestBaslerCameraBackendROIOperations:
 class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
     """Test white balance and pixel format error handling paths."""
 
+    @pytest.mark.asyncio
     async def test_get_wb_feature_not_available(self, mock_pypylon):
         """Test white balance retrieval when feature is not available."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
