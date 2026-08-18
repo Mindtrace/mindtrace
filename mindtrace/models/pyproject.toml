@@ -41,6 +41,7 @@ peft = ["peft>=0.6"]
 
 # Install everything
 all = [
+    "datasets>=2.19.0",
     "mlflow>=2.0",
     "wandb>=0.16",
     "torchvision>=0.15",
