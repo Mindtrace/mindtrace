@@ -199,6 +199,8 @@ def find_skipped_keys(data: Dict[str, Any]) -> tuple[str, ...]:
 
 _ROI_DICT_KEYS = ("x", "y", "width", "height")
 _LEGACY_ROI_KEYS = ("roi_x", "roi_y", "width", "height")
+# Legacy Basler export_config wrote explicit null for non-GigE cameras; treat as absent.
+_GIGE_PASSTHROUGH_KEYS = frozenset({"packet_size", "inter_packet_delay", "bandwidth_limit"})
 
 
 def _normalize_roi(value: Any) -> Tuple[int, int, int, int]:
@@ -275,8 +277,12 @@ def parse_configure_settings(data: Dict[str, Any]) -> tuple[Dict[str, Any], Dict
 
     passthrough_keys = set(CONFIGURABLE_KEYS) - {"exposure_time", "trigger_mode", "image_enhancement", "roi"}
     for key in passthrough_keys:
-        if key in source:
-            normalized[key] = source[key]
+        if key not in source:
+            continue
+        value = source[key]
+        if value is None and key in _GIGE_PASSTHROUGH_KEYS:
+            continue
+        normalized[key] = value
 
     return normalized, invalid
 

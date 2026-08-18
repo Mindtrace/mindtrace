@@ -2381,6 +2381,43 @@ class TestBaslerCameraBackendGigESettings:
         assert basler_camera.camera.IsGrabbing() is True
         assert basler_camera.camera.bandwidth_limit_mode == "Off"
 
+    @pytest.mark.asyncio
+    async def test_get_bandwidth_limit_off_returns_none(self, basler_camera):
+        await basler_camera.initialize()
+        basler_camera.camera.bandwidth_limit_mode = "Off"
+
+        assert await basler_camera.get_bandwidth_limit() is None
+
+    @pytest.mark.asyncio
+    async def test_bandwidth_limit_unlimited_does_not_round_trip_as_zero(self, basler_camera):
+        """Unlimited (Off) must not export/restore as 0.0 Mbps."""
+        await basler_camera.initialize()
+        basler_camera.camera.bandwidth_limit_mode = "Off"
+
+        limit = await basler_camera.get_bandwidth_limit()
+        assert limit is None
+
+        if limit is not None:
+            await basler_camera.set_bandwidth_limit(limit)
+
+        assert basler_camera.camera.bandwidth_limit_mode == "Off"
+
+    @pytest.mark.asyncio
+    async def test_bandwidth_limit_set_get_set_round_trip(self, basler_camera):
+        await basler_camera.initialize()
+
+        await basler_camera.set_bandwidth_limit(100.0)
+        assert await basler_camera.get_bandwidth_limit() == pytest.approx(100.0)
+
+        await basler_camera.set_bandwidth_limit(None)
+        assert await basler_camera.get_bandwidth_limit() is None
+
+        limit = await basler_camera.get_bandwidth_limit()
+        if limit is not None:
+            await basler_camera.set_bandwidth_limit(limit)
+
+        assert basler_camera.camera.bandwidth_limit_mode == "Off"
+
 
 class TestBaslerCameraBackendConfigureCameraPypylonCheck:
     """Test _configure_camera method when pypylon is not available."""

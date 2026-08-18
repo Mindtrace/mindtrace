@@ -735,11 +735,12 @@ class AsyncCamera(Mindtrace):
         async with self._lock:
             await self._backend.set_inter_packet_delay(delay_ticks)
 
-    async def get_bandwidth_limit(self) -> float:
+    async def get_bandwidth_limit(self) -> Optional[float]:
         """Get bandwidth limit in Mbps.
 
         Returns:
-            Bandwidth limit in Mbps, or unlimited if not set.
+            Bandwidth limit in Mbps when limiting is enabled, or ``None`` when
+            unlimited.
 
         Raises:
             NotImplementedError: If camera doesn't support bandwidth limiting.

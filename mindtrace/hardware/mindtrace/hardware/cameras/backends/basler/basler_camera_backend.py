@@ -1464,8 +1464,13 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.error(f"Error setting bandwidth limit for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to set bandwidth limit: {str(e)}")
 
-    async def get_bandwidth_limit(self) -> float:
-        """Get current bandwidth limit in Mbps."""
+    async def get_bandwidth_limit(self) -> Optional[float]:
+        """Get current bandwidth limit in Mbps.
+
+        Returns:
+            Limit in Mbps when limiting is enabled, or ``None`` when unlimited
+            (``DeviceLinkThroughputLimitMode`` is ``Off``).
+        """
         if not self.initialized or not self.camera:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
@@ -1477,7 +1482,7 @@ class BaslerCameraBackend(CameraBackend):
                     self.camera.DeviceLinkThroughputLimitMode.GetValue, timeout=self._op_timeout_s
                 )
                 if mode == "Off":
-                    return 0.0  # No limit
+                    return None
 
                 if hasattr(self.camera, "DeviceLinkThroughputLimit"):
                     limit_bps = await self._run_blocking(
@@ -1487,7 +1492,7 @@ class BaslerCameraBackend(CameraBackend):
                     limit_mbps = (limit_bps * 8) / (1024 * 1024)
                     return float(limit_mbps)
 
-            return 0.0  # No limit or not supported
+            return None
 
         except Exception as e:
             self.logger.error(f"Error getting bandwidth limit for camera '{self.camera_name}': {str(e)}")

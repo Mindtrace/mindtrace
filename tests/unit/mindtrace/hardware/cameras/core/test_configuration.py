@@ -239,5 +239,22 @@ def test_parse_configure_settings_rejects_roi_with_wrong_length():
     assert "roi" in invalid
 
 
+def test_normalize_settings_skips_null_gige_keys_from_legacy_profiles():
+    data = {
+        "exposure_time": 1000.0,
+        "packet_size": None,
+        "inter_packet_delay": None,
+        "bandwidth_limit": None,
+        "gain": 2.0,
+    }
+
+    normalized = normalize_settings(data)
+
+    assert normalized == {"exposure_time": 1000.0, "gain": 2.0}
+    assert "packet_size" not in normalized
+    assert "inter_packet_delay" not in normalized
+    assert "bandwidth_limit" not in normalized
+
+
 def test_find_skipped_keys_treats_malformed_roi_as_consumed():
     assert find_skipped_keys({"roi": "full", "gain": 2.0}) == ()

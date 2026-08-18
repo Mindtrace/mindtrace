@@ -397,8 +397,8 @@ class CameraBackend(MindtraceABC):
         self.logger.error(f"set_bandwidth_limit not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_bandwidth_limit not supported by {self.__class__.__name__}")
 
-    async def get_bandwidth_limit(self) -> float:
-        """Get current bandwidth limit."""
+    async def get_bandwidth_limit(self) -> Optional[float]:
+        """Get current bandwidth limit in Mbps, or ``None`` when unlimited."""
         self.logger.error(f"get_bandwidth_limit not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_bandwidth_limit not supported by {self.__class__.__name__}")
 
