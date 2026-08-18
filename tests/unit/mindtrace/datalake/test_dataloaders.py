@@ -1,3 +1,4 @@
+import copy
 import pickle
 from types import SimpleNamespace
 
@@ -20,12 +21,41 @@ class _FakeSplitDataset:
         self.rows = rows
         self.column_names = column_names or ["image", "label"]
         self.features = features or {"label": SimpleNamespace(names=["pink primrose", "orchid"])}
+        self.info = SimpleNamespace(metadata={})
+        self._transform = None
 
     def __len__(self):
         return len(self.rows)
 
     def __getitem__(self, index):
-        return self.rows[index]
+        row = self.rows[index]
+        if self._transform is None:
+            return row
+        transformed = self._transform({key: [value] for key, value in row.items()})
+        return {key: values[0] for key, values in transformed.items()}
+
+    def with_transform(self, transform):
+        transformed = copy.copy(self)
+        transformed._transform = transform
+        return transformed
+
+    def select(self, indices):
+        selected = copy.copy(self)
+        selected.rows = [self.rows[index] for index in indices]
+        return selected
+
+    def filter(self, predicate):
+        filtered = copy.copy(self)
+        filtered.rows = [row for row in self.rows if predicate(row)]
+        return filtered
+
+    def shuffle(self, seed=None):
+        shuffled = copy.copy(self)
+        shuffled.shuffle_seed = seed
+        return shuffled
+
+    def train_test_split(self, **kwargs):
+        return {"train": self, "test": copy.copy(self), "kwargs": kwargs}
 
 
 class _FakeDatasetDict(dict):
@@ -116,15 +146,15 @@ def test_classification_dataset_returns_normalized_image_and_long_target(monkeyp
         lambda: _dependency_bundle(payload),
     )
 
-    dataset = dataloaders.HuggingFaceClassificationDataset("/export", split="train")
-    sample, target = dataset[0]
+    dataset = dataloaders.build_datasets("/export")["train"]
+    sample = dataset[0]
+    target = sample["target"]
 
-    assert sample == ("normalized", image, 255)
+    assert sample["image"] == ("normalized", image, 255)
     assert image.mode == "RGB"
     assert target.value == 1
     assert target.dtype == "long"
-    assert dataset.class_names == ("pink primrose", "orchid")
-    assert dataset.classification_type == "single_label"
+    assert dataset.features["label"].names == ["pink primrose", "orchid"]
 
 
 def test_multi_label_classification_dataset_returns_float_target(monkeypatch):
@@ -143,14 +173,14 @@ def test_multi_label_classification_dataset_returns_float_target(monkeypatch):
         lambda: _dependency_bundle(payload),
     )
 
-    dataset = dataloaders.HuggingFaceClassificationDataset("/export", split="train")
-    sample, target = dataset[0]
+    dataset = dataloaders.build_datasets("/export")["train"]
+    sample = dataset[0]
+    target = sample["target"]
 
-    assert sample == ("normalized", image, 255)
+    assert sample["image"] == ("normalized", image, 255)
     assert target.value == [1.0, 0.0, 1.0]
     assert target.dtype == "float32"
-    assert dataset.class_names == ("aeroplane", "bicycle", "bird")
-    assert dataset.classification_type == "multi_label"
+    assert dataset.features["label_ids"].feature.names == ["aeroplane", "bicycle", "bird"]
 
 
 def test_classification_dataset_is_picklable_for_spawned_workers(monkeypatch):
@@ -163,7 +193,7 @@ def test_classification_dataset_is_picklable_for_spawned_workers(monkeypatch):
         lambda: _dependency_bundle(payload),
     )
 
-    dataset = dataloaders.HuggingFaceClassificationDataset("/export", split="train")
+    dataset = dataloaders.build_datasets("/export")["train"]
 
     pickle.dumps(dataset)
 
@@ -178,9 +208,37 @@ def test_classification_dataset_rejects_export_without_media(monkeypatch):
         lambda: _dependency_bundle(payload),
     )
 
-    dataset = dataloaders.HuggingFaceClassificationDataset("/export", split="train")
+    dataset = dataloaders.build_datasets("/export")["train"]
     with pytest.raises(ValueError, match="include_media=True"):
         dataset[0]
+
+
+def test_classification_dataloader_collates_native_dataset_mappings(monkeypatch):
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset([{"image": _FakeImage(), "label": 0}]),
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    loader = dataloaders.build_dataloaders("/export")["train"]
+    collate_fn = loader.kwargs["collate_fn"]
+    image_a = _FakeTensor("image-a", dtype="float32")
+    image_b = _FakeTensor("image-b", dtype="float32")
+    target_a = _FakeTensor(0, dtype="long")
+    target_b = _FakeTensor(1, dtype="long")
+
+    images, targets = collate_fn(
+        [
+            {"image": image_a, "target": target_a},
+            {"image": image_b, "target": target_b},
+        ]
+    )
+
+    assert images.value == ["image-a", "image-b"]
+    assert targets.value == [0, 1]
 
 
 def test_detection_dataset_returns_xywh_targets_and_zero_based_labels(monkeypatch):
@@ -209,10 +267,11 @@ def test_detection_dataset_returns_xywh_targets_and_zero_based_labels(monkeypatc
         lambda: _dependency_bundle(payload),
     )
 
-    dataset = dataloaders.HuggingFaceDetectionDataset("/export", split="train")
-    sample, target = dataset[0]
+    dataset = dataloaders.build_datasets("/export", task="detection")["train"]
+    sample = dataset[0]
+    target = sample["target"]
 
-    assert sample == ("normalized", image, 255)
+    assert sample["image"] == ("normalized", image, 255)
     assert target["boxes"].value == [[10.0, 20.0, 40.0, 60.0]]
     assert target["boxes"].dtype == "float32"
     assert target["boxes"].shape == (-1, 4)
@@ -221,7 +280,43 @@ def test_detection_dataset_returns_xywh_targets_and_zero_based_labels(monkeypatc
     assert target["area"].value == [1200.0]
     assert target["iscrowd"].value == [0]
     assert "asset_id" not in target
-    assert dataset.class_names == ("aeroplane", "bicycle")
+    assert dataset.features["objects"].feature["category"].names == ["aeroplane", "bicycle"]
+
+
+def test_detection_dataset_can_return_provenance_outside_tensor_target(monkeypatch):
+    objects_feature = SimpleNamespace(feature={"category": SimpleNamespace(names=["object"])})
+    row = {
+        "asset_id": "asset-1",
+        "image": _FakeImage(),
+        "objects": {
+            "bbox": [[1.0, 2.0, 3.0, 4.0]],
+            "category": [0],
+            "area": [12.0],
+        },
+    }
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset(
+            [row],
+            column_names=list(row),
+            features={"objects": objects_feature},
+        ),
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    dataset = dataloaders.build_datasets(
+        "/export",
+        task="detection",
+        return_metadata=True,
+    )["train"]
+    sample = dataset[0]
+
+    assert sample["metadata"] == {"asset_id": "asset-1"}
+    assert "asset_id" not in sample["target"]
+    assert all(callable(getattr(value, "to", None)) for value in sample["target"].values())
 
 
 def test_detection_dataloader_uses_variable_target_collator(monkeypatch):
@@ -242,10 +337,50 @@ def test_detection_dataloader_uses_variable_target_collator(monkeypatch):
     loaders = dataloaders.build_dataloaders("/export", task="detection")
     collate_fn = loaders["train"].kwargs["collate_fn"]
 
-    assert isinstance(loaders["train"].dataset, dataloaders.HuggingFaceDetectionDataset)
-    assert collate_fn([("image-a", {"boxes": "a"}), ("image-b", {"boxes": "b"})]) == (
+    assert isinstance(loaders["train"].dataset, _FakeSplitDataset)
+    assert collate_fn(
+        [
+            {"image": "image-a", "target": {"boxes": "a"}},
+            {"image": "image-b", "target": {"boxes": "b"}},
+        ]
+    ) == (
         ["image-a", "image-b"],
         [{"boxes": "a"}, {"boxes": "b"}],
+    )
+
+
+def test_detection_dataloader_preserves_optional_metadata_column(monkeypatch):
+    objects_feature = SimpleNamespace(feature={"category": SimpleNamespace(names=["object"])})
+    row = {"asset_id": "asset-1", "image": _FakeImage(), "objects": []}
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset(
+            [row],
+            column_names=list(row),
+            features={"objects": objects_feature},
+        ),
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    loaders = dataloaders.build_dataloaders(
+        "/export",
+        task="detection",
+        return_metadata=True,
+    )
+    collate_fn = loaders["train"].kwargs["collate_fn"]
+
+    assert collate_fn(
+        [
+            {"image": "image-a", "target": {"boxes": "a"}, "metadata": {"asset_id": "a"}},
+            {"image": "image-b", "target": {"boxes": "b"}, "metadata": {"asset_id": "b"}},
+        ]
+    ) == (
+        ["image-a", "image-b"],
+        [{"boxes": "a"}, {"boxes": "b"}],
+        [{"asset_id": "a"}, {"asset_id": "b"}],
     )
 
 
@@ -283,9 +418,14 @@ def test_build_datasets_returns_requested_split_adapters_and_split_transforms(mo
     )
 
     assert tuple(datasets) == ("train", "val")
-    assert all(isinstance(dataset, dataloaders.HuggingFaceClassificationDataset) for dataset in datasets.values())
-    assert datasets["train"].transform is train_transform
-    assert datasets["val"].transform is val_transform
+    assert all(isinstance(dataset, _FakeSplitDataset) for dataset in datasets.values())
+    assert datasets["train"][0]["image"] == ("train", row["image"])
+    assert datasets["val"][0]["image"] == ("val", row["image"])
+    assert datasets["train"].select([0])[0]["target"].dtype == "long"
+    assert callable(datasets["train"].filter)
+    assert callable(datasets["train"].shuffle)
+    assert callable(datasets["train"].train_test_split)
+    assert datasets["train"].features is payload["train"].features
     assert load_calls == ["/export"]
 
 
@@ -315,17 +455,21 @@ def test_semantic_segmentation_dataset_returns_image_and_long_mask(monkeypatch):
         lambda: _dependency_bundle(payload),
     )
 
-    dataset = dataloaders.HuggingFaceSemanticSegmentationDataset("/export", split="train")
-    sample, target = dataset[0]
+    dataset = dataloaders.build_datasets("/export", task="semantic_segmentation")["train"]
+    sample = dataset[0]
+    target = sample["target"]
 
-    assert sample == ("normalized", image, 255)
+    assert sample["image"] == ("normalized", image, 255)
     assert image.mode == "RGB"
     assert target.value is mask
     assert target.squeezed_dimension == 0
     assert target.dtype == "long"
-    assert dataset.class_names == ("background", "person")
-    assert dataset.background_id == 0
-    assert dataset.ignore_index == 255
+    assert dataset.info.metadata["mindtrace"] == {
+        "profile": "semantic_segmentation",
+        "class_names": ["background", "person"],
+        "background_id": 0,
+        "ignore_index": 255,
+    }
 
 
 def test_semantic_segmentation_dataloader_uses_variable_size_collator(monkeypatch):
@@ -349,8 +493,13 @@ def test_semantic_segmentation_dataloader_uses_variable_size_collator(monkeypatc
     loaders = dataloaders.build_dataloaders("/export", task="segmentation")
     collate_fn = loaders["train"].kwargs["collate_fn"]
 
-    assert isinstance(loaders["train"].dataset, dataloaders.HuggingFaceSemanticSegmentationDataset)
-    assert collate_fn([("image-a", "mask-a"), ("image-b", "mask-b")]) == (
+    assert isinstance(loaders["train"].dataset, _FakeSplitDataset)
+    assert collate_fn(
+        [
+            {"image": "image-a", "target": "mask-a"},
+            {"image": "image-b", "target": "mask-b"},
+        ]
+    ) == (
         ["image-a", "image-b"],
         ["mask-a", "mask-b"],
     )
@@ -377,7 +526,8 @@ def test_build_datasets_supports_inferred_and_explicit_semantic_profiles(monkeyp
 
     datasets = dataloaders.build_datasets("/export", task=task)
 
-    assert isinstance(datasets["train"], dataloaders.HuggingFaceSemanticSegmentationDataset)
+    assert isinstance(datasets["train"], _FakeSplitDataset)
+    assert datasets["train"][0]["target"].dtype == "long"
 
 
 @pytest.mark.parametrize("task", ["segmentation", "instance_segmentation", "instance-segmentation"])
@@ -397,8 +547,8 @@ def test_build_datasets_supports_inferred_and_explicit_instance_profiles(monkeyp
 
     datasets = dataloaders.build_datasets("/export", task=task)
 
-    assert isinstance(datasets["train"], dataloaders.HuggingFaceInstanceSegmentationDataset)
-    assert datasets["train"].class_names == ("background", "person")
+    assert isinstance(datasets["train"], _FakeSplitDataset)
+    assert datasets["train"].features["objects"] is objects_feature
 
 
 def test_build_datasets_infers_instance_profile_from_reloaded_hf_sequence_schema(monkeypatch):
@@ -418,8 +568,8 @@ def test_build_datasets_infers_instance_profile_from_reloaded_hf_sequence_schema
 
     datasets = dataloaders.build_datasets("/export", task="segmentation")
 
-    assert isinstance(datasets["train"], dataloaders.HuggingFaceInstanceSegmentationDataset)
-    assert datasets["train"].class_names == ("background", "person")
+    assert isinstance(datasets["train"], _FakeSplitDataset)
+    assert datasets["train"].features["objects"] is objects_feature
 
 
 def test_instance_segmentation_dataset_returns_mask_rcnn_target(monkeypatch):
@@ -448,10 +598,11 @@ def test_instance_segmentation_dataset_returns_mask_rcnn_target(monkeypatch):
         lambda: _dependency_bundle(payload),
     )
 
-    dataset = dataloaders.HuggingFaceInstanceSegmentationDataset("/export", split="train")
-    sample, target = dataset[0]
+    dataset = dataloaders.build_datasets("/export", task="instance_segmentation")["train"]
+    sample = dataset[0]
+    target = sample["target"]
 
-    assert sample == ("normalized", image, 255)
+    assert sample["image"] == ("normalized", image, 255)
     assert target["boxes"].value == [[10.0, 20.0, 40.0, 60.0]]
     assert target["labels"].value == [1]
     assert target["masks"].value == [mask]
@@ -597,7 +748,8 @@ def test_detection_target_contains_only_device_movable_values(monkeypatch):
         lambda: _dependency_bundle(payload),
     )
 
-    _, target = dataloaders.HuggingFaceDetectionDataset("/export", split="train")[0]
+    sample = dataloaders.build_datasets("/export", task="detection")["train"][0]
+    target = sample["target"]
 
     assert target
     assert all(callable(getattr(value, "to", None)) for value in target.values())
@@ -629,7 +781,8 @@ def test_detection_target_preserves_voc_difficult_flags(monkeypatch):
         lambda: _dependency_bundle(payload),
     )
 
-    _, target = dataloaders.HuggingFaceDetectionDataset("/export", split="train")[0]
+    sample = dataloaders.build_datasets("/export", task="detection")["train"][0]
+    target = sample["target"]
 
     assert target["difficult"].value == [True]
     assert target["iscrowd"].value == [True]
@@ -705,11 +858,14 @@ def test_semantic_dataset_reads_constants_without_decoding_first_sample(monkeypa
         lambda: _dependency_bundle(payload),
     )
 
-    dataset = dataloaders.HuggingFaceSemanticSegmentationDataset("/export", split="train")
+    dataset = dataloaders.build_datasets("/export", task="semantic_segmentation")["train"]
 
-    assert dataset.class_names == ("background", "person")
-    assert dataset.background_id == 0
-    assert dataset.ignore_index == 255
+    assert dataset.info.metadata["mindtrace"] == {
+        "profile": "semantic_segmentation",
+        "class_names": ["background", "person"],
+        "background_id": 0,
+        "ignore_index": 255,
+    }
 
 
 def test_build_datasets_dispatches_to_caller_supplied_task_profile(monkeypatch):

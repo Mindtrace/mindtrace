@@ -116,12 +116,13 @@ def test_voc_single_label_view_reuses_full_image_datum(tmp_path):
     assert version_calls["tiny-voc-classification-single-label"]["manifest"] == ["datum_1"]
 
 
-def test_torch_dataset_adapters_are_public_from_models_training():
+def test_native_huggingface_dataset_builders_are_public_from_models_training():
     training = importlib.import_module("mindtrace.models.training")
 
     assert callable(getattr(training, "build_datasets"))
     assert callable(getattr(training, "build_dataloaders"))
-    assert getattr(training, "HuggingFaceClassificationDataset") is not None
+    assert "HuggingFaceClassificationDataset" not in training.__all__
+    assert not hasattr(training, "HuggingFaceClassificationDataset")
 
 
 def test_obsolete_live_datalake_bridge_is_not_public():

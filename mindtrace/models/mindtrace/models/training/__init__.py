@@ -25,7 +25,7 @@ Optimizers & Schedulers
 
 Hugging Face Data Adapters
 --------------------------
-- Typed PyTorch datasets and DataLoader builders over exported artifacts.
+- Native Hugging Face datasets with PyTorch transforms and DataLoader builders.
 """
 
 from __future__ import annotations
@@ -40,10 +40,6 @@ from mindtrace.models.training.callbacks import (
     UnfreezeSchedule,
 )
 from mindtrace.models.training.huggingface_dataloaders import (
-    HuggingFaceClassificationDataset,
-    HuggingFaceDetectionDataset,
-    HuggingFaceInstanceSegmentationDataset,
-    HuggingFaceSemanticSegmentationDataset,
     build_dataloaders,
     build_datasets,
 )
@@ -64,10 +60,6 @@ __all__ = [
     # Optimizer / scheduler factories
     "build_optimizer",
     "build_scheduler",
-    "HuggingFaceClassificationDataset",
-    "HuggingFaceDetectionDataset",
-    "HuggingFaceInstanceSegmentationDataset",
-    "HuggingFaceSemanticSegmentationDataset",
     "build_datasets",
     "build_dataloaders",
 ]

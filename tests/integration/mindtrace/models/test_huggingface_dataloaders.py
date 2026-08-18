@@ -4,7 +4,7 @@ from pathlib import Path
 import datasets
 from PIL import Image
 
-from mindtrace.models.training import HuggingFaceDetectionDataset
+from mindtrace.models.training import build_datasets
 
 
 def _png_bytes() -> bytes:
@@ -46,7 +46,14 @@ def test_voc_difficult_is_preserved_and_projected_to_torchvision_ignore_channel(
     export_path = tmp_path / "voc-detection"
     datasets.DatasetDict({"train": split}).save_to_disk(str(export_path))
 
-    _, target = HuggingFaceDetectionDataset(export_path, split="train")[0]
+    dataset = build_datasets(export_path, task="detection")["train"]
+    sample = dataset[0]
+    target = sample["target"]
 
+    assert isinstance(dataset, datasets.Dataset)
+    assert dataset.features == split.features
+    selected = dataset.select([0])
+    assert isinstance(selected, datasets.Dataset)
+    assert selected[0]["target"]["iscrowd"].tolist() == [1, 0]
     assert target["difficult"].tolist() == [True, False]
     assert target["iscrowd"].tolist() == [1, 0]

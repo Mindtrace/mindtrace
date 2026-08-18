@@ -161,12 +161,14 @@ Datalake DatasetVersion
         ↓ typed Hugging Face export
 relocatable Dataset / DatasetDict
         ↓ build_datasets(...)
-train / val / test PyTorch Datasets
+train / val / test native HF Datasets with PyTorch transforms
         ↓ build_dataloaders(...)
 train / val / test PyTorch DataLoaders
 ```
 
-`build_datasets()` returns one indexable PyTorch-compatible Dataset per available or requested split.
+`build_datasets()` returns one native, indexable Hugging Face `Dataset` per available or requested split. Task
+preparation is applied on access with `Dataset.with_transform()`, so the usual Hugging Face composition API—such
+as `select()`, `filter()`, `shuffle()`, and `train_test_split()`—remains available.
 `build_dataloaders()` delegates to it, then adds batching, train-only shuffling, workers, seeding, and task-specific
 collation. Both accept one shared transform or a split-keyed transform mapping.
 
@@ -459,7 +461,8 @@ datasets = {
 }
 
 # Direct random access to a Mask R-CNN-shaped instance-segmentation sample.
-image, target = datasets["penn_fudan_instance"]["train"][0]
+sample = datasets["penn_fudan_instance"]["train"][0]
+image, target = sample["image"], sample["target"]
 # target["boxes"]:   FloatTensor[N, 4] in xyxy
 # target["labels"]:  LongTensor[N]
 # target["masks"]:   BoolTensor[N, H, W]
@@ -498,12 +501,17 @@ aligned. Semantic mask resizing must use nearest-neighbour interpolation.
 
 ### Runtime target contracts
 
-- Single-label classification: `(image, scalar LongTensor)`.
-- Multi-label classification: `(image, FloatTensor[num_classes])`.
-- Detection: `(image, target)` where `target` contains `boxes`, `labels`, `area`, `iscrowd`, and `difficult`.
-- Semantic segmentation: `(image, LongTensor[H, W])`.
-- Instance segmentation: `(image, target)` where `target` contains `boxes`, `labels`, `masks`, `area`, and
-  `iscrowd`.
+Native datasets return mappings with `image` and `target` keys. DataLoaders collate those mappings into the
+training-facing `(images, targets)` batch structure below:
+
+- Single-label classification: scalar `LongTensor` targets.
+- Multi-label classification: `FloatTensor[num_classes]` targets.
+- Detection: target mappings containing `boxes`, `labels`, `area`, `iscrowd`, and `difficult`.
+- Semantic segmentation: `LongTensor[H, W]` targets.
+- Instance segmentation: target mappings containing `boxes`, `labels`, `masks`, `area`, and `iscrowd`.
+
+Pass `return_metadata=True` to include a separate `metadata` mapping in dataset samples and a third metadata
+column in DataLoader batches.
 
 Detection and instance targets follow torchvision conventions. The detection adapter is source-dataset-generic but
 expects the canonical Mindtrace HF detection schema: embedded image media, absolute pixel-space `xywh` boxes, and
