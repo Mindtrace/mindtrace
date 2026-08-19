@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import runpy
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -9,11 +11,14 @@ import torch
 from PIL import Image
 from torch import Tensor, nn
 
+import mindtrace.models as models_module
 from mindtrace.models import (
     ClassificationPostprocessor,
     HuggingFaceImageProcessor,
     TorchModel,
 )
+
+_MODEL_PROTOCOL_SAMPLE = Path(__file__).resolve().parents[4] / "samples" / "models" / "09_model_protocol.py"
 
 
 class _ImageSizeProcessor:
@@ -33,16 +38,47 @@ class _RecordingNetwork(nn.Module):
         self.register_buffer("offset", torch.tensor([1.0, -1.0]))
         self.training_during_forward: bool | None = None
         self.grad_enabled_during_forward: bool | None = None
+        self.inference_mode_during_forward: bool | None = None
 
     def forward(self, inputs: Tensor) -> Tensor:
         self.training_during_forward = self.training
         self.grad_enabled_during_forward = torch.is_grad_enabled()
+        self.inference_mode_during_forward = torch.is_inference_mode_enabled()
         return inputs + self.offset
 
 
 class _PassthroughPostprocessor:
     def __call__(self, outputs: Tensor, **params: Any) -> dict[str, Any]:
         return {"outputs": outputs.cpu().tolist(), "params": params}
+
+
+class _RecordingProcessor(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.training_during_call: bool | None = None
+        self.grad_enabled_during_call: bool | None = None
+        self.inference_mode_during_call: bool | None = None
+
+    def forward(self, inputs: Tensor) -> Tensor:
+        self.training_during_call = self.training
+        self.grad_enabled_during_call = torch.is_grad_enabled()
+        self.inference_mode_during_call = torch.is_inference_mode_enabled()
+        return inputs
+
+
+class _RecordingParameterizedPostprocessor(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.projection = nn.Linear(2, 2)
+        self.training_during_call: bool | None = None
+        self.grad_enabled_during_call: bool | None = None
+        self.inference_mode_during_call: bool | None = None
+
+    def forward(self, outputs: Tensor, **params: Any) -> Tensor:
+        self.training_during_call = self.training
+        self.grad_enabled_during_call = torch.is_grad_enabled()
+        self.inference_mode_during_call = torch.is_inference_mode_enabled()
+        return self.projection(outputs)
 
 
 def _build_test_model() -> TorchModel[Any, dict[str, Any]]:
@@ -84,6 +120,34 @@ def test_predict_composes_processor_network_and_postprocessor() -> None:
     assert model.network.grad_enabled_during_forward is False
     assert model.training is True
     assert model.network.training is True
+
+
+def test_predict_runs_the_complete_pipeline_in_eval_and_inference_mode() -> None:
+    processor = _RecordingProcessor()
+    postprocessor = _RecordingParameterizedPostprocessor()
+    model = TorchModel(
+        network=_RecordingNetwork(),
+        processor=processor,
+        postprocessor=postprocessor,
+    )
+    model.train()
+
+    result = model.predict(torch.ones((1, 2)))
+
+    assert result.shape == (1, 2)
+    assert processor.training_during_call is False
+    assert processor.grad_enabled_during_call is False
+    assert processor.inference_mode_during_call is True
+    assert model.network.training_during_forward is False
+    assert model.network.grad_enabled_during_forward is False
+    assert model.network.inference_mode_during_forward is True
+    assert postprocessor.training_during_call is False
+    assert postprocessor.grad_enabled_during_call is False
+    assert postprocessor.inference_mode_during_call is True
+    assert model.training is True
+    assert processor.training is True
+    assert model.network.training is True
+    assert postprocessor.training is True
 
 
 def test_predict_restores_training_state_after_inference_error() -> None:
@@ -177,6 +241,17 @@ def test_classification_postprocessor_rejects_label_count_mismatch(labels: list[
         postprocessor(torch.tensor([[1.0, 2.0]]))
 
 
+@pytest.mark.parametrize("labels", ["cat", b"cat"])
+def test_classification_postprocessor_rejects_a_scalar_label_sequence(labels: Any) -> None:
+    with pytest.raises(TypeError, match="labels"):
+        ClassificationPostprocessor(labels=labels)
+
+
+def test_classification_postprocessor_rejects_non_string_labels() -> None:
+    with pytest.raises(TypeError, match="labels"):
+        ClassificationPostprocessor(labels=["cat", 7])  # type: ignore[list-item]
+
+
 def test_classification_postprocessor_rejects_unknown_options() -> None:
     postprocessor = ClassificationPostprocessor()
 
@@ -213,3 +288,69 @@ def test_hugging_face_processor_rejects_integer_tensor() -> None:
 
     with pytest.raises(TypeError, match="floating-point dtype"):
         processor(torch.ones((1, 3, 8, 8), dtype=torch.uint8))
+
+
+def test_model_protocol_sample_runs_raw_forward_as_device_safe_inference(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeImage:
+        def convert(self, mode: str) -> FakeImage:
+            return self
+
+    class FakeBatch:
+        def __init__(self, device: str = "cpu") -> None:
+            self.device = device
+
+        def to(self, device: str) -> FakeBatch:
+            return FakeBatch(device=device)
+
+    class FakeProcessor:
+        def __init__(self, model_id: str) -> None:
+            self.model_id = model_id
+
+        def __call__(self, inputs: Any) -> FakeBatch:
+            return FakeBatch()
+
+    class FakePostprocessor:
+        def __init__(self, labels: list[str]) -> None:
+            self.labels = labels
+
+    class FakeLogits:
+        shape = (1, 3)
+
+    class FakeTorchModel:
+        def __init__(
+            self,
+            network: Any,
+            processor: FakeProcessor,
+            postprocessor: FakePostprocessor,
+            *,
+            device: str,
+        ) -> None:
+            self.network = network
+            self.processor = processor
+            self.postprocessor = postprocessor
+            self.device = "accelerator"
+            self.training = True
+
+        def eval(self) -> FakeTorchModel:
+            self.training = False
+            return self
+
+        def __call__(self, inputs: FakeBatch) -> FakeLogits:
+            if inputs.device != self.device:
+                raise RuntimeError(f"input is on {inputs.device}, but model is on {self.device}")
+            if self.training:
+                raise RuntimeError("raw inference ran while the model was in training mode")
+            if not torch.is_inference_mode_enabled():
+                raise RuntimeError("raw inference ran without torch.inference_mode()")
+            return FakeLogits()
+
+        def predict(self, inputs: Any, **params: Any) -> list[Any]:
+            return []
+
+    monkeypatch.setattr(models_module, "build_model_from_hf", lambda *args, **kwargs: object())
+    monkeypatch.setattr(models_module, "HuggingFaceImageProcessor", FakeProcessor)
+    monkeypatch.setattr(models_module, "ClassificationPostprocessor", FakePostprocessor)
+    monkeypatch.setattr(models_module, "TorchModel", FakeTorchModel)
+    monkeypatch.setattr(Image, "open", lambda path: FakeImage())
+
+    runpy.run_path(str(_MODEL_PROTOCOL_SAMPLE), run_name="__main__")
