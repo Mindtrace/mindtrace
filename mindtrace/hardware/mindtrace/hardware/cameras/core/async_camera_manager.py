@@ -477,7 +477,12 @@ class AsyncCameraManager(Mindtrace):
                         f"camera_config path not found for '{camera_name}': {explicit_config_path}"
                     )
             except Exception:
-                await camera.close()
+                try:
+                    await camera.close()
+                except Exception as close_error:
+                    self.logger.warning(
+                        f"Failed to close '{camera_name}' after failed config apply: {close_error}"
+                    )
                 raise
 
         if test_connection:
