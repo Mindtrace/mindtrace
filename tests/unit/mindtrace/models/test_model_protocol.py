@@ -171,6 +171,44 @@ def test_predict_restores_training_state_after_inference_error() -> None:
     assert model.network.training is True
 
 
+@pytest.mark.parametrize("failing_stage", ["processor", "postprocessor"])
+def test_predict_restores_mixed_training_states_after_pipeline_component_error(failing_stage: str) -> None:
+    class PipelineProcessor(nn.Module):
+        def forward(self, inputs: Tensor) -> Tensor:
+            assert self.training is False
+            assert torch.is_inference_mode_enabled()
+            if failing_stage == "processor":
+                raise RuntimeError("processor failed")
+            return inputs
+
+    class PipelinePostprocessor(nn.Module):
+        def forward(self, outputs: Tensor, **params: Any) -> Tensor:
+            assert self.training is False
+            assert torch.is_inference_mode_enabled()
+            if failing_stage == "postprocessor":
+                raise RuntimeError("postprocessor failed")
+            return outputs
+
+    processor = PipelineProcessor()
+    postprocessor = PipelinePostprocessor()
+    model = TorchModel(
+        network=_RecordingNetwork(),
+        processor=processor,
+        postprocessor=postprocessor,
+    )
+    model.train()
+    processor.eval()
+    postprocessor.eval()
+
+    with pytest.raises(RuntimeError, match=f"{failing_stage} failed"):
+        model.predict(torch.ones((1, 2)))
+
+    assert model.training is True
+    assert processor.training is False
+    assert model.network.training is True
+    assert postprocessor.training is False
+
+
 def test_predict_accepts_a_preprocessed_tensor() -> None:
     model = _build_test_model()
 
