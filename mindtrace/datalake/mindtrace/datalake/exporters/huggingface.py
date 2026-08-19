@@ -10,7 +10,6 @@ from typing import Any
 from .base import prepare_export_destination, write_export_file
 from .types import ExportableDataset, ExportResult
 
-
 _INTEGER_DTYPES = {"int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"}
 _FLOAT_DTYPES = {"float16", "float32", "float64"}
 _METADATA_DTYPES = {"string", "bool", *_INTEGER_DTYPES, *_FLOAT_DTYPES}
@@ -122,9 +121,7 @@ def _classification_class_names(
                     f"Classification label id {annotation.label_id} maps to both {previous!r} and {annotation.label!r}."
                 )
     if not labels_by_id:
-        raise ValueError(
-            "Classification export requires annotation label IDs or explicit exporter option class_names."
-        )
+        raise ValueError("Classification export requires annotation label IDs or explicit exporter option class_names.")
     expected_ids = list(range(len(labels_by_id)))
     if sorted(labels_by_id) != expected_ids:
         raise ValueError(
@@ -149,9 +146,7 @@ def _detection_class_names(dataset: ExportableDataset) -> list[str]:
 def _classification_annotation(item: Any, annotation_attributes: Mapping[str, Any] | None = None) -> Any:
     selected_attributes = annotation_attributes or {}
     annotations = [
-        annotation
-        for annotation in item.annotations
-        if _annotation_matches_attributes(annotation, selected_attributes)
+        annotation for annotation in item.annotations if _annotation_matches_attributes(annotation, selected_attributes)
     ]
     if len(annotations) != 1:
         selector = f" matching attributes {dict(selected_attributes)!r}" if selected_attributes else ""
