@@ -1131,6 +1131,19 @@ class OpenCVCameraBackend(CameraBackend):
             pass
         return result
 
+    async def get_configuration_read_context(self) -> Dict[str, Any]:
+        """Bulk-read OpenCV properties once for one get_configuration() call."""
+        return {"opencv_properties": await self.get_opencv_properties()}
+
+    async def read_configuration_value(self, key: str, context: Optional[Dict[str, Any]] = None) -> Any:
+        """Read OpenCV-specific configuration values from a cached bulk-read context."""
+        if key not in self._opencv_property_map():
+            raise NotImplementedError(f"{key} not supported by {self.__class__.__name__}")
+        props = context.get("opencv_properties") if context else None
+        if props is None:
+            props = await self.get_opencv_properties()
+        return props.get(key)
+
     # Network functions - not applicable for OpenCV (USB cameras)
     async def get_bandwidth_limit(self) -> float:
         """Bandwidth limiting not applicable for OpenCV cameras."""

@@ -901,6 +901,43 @@ async def test_get_configuration_includes_white_balance_from_backend():
 
 
 @pytest.mark.asyncio
+async def test_get_configuration_uses_backend_read_context_once():
+    """Backend-specific bulk-read context should be built once per get_configuration() call."""
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        context_calls = 0
+
+        async def fake_get_configuration_read_context():
+            nonlocal context_calls
+            context_calls += 1
+            return {
+                "fake_backend_values": {
+                    "genicam_nodes": {"PixelFormat": "Mono8"},
+                    "brightness": 0.1,
+                    "contrast": 0.2,
+                }
+            }
+
+        async def fake_read_configuration_value(key, context):
+            return context.get("fake_backend_values", {}).get(key)
+
+        cam.backend.get_configuration_read_context = fake_get_configuration_read_context  # type: ignore[method-assign]
+        cam.backend.read_configuration_value = fake_read_configuration_value  # type: ignore[method-assign]
+
+        config = await cam.get_configuration()
+
+        assert context_calls == 1
+        assert config["genicam_nodes"] == {"PixelFormat": "Mono8"}
+        assert config["brightness"] == 0.1
+        assert config["contrast"] == 0.2
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_configure_reports_skipped_unknown_keys():
     manager = AsyncCameraManager(include_mocks=True)
     try:

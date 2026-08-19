@@ -474,6 +474,14 @@ class CameraBackend(MindtraceABC):
         """
         raise NotImplementedError(f"set_focus_config not supported by {self.__class__.__name__}")
 
+    async def get_configuration_read_context(self) -> Dict[str, Any]:
+        """Return an optional bulk-read context for one get_configuration() call."""
+        return {}
+
+    async def read_configuration_value(self, key: str, context: Optional[Dict[str, Any]] = None) -> Any:
+        """Read a backend-specific configuration value using an optional bulk-read context."""
+        raise NotImplementedError(f"{key} not supported by {self.__class__.__name__}")
+
     async def __aenter__(self):
         await self.setup_camera()
         return self

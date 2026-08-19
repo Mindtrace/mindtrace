@@ -444,9 +444,16 @@ class AsyncCamera(Mindtrace):
     async def _collect_configuration(self) -> Dict[str, Any]:
         config: Dict[str, Any] = {}
         async with self._backend.configuration_session():
+            read_context: Dict[str, Any] = {}
+            try:
+                read_context = await self._backend.get_configuration_read_context()
+            except Exception as exc:
+                self.logger.debug(
+                    f"Could not build configuration read context for camera '{self._full_name}': {exc}"
+                )
             for key in CONFIGURABLE_KEYS:
                 try:
-                    value = await self._read_config_key(key)
+                    value = await self._read_config_key(key, read_context=read_context)
                 except Exception as exc:
                     self.logger.debug(f"Could not read '{key}' for camera '{self._full_name}': {exc}")
                     continue
@@ -454,7 +461,7 @@ class AsyncCamera(Mindtrace):
                     config[key] = value
         return config
 
-    async def _read_config_key(self, key: str) -> Any:
+    async def _read_config_key(self, key: str, *, read_context: Optional[Dict[str, Any]] = None) -> Any:
         """Read a single canonical configuration key."""
         if key == "exposure_time":
             return await self._backend.get_exposure()
@@ -481,17 +488,7 @@ class AsyncCamera(Mindtrace):
             return await self._backend.get_bandwidth_limit()
         if key == "focus_config":
             return await self._backend.get_focus_config()
-        if key == "genicam_nodes":
-            if hasattr(self._backend, "get_genicam_nodes"):
-                nodes = await self._backend.get_genicam_nodes()
-                return nodes or None
-            return None
-        if key in _OPENCV_CONFIG_KEYS:
-            if hasattr(self._backend, "get_opencv_properties"):
-                props = await self._backend.get_opencv_properties()
-                return props.get(key)
-            return None
-        return None
+        return await self._backend.read_configuration_value(key, read_context or {})
 
     async def set_exposure(self, exposure: Union[int, float]):
         """Set the camera exposure.

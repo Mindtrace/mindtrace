@@ -1636,6 +1636,19 @@ class GenICamCameraBackend(CameraBackend):
             self.logger.warning(f"GenICam node export failed for camera '{self.camera_name}': {str(e)}")
             return {}
 
+    async def get_configuration_read_context(self) -> Dict[str, Any]:
+        """Bulk-read GenICam nodes once for one get_configuration() call."""
+        return {"genicam_nodes": await self.get_genicam_nodes()}
+
+    async def read_configuration_value(self, key: str, context: Optional[Dict[str, Any]] = None) -> Any:
+        """Read backend-specific configuration values from a cached bulk-read context."""
+        if key != "genicam_nodes":
+            raise NotImplementedError(f"{key} not supported by {self.__class__.__name__}")
+        nodes = context.get("genicam_nodes") if context else None
+        if nodes is None:
+            nodes = await self.get_genicam_nodes()
+        return nodes or None
+
     async def set_ROI(self, x: int, y: int, width: int, height: int):
         """Set Region of Interest using GenICam nodes.
 
