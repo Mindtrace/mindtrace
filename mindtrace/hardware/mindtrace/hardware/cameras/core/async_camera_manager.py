@@ -477,9 +477,7 @@ class AsyncCameraManager(Mindtrace):
                         raise CameraConfigurationError(
                             configuration_apply_failure_message(
                                 result,
-                                prefix=(
-                                    f"open camera_config for '{camera_name}' failed from {config_path}"
-                                ),
+                                prefix=(f"open camera_config for '{camera_name}' failed from {config_path}"),
                             )
                         )
                 else:
