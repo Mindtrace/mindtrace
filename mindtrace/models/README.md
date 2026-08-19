@@ -180,6 +180,25 @@ The generic `Model[InputT, OutputT]` protocol defines task-level prediction with
 queue payloads, or another transport. Implementations own preprocessing, inference, and postprocessing; serving and
 backend integrations remain responsible for transport, scheduling, and backend-specific behavior.
 
+Implementations satisfy `Model` structurally; no Mindtrace base class is required:
+
+```python
+from typing import Any
+
+from PIL import Image
+
+from mindtrace.models import Model
+
+
+class ImageSizeModel:
+    def predict(self, inputs: Image.Image, **params: Any) -> dict[str, Any]:
+        return {"size": inputs.size, "params": params}
+
+
+model: Model[Image.Image, dict[str, Any]] = ImageSizeModel()
+result = model.predict(Image.open("tests/resources/hopper.png"), source="local")
+```
+
 `TorchModel` composes a processor, an `nn.Module`, and a postprocessor:
 
 ```python
@@ -536,6 +555,12 @@ Everything below is importable directly from `mindtrace.models`:
 
 ```python
 from mindtrace.models import (
+    # -- Inference --
+    Model,                          # Structural task-level prediction protocol
+    TorchModel,                     # Composable processor/network/postprocessor
+    HuggingFaceImageProcessor,      # Lazy raw-image and tensor preprocessing
+    ClassificationPostprocessor,   # Labelled classification result conversion
+
     # -- Architectures --
     build_model,                    # Build backbone+head from registry names
     build_model_from_hf,            # Build from any HuggingFace model ID

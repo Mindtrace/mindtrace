@@ -340,6 +340,8 @@ def test_hugging_face_processor_rejects_an_empty_image_sequence_before_loading_t
 
 def test_model_protocol_sample_runs_raw_forward_as_device_safe_inference(monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeImage:
+        size = (1, 1)
+
         def convert(self, mode: str) -> FakeImage:
             return self
 

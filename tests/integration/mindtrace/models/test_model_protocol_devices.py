@@ -36,6 +36,8 @@ _ACCELERATOR_CASES = [
 
 
 class _FakeImage:
+    size = (1, 1)
+
     def convert(self, mode: str) -> _FakeImage:
         return self
 
