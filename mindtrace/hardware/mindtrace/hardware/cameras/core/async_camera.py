@@ -448,9 +448,7 @@ class AsyncCamera(Mindtrace):
             try:
                 read_context = await self._backend.get_configuration_read_context()
             except Exception as exc:
-                self.logger.debug(
-                    f"Could not build configuration read context for camera '{self._full_name}': {exc}"
-                )
+                self.logger.debug(f"Could not build configuration read context for camera '{self._full_name}': {exc}")
             for key in CONFIGURABLE_KEYS:
                 try:
                     value = await self._read_config_key(key, read_context=read_context)
