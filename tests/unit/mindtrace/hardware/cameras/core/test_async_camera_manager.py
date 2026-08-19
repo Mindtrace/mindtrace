@@ -149,19 +149,19 @@ async def test_open_camera_config_applies_when_restore_disabled(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_open_missing_camera_config_path_still_opens(tmp_path):
-    """A missing camera_config path logs a warning but does not fail open."""
+async def test_open_missing_camera_config_path_raises(tmp_path):
+    """A missing camera_config path should fail open."""
     manager = AsyncCameraManager(include_mocks=True)
     manager._camera_config_dir = str(tmp_path)
     name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
 
     try:
-        camera = await manager.open(
-            name,
-            test_connection=False,
-            camera_config=str(tmp_path / "does_not_exist.json"),
-        )
-        assert camera.is_connected
+        with pytest.raises(CameraConfigurationError, match="camera_config path not found"):
+            await manager.open(
+                name,
+                test_connection=False,
+                camera_config=str(tmp_path / "does_not_exist.json"),
+            )
     finally:
         await manager.close(None)
 

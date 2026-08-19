@@ -464,19 +464,17 @@ class AsyncCameraManager(Mindtrace):
         if explicit_config_path:
             config_path = Path(explicit_config_path)
             if config_path.exists():
-                try:
-                    _result, pending_runtime = await self._apply_config_from_path(
-                        camera_name,
-                        proxy,
-                        str(config_path),
-                        merge_runtime=False,
-                        source_label="open camera_config",
-                    )
-                except Exception as e:
-                    self.logger.warning(f"Failed to apply camera_config for '{camera_name}': {e}")
-                    pending_runtime = {}
+                _result, pending_runtime = await self._apply_config_from_path(
+                    camera_name,
+                    proxy,
+                    str(config_path),
+                    merge_runtime=False,
+                    source_label="open camera_config",
+                )
             else:
-                self.logger.warning(f"camera_config path not found for '{camera_name}': {explicit_config_path}")
+                raise CameraConfigurationError(
+                    f"camera_config path not found for '{camera_name}': {explicit_config_path}"
+                )
 
         if test_connection:
             self.logger.info(f"Testing connection for camera '{camera_name}'...")
