@@ -152,7 +152,9 @@ from mindtrace.hardware.cameras.core.camera import Camera
 # Simple synchronous usage
 camera = Camera(name="OpenCV:opencv_camera_0")
 image = camera.capture()
-camera.configure(exposure=15000, gain=2.0)
+result = camera.configure(exposure=15000, gain=2.0)
+if not result.success:
+    raise RuntimeError(result.failures or result.skipped)
 camera.close()
 ```
 
@@ -160,14 +162,16 @@ camera.close()
 
 ```python
 import asyncio
-from mindtrace.hardware import CameraManager
+from mindtrace.hardware.cameras import AsyncCameraManager
 
 async def capture_with_bandwidth_limit():
-    async with CameraManager(max_concurrent_captures=2) as manager:
+    async with AsyncCameraManager(max_concurrent_captures=2) as manager:
         cameras = manager.discover()
         proxy = await manager.open(cameras[0])
         image = await proxy.capture()
-        await proxy.configure(exposure=15000)
+        result = await manager.configure_camera(cameras[0], {"exposure": 15000})
+        if not result.success:
+            raise RuntimeError(result.failures or result.skipped)
 
 asyncio.run(capture_with_bandwidth_limit())
 ```

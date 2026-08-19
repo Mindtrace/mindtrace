@@ -15,6 +15,7 @@ from mindtrace.core import Mindtrace
 from mindtrace.hardware.cameras.core.async_camera import AsyncCamera
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
 from mindtrace.hardware.cameras.core.camera import Camera
+from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult
 
 
 class CameraManager(Mindtrace):
@@ -116,8 +117,13 @@ class CameraManager(Mindtrace):
     def diagnostics(self) -> Dict[str, Any]:
         return self._manager.diagnostics()
 
-    def batch_configure(self, configurations: Dict[str, Dict[str, Any]]) -> Dict[str, bool]:
-        """Configure multiple cameras simultaneously."""
+    def batch_configure(self, configurations: Dict[str, Dict[str, Any]]) -> Dict[str, ConfigurationApplyResult]:
+        """Configure multiple cameras simultaneously.
+
+        Returns:
+            Mapping of camera name to ``ConfigurationApplyResult``. Check
+            ``result.success`` per camera; the result object is always truthy.
+        """
         return self._submit_coro(self._manager.batch_configure(configurations))
 
     def batch_capture(self, camera_names: List[str], output_format: str = "pil") -> Dict[str, Any]:
