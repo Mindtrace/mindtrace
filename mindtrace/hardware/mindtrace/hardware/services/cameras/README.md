@@ -70,6 +70,41 @@ uv run python -m mindtrace.hardware.services.cameras.launcher --include-mocks
 - `POST /cameras/config/export` - Export configuration to file
 - `POST /cameras/config/reset` - Delete persisted configuration file
 
+#### Breaking Changes
+
+Recent (August 2026) API and backend contract changes:
+
+| Surface | Before | After |
+|---------|--------|-------|
+| `POST /cameras/configure` | `data: bool` | `data: {applied, total, failures, skipped, partial, success, …}` |
+| `POST /cameras/configure/batch` | `results: Dict[str, bool]` | `results: Dict[str, ConfigurationApplyResultData]` |
+| `POST /cameras/config/get` | All fields present, `null` when unset | Unset keys omitted from `data` |
+| `CameraBackend.__init__` | `(name, camera_config, …)` | `(name, …)` — positional shift; profile JSON is applied via `configure()` after construction |
+
+Migration notes:
+
+- Check `data.success` on configure responses instead of treating `data` as a boolean.
+- For batch configure, inspect per-camera `results[name].success`, `applied`, and `failures`.
+- `/cameras/config/get` JSON omits unset keys and can be posted directly to `/cameras/configure`.
+- Custom backends: remove the `camera_config` positional argument from `__init__` signatures.
+
+Example configure response:
+
+```json
+{
+  "success": true,
+  "message": "Camera 'Basler:cam0' configured successfully",
+  "data": {
+    "applied": 3,
+    "total": 3,
+    "failures": {},
+    "skipped": [],
+    "partial": {},
+    "success": true
+  }
+}
+```
+
 ### Image Capture
 
 - `POST /cameras/capture` - Capture single image
