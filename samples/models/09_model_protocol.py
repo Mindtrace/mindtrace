@@ -6,6 +6,7 @@ and processor on first use.
 
 from pathlib import Path
 
+import torch
 from PIL import Image
 
 from mindtrace.models import (
@@ -38,8 +39,10 @@ for prediction in model.predict(image, include_probabilities=True):
     print(prediction.to_dict())
 
 # Calling the module directly retains standard tensor-to-tensor semantics.
-preprocessed_batch = model.processor(image)
-logits = model(preprocessed_batch)
+model.eval()
+with torch.inference_mode():
+    preprocessed_batch = model.processor(image).to(model.device)
+    logits = model(preprocessed_batch)
 print(f"Raw logits shape: {tuple(logits.shape)}")
 
 # Floating-point CHW and BCHW tensors are treated as already preprocessed.
