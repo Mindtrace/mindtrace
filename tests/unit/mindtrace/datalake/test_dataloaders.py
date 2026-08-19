@@ -319,6 +319,60 @@ def test_detection_dataset_can_return_provenance_outside_tensor_target(monkeypat
     assert all(callable(getattr(value, "to", None)) for value in sample["target"].values())
 
 
+def test_classification_dataset_returns_requested_metadata_keys(monkeypatch):
+    row = {
+        "asset_id": "asset-1",
+        "image": _FakeImage(),
+        "label": 1,
+        "subject_id": "subject-1",
+        "group_id": "group-1",
+    }
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset([row], column_names=list(row)),
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    dataset = dataloaders.build_datasets(
+        "/export",
+        return_metadata=True,
+        metadata_keys=("subject_id", "group_id"),
+    )["train"]
+
+    assert dataset[0]["metadata"] == {
+        "asset_id": "asset-1",
+        "subject_id": "subject-1",
+        "group_id": "group-1",
+    }
+
+
+def test_build_datasets_rejects_missing_requested_metadata_key(monkeypatch):
+    row = {"asset_id": "asset-1", "image": _FakeImage(), "label": 1}
+    payload = _FakeDatasetDict(
+        train=_FakeSplitDataset([row], column_names=list(row)),
+    )
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+
+    with pytest.raises(ValueError, match="missing required column.*group_id"):
+        dataloaders.build_datasets(
+            "/export",
+            return_metadata=True,
+            metadata_keys=("group_id",),
+        )
+
+
+def test_build_datasets_requires_return_metadata_for_metadata_keys():
+    with pytest.raises(ValueError, match="metadata_keys requires return_metadata=True"):
+        dataloaders.build_datasets("/export", metadata_keys=("group_id",))
+
+
 def test_detection_dataloader_uses_variable_target_collator(monkeypatch):
     objects_feature = SimpleNamespace(feature={"category": SimpleNamespace(names=["object"])})
     payload = _FakeDatasetDict(
