@@ -14,7 +14,16 @@ class ClassificationPostprocessor:
     """Convert classification logits into labelled confidence results."""
 
     def __init__(self, labels: Sequence[str] | None = None) -> None:
-        self.labels = list(labels) if labels is not None else None
+        if labels is None:
+            self.labels = None
+            return
+        if isinstance(labels, (str, bytes)):
+            raise TypeError("labels must be a sequence of strings, not a single string or bytes value")
+
+        normalized_labels = list(labels)
+        if not all(isinstance(label, str) for label in normalized_labels):
+            raise TypeError("labels must contain only strings")
+        self.labels = normalized_labels
 
     def __call__(
         self,
