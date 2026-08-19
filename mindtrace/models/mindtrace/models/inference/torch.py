@@ -56,18 +56,18 @@ class TorchModel(nn.Module, Generic[InputT, OutputT]):
 
         ``params`` are task-specific options forwarded to the postprocessor.
         """
-        batch = self.processor(inputs)
-        if not isinstance(batch, Tensor):
-            raise TypeError(f"processor must return torch.Tensor, got {type(batch).__name__}")
-
-        batch = batch.to(self.device)
         training_states = [(module, module.training) for module in self.modules()]
 
         self.eval()
         try:
             with torch.inference_mode():
+                batch = self.processor(inputs)
+                if not isinstance(batch, Tensor):
+                    raise TypeError(f"processor must return torch.Tensor, got {type(batch).__name__}")
+
+                batch = batch.to(self.device)
                 outputs = self(batch)
-            return self.postprocessor(outputs, **params)
+                return self.postprocessor(outputs, **params)
         finally:
             for module, training in training_states:
                 module.training = training
