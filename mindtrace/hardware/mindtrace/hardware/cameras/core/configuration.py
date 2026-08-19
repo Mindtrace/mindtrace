@@ -110,6 +110,25 @@ def configuration_error_result(
     )
 
 
+def configuration_apply_failure_message(
+    result: ConfigurationApplyResult,
+    *,
+    prefix: str,
+) -> str:
+    """Build a human-readable message for a failed configure apply."""
+    parts = [prefix]
+    if result.total:
+        parts.append(f"{result.applied}/{result.total} settings applied")
+    if result.failures:
+        parts.append(f"failures: {result.failures}")
+    unexpected = result.skipped_unexpected
+    if unexpected:
+        parts.append(f"skipped unexpected keys: {', '.join(unexpected)}")
+    elif result.skipped:
+        parts.append(f"skipped keys: {', '.join(result.skipped)}")
+    return "; ".join(parts)
+
+
 def applied_settings_from_result(
     raw_settings: Dict[str, Any],
     result: ConfigurationApplyResult,

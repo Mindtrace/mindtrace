@@ -6,6 +6,7 @@ from mindtrace.hardware.cameras.core.configuration import (
     ConfigurationApplyResult,
     applied_settings_from_result,
     applied_subset_from_exception,
+    configuration_apply_failure_message,
     configuration_error_result,
     find_skipped_keys,
     load_config_json,
@@ -86,6 +87,36 @@ def test_configuration_apply_result_success_property():
     )
 
 
+def test_configuration_apply_failure_message():
+    result = ConfigurationApplyResult(
+        applied=1,
+        total=2,
+        failures={"roi": "roi must be a 4-int tuple"},
+        skipped=("gan",),
+    )
+    message = configuration_apply_failure_message(result, prefix="open camera_config failed")
+    assert message.startswith("open camera_config failed")
+    assert "1/2 settings applied" in message
+    assert "failures: {'roi': 'roi must be a 4-int tuple'}" in message
+    assert "skipped unexpected keys: gan" in message
+
+
+def test_configuration_error_result_uses_payload_size():
+    two_keys = configuration_error_result("not initialized", {"exposure": 1000, "gain": 2.0})
+    assert two_keys.applied == 0
+    assert two_keys.total == 2
+    assert two_keys.success is False
+    assert two_keys.failures == {"_error": "not initialized"}
+
+    empty = configuration_error_result("not initialized", {})
+    assert empty.total == 0
+    assert empty.success is False
+
+    missing = configuration_error_result("not initialized")
+    assert missing.total == 0
+    assert missing.success is False
+
+
 def test_skipped_metadata_and_unexpected_partition():
     skipped = ("camera_type", "timestamp", "gan", "unknown_flag")
     assert skipped_metadata_keys(skipped) == ("camera_type", "timestamp")
@@ -111,22 +142,6 @@ def test_legacy_genicam_and_opencv_export_metadata_report_success():
     assert skipped_unexpected_keys(opencv_skipped) == ()
     assert ConfigurationApplyResult(applied=3, total=3, skipped=genicam_skipped).success is True
     assert ConfigurationApplyResult(applied=2, total=2, skipped=opencv_skipped).success is True
-
-
-def test_configuration_error_result_uses_payload_size():
-    two_keys = configuration_error_result("not initialized", {"exposure": 1000, "gain": 2.0})
-    assert two_keys.applied == 0
-    assert two_keys.total == 2
-    assert two_keys.success is False
-    assert two_keys.failures == {"_error": "not initialized"}
-
-    empty = configuration_error_result("not initialized", {})
-    assert empty.total == 0
-    assert empty.success is False
-
-    missing = configuration_error_result("not initialized")
-    assert missing.total == 0
-    assert missing.success is False
 
 
 def test_applied_settings_from_result_returns_only_successful_keys():

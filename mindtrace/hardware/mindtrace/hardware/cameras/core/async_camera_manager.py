@@ -18,6 +18,7 @@ from mindtrace.hardware.cameras.core.capture_groups import (
 from mindtrace.hardware.cameras.core.configuration import (
     ConfigurationApplyResult,
     applied_settings_from_result,
+    configuration_apply_failure_message,
     configuration_error_result,
     load_config_json,
     merge_configure_settings,
@@ -465,13 +466,22 @@ class AsyncCameraManager(Mindtrace):
             try:
                 config_path = Path(explicit_config_path)
                 if config_path.exists():
-                    _result, pending_runtime = await self._apply_config_from_path(
+                    result, pending_runtime = await self._apply_config_from_path(
                         camera_name,
                         proxy,
                         str(config_path),
                         merge_runtime=False,
                         source_label="open camera_config",
                     )
+                    if not result.success:
+                        raise CameraConfigurationError(
+                            configuration_apply_failure_message(
+                                result,
+                                prefix=(
+                                    f"open camera_config for '{camera_name}' failed from {config_path}"
+                                ),
+                            )
+                        )
                 else:
                     raise CameraConfigurationError(
                         f"camera_config path not found for '{camera_name}': {explicit_config_path}"
@@ -550,6 +560,8 @@ class AsyncCameraManager(Mindtrace):
             **kwargs: Backend constructor parameters forwarded to the camera backend.
                 ``camera_config``: Optional path to a JSON profile applied after any
                 saved-profile restore on open (and recorded for auto-reinit replay).
+                Raises :class:`CameraConfigurationError` when the file is missing,
+                invalid JSON, or configure reports ``success=False``.
 
         Returns:
             AsyncCamera if a single name was provided, otherwise a dict mapping names to AsyncCamera.

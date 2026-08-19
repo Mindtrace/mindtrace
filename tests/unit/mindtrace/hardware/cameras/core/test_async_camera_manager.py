@@ -182,6 +182,43 @@ async def test_open_missing_camera_config_path_raises(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_open_camera_config_fails_when_apply_unsuccessful(monkeypatch, tmp_path):
+    """open(camera_config=...) must fail when configure reports success=False."""
+    import json
+
+    from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    config_path = tmp_path / "bad-config.json"
+    config_path.write_text(json.dumps({"exposure_time": 15000, "gan": 2.0}), encoding="utf-8")
+    created_backend: CameraBackend | None = None
+
+    original_create = manager._create_camera_instance
+
+    def create_camera_instance_spy(backend: str, device_name: str, **kwargs):
+        nonlocal created_backend
+        created_backend = original_create(backend, device_name, **kwargs)
+        return created_backend
+
+    try:
+        monkeypatch.setattr(manager, "_create_camera_instance", create_camera_instance_spy)
+        with pytest.raises(CameraConfigurationError, match="open camera_config"):
+            await manager.open(
+                name,
+                test_connection=False,
+                camera_config=str(config_path),
+            )
+        assert created_backend is not None
+        assert created_backend.initialized is False
+        assert created_backend.camera is None
+        assert name not in manager._cameras
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_open_restore_preserves_manager_performance_settings(tmp_path):
     """Saved profiles must not overwrite manager-owned timeout and retry settings."""
     import json
