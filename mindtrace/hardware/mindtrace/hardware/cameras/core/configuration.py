@@ -43,6 +43,13 @@ CONFIGURE_METADATA_KEYS: frozenset[str] = frozenset(
         # Top-level duplicates when a legacy export also includes a canonical ``roi`` dict.
         "width",
         "height",
+        # GenICam legacy export_config metadata.
+        "exported_timestamp",
+        "exposure_range",
+        "gain_range",
+        "white_balance_range",
+        # OpenCV legacy export_config metadata.
+        "camera_index",
     }
 )
 

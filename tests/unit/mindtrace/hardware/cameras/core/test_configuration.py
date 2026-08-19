@@ -93,6 +93,22 @@ def test_skipped_metadata_and_unexpected_partition():
     assert result.success is False
 
 
+def test_legacy_genicam_and_opencv_export_metadata_report_success():
+    """Saved GenICam/OpenCV profiles include backend-specific metadata keys."""
+    genicam_skipped = (
+        "exported_timestamp",
+        "exposure_range",
+        "gain_range",
+        "white_balance_range",
+    )
+    opencv_skipped = ("camera_index",)
+
+    assert skipped_unexpected_keys(genicam_skipped) == ()
+    assert skipped_unexpected_keys(opencv_skipped) == ()
+    assert ConfigurationApplyResult(applied=3, total=3, skipped=genicam_skipped).success is True
+    assert ConfigurationApplyResult(applied=2, total=2, skipped=opencv_skipped).success is True
+
+
 def test_configuration_error_result_uses_payload_size():
     two_keys = configuration_error_result("not initialized", {"exposure": 1000, "gain": 2.0})
     assert two_keys.applied == 0
