@@ -293,8 +293,43 @@ def test_read_saved_config_raises_on_invalid_json(tmp_path):
     config_path = Path(manager.get_camera_config_path(name))
     config_path.write_text("{not-json", encoding="utf-8")
 
-    with pytest.raises(CameraConfigurationError, match="Invalid saved config JSON"):
+    with pytest.raises(CameraConfigurationError, match="Invalid config JSON"):
         manager.read_saved_config(name)
+
+
+@pytest.mark.asyncio
+async def test_open_malformed_camera_config_raises(monkeypatch, tmp_path):
+    """Malformed camera_config JSON should fail open with context and close the backend."""
+    from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    bad_path = tmp_path / "bad.json"
+    bad_path.write_text("{not-json", encoding="utf-8")
+    created_backend: CameraBackend | None = None
+
+    original_create = manager._create_camera_instance
+
+    def create_camera_instance_spy(backend: str, device_name: str, **kwargs):
+        nonlocal created_backend
+        created_backend = original_create(backend, device_name, **kwargs)
+        return created_backend
+
+    try:
+        monkeypatch.setattr(manager, "_create_camera_instance", create_camera_instance_spy)
+        with pytest.raises(CameraConfigurationError, match=f"Invalid config JSON at {bad_path}"):
+            await manager.open(
+                name,
+                test_connection=False,
+                camera_config=str(bad_path),
+            )
+        assert created_backend is not None
+        assert created_backend.initialized is False
+        assert created_backend.camera is None
+        assert name not in manager._cameras
+    finally:
+        await manager.close(None)
 
 
 def test_validate_camera_name_accepts_known_backend():

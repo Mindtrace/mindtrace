@@ -480,9 +480,7 @@ class AsyncCameraManager(Mindtrace):
                 try:
                     await camera.close()
                 except Exception as close_error:
-                    self.logger.warning(
-                        f"Failed to close '{camera_name}' after failed config apply: {close_error}"
-                    )
+                    self.logger.warning(f"Failed to close '{camera_name}' after failed config apply: {close_error}")
                 raise
 
         if test_connection:
@@ -796,6 +794,19 @@ class AsyncCameraManager(Mindtrace):
         self.logger.info(f"Deleted saved config for '{camera_name}' at {path}")
         return True
 
+    @staticmethod
+    def _load_config_json(path: Path) -> dict:
+        """Load configuration JSON from disk.
+
+        Raises:
+            CameraConfigurationError: If the file contains invalid JSON.
+        """
+        try:
+            with path.open(encoding="utf-8") as config_file:
+                return json.load(config_file)
+        except json.JSONDecodeError as exc:
+            raise CameraConfigurationError(f"Invalid config JSON at {path}: {exc}") from exc
+
     def read_saved_config(self, camera_name: str) -> dict | None:
         """Read persisted config JSON for a camera.
 
@@ -813,11 +824,7 @@ class AsyncCameraManager(Mindtrace):
         if not path.exists():
             self.logger.debug(f"No saved config for '{camera_name}' at {path}")
             return None
-        try:
-            with path.open(encoding="utf-8") as config_file:
-                return json.load(config_file)
-        except json.JSONDecodeError as exc:
-            raise CameraConfigurationError(f"Invalid saved config JSON at {path}: {exc}") from exc
+        return self._load_config_json(path)
 
     async def _apply_config_from_path(
         self,
@@ -839,7 +846,7 @@ class AsyncCameraManager(Mindtrace):
         if not path.exists():
             raise CameraConfigurationError(f"Configuration file not found: {config_path}")
 
-        raw_config = json.loads(path.read_text(encoding="utf-8"))
+        raw_config = self._load_config_json(path)
         result = await camera.configure(**raw_config)
         applied = applied_settings_from_result(raw_config, result)
         if merge_runtime and applied:
