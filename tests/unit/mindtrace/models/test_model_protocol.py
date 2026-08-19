@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import runpy
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -288,6 +290,52 @@ def test_hugging_face_processor_rejects_integer_tensor() -> None:
 
     with pytest.raises(TypeError, match="floating-point dtype"):
         processor(torch.ones((1, 3, 8, 8), dtype=torch.uint8))
+
+
+def test_hugging_face_processor_lazily_processes_single_and_multiple_pil_images(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pixel_values = torch.ones((2, 3, 8, 8))
+    factory_calls: list[tuple[str, str | None]] = []
+    processor_calls: list[tuple[list[Image.Image], str]] = []
+
+    class FakeProcessor:
+        def __call__(self, *, images: list[Image.Image], return_tensors: str) -> dict[str, Tensor]:
+            processor_calls.append((images, return_tensors))
+            return {"pixel_values": pixel_values}
+
+    class FakeAutoImageProcessor:
+        @classmethod
+        def from_pretrained(cls, model_id: str, *, cache_dir: str | None = None) -> FakeProcessor:
+            factory_calls.append((model_id, cache_dir))
+            return FakeProcessor()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "transformers",
+        SimpleNamespace(AutoImageProcessor=FakeAutoImageProcessor),
+    )
+    processor = HuggingFaceImageProcessor("example/model", cache_dir="/tmp/model-cache")
+    first_image = Image.new("RGB", (8, 8))
+    second_image = Image.new("RGB", (8, 8))
+
+    assert processor(first_image) is pixel_values
+    assert processor([first_image, second_image]) is pixel_values
+    assert factory_calls == [("example/model", "/tmp/model-cache")]
+    assert processor_calls == [
+        ([first_image], "pt"),
+        ([first_image, second_image], "pt"),
+    ]
+
+
+def test_hugging_face_processor_rejects_an_empty_image_sequence_before_loading_transformers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "transformers", object())
+    processor = HuggingFaceImageProcessor("unused-model-id")
+
+    with pytest.raises(ValueError, match="at least one image is required"):
+        processor([])
 
 
 def test_model_protocol_sample_runs_raw_forward_as_device_safe_inference(monkeypatch: pytest.MonkeyPatch) -> None:
