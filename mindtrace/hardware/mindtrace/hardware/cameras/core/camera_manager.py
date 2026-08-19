@@ -15,6 +15,7 @@ from mindtrace.core import Mindtrace
 from mindtrace.hardware.cameras.core.async_camera import AsyncCamera
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
 from mindtrace.hardware.cameras.core.camera import Camera
+from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult
 
 
 class CameraManager(Mindtrace):
@@ -26,14 +27,23 @@ class CameraManager(Mindtrace):
         - Use `close_all_cameras()` or `shutdown()` to stop the background loop and release resources.
     """
 
-    def __init__(self, include_mocks: bool = False, max_concurrent_captures: int | None = None, **kwargs):
+    def __init__(
+        self,
+        include_mocks: bool = False,
+        max_concurrent_captures: int | None = None,
+        restore_saved_config_on_open: bool | None = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self._shutting_down = False
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
         self._manager = self._call_in_loop(
-            AsyncCameraManager, include_mocks=include_mocks, max_concurrent_captures=max_concurrent_captures
+            AsyncCameraManager,
+            include_mocks=include_mocks,
+            max_concurrent_captures=max_concurrent_captures,
+            restore_saved_config_on_open=restore_saved_config_on_open,
         )
         self.logger.info("CameraManager (sync) initialized with background event loop")
 
@@ -54,7 +64,10 @@ class CameraManager(Mindtrace):
         return AsyncCameraManager.discover(backends=backends, details=details, include_mocks=include_mocks)
 
     def open(
-        self, names: Optional[Union[str, List[str]]] = None, test_connection: bool = True, **kwargs
+        self,
+        names: Optional[Union[str, List[str]]] = None,
+        test_connection: bool = True,
+        **kwargs,
     ) -> Union["Camera", Dict[str, "Camera"]]:
         """Open one or more cameras.
 
@@ -77,7 +90,13 @@ class CameraManager(Mindtrace):
         Notes:
             - This method is idempotent for single-name calls; if the camera is already open, the existing instance is returned.
         """
-        result = self._submit_coro(self._manager.open(names, test_connection=test_connection, **kwargs))
+        result = self._submit_coro(
+            self._manager.open(
+                names,
+                test_connection=test_connection,
+                **kwargs,
+            )
+        )
         if isinstance(result, AsyncCamera):
             return Camera(result, self._loop)
         # assume dict[str, AsyncCamera]
@@ -98,8 +117,13 @@ class CameraManager(Mindtrace):
     def diagnostics(self) -> Dict[str, Any]:
         return self._manager.diagnostics()
 
-    def batch_configure(self, configurations: Dict[str, Dict[str, Any]]) -> Dict[str, bool]:
-        """Configure multiple cameras simultaneously."""
+    def batch_configure(self, configurations: Dict[str, Dict[str, Any]]) -> Dict[str, ConfigurationApplyResult]:
+        """Configure multiple cameras simultaneously.
+
+        Returns:
+            Mapping of camera name to ``ConfigurationApplyResult``. Check
+            ``result.success`` per camera; the result object is always truthy.
+        """
         return self._submit_coro(self._manager.batch_configure(configurations))
 
     def batch_capture(self, camera_names: List[str], output_format: str = "pil") -> Dict[str, Any]:

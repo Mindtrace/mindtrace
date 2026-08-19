@@ -140,7 +140,7 @@ async def mock_basler_camera():
     """Mock Basler backend instance."""
     from mindtrace.hardware.cameras.backends.basler import MockBaslerCameraBackend
 
-    camera = MockBaslerCameraBackend(camera_name="mock_basler_1", camera_config=None)
+    camera = MockBaslerCameraBackend(camera_name="mock_basler_1")
     yield camera
     try:
         await camera.close()

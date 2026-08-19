@@ -5,7 +5,6 @@ Supports GigE Vision and USB3 Vision cameras with full feature control.
 """
 
 import asyncio
-import os
 import re
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -88,7 +87,6 @@ class DahengCameraBackend(CameraBackend):
     def __init__(
         self,
         camera_name: str,
-        camera_config: Optional[str] = None,
         img_quality_enhancement: Optional[bool] = None,
         retrieve_retry_count: Optional[int] = None,
         **backend_kwargs,
@@ -97,7 +95,6 @@ class DahengCameraBackend(CameraBackend):
 
         Args:
             camera_name: Camera identifier (serial number, IP address, or user-defined name)
-            camera_config: Path to JSON configuration file (optional)
             img_quality_enhancement: Enable CLAHE image enhancement (uses config default if None)
             retrieve_retry_count: Number of capture retry attempts (uses config default if None)
             **backend_kwargs: Backend-specific parameters:
@@ -120,7 +117,7 @@ class DahengCameraBackend(CameraBackend):
         else:
             assert gx is not None, "gxipy SDK is available but gx is not initialized"
 
-        super().__init__(camera_name, camera_config, img_quality_enhancement, retrieve_retry_count)
+        super().__init__(camera_name, img_quality_enhancement, retrieve_retry_count)
 
         # Get backend-specific configuration with fallbacks
         pixel_format = backend_kwargs.get("pixel_format")
@@ -141,7 +138,6 @@ class DahengCameraBackend(CameraBackend):
             raise CameraConfigurationError("Timeout must be at least 100ms")
 
         # Store configuration
-        self.camera_config_path = camera_config
         self.default_pixel_format = pixel_format
         self.buffer_count = buffer_count
         self.timeout_ms = timeout_ms
@@ -320,10 +316,6 @@ class DahengCameraBackend(CameraBackend):
 
             # Configure the camera
             await self._configure_camera()
-
-            # Load config if provided
-            if self.camera_config_path and os.path.exists(self.camera_config_path):
-                await self.import_config(self.camera_config_path)
 
             self.initialized = True
             self.logger.info(f"Daheng camera '{self.camera_name}' connected and initialized")
@@ -1319,74 +1311,6 @@ class DahengCameraBackend(CameraBackend):
             raise
         except Exception as e:
             raise CameraConfigurationError(f"Failed to set pixel format for camera '{self.camera_name}': {e}") from e
-
-    async def import_config(self, config_path: str):
-        """Import camera configuration from JSON file.
-
-        Args:
-            config_path: Path to configuration JSON file
-
-        Raises:
-            CameraConfigurationError: If configuration file is not found or invalid
-        """
-        import json
-
-        try:
-            if not os.path.exists(config_path):
-                raise CameraConfigurationError(f"Configuration file not found: {config_path}")
-
-            with open(config_path, "r") as f:
-                config_data = json.load(f)
-
-            if "exposure_time" in config_data:
-                await self.set_exposure(config_data["exposure_time"])
-            if "gain" in config_data:
-                await self.set_gain(config_data["gain"])
-            if "gamma" in config_data:
-                await self.set_gamma(config_data["gamma"])
-            if "trigger_mode" in config_data:
-                await self.set_triggermode(config_data["trigger_mode"])
-            if "white_balance" in config_data:
-                await self.set_auto_wb_once(config_data["white_balance"])
-
-            self.logger.debug(f"Configuration imported from '{config_path}' for camera '{self.camera_name}'")
-        except CameraConfigurationError:
-            raise
-        except Exception as e:
-            raise CameraConfigurationError(f"Failed to import config from '{config_path}': {str(e)}")
-
-    async def export_config(self, config_path: str):
-        """Export camera configuration to JSON file.
-
-        Args:
-            config_path: Path to save configuration file
-        """
-        import json
-
-        try:
-            config_data = {
-                "camera_type": "daheng",
-                "camera_name": self.camera_name,
-                "timestamp": time.time(),
-                "exposure_time": await self.get_exposure(),
-                "gain": await self.get_gain(),
-                "gamma": await self.get_gamma(),
-                "trigger_mode": self.triggermode,
-                "white_balance": await self.get_wb(),
-                "pixel_format": await self.get_current_pixel_format(),
-                "image_enhancement": self.img_quality_enhancement,
-                "retrieve_retry_count": self.retrieve_retry_count,
-                "timeout_ms": self.timeout_ms,
-            }
-
-            os.makedirs(os.path.dirname(config_path), exist_ok=True)
-
-            with open(config_path, "w") as f:
-                json.dump(config_data, f, indent=2)
-
-            self.logger.debug(f"Configuration exported to '{config_path}' for camera '{self.camera_name}'")
-        except Exception as e:
-            self.logger.error(f"Failed to export config to '{config_path}': {str(e)}")
 
     async def set_capture_timeout(self, timeout_ms: int):
         """Set capture timeout in milliseconds.

@@ -162,7 +162,6 @@ class TestCameraBackendConstructor:
         # Should use config defaults
         assert backend.img_quality_enhancement is True
         assert backend.retrieve_retry_count == 3
-        assert backend.camera_config_file is None
         assert backend.camera is None
         assert backend.device_manager is None
         assert backend.initialized is False
@@ -178,14 +177,12 @@ class TestCameraBackendConstructor:
 
         backend = MinimalConcreteBackend(
             camera_name="test_camera",
-            camera_config="/path/to/config.json",
             img_quality_enhancement=False,
             retrieve_retry_count=5,
         )
 
         # Should use explicit values
         assert backend.camera_name == "test_camera"
-        assert backend.camera_config_file == "/path/to/config.json"
         assert backend.img_quality_enhancement is False
         assert backend.retrieve_retry_count == 5
 
@@ -503,39 +500,6 @@ class TestCameraBackendDefaultImplementations:
 
     @pytest.mark.asyncio
     @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
-    async def test_config_methods_log_warnings(self, mock_get_config, caplog):
-        """Test that config methods log warnings and return expected values."""
-        mock_config_obj = MagicMock()
-        mock_config_obj.cameras.image_quality_enhancement = True
-        mock_config_obj.cameras.retrieve_retry_count = 3
-        mock_get_config.return_value.get_config.return_value = mock_config_obj
-
-        backend = MinimalConcreteBackend()
-
-        # Temporarily lower handler levels to capture warnings
-        original_levels, original_propagate, original_logger_level = enable_log_capture(backend)
-
-        with caplog.at_level(logging.WARNING):
-            # Test async config methods - call base class methods to trigger exceptions
-            with pytest.raises(NotImplementedError):
-                await CameraBackend.set_config(backend, "test_config")
-            with pytest.raises(NotImplementedError):
-                await CameraBackend.import_config(backend, "/path/to/config")
-            with pytest.raises(NotImplementedError):
-                await CameraBackend.export_config(backend, "/path/to/config")
-
-        # Restore original handler levels
-        restore_log_settings(backend, original_levels, original_propagate, original_logger_level)
-
-        # Should log warnings
-        # Check log records instead of text for more reliable capture
-        log_messages = [record.message for record in caplog.records]
-        assert any("set_config not implemented" in msg for msg in log_messages)
-        assert any("import_config not implemented" in msg for msg in log_messages)
-        assert any("export_config not implemented" in msg for msg in log_messages)
-
-    @pytest.mark.asyncio
-    @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
     async def test_gamma_methods_log_warnings(self, mock_get_config, caplog):
         """Test that gamma methods log warnings and raise NotImplementedError by default."""
         mock_config_obj = MagicMock()
@@ -567,8 +531,8 @@ class TestCameraBackendDefaultImplementations:
 
     @pytest.mark.asyncio
     @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
-    async def test_white_balance_methods_log_warnings(self, mock_get_config, caplog):
-        """Test white balance methods log warnings and return expected values."""
+    async def test_white_balance_methods_raise_not_implemented(self, mock_get_config, caplog):
+        """Test white balance base stubs raise NotImplementedError without logging."""
         mock_config_obj = MagicMock()
         mock_config_obj.cameras.image_quality_enhancement = True
         mock_config_obj.cameras.retrieve_retry_count = 3
@@ -602,16 +566,12 @@ class TestCameraBackendDefaultImplementations:
         # Restore original handler levels
         restore_log_settings(backend, original_levels, original_propagate, original_logger_level)
 
-        # Check log records instead of text for more reliable capture
-        log_messages = [record.message for record in caplog.records]
-        assert any("get_wb not implemented" in msg for msg in log_messages)
-        assert any("set_auto_wb_once not implemented" in msg for msg in log_messages)
-        assert any("get_wb_range not implemented" in msg for msg in log_messages)
+        assert not any("not implemented" in record.message for record in caplog.records)
 
     @pytest.mark.asyncio
     @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
-    async def test_trigger_methods_log_warnings(self, mock_get_config, caplog):
-        """Test trigger methods log warnings and return expected values."""
+    async def test_trigger_methods_raise_not_implemented(self, mock_get_config, caplog):
+        """Test trigger base stubs raise NotImplementedError without logging."""
         mock_config_obj = MagicMock()
         mock_config_obj.cameras.image_quality_enhancement = True
         mock_config_obj.cameras.retrieve_retry_count = 3
@@ -640,10 +600,7 @@ class TestCameraBackendDefaultImplementations:
         # Restore original handler levels
         restore_log_settings(backend, original_levels, original_propagate, original_logger_level)
 
-        # Check log records instead of text for more reliable capture
-        log_messages = [record.message for record in caplog.records]
-        assert any("get_triggermode not implemented" in msg for msg in log_messages)
-        assert any("set_triggermode not implemented" in msg for msg in log_messages)
+        assert not any("not implemented" in record.message for record in caplog.records)
 
     @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
     @pytest.mark.asyncio

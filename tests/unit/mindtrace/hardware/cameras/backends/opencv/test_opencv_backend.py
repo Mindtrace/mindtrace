@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 
 import numpy as np
@@ -181,8 +180,8 @@ async def test_roi_and_pixel_format_and_enhancement(fake_cv):
     # ROI methods
     with pytest.raises(NotImplementedError, match="ROI setting not supported"):
         await cam.set_ROI(0, 0, 10, 10)
-    roi = await cam.get_ROI()
-    assert set(roi.keys()) == {"x", "y", "width", "height"}
+    with pytest.raises(NotImplementedError, match="ROI query not supported"):
+        await cam.get_ROI()
     with pytest.raises(NotImplementedError, match="ROI reset not supported"):
         await cam.reset_ROI()
 
@@ -213,18 +212,6 @@ async def test_white_balance_get_and_set(fake_cv):
 
 
 @pytest.mark.asyncio
-async def test_export_and_import_config(fake_cv, tmp_path):
-    cam = OpenCVCameraBackend("0")
-    await cam.initialize()
-    path = os.path.join(tmp_path, "cfg.json")
-    await cam.export_config(path)
-    with open(path, "r") as f:
-        data = json.load(f)
-    assert "camera_type" in data and data["camera_type"] == "opencv"
-    await cam.import_config(path)
-    await cam.close()
-
-
 @pytest.mark.asyncio
 async def test_capture_timeout_and_generic_errors(fake_cv, monkeypatch):
     cam = OpenCVCameraBackend("0", timeout_ms=200)
@@ -355,59 +342,6 @@ async def test_check_connection_failure_branches(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_import_config_optional_settings_failures(fake_cv, tmp_path, monkeypatch):
-    cam = OpenCVCameraBackend("0")
-    await cam.initialize()
-    path = os.path.join(tmp_path, "cfg.json")
-    data = {
-        "width": 800,
-        "height": 600,
-        "fps": 25,
-        "exposure_time": -5.0,
-        # Optional ones: force failures by returning False from _run_blocking for set
-        "brightness": 0.4,
-        "contrast": 0.4,
-        "saturation": 0.4,
-        "hue": 0.1,
-        "gain": 5.0,
-        "auto_exposure": 1.0,
-        "white_balance_blue_u": 4600.0,
-        "white_balance_red_v": 4600.0,
-        "white_balance": "auto",
-        "image_enhancement": True,
-        "retrieve_retry_count": 2,
-        "timeout_ms": 500,
-    }
-    with open(path, "w") as f:
-        json.dump(data, f)
-
-    original_run_blocking = cam._run_blocking
-
-    async def _run_blocking_maybe_fail(func, *args, **kwargs):
-        # If setting optional properties, return False; otherwise call through
-        if (
-            func == cam.cap.set
-            and args
-            and args[0]
-            in {
-                getattr(__import__("cv2"), "CAP_PROP_BRIGHTNESS"),
-                getattr(__import__("cv2"), "CAP_PROP_CONTRAST"),
-                getattr(__import__("cv2"), "CAP_PROP_SATURATION"),
-                getattr(__import__("cv2"), "CAP_PROP_HUE"),
-                getattr(__import__("cv2"), "CAP_PROP_GAIN"),
-                getattr(__import__("cv2"), "CAP_PROP_AUTO_EXPOSURE"),
-                getattr(__import__("cv2"), "CAP_PROP_WHITE_BALANCE_BLUE_U"),
-                getattr(__import__("cv2"), "CAP_PROP_WHITE_BALANCE_RED_V"),
-            }
-        ):
-            return False
-        return await original_run_blocking(func, *args, **kwargs)
-
-    monkeypatch.setattr(cam, "_run_blocking", _run_blocking_maybe_fail, raising=False)
-    await cam.import_config(path)
-    await cam.close()
-
-
 def test_discovery_error_returns_empty(monkeypatch):
     import cv2
 
@@ -995,7 +929,6 @@ class TestOpenCVCameraBackendGetAvailableCameras:
 
     def test_get_available_cameras_max_probe_env_var(self, fake_cv, monkeypatch):
         """Test get_available_cameras respects MINDTRACE_OPENCV_MAX_PROBE environment variable."""
-        import os
         import sys
 
         original_platform = sys.platform
@@ -1072,7 +1005,6 @@ class TestOpenCVCameraBackendGetAvailableCameras:
 
     def test_get_available_cameras_full_execution_path(self, fake_cv, monkeypatch):
         """Test get_available_cameras executes the full code path when OpenCV is available."""
-        import os
         import sys
 
         original_platform = sys.platform
@@ -1627,35 +1559,14 @@ class TestOpenCVCameraBackendROI:
     """Test suite for ROI-related methods."""
 
     @pytest.mark.asyncio
-    async def test_get_roi_not_initialized(self, fake_cv):
-        """Test get_ROI when camera is not initialized."""
+    async def test_get_roi_raises_not_implemented(self, fake_cv):
+        """OpenCV has no hardware ROI; get_ROI must raise so export omits the key."""
         cam = OpenCVCameraBackend("0")
         cam.initialized = False
         cam.cap = None
 
-        roi = await cam.get_ROI()
-        assert roi == {"x": 0, "y": 0, "width": 0, "height": 0}
-
-    @pytest.mark.asyncio
-    async def test_get_roi_exception(self, fake_cv, monkeypatch):
-        """Test get_ROI exception handling."""
-        cam = OpenCVCameraBackend("0")
-        await cam.initialize()
-
-        original_run_blocking = cam._run_blocking
-
-        async def failing_run_blocking(func, *args, **kwargs):
-            if func == cam.cap.get:
-                raise RuntimeError("Get failed")
-            return await original_run_blocking(func, *args, **kwargs)
-
-        monkeypatch.setattr(cam, "_run_blocking", failing_run_blocking, raising=False)
-
-        # Should return default ROI on exception
-        roi = await cam.get_ROI()
-        assert roi == {"x": 0, "y": 0, "width": 0, "height": 0}
-
-        await cam.close()
+        with pytest.raises(NotImplementedError, match="ROI query not supported"):
+            await cam.get_ROI()
 
 
 class TestOpenCVCameraBackendWhiteBalance:
@@ -1790,171 +1701,6 @@ class TestOpenCVCameraBackendImageEnhancement:
             pass
 
         cam.logger.error = original_error
-
-
-class TestOpenCVCameraBackendExportConfig:
-    """Test suite for export_config method."""
-
-    @pytest.mark.asyncio
-    async def test_export_config_exception(self, fake_cv, monkeypatch, tmp_path):
-        """Test export_config exception handling."""
-        cam = OpenCVCameraBackend("0")
-        await cam.initialize()
-
-        original_run_blocking = cam._run_blocking
-
-        async def failing_run_blocking(func, *args, **kwargs):
-            if func == cam.cap.get:
-                raise RuntimeError("Get failed")
-            return await original_run_blocking(func, *args, **kwargs)
-
-        monkeypatch.setattr(cam, "_run_blocking", failing_run_blocking, raising=False)
-
-        config_path = os.path.join(tmp_path, "config.json")
-
-        with pytest.raises(CameraConfigurationError, match="Failed to export config"):
-            await cam.export_config(config_path)
-
-        await cam.close()
-
-    @pytest.mark.asyncio
-    async def test_export_config_directory_creation(self, fake_cv, tmp_path):
-        """Test export_config creates parent directories."""
-        cam = OpenCVCameraBackend("0")
-        await cam.initialize()
-
-        config_path = os.path.join(tmp_path, "nested", "dir", "config.json")
-
-        await cam.export_config(config_path)
-        assert os.path.exists(config_path)
-
-        await cam.close()
-
-
-class TestOpenCVCameraBackendImportConfig:
-    """Test suite for import_config method."""
-
-    @pytest.mark.asyncio
-    async def test_import_config_file_not_found(self, fake_cv):
-        """Test import_config when file does not exist."""
-        cam = OpenCVCameraBackend("0")
-        await cam.initialize()
-
-        with pytest.raises(CameraConfigurationError, match="Configuration file not found"):
-            await cam.import_config("/nonexistent/path/config.json")
-
-        await cam.close()
-
-    @pytest.mark.asyncio
-    async def test_import_config_invalid_format(self, fake_cv, tmp_path):
-        """Test import_config with invalid JSON format."""
-        cam = OpenCVCameraBackend("0")
-        await cam.initialize()
-
-        config_path = os.path.join(tmp_path, "invalid.json")
-        with open(config_path, "w") as f:
-            f.write("not valid json")
-
-        with pytest.raises(CameraConfigurationError, match="Failed to import config"):
-            await cam.import_config(config_path)
-
-        await cam.close()
-
-    @pytest.mark.asyncio
-    async def test_import_config_not_dict(self, fake_cv, tmp_path):
-        """Test import_config when JSON is not a dictionary."""
-        cam = OpenCVCameraBackend("0")
-        await cam.initialize()
-
-        config_path = os.path.join(tmp_path, "not_dict.json")
-        with open(config_path, "w") as f:
-            json.dump([1, 2, 3], f)
-
-        with pytest.raises(CameraConfigurationError, match="Invalid configuration file format"):
-            await cam.import_config(config_path)
-
-        await cam.close()
-
-    @pytest.mark.asyncio
-    async def test_import_config_nested_format(self, fake_cv, tmp_path):
-        """Test import_config with nested settings format."""
-        cam = OpenCVCameraBackend("0")
-        await cam.initialize()
-
-        config_path = os.path.join(tmp_path, "nested.json")
-        config_data = {
-            "settings": {
-                "width": 800,
-                "height": 600,
-                "fps": 25,
-                "exposure": -5.0,
-            }
-        }
-        with open(config_path, "w") as f:
-            json.dump(config_data, f)
-
-        await cam.import_config(config_path)
-        await cam.close()
-
-    @pytest.mark.asyncio
-    async def test_import_config_legacy_exposure_key(self, fake_cv, tmp_path):
-        """Test import_config with legacy exposure key."""
-        cam = OpenCVCameraBackend("0")
-        await cam.initialize()
-
-        config_path = os.path.join(tmp_path, "legacy.json")
-        config_data = {
-            "width": 800,
-            "height": 600,
-            "exposure": -5.0,  # Legacy key instead of exposure_time
-        }
-        with open(config_path, "w") as f:
-            json.dump(config_data, f)
-
-        await cam.import_config(config_path)
-        await cam.close()
-
-    @pytest.mark.asyncio
-    async def test_import_config_legacy_enhancement_key(self, fake_cv, tmp_path):
-        """Test import_config with legacy img_quality_enhancement key."""
-        cam = OpenCVCameraBackend("0")
-        await cam.initialize()
-
-        config_path = os.path.join(tmp_path, "legacy_enhancement.json")
-        config_data = {
-            "img_quality_enhancement": True,  # Legacy key instead of image_enhancement
-        }
-        with open(config_path, "w") as f:
-            json.dump(config_data, f)
-
-        await cam.import_config(config_path)
-        assert cam.img_quality_enhancement is True
-
-        await cam.close()
-
-    @pytest.mark.asyncio
-    async def test_import_config_white_balance_exception(self, fake_cv, tmp_path, monkeypatch):
-        """Test import_config white balance setting exception handling."""
-        cam = OpenCVCameraBackend("0")
-        await cam.initialize()
-
-        config_path = os.path.join(tmp_path, "wb.json")
-        config_data = {"white_balance": "auto"}
-        with open(config_path, "w") as f:
-            json.dump(config_data, f)
-
-        original_run_blocking = cam._run_blocking
-
-        async def failing_wb_set(func, *args, **kwargs):
-            if func == cam.cap.set and args and args[0] == getattr(__import__("cv2"), "CAP_PROP_AUTO_WB"):
-                raise RuntimeError("WB set failed")
-            return await original_run_blocking(func, *args, **kwargs)
-
-        monkeypatch.setattr(cam, "_run_blocking", failing_wb_set, raising=False)
-
-        # Should handle exception gracefully
-        await cam.import_config(config_path)
-        await cam.close()
 
 
 class TestOpenCVCameraBackendNetworkMethods:

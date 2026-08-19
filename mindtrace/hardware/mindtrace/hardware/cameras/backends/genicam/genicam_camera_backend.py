@@ -3,7 +3,6 @@
 import asyncio
 import os
 import platform
-import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
@@ -87,6 +86,7 @@ class GenICamCameraBackend(CameraBackend):
     """
 
     REQUIRES_THREAD_AFFINITY = True
+    nested_merge_config_keys = frozenset({"genicam_nodes", "focus_config"})
 
     # Class-level singleton Harvester instance shared across all backend instances
     _shared_harvester: Optional[Harvester] = None
@@ -96,7 +96,6 @@ class GenICamCameraBackend(CameraBackend):
     def __init__(
         self,
         camera_name: str,
-        camera_config: Optional[str] = None,
         img_quality_enhancement: Optional[bool] = None,
         retrieve_retry_count: Optional[int] = None,
         **backend_kwargs,
@@ -105,7 +104,6 @@ class GenICamCameraBackend(CameraBackend):
 
         Args:
             camera_name: Camera identifier (serial number, device ID, or user-defined name)
-            camera_config: Path to JSON configuration file (optional)
             img_quality_enhancement: Enable CLAHE image enhancement (uses config default if None)
             retrieve_retry_count: Number of capture retry attempts (uses config default if None)
             **backend_kwargs: Backend-specific parameters:
@@ -130,7 +128,7 @@ class GenICamCameraBackend(CameraBackend):
         else:
             assert Harvester is not None, "Harvesters is available but Harvester class is not initialized"
 
-        super().__init__(camera_name, camera_config, img_quality_enhancement, retrieve_retry_count)
+        super().__init__(camera_name, img_quality_enhancement, retrieve_retry_count)
 
         # Get backend-specific configuration with fallbacks
         cti_path = backend_kwargs.get("cti_path")
@@ -156,7 +154,6 @@ class GenICamCameraBackend(CameraBackend):
             raise CameraConfigurationError(f"GenTL Producer file not found: {cti_path}")
 
         # Store configuration
-        self.camera_config_path = camera_config
         self.cti_path = cti_path
         self.timeout_ms = timeout_ms
         self.buffer_count = buffer_count
@@ -457,10 +454,6 @@ class GenICamCameraBackend(CameraBackend):
 
                 # Start acquisition for continuous capture (required for some cameras like Keyence)
                 await self._start_acquisition()
-
-                # Load config if provided
-                if self.camera_config_path and os.path.exists(self.camera_config_path):
-                    await self.import_config(self.camera_config_path)
 
                 self.initialized = True
                 return True, self.image_acquirer, self.device_info
@@ -1592,162 +1585,66 @@ class GenICamCameraBackend(CameraBackend):
             self.logger.warning(f"White balance range retrieval failed for camera '{self.camera_name}': {str(e)}")
             return ["auto", "manual", "once"]
 
-    async def import_config(self, config_path: str):
-        """Import camera configuration from JSON file.
-
-        Args:
-            config_path: Path to JSON configuration file
-
-        Raises:
-            CameraConnectionError: If camera is not initialized
-            CameraConfigurationError: If configuration file is invalid
-            HardwareOperationError: If configuration import fails
-        """
-        if not self.initialized or self.image_acquirer is None:
-            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
-
-        try:
-            import json
-            import os
-
-            if not os.path.exists(config_path):
-                raise CameraConfigurationError(f"Configuration file not found: {config_path}")
-
-            # Read config from file (run in threadpool to avoid blocking event loop)
-            def _load_config():
-                with open(config_path, "r") as f:
-                    return json.load(f)
-
-            config = await asyncio.to_thread(_load_config)
-
-            # Apply configuration settings
-            # Support both 'exposure_time' (new) and 'exposure' (legacy) for backward compatibility
-            if "exposure_time" in config:
-                await self.set_exposure(config["exposure_time"])
-            elif "exposure" in config:
-                await self.set_exposure(config["exposure"])
-
-            if "gain" in config:
-                await self.set_gain(config["gain"])
-
-            if "gamma" in config:
-                await self.set_gamma(config["gamma"])
-
-            if "triggermode" in config:
-                await self.set_triggermode(config["triggermode"])
-
-            if "white_balance" in config:
-                await self.set_auto_wb_once(config["white_balance"])
-
-            if "roi" in config and isinstance(config["roi"], dict):
-                roi = config["roi"]
-                if all(key in roi for key in ["x", "y", "width", "height"]):
-                    await self.set_ROI(roi["x"], roi["y"], roi["width"], roi["height"])
-
-            # Apply any vendor-specific GenICam settings
-            if "genicam_nodes" in config and isinstance(config["genicam_nodes"], dict):
-                await self._apply_genicam_nodes(config["genicam_nodes"])
-
-            self.logger.info(f"Configuration imported successfully for camera '{self.camera_name}'")
-
-        except (CameraConnectionError, CameraConfigurationError):
-            raise
-        except Exception as e:
-            self.logger.error(f"Configuration import failed for camera '{self.camera_name}': {str(e)}")
-            raise HardwareOperationError(f"Failed to import configuration: {str(e)}")
-
-    async def export_config(self, config_path: str):
-        """Export camera configuration to JSON file.
-
-        Args:
-            config_path: Path to save JSON configuration file
-
-        Raises:
-            CameraConnectionError: If camera is not initialized
-            HardwareOperationError: If configuration export fails
-        """
-        if not self.initialized or self.image_acquirer is None:
-            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
-
-        try:
-            import json
-            import os
-
-            # Gather current configuration
-            config = {
-                "camera_name": self.camera_name,
-                "vendor": self.device_info.get("vendor", "Unknown") if self.device_info else "Unknown",
-                "model": self.device_info.get("model", "Unknown") if self.device_info else "Unknown",
-                "exported_timestamp": time.time(),
-                "exposure_time": await self.get_exposure(),
-                "gain": await self.get_gain(),
-                "gamma": await self.get_gamma(),
-                "triggermode": await self.get_triggermode(),
-                "white_balance": await self.get_wb(),
-                "roi": await self.get_ROI(),
-                "exposure_range": await self.get_exposure_range(),
-                "gain_range": await self.get_gain_range(),
-                "gamma_range": await self.get_gamma_range(),
-                "white_balance_range": await self.get_wb_range(),
-            }
-
-            # Add GenICam-specific nodes that might be useful
-            genicam_nodes = await self._export_genicam_nodes()
-            if genicam_nodes:
-                config["genicam_nodes"] = genicam_nodes
-
-            # Ensure directory exists and save configuration (run in threadpool to avoid blocking event loop)
-            def _save_config():
-                dirname = os.path.dirname(config_path)
-                if dirname:
-                    os.makedirs(dirname, exist_ok=True)
-                with open(config_path, "w") as f:
-                    json.dump(config, f, indent=2)
-
-            await asyncio.to_thread(_save_config)
-
-            self.logger.info(f"Configuration exported successfully for camera '{self.camera_name}' to {config_path}")
-
-        except (CameraConnectionError,):
-            raise
-        except Exception as e:
-            self.logger.error(f"Configuration export failed for camera '{self.camera_name}': {str(e)}")
-            raise HardwareOperationError(f"Failed to export configuration: {str(e)}")
-
-    async def _apply_genicam_nodes(self, node_config: Dict[str, Any]):
+    async def apply_genicam_nodes(self, node_config: Dict[str, Any]):
         """Apply GenICam node configuration.
 
         Args:
             node_config: Dictionary of node names to values
+
+        Raises:
+            CameraConfigurationError: If any writable node fails to apply, or no
+                configured nodes match writable nodes on the camera. When some
+                nodes applied before a failure, the successful subset is stored
+                on the exception as ``details["applied"]``.
         """
         try:
             await self._ensure_connected()
 
-            def _apply_nodes():
+            def _apply_nodes() -> tuple[Dict[str, Any], Dict[str, str]]:
                 node_map = self.image_acquirer.remote_device.node_map
-                applied_count = 0
+                applied_nodes: Dict[str, Any] = {}
+                failures: Dict[str, str] = {}
 
                 for node_name, value in node_config.items():
+                    node = getattr(node_map, node_name, None)
+                    if node is None or not hasattr(node, "value"):
+                        continue
                     try:
-                        node = getattr(node_map, node_name, None)
-                        if node is not None and hasattr(node, "value"):
-                            node.value = value
-                            applied_count += 1
-                            self.logger.debug(f"Applied GenICam node '{node_name}' = {value}")
+                        node.value = value
+                        applied_nodes[node_name] = value
+                        self.logger.debug(f"Applied GenICam node '{node_name}' = {value}")
                     except Exception as e:
-                        self.logger.debug(f"Could not apply GenICam node '{node_name}': {e}")
+                        failures[node_name] = str(e)
 
-                return applied_count
+                return applied_nodes, failures
 
-            applied_count = await self._run_blocking(_apply_nodes, timeout=self._op_timeout_s)
+            applied_nodes, failures = await self._run_blocking(_apply_nodes, timeout=self._op_timeout_s)
+
+            if failures:
+                details = "; ".join(f"{name}: {error}" for name, error in failures.items())
+                raise CameraConfigurationError(
+                    f"Failed to apply GenICam nodes for camera '{self.camera_name}': {details}",
+                    details={"applied": applied_nodes},
+                )
+
+            if node_config and not applied_nodes:
+                raise CameraConfigurationError(
+                    f"No GenICam nodes from config matched writable nodes on camera '{self.camera_name}'"
+                )
+
             self.logger.debug(
-                f"Applied {applied_count}/{len(node_config)} GenICam nodes for camera '{self.camera_name}'"
+                f"Applied {len(applied_nodes)}/{len(node_config)} GenICam nodes for camera '{self.camera_name}'"
             )
 
+        except CameraConfigurationError:
+            raise
         except Exception as e:
             self.logger.warning(f"GenICam node application failed for camera '{self.camera_name}': {str(e)}")
+            raise CameraConfigurationError(
+                f"GenICam node application failed for camera '{self.camera_name}': {e}"
+            ) from e
 
-    async def _export_genicam_nodes(self) -> Dict[str, Any]:
+    async def get_genicam_nodes(self) -> Dict[str, Any]:
         """Export key GenICam node values.
 
         Returns:
@@ -1790,6 +1687,19 @@ class GenICamCameraBackend(CameraBackend):
         except Exception as e:
             self.logger.warning(f"GenICam node export failed for camera '{self.camera_name}': {str(e)}")
             return {}
+
+    async def get_configuration_read_context(self) -> Dict[str, Any]:
+        """Bulk-read GenICam nodes once for one get_configuration() call."""
+        return {"genicam_nodes": await self.get_genicam_nodes()}
+
+    async def read_configuration_value(self, key: str, context: Optional[Dict[str, Any]] = None) -> Any:
+        """Read backend-specific configuration values from a cached bulk-read context."""
+        if key != "genicam_nodes":
+            raise NotImplementedError(f"{key} not supported by {self.__class__.__name__}")
+        nodes = context.get("genicam_nodes") if context else None
+        if nodes is None:
+            nodes = await self.get_genicam_nodes()
+        return nodes or None
 
     async def set_ROI(self, x: int, y: int, width: int, height: int):
         """Set Region of Interest using GenICam nodes.

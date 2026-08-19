@@ -64,9 +64,46 @@ uv run python -m mindtrace.hardware.services.cameras.launcher --include-mocks
 
 - `POST /cameras/configure` - Configure camera parameters (runtime-configurable)
 - `POST /cameras/configure/batch` - Configure multiple cameras
-- `POST /cameras/configuration` - Get current camera configuration
+- `POST /cameras/config/get` - Get current camera configuration (live hardware)
+- `POST /cameras/config/saved/get` - Get persisted camera configuration from disk
 - `POST /cameras/config/import` - Import configuration from file
 - `POST /cameras/config/export` - Export configuration to file
+- `POST /cameras/config/reset` - Delete persisted configuration file
+
+#### Breaking Changes
+
+Recent (August 2026) API and backend contract changes:
+
+| Surface | Before | After |
+|---------|--------|-------|
+| `POST /cameras/configure` | `data: bool` | `data: {applied, total, failures, skipped, partial, success, …}` |
+| `POST /cameras/configure/batch` | `results: Dict[str, bool]` | `results: Dict[str, ConfigurationApplyResultData]` |
+| `POST /cameras/config/get` | All fields present, `null` when unset | Unset keys omitted from `data` |
+| `CameraBackend.__init__` | `(name, camera_config, …)` | `(name, …)` — positional shift; profile JSON is applied via `configure()` after construction |
+
+Migration notes:
+
+- Check `data.success` on configure responses instead of treating `data` as a boolean.
+- For batch configure, inspect per-camera `results[name].success`, `applied`, and `failures`.
+- `/cameras/config/get` JSON omits unset keys and can be posted directly to `/cameras/configure`.
+- Custom backends: remove the `camera_config` positional argument from `__init__` signatures.
+
+Example configure response:
+
+```json
+{
+  "success": true,
+  "message": "Camera 'Basler:cam0' configured successfully",
+  "data": {
+    "applied": 3,
+    "total": 3,
+    "failures": {},
+    "skipped": [],
+    "partial": {},
+    "success": true
+  }
+}
+```
 
 ### Image Capture
 
@@ -276,15 +313,65 @@ For GigE cameras sharing a single NIC, the `batch_size` per group must account f
 - **`inter_packet_delay`** (camera setting, e.g., 1000 ticks) spaces out packets to prevent NIC buffer overflow
 - With 12.5MP cameras on 1Gbps, typically max 2 concurrent transfers are reliable
 
+## Configuration Persistence
+
+When a camera is opened, the manager can restore a persisted JSON profile from
+`MINDTRACE_HW_CAMERA_CONFIG_DIR` **before** the connection test runs. Operators
+commit defaults with `/cameras/config/export`; production and UI open paths then
+pick up that file on (re)open.
+
+### Operations
+
+| Operation | Persists to disk? |
+|---|---|
+| `/cameras/configure` | No — runtime only |
+| `/cameras/configure/batch` | No — runtime only |
+| `/cameras/config/get` | No — reads live hardware state |
+| `/cameras/config/saved/get` | No — reads per-camera JSON from disk without applying it |
+| `/cameras/config/export` | Yes — writes per-camera JSON under `MINDTRACE_HW_CAMERA_CONFIG_DIR` |
+| `/cameras/config/import` | Reads per-camera JSON and applies to live camera |
+| `open()` (when restore enabled) | Reads per-camera JSON and applies to live camera before connection test |
+| `open(camera_config=path)` | Applies JSON from `path` after any saved-profile restore; overrides overlapping keys |
+| `/cameras/config/reset` | Deletes the managed per-camera profile; next close/open uses backend defaults |
+| Auto-reinit after capture failures | No — closes and reopens only; does not rewrite the saved file. Replays the original `open()` kwargs and accumulated runtime `/cameras/configure` settings. |
+
+Saved profiles use the same JSON payload shape as `/cameras/configure` and
+the `/cameras/config/get` and `/cameras/config/saved/get` responses
+(`exposure_time`, `gain`, `roi`, `trigger_mode`, `pixel_format`, `white_balance`,
+`image_enhancement`, `optical_power`, `packet_size`, `inter_packet_delay`,
+`bandwidth_limit`, plus backend-specific keys such as `focus_config`,
+`genicam_nodes`, or OpenCV properties). GET responses omit unset keys rather
+than serializing them as ``null``, so the ``data`` object can be posted back to
+configure. Legacy export files with metadata keys (`camera_type`, `timestamp`,
+etc.) still import successfully; unknown keys are ignored.
+
+Saved profiles restore **imaging settings** (exposure, gain, trigger, ROI, etc.)
+and **per-camera GigE transport settings** (`packet_size`, `inter_packet_delay`,
+`bandwidth_limit`). They do **not** include manager-owned performance settings
+(`timeout_ms`, `retrieve_retry_count`, `buffer_count`) — use
+`/cameras/performance/settings` instead. OpenCV **open-time** settings
+(`width`, `height`, `fps`) are also excluded; pass them to `open()` or hardware
+config defaults.
+
+To open without loading a saved profile: call `/cameras/config/reset`, then close
+and reopen the camera. Partial profile apply is logged at WARNING during auto-restore;
+`/cameras/config/import` reports `success=false` when not all settings applied.
+
+### Environment
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `MINDTRACE_HW_CAMERA_CONFIG_DIR` | `~/.config/mindtrace/cameras` | Directory for preserved configs |
+| `MINDTRACE_HW_CAMERA_RESTORE_SAVED_CONFIG_ON_OPEN` | true | Restore saved config when opening a camera |
+
 ## Auto-Reconnection
 
 The camera manager tracks consecutive capture failures per camera. When a camera exceeds the failure threshold, it automatically:
 
 1. Checks the reinitialization cooldown (prevents thrashing)
-2. Exports the current camera config to disk
-3. Closes the camera
-4. Re-opens and restores the saved configuration
-5. Resets the failure counter
+2. Closes the camera
+3. Re-opens with the original `open()` kwargs, restores the saved configuration (when restore is enabled), and replays accumulated runtime `/cameras/configure` settings (in-process: `AsyncCameraManager.configure_camera`, not `camera.configure`)
+4. Resets the failure counter
 
 ### Configuration
 
@@ -292,7 +379,6 @@ The camera manager tracks consecutive capture failures per camera. When a camera
 |---------------------|---------|-------------|
 | `MINDTRACE_HW_CAMERA_MAX_CONSECUTIVE_FAILURES` | 5 | Failures before attempting reinit |
 | `MINDTRACE_HW_CAMERA_REINITIALIZATION_COOLDOWN` | 30.0 | Seconds between reinit attempts |
-| `MINDTRACE_HW_CAMERA_CONFIG_DIR` | `~/.config/mindtrace/cameras` | Directory for preserved configs |
 
 ### Diagnostics
 
@@ -310,12 +396,11 @@ Response includes `failure_counts`, `cameras_in_cooldown`, and `capture_groups_c
 
 Can be changed dynamically without reinitialization:
 
-- `timeout_ms` - Capture timeout in milliseconds
 - `exposure_time` - Exposure time in microseconds
 - `gain` - Camera gain value
 - `trigger_mode` - Trigger mode (continuous/trigger)
 - `white_balance` - White balance setting
-- `image_quality_enhancement` - Enable CLAHE enhancement
+- `image_enhancement` - Enable CLAHE enhancement (legacy alias: `img_quality_enhancement`)
 - `pixel_format` - Pixel format (BGR8, RGB8, Mono8, etc.)
 - `packet_size` - GigE packet size in bytes (set to match NIC MTU, e.g., 8164 for jumbo frames)
 - `inter_packet_delay` - Ticks between GigE packets (e.g., 1000 = ~8us gap)
@@ -332,6 +417,15 @@ Available on cameras with a connected liquid lens:
 - `focus_source` - AF source: Auto, SourceL, SourceM, SourceS
 - `edge_detection` - Enable edge-detection focusing
 - `roi_offset_x`, `roi_offset_y` - Focus ROI offset
+
+### Manager-Owned (via `/cameras/performance/settings`)
+
+Applied by ``AsyncCameraManager`` to active and future cameras; not accepted by
+``/cameras/configure`` or saved camera profiles:
+
+- `timeout_ms` - Capture timeout in milliseconds
+- `retrieve_retry_count` - Capture retry attempts
+- `max_concurrent_captures` - Global concurrent capture limit
 
 ### Startup-Only Parameters
 

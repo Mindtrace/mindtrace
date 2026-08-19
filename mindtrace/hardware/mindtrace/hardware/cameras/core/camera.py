@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from mindtrace.core import Mindtrace
 from mindtrace.hardware.cameras.core.async_camera import AsyncCamera
+from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult
 
 
 class Camera(Mindtrace):
@@ -159,18 +160,29 @@ class Camera(Mindtrace):
         """
         return self._submit(self._backend.capture(save_path, output_format=output_format))
 
-    def configure(self, **settings):
-        """Configure multiple camera settings atomically.
+    def configure(self, **settings) -> ConfigurationApplyResult:
+        """Configure multiple camera settings with per-key apply reporting.
 
         Args:
-            **settings: Supported keys include exposure, gain, gamma, roi=(x, y, w, h), trigger_mode, pixel_format,
-                white_balance, image_enhancement.
+            **settings: Canonical configuration keys (see ``CONFIGURABLE_KEYS``),
+                including ``gamma``. Legacy aliases (``exposure``, ``triggermode``,
+                etc.) are normalized.
+
+        Returns:
+            A ``ConfigurationApplyResult``. Check ``result.success`` rather than
+            treating the object as a boolean. Unrecognized keys are reported on
+            ``skipped``; invalid or backend-rejected values are reported on
+            ``failures`` and do not abort the rest of the payload.
 
         Raises:
-            CameraConfigurationError: If a provided value is invalid for the backend.
-            CameraConnectionError: If the camera cannot be configured.
+            CameraConnectionError: On connection loss while applying a key;
+                aborts remaining keys. Partial progress is on ``exc.details``.
+            CameraTimeoutError: On timeout while applying a key; aborts remaining
+                keys. Partial progress is on ``exc.details``.
+            CameraInitializationError: On initialization failure while applying a
+                key; aborts remaining keys. Partial progress is on ``exc.details``.
         """
-        self._submit(self._backend.configure(**settings))
+        return self._submit(self._backend.configure(**settings))
 
     def set_exposure(self, exposure: Union[int, float]):
         """Set the camera exposure.
@@ -421,11 +433,15 @@ class Camera(Mindtrace):
         """Set focus/autofocus parameters."""
         self._submit(self._backend.set_focus_config(**settings))
 
-    def save_config(self, path: str) -> bool:
-        """Export current camera configuration to a file via backend.
+    def export_config(self, path: str) -> bool:
+        """Export current camera configuration to a canonical JSON file.
+
+        The file uses the same keys as ``/cameras/configure`` and
+        ``AsyncCamera.get_configuration()`` (see ``CONFIGURABLE_KEYS``).
+        Legacy metadata keys from older exports are not written.
 
         Args:
-            path: Destination file path (backend-specific JSON).
+            path: Destination file path.
 
         Returns:
             bool: True if export succeeds, raises exception on failure.
@@ -433,13 +449,20 @@ class Camera(Mindtrace):
         self._submit(self._backend.export_config(path))
         return True
 
-    def load_config(self, path: str):
-        """Import camera configuration from a file via backend.
+    def import_config(self, path: str) -> Tuple[int, int]:
+        """Import camera configuration from JSON via ``AsyncCamera.configure()``.
+
+        Accepts canonical configure keys and legacy aliases (``exposure``,
+        ``triggermode``, ``img_quality_enhancement``, etc.). Unknown keys are
+        skipped; per-key failures are logged and do not abort the import.
 
         Args:
-            path: Configuration file path (backend-specific JSON).
+            path: Configuration file path.
+
+        Returns:
+            Tuple of (applied_settings, total_settings) attempted by configure().
         """
-        self._submit(self._backend.load_config(path))
+        return self._submit(self._backend.import_config(path))
 
     def check_connection(self) -> bool:
         """Check whether the backend connection is healthy.
