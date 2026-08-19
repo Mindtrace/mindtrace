@@ -322,6 +322,7 @@ class AsyncCamera(Mindtrace):
 
         Unrecognized keys are skipped. Invalid or backend-rejected values are
         recorded as per-key failures and do not abort the rest of the payload.
+        Connection, timeout, or initialization failures abort the remaining keys.
 
         Args:
             **settings: Canonical configuration keys (see ``CONFIGURABLE_KEYS``).
@@ -331,6 +332,14 @@ class AsyncCamera(Mindtrace):
             ``ConfigurationApplyResult`` with applied/total counts, ``failures``,
             ``skipped``, and ``success``. Check ``result.success``; the result
             object itself is always truthy.
+
+        Raises:
+            CameraConnectionError: On connection loss while applying a key;
+                aborts remaining keys. Partial progress is on ``exc.details``.
+            CameraTimeoutError: On timeout while applying a key; aborts remaining
+                keys. Partial progress is on ``exc.details``.
+            CameraInitializationError: On initialization failure while applying a
+                key; aborts remaining keys. Partial progress is on ``exc.details``.
 
         Note:
             When the camera is owned by :class:`AsyncCameraManager`, use

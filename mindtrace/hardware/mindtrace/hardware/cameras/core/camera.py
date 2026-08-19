@@ -169,8 +169,17 @@ class Camera(Mindtrace):
 
         Returns:
             A ``ConfigurationApplyResult``. Check ``result.success`` rather than
-            treating the object as a boolean. Per-key failures and unrecognized
-            keys are reported on ``failures`` / ``skipped``; they are not raised.
+            treating the object as a boolean. Unrecognized keys are reported on
+            ``skipped``; invalid or backend-rejected values are reported on
+            ``failures`` and do not abort the rest of the payload.
+
+        Raises:
+            CameraConnectionError: On connection loss while applying a key;
+                aborts remaining keys. Partial progress is on ``exc.details``.
+            CameraTimeoutError: On timeout while applying a key; aborts remaining
+                keys. Partial progress is on ``exc.details``.
+            CameraInitializationError: On initialization failure while applying a
+                key; aborts remaining keys. Partial progress is on ``exc.details``.
         """
         return self._submit(self._backend.configure(**settings))
 

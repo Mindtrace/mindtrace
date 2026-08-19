@@ -977,8 +977,17 @@ class AsyncCameraManager(Mindtrace):
         settings on the device but is not replayed after auto-reinit.
 
         Returns:
-            ``ConfigurationApplyResult``. Check ``result.success``; per-key
-            failures are reported on the result rather than raised.
+            ``ConfigurationApplyResult``. Check ``result.success``; invalid or
+            backend-rejected values are reported on ``failures`` and do not abort
+            the rest of the payload.
+
+        Raises:
+            CameraConnectionError: On connection loss while applying a key;
+                aborts remaining keys. Partial progress is on ``exc.details``.
+            CameraTimeoutError: On timeout while applying a key; aborts remaining
+                keys. Partial progress is on ``exc.details``.
+            CameraInitializationError: On initialization failure while applying a
+                key; aborts remaining keys. Partial progress is on ``exc.details``.
         """
         if camera_name not in self._cameras:
             raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
