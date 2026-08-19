@@ -1003,6 +1003,43 @@ async def test_configure_reports_genicam_node_failures():
 
 
 @pytest.mark.asyncio
+async def test_configure_propagates_connection_errors_and_stops():
+    """Device-level errors should abort configure instead of returning a partial result."""
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        exposure_called = False
+        gain_called = False
+
+        async def _set_exposure(_value):
+            nonlocal exposure_called
+            exposure_called = True
+
+        async def _set_gain(_value):
+            nonlocal gain_called
+            gain_called = True
+            raise CameraConnectionError("device disconnected")
+
+        cam.backend.set_exposure = _set_exposure  # type: ignore[method-assign]
+        cam.backend.set_gain = _set_gain  # type: ignore[method-assign]
+
+        with pytest.raises(CameraConnectionError, match="device disconnected") as exc_info:
+            await cam.configure(exposure_time=12000, gain=2.0)
+
+        details = getattr(exc_info.value, "details", {})
+        assert details["applied"] == 1
+        assert details["total"] == 2
+        assert details["failed_key"] == "gain"
+        assert details["failures"]["gain"] == "device disconnected"
+        assert exposure_called is True
+        assert gain_called is True
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_configure_records_partial_genicam_nodes_that_applied():
     manager = AsyncCameraManager(include_mocks=True)
     try:

@@ -360,6 +360,28 @@ class AsyncCamera(Mindtrace):
                         await self._apply_config_key(key, value)
                         applied += 1
                     except Exception as exc:
+                        if isinstance(exc, (CameraConnectionError, CameraTimeoutError, CameraInitializationError)):
+                            progress_failures = dict(failures)
+                            progress_failures[key] = str(exc)
+                            progress_details = {
+                                "applied": applied,
+                                "total": total,
+                                "failures": progress_failures,
+                                "partial": dict(partial),
+                                "skipped": skipped,
+                                "failed_key": key,
+                            }
+                            self.logger.error(
+                                "Fatal configuration error while setting '%s' for camera '%s': %s",
+                                key,
+                                self._full_name,
+                                exc,
+                            )
+                            if isinstance(exc, CameraConnectionError):
+                                raise CameraConnectionError(str(exc), details=progress_details) from exc
+                            if isinstance(exc, CameraTimeoutError):
+                                raise CameraTimeoutError(str(exc), details=progress_details) from exc
+                            raise CameraInitializationError(str(exc), details=progress_details) from exc
                         failures[key] = str(exc)
                         applied_subset = applied_subset_from_exception(exc)
                         if applied_subset:

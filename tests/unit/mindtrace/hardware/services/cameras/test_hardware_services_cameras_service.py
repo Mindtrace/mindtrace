@@ -944,6 +944,19 @@ class TestCameraManagerServiceErrorHandling:
         assert response.data.total == 1
         assert response.data.failures == {"_error": "Invalid config"}
 
+    @pytest.mark.asyncio
+    async def test_connection_error_propagation_on_configure(self, service_with_mock_manager):
+        """Device-level connection errors during configure should propagate (service does not map them)."""
+        service, mock_manager = service_with_mock_manager
+        mock_manager.active_cameras = ["TestCamera"]
+        mock_manager.open = AsyncMock()
+        mock_manager.configure_camera = AsyncMock(side_effect=CameraConnectionError("device disconnected"))
+
+        request = CameraConfigureRequest(camera="TestCamera", properties={"exposure_time": 1000})
+
+        with pytest.raises(CameraConnectionError, match="device disconnected"):
+            await service.configure_camera(request)
+
 
 class TestCameraManagerServiceResponseModels:
     """Test response model creation and data formatting."""
