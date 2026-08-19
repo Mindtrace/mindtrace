@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, Tuple
+
+from mindtrace.hardware.core.exceptions import CameraConfigurationError
 
 # Keys accepted by AsyncCamera.configure() / returned by get_configuration().
 CONFIGURABLE_KEYS: tuple[str, ...] = (
@@ -351,3 +355,23 @@ def settings_to_camera_configuration_dict(data: Dict[str, Any]) -> Dict[str, Any
     """
     normalized = normalize_settings(data)
     return {key: normalized[key] for key in CONFIGURABLE_KEYS if key in normalized}
+
+
+def load_config_json(path: Path | str) -> Dict[str, Any]:
+    """Load configuration JSON from disk.
+
+    Args:
+        path: Path to a saved profile or explicit config file.
+
+    Returns:
+        Parsed configuration dict.
+
+    Raises:
+        CameraConfigurationError: If the file contains invalid JSON.
+    """
+    config_path = Path(path)
+    try:
+        with config_path.open(encoding="utf-8") as config_file:
+            return json.load(config_file)
+    except json.JSONDecodeError as exc:
+        raise CameraConfigurationError(f"Invalid config JSON at {config_path}: {exc}") from exc

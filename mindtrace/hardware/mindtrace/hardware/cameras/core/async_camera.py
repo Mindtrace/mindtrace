@@ -13,6 +13,7 @@ from mindtrace.hardware.cameras.core.configuration import (
     ConfigurationApplyResult,
     applied_subset_from_exception,
     find_skipped_keys,
+    load_config_json,
     parse_configure_settings,
 )
 from mindtrace.hardware.core.exceptions import (
@@ -704,14 +705,13 @@ class AsyncCamera(Mindtrace):
         Returns:
             Tuple of (applied_settings, total_settings).
         """
-        import json
         from pathlib import Path
 
         config_path = Path(path)
         if not config_path.exists():
             raise CameraConfigurationError(f"Configuration file not found: {path}")
 
-        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        raw = load_config_json(config_path)
         result = await self.configure(**raw)
         return result.applied, result.total
 

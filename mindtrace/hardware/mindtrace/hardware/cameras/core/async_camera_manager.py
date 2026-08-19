@@ -1,7 +1,6 @@
 """Async camera manager for Mindtrace hardware cameras."""
 
 import asyncio
-import json
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -20,6 +19,7 @@ from mindtrace.hardware.cameras.core.configuration import (
     ConfigurationApplyResult,
     applied_settings_from_result,
     configuration_error_result,
+    load_config_json,
     merge_configure_settings,
 )
 from mindtrace.hardware.core.exceptions import (
@@ -794,19 +794,6 @@ class AsyncCameraManager(Mindtrace):
         self.logger.info(f"Deleted saved config for '{camera_name}' at {path}")
         return True
 
-    @staticmethod
-    def _load_config_json(path: Path) -> dict:
-        """Load configuration JSON from disk.
-
-        Raises:
-            CameraConfigurationError: If the file contains invalid JSON.
-        """
-        try:
-            with path.open(encoding="utf-8") as config_file:
-                return json.load(config_file)
-        except json.JSONDecodeError as exc:
-            raise CameraConfigurationError(f"Invalid config JSON at {path}: {exc}") from exc
-
     def read_saved_config(self, camera_name: str) -> dict | None:
         """Read persisted config JSON for a camera.
 
@@ -824,7 +811,7 @@ class AsyncCameraManager(Mindtrace):
         if not path.exists():
             self.logger.debug(f"No saved config for '{camera_name}' at {path}")
             return None
-        return self._load_config_json(path)
+        return load_config_json(path)
 
     async def _apply_config_from_path(
         self,
@@ -846,7 +833,7 @@ class AsyncCameraManager(Mindtrace):
         if not path.exists():
             raise CameraConfigurationError(f"Configuration file not found: {config_path}")
 
-        raw_config = self._load_config_json(path)
+        raw_config = load_config_json(path)
         result = await camera.configure(**raw_config)
         applied = applied_settings_from_result(raw_config, result)
         if merge_runtime and applied:

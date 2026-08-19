@@ -1,11 +1,14 @@
 """Tests for canonical camera configuration normalization."""
 
+import pytest
+
 from mindtrace.hardware.cameras.core.configuration import (
     ConfigurationApplyResult,
     applied_settings_from_result,
     applied_subset_from_exception,
     configuration_error_result,
     find_skipped_keys,
+    load_config_json,
     merge_configure_settings,
     normalize_settings,
     parse_configure_settings,
@@ -13,6 +16,7 @@ from mindtrace.hardware.cameras.core.configuration import (
     skipped_metadata_keys,
     skipped_unexpected_keys,
 )
+from mindtrace.hardware.core.exceptions import CameraConfigurationError
 
 
 def test_normalize_settings_maps_legacy_aliases():
@@ -299,3 +303,18 @@ def test_normalize_settings_skips_null_gige_keys_from_legacy_profiles():
 
 def test_find_skipped_keys_treats_malformed_roi_as_consumed():
     assert find_skipped_keys({"roi": "full", "gain": 2.0}) == ()
+
+
+def test_load_config_json_raises_on_invalid_json(tmp_path):
+    bad_path = tmp_path / "bad.json"
+    bad_path.write_text("{not-json", encoding="utf-8")
+
+    with pytest.raises(CameraConfigurationError, match=f"Invalid config JSON at {bad_path}"):
+        load_config_json(bad_path)
+
+
+def test_load_config_json_reads_valid_profile(tmp_path):
+    path = tmp_path / "profile.json"
+    path.write_text('{"exposure_time": 15000}', encoding="utf-8")
+
+    assert load_config_json(path) == {"exposure_time": 15000}

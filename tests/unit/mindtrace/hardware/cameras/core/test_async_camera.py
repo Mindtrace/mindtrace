@@ -999,6 +999,21 @@ async def test_configure_succeeds_when_only_metadata_keys_are_skipped():
 
 
 @pytest.mark.asyncio
+async def test_import_config_raises_on_invalid_json(tmp_path):
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+        bad_path = tmp_path / "bad.json"
+        bad_path.write_text("{not-json", encoding="utf-8")
+
+        with pytest.raises(CameraConfigurationError, match=f"Invalid config JSON at {bad_path}"):
+            await cam.import_config(str(bad_path))
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_configure_reports_malformed_roi_as_failure():
     manager = AsyncCameraManager(include_mocks=True)
     try:
