@@ -874,6 +874,19 @@ class TestBaslerCameraBackendConfiguration:
         assert await basler_camera.get_gamma_range() is None
 
     @pytest.mark.asyncio
+    async def test_set_gamma_verification_failure(self, basler_camera):
+        """Test readback mismatch after set raises HardwareOperationError like gain/exposure."""
+        await basler_camera.initialize()
+
+        def bad_get_value():
+            return 999.0
+
+        basler_camera.camera._gamma_param.GetValue = bad_get_value  # type: ignore[method-assign]
+
+        with pytest.raises(HardwareOperationError, match="verification failed"):
+            await basler_camera.set_gamma(1.0)
+
+    @pytest.mark.asyncio
     async def test_set_gamma_without_node_raises(self, basler_camera):
         """Test that setting gamma on a camera without a Gamma node fails loudly."""
         basler_camera.initialized = True

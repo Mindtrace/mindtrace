@@ -1471,8 +1471,8 @@ class BaslerCameraBackend(CameraBackend):
 
         Raises:
             CameraConnectionError: If camera is not initialized
-            CameraConfigurationError: If gamma is unsupported, out of range, or setting fails
-            HardwareOperationError: If gamma verification fails after a successful SDK write
+            CameraConfigurationError: If gamma is unsupported or out of range
+            HardwareOperationError: If gamma verification fails or setting fails
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
