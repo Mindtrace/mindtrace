@@ -72,14 +72,10 @@ class GroupedClassBatchSampler(Sampler[list[int]]):
         _require_hashable("group_ids", materialized_group_ids)
 
         index: dict[Hashable, dict[Hashable, list[int]]] = {}
-        for sample_index, (label, group_id) in enumerate(
-            zip(materialized_labels, materialized_group_ids, strict=True)
-        ):
+        for sample_index, (label, group_id) in enumerate(zip(materialized_labels, materialized_group_ids, strict=True)):
             index.setdefault(label, {}).setdefault(group_id, []).append(sample_index)
 
-        eligible_labels = tuple(
-            label for label, groups in index.items() if len(groups) >= samples_per_class
-        )
+        eligible_labels = tuple(label for label, groups in index.items() if len(groups) >= samples_per_class)
         if len(eligible_labels) < classes_per_batch:
             raise ValueError(
                 "Grouped sampling requires "
@@ -92,8 +88,7 @@ class GroupedClassBatchSampler(Sampler[list[int]]):
             batches_per_epoch = len(materialized_labels) // batch_size
             if batches_per_epoch == 0:
                 raise ValueError(
-                    "The default batches_per_epoch is zero; provide enough samples "
-                    "or set batches_per_epoch explicitly."
+                    "The default batches_per_epoch is zero; provide enough samples or set batches_per_epoch explicitly."
                 )
         else:
             _require_positive_int("batches_per_epoch", batches_per_epoch)
@@ -106,9 +101,7 @@ class GroupedClassBatchSampler(Sampler[list[int]]):
         self.batch_size = batch_size
         self.eligible_labels = eligible_labels
         self._index = index
-        self._groups_by_label = {
-            label: tuple(index[label]) for label in eligible_labels
-        }
+        self._groups_by_label = {label: tuple(index[label]) for label in eligible_labels}
 
     def __iter__(self) -> Iterator[list[int]]:
         rng = random.Random(self.seed + self.epoch)
