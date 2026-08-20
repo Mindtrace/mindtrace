@@ -1425,6 +1425,10 @@ class GenICamCameraBackend(CameraBackend):
         Cameras that gate the ``Gamma`` node behind ``GammaSelector``/``GammaEnable``
         are switched to user gamma first; those nodes are absent on cameras that
         expose ``Gamma`` directly, which is not an error.
+
+        Raises:
+            CameraConfigurationError: If gamma is unsupported or out of range.
+            HardwareOperationError: If applying gamma to the device fails.
         """
         try:
             gamma_range = await self.get_gamma_range()
