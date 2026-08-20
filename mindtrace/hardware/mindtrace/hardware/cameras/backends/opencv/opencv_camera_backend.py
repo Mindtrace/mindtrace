@@ -917,13 +917,23 @@ class OpenCVCameraBackend(CameraBackend):
             async with self._io_lock:
                 actual_gamma = await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAMMA, timeout=2.0)
 
-            return abs(float(actual_gamma) - float(current_gamma)) <= 0.01 * max(1.0, float(current_gamma))
+            return self._gamma_values_match(current_gamma, actual_gamma)
         except Exception as e:
             self.logger.debug(f"Gamma control check failed for camera '{self.camera_name}': {e}")
             return False
 
+    @staticmethod
+    def _gamma_values_match(requested: float, actual: float) -> bool:
+        """Return True when a gamma readback matches the requested value."""
+        return abs(float(actual) - float(requested)) <= 0.01 * max(1.0, float(requested))
+
     async def get_gamma_range(self) -> Optional[List[Union[int, float]]]:
         """Get the supported gamma range.
+
+        OpenCV exposes only ``CAP_PROP_GAMMA`` get/set and does not report device
+        min/max bounds. These limits are therefore taken from configuration, like
+        ``get_exposure_range()``, and used as validation hints; ``set_gamma`` still
+        verifies the value via driver readback.
 
         Returns:
             List with [min_gamma, max_gamma], or ``None`` when gamma control is
@@ -932,7 +942,10 @@ class OpenCVCameraBackend(CameraBackend):
         if not await self.is_gamma_control_supported():
             return None
 
-        return [0.25, 2.0]
+        return [
+            getattr(self.camera_config.cameras, "opencv_gamma_range_min", 0.25),
+            getattr(self.camera_config.cameras, "opencv_gamma_range_max", 2.0),
+        ]
 
     async def set_gamma(self, gamma: Union[int, float]):
         """Set camera gamma.
@@ -973,7 +986,7 @@ class OpenCVCameraBackend(CameraBackend):
 
             async with self._io_lock:
                 actual_gamma = await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAMMA)
-            if abs(float(actual_gamma) - float(gamma)) > 0.01 * max(1.0, float(gamma)):
+            if not self._gamma_values_match(gamma, actual_gamma):
                 raise CameraConfigurationError(
                     f"Gamma not supported by camera '{self.camera_name}': requested={gamma}, readback={actual_gamma}"
                 )
