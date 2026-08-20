@@ -3917,25 +3917,8 @@ class TestBaslerCameraBackendFocusConfig:
     async def test_get_focus_config_no_lens_raises(self, basler_camera_no_lens):
         """Raises CameraConfigurationError on camera without lens."""
         await basler_camera_no_lens.initialize()
-        with pytest.raises(CameraConfigurationError, match="connected liquid lens"):
+        with pytest.raises(CameraConfigurationError, match="does not have liquid lens"):
             await basler_camera_no_lens.get_focus_config()
-
-    @pytest.mark.asyncio
-    async def test_get_focus_config_disconnected_lens_raises(self, mock_pypylon_with_lens):
-        """Raises when lens nodes exist but no physical lens is connected."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        mock_pylon, _ = mock_pypylon_with_lens
-        mock_pylon.InstantCamera = lambda device_info=None: MockPylonCameraWithLens(
-            device_info=device_info, lens_connected=False
-        )
-        camera = BaslerCameraBackend(camera_name="Camera_40660836", pixel_format="BGR8")
-        await camera.initialize()
-        try:
-            with pytest.raises(CameraConfigurationError, match="connected liquid lens"):
-                await camera.get_focus_config()
-        finally:
-            await camera.close()
 
     @pytest.mark.asyncio
     async def test_set_focus_config_empty_is_noop_without_lens(self, basler_camera_no_lens):

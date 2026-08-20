@@ -2123,8 +2123,8 @@ class BaslerCameraBackend(CameraBackend):
         """Get current focus/autofocus configuration."""
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
-        if not self._has_liquid_lens() or not self._is_lens_connected():
-            raise CameraConfigurationError(f"Camera '{self.camera_name}' does not have a connected liquid lens")
+        if not self._has_liquid_lens():
+            raise CameraConfigurationError(f"Camera '{self.camera_name}' does not have liquid lens support")
 
         config: Dict[str, Any] = {}
         await self._ensure_open()
