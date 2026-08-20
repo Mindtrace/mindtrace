@@ -890,12 +890,48 @@ class OpenCVCameraBackend(CameraBackend):
             self.logger.error(f"Failed to get gain for camera '{self.camera_name}': {str(e)}")
             return 0.0
 
-    async def get_gamma_range(self) -> List[Union[int, float]]:
+    async def is_gamma_control_supported(self) -> bool:
+        """Check whether gamma can be read and written for this camera."""
+        if not self.initialized or not self.cap or not await self._run_blocking(self.cap.isOpened):
+            return False
+        else:
+            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
+        try:
+            async with self._io_lock:
+                current_gamma = await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAMMA, timeout=2.0)
+
+            if current_gamma is None or float(current_gamma) < 0:
+                return False
+
+            async with self._io_lock:
+                set_success = await self._run_blocking(
+                    self.cap.set, cv2.CAP_PROP_GAMMA, float(current_gamma), timeout=2.0
+                )
+
+            if not set_success:
+                self.logger.debug(
+                    f"Camera '{self.camera_name}' can read gamma but cannot set it - gamma control not supported"
+                )
+                return False
+
+            async with self._io_lock:
+                actual_gamma = await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAMMA, timeout=2.0)
+
+            return abs(float(actual_gamma) - float(current_gamma)) <= 0.01 * max(1.0, float(current_gamma))
+        except Exception as e:
+            self.logger.debug(f"Gamma control check failed for camera '{self.camera_name}': {e}")
+            return False
+
+    async def get_gamma_range(self) -> Optional[List[Union[int, float]]]:
         """Get the supported gamma range.
 
         Returns:
-            List with [min_gamma, max_gamma]
+            List with [min_gamma, max_gamma], or ``None`` when gamma control is
+            not supported by this camera/driver.
         """
+        if not await self.is_gamma_control_supported():
+            return None
+
         return [0.25, 2.0]
 
     async def set_gamma(self, gamma: Union[int, float]):
@@ -917,8 +953,13 @@ class OpenCVCameraBackend(CameraBackend):
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
 
+        if not await self.is_gamma_control_supported():
+            raise CameraConfigurationError(f"Gamma not supported by camera '{self.camera_name}'")
+
         try:
             gamma_range = await self.get_gamma_range()
+            if gamma_range is None:
+                raise CameraConfigurationError(f"Gamma not supported by camera '{self.camera_name}'")
             if gamma < gamma_range[0] or gamma > gamma_range[1]:
                 raise CameraConfigurationError(f"Gamma {gamma} out of range {gamma_range}")
 

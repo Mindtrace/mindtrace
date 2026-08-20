@@ -725,6 +725,29 @@ async def test_async_camera_gamma_round_trip():
 
 
 @pytest.mark.asyncio
+async def test_async_camera_supports_feature_gamma_false_when_unsupported():
+    """Test supports_feature('gamma') is false when get_gamma_range returns None."""
+    manager = AsyncCameraManager(include_mocks=True)
+
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name)
+        original_get_gamma_range = cam._backend.get_gamma_range
+
+        async def unsupported_gamma_range():
+            return None
+
+        cam._backend.get_gamma_range = unsupported_gamma_range  # type: ignore[method-assign]
+
+        assert await cam.get_gamma_range() is None
+        assert await cam.supports_feature("gamma") is False
+
+        cam._backend.get_gamma_range = original_get_gamma_range  # type: ignore[method-assign]
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_async_camera_capture_with_save_path():
     """Test AsyncCamera capture with save_path functionality."""
     manager = AsyncCameraManager(include_mocks=True)

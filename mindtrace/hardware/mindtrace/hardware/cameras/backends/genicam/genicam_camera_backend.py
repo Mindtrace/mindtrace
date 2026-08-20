@@ -1386,21 +1386,29 @@ class GenICamCameraBackend(CameraBackend):
         except Exception as e:
             raise HardwareOperationError(f"Failed to set gain for camera '{self.camera_name}': {str(e)}")
 
-    async def get_gamma_range(self) -> List[Union[int, float]]:
+    async def get_gamma_range(self) -> Optional[List[Union[int, float]]]:
         """Get camera gamma range."""
         try:
             node_name = self.vendor_quirks.get("gamma_node_name", "Gamma")
 
             def _get_gamma_range():
                 node_map = self.image_acquirer.remote_device.node_map
-                node = getattr(node_map, node_name, None)
-                if node is not None:
-                    return [node.min, node.max]
-                return [0.25, 2.0]  # Default range
+                for name in (node_name, "Gamma", "GammaRaw"):
+                    node = getattr(node_map, name, None)
+                    if node is None:
+                        continue
+                    try:
+                        access_mode = node.get_access_mode()
+                        if access_mode != 4:  # 4 = RW (Read/Write)
+                            return None
+                        return [node.min, node.max]
+                    except Exception:
+                        continue
+                return None
 
             return await self._run_blocking(_get_gamma_range, timeout=self._op_timeout_s)
         except Exception:
-            return [0.25, 2.0]  # Default range
+            return None
 
     async def get_gamma(self) -> float:
         """Get current camera gamma."""
@@ -1419,8 +1427,11 @@ class GenICamCameraBackend(CameraBackend):
         expose ``Gamma`` directly, which is not an error.
         """
         try:
-            min_gamma, max_gamma = await self.get_gamma_range()
+            gamma_range = await self.get_gamma_range()
+            if gamma_range is None:
+                raise CameraConfigurationError(f"Gamma feature is not implemented on camera '{self.camera_name}'")
 
+            min_gamma, max_gamma = gamma_range
             if gamma < min_gamma or gamma > max_gamma:
                 raise CameraConfigurationError(
                     f"Gamma {gamma} outside valid range [{min_gamma}, {max_gamma}] for camera '{self.camera_name}'"
@@ -1434,6 +1445,8 @@ class GenICamCameraBackend(CameraBackend):
 
             node_name = self.vendor_quirks.get("gamma_node_name", "Gamma")
             await self._set_node_value(node_name, gamma, ["Gamma", "GammaRaw"])
+        except CameraConfigurationError:
+            raise
         except Exception as e:
             raise HardwareOperationError(f"Failed to set gamma for camera '{self.camera_name}': {str(e)}")
 

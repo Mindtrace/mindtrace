@@ -258,13 +258,17 @@ class Camera(Mindtrace):
         """
         return self._submit(self._backend.get_gamma())
 
-    def get_gamma_range(self) -> Tuple[float, float]:
+    def get_gamma_range(self) -> Optional[Tuple[float, float]]:
         """Get the valid gamma range.
 
         Returns:
-            A tuple of (min_gamma, max_gamma).
+            A tuple of (min_gamma, max_gamma), or ``None`` when gamma is not
+            supported on this camera.
         """
-        return self._submit(self._backend.get_gamma_range())
+        range_list = self._submit(self._backend.get_gamma_range())
+        if range_list is None:
+            return None
+        return range_list[0], range_list[1]
 
     def set_roi(self, x: int, y: int, width: int, height: int):
         """Set the Region of Interest (ROI).

@@ -374,11 +374,12 @@ class CameraBackend(MindtraceABC):
         self.logger.error(f"get_gamma not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_gamma not supported by {self.__class__.__name__}")
 
-    async def get_gamma_range(self) -> List[Union[int, float]]:
+    async def get_gamma_range(self) -> Optional[List[Union[int, float]]]:
         """Get the supported gamma range.
 
         Returns:
-            List containing [min_gamma, max_gamma].
+            List containing [min_gamma, max_gamma], or ``None`` when gamma is not
+            implemented or writable on this camera.
         """
         self.logger.error(f"get_gamma_range not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_gamma_range not supported by {self.__class__.__name__}")

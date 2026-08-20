@@ -680,11 +680,22 @@ class DahengCameraBackend(CameraBackend):
         except Exception as e:
             raise HardwareOperationError(f"Failed to get gamma for camera '{self.camera_name}': {e}") from e
 
-    async def get_gamma_range(self) -> List[Union[int, float]]:
+    @staticmethod
+    def _is_gamma_writable(gamma) -> bool:
+        """Return True when the Gamma feature exists and can be written."""
+        if gamma is None or not gamma.is_implemented():
+            return False
+        is_writable = getattr(gamma, "is_writable", None)
+        if callable(is_writable):
+            return bool(is_writable())
+        return True
+
+    async def get_gamma_range(self) -> Optional[List[Union[int, float]]]:
         """Get the supported gamma range.
 
         Returns:
-            List with [min_gamma, max_gamma]
+            List with [min_gamma, max_gamma], or ``None`` when gamma is not
+            implemented or writable on this camera.
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
@@ -694,14 +705,14 @@ class DahengCameraBackend(CameraBackend):
             def _get_range():
                 cam = self.camera
                 gamma = getattr(cam, "Gamma", None)
-                if gamma is not None and gamma.is_implemented():
-                    return [gamma.get_min(), gamma.get_max()]
-                return [0.25, 2.0]
+                if not self._is_gamma_writable(gamma):
+                    return None
+                return [gamma.get_min(), gamma.get_max()]
 
             return await self._run_blocking(_get_range)
         except Exception as e:
             self.logger.warning(f"Gamma range not available for camera '{self.camera_name}': {str(e)}")
-            return [0.25, 2.0]
+            return None
 
     async def set_gamma(self, gamma: Union[int, float]):
         """Set camera gamma.
@@ -714,6 +725,14 @@ class DahengCameraBackend(CameraBackend):
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        gamma_range = await self.get_gamma_range()
+        if gamma_range is None:
+            raise CameraConfigurationError("Gamma feature is not implemented on this camera")
+        if gamma < gamma_range[0] or gamma > gamma_range[1]:
+            raise CameraConfigurationError(
+                f"Gamma {gamma} outside valid range [{gamma_range[0]}, {gamma_range[1]}] for camera '{self.camera_name}'"
+            )
 
         try:
 

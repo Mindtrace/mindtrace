@@ -1455,9 +1455,31 @@ class TestOpenCVCameraBackendGamma:
 
     @pytest.mark.asyncio
     async def test_get_gamma_range(self, fake_cv):
-        """Test the advertised gamma range."""
+        """Test the advertised gamma range when control is supported."""
         cam = OpenCVCameraBackend("0")
+        await cam.initialize()
         assert await cam.get_gamma_range() == [0.25, 2.0]
+        await cam.close()
+
+    @pytest.mark.asyncio
+    async def test_get_gamma_range_not_supported_when_uninitialized(self, fake_cv):
+        """Test get_gamma_range returns None before the camera is opened."""
+        cam = OpenCVCameraBackend("0")
+        assert await cam.get_gamma_range() is None
+
+    @pytest.mark.asyncio
+    async def test_get_gamma_range_not_supported_when_driver_ignores_property(self, fake_cv, monkeypatch):
+        """Test get_gamma_range returns None when the driver cannot honor gamma writes."""
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        async def unsupported_gamma(_self):
+            return False
+
+        monkeypatch.setattr(OpenCVCameraBackend, "is_gamma_control_supported", unsupported_gamma)
+
+        assert await cam.get_gamma_range() is None
+        await cam.close()
 
     @pytest.mark.asyncio
     async def test_set_gamma_out_of_range(self, fake_cv):

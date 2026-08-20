@@ -1428,9 +1428,6 @@ class BaslerCameraBackend(CameraBackend):
             # Return reasonable defaults if gain feature is not available
             return [1.0, 16.0]  # Common gain range
 
-    # Gamma correction
-    DEFAULT_GAMMA_RANGE: List[float] = [0.25, 2.0]
-
     def _is_gamma_writable(self) -> bool:
         """Check whether the Gamma node exists and is writable.
 
@@ -1481,17 +1478,17 @@ class BaslerCameraBackend(CameraBackend):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
         try:
-            min_gamma, max_gamma = await self.get_gamma_range()
+            await self._ensure_open()
 
+            gamma_range = await self.get_gamma_range()
+            if gamma_range is None:
+                raise HardwareOperationError(f"Gamma not supported on camera '{self.camera_name}'")
+
+            min_gamma, max_gamma = gamma_range
             if gamma < min_gamma or gamma > max_gamma:
                 raise CameraConfigurationError(
                     f"Gamma {gamma} outside valid range [{min_gamma}, {max_gamma}] for camera '{self.camera_name}'"
                 )
-
-            await self._ensure_open()
-
-            if not self._is_gamma_writable():
-                raise HardwareOperationError(f"Gamma node not writable on camera '{self.camera_name}'")
 
             await self._prepare_gamma_node()
 
@@ -1533,11 +1530,12 @@ class BaslerCameraBackend(CameraBackend):
             # Return reasonable default if gamma feature is not available
             return 1.0  # Linear gamma default
 
-    async def get_gamma_range(self) -> List[Union[int, float]]:
+    async def get_gamma_range(self) -> Optional[List[Union[int, float]]]:
         """Get camera gamma range.
 
         Returns:
-            List containing [min_gamma, max_gamma]
+            List containing [min_gamma, max_gamma], or ``None`` when gamma is not
+            implemented or writable on this camera.
 
         Raises:
             CameraConnectionError: If camera is not initialized
@@ -1548,6 +1546,9 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
+            if not self._is_gamma_writable():
+                return None
+
             min_gamma = await self._run_blocking(self.camera.Gamma.GetMin, timeout=self._op_timeout_s)
             max_gamma = await self._run_blocking(self.camera.Gamma.GetMax, timeout=self._op_timeout_s)
 
@@ -1555,8 +1556,7 @@ class BaslerCameraBackend(CameraBackend):
 
         except Exception as e:
             self.logger.warning(f"Gamma range not available for camera '{self.camera_name}': {str(e)}")
-            # Return reasonable defaults if gamma feature is not available
-            return list(self.DEFAULT_GAMMA_RANGE)  # Common Basler gamma range
+            return None
 
     # Network-related functionality for GigE cameras
     async def set_bandwidth_limit(self, limit_mbps: Optional[float]):

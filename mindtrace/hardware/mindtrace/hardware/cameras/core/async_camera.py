@@ -573,13 +573,16 @@ class AsyncCamera(Mindtrace):
         """
         return await self._backend.get_gamma()
 
-    async def get_gamma_range(self) -> Tuple[float, float]:
+    async def get_gamma_range(self) -> Optional[Tuple[float, float]]:
         """Get the valid gamma range.
 
         Returns:
-            A tuple of (min_gamma, max_gamma).
+            A tuple of (min_gamma, max_gamma), or ``None`` when gamma is not
+            supported on this camera.
         """
         range_list = await self._backend.get_gamma_range()
+        if range_list is None:
+            return None
         return range_list[0], range_list[1]
 
     async def set_capture_timeout(self, timeout_ms: int):
