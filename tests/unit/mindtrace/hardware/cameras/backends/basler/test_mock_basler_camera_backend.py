@@ -61,8 +61,6 @@ async def test_get_current_pixel_format():
     await camera.close()
 
 
-
-
 @pytest.mark.asyncio
 async def test_gamma_defaults_and_round_trip(mock_basler_camera):
     camera = mock_basler_camera
