@@ -23,6 +23,11 @@ Optimizers & Schedulers
   differential learning rates (``backbone_lr_multiplier``).
 - ``build_scheduler``: Factory for named PyTorch LR schedulers.
 
+Samplers
+--------
+- ``GroupedClassBatchSampler``: Builds class-balanced batches from distinct
+  sample groups.
+
 Hugging Face Data Adapters
 --------------------------
 - Native Hugging Face datasets with PyTorch transforms and DataLoader builders.
