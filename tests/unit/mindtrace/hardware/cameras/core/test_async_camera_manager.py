@@ -1,10 +1,11 @@
 import asyncio
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
-from mindtrace.hardware.core.exceptions import CameraConfigurationError, CameraConnectionError
+from mindtrace.hardware.core.exceptions import CameraConfigurationError, CameraConnectionError, CameraNotFoundError
 
 
 @pytest.mark.asyncio
@@ -35,6 +36,921 @@ async def test_open_idempotent_and_close():
         # Re-open for batch test
         opened = await manager.open([name])
         assert set(opened.keys()) == {name}
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_close_waits_for_in_flight_open(monkeypatch):
+    """close() must not return while an in-flight open is still registering the camera."""
+    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    async def slow_check_connection(self):
+        await asyncio.sleep(0.3)
+        return True
+
+    monkeypatch.setattr(MockBaslerCameraBackend, "check_connection", slow_check_connection)
+
+    try:
+        open_task = asyncio.create_task(manager.open(name, test_connection=True))
+        await asyncio.sleep(0.05)
+        assert name not in manager.active_cameras
+
+        await manager.close(name)
+        assert name not in manager.active_cameras
+
+        proxy = await open_task
+        assert proxy is not None
+        assert name not in manager.active_cameras
+        assert name in manager._open_locks
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_open_restores_saved_config_before_connection_test(monkeypatch, tmp_path):
+    """Saved settings are restored on open; later runtime configure tweaks are not persisted."""
+    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    config_path = manager.get_camera_config_path(name)
+
+    try:
+        camera = await manager.open(name, test_connection=False)
+        assert (await camera.configure(exposure=15000)).success is True
+        await camera.export_config(config_path)
+
+        # Runtime configure does not update the saved file.
+        assert (await camera.configure(exposure=25000)).success is True
+        assert await camera.get_exposure() == 25000
+        await manager.close(name)
+
+        async def check_restored_config(self):
+            assert self.exposure_time == 15000
+            return True
+
+        monkeypatch.setattr(MockBaslerCameraBackend, "check_connection", check_restored_config)
+
+        reopened = await manager.open(name, test_connection=True)
+        assert await reopened.get_exposure() == 15000
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_open_camera_config_overrides_saved_profile(tmp_path):
+    """open(camera_config=...) applies after saved profile and wins on overlapping keys."""
+    import json
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    saved_path = manager.get_camera_config_path(name)
+    override_path = tmp_path / "override.json"
+
+    Path(saved_path).parent.mkdir(parents=True, exist_ok=True)
+    with open(saved_path, "w", encoding="utf-8") as f:
+        json.dump({"exposure_time": 15000, "gain": 1.0}, f)
+    with open(override_path, "w", encoding="utf-8") as f:
+        json.dump({"exposure_time": 28000}, f)
+
+    try:
+        camera = await manager.open(name, test_connection=False, camera_config=str(override_path))
+        assert await camera.get_exposure() == 28000
+        assert await camera.get_gain() == 1.0
+        assert manager._runtime_configure[name] == {"exposure_time": 28000}
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_open_camera_config_applies_when_restore_disabled(tmp_path):
+    """camera_config still applies when restore_saved_config_on_open is disabled."""
+    import json
+
+    manager = AsyncCameraManager(include_mocks=True, restore_saved_config_on_open=False)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    override_path = tmp_path / "session.json"
+
+    with open(override_path, "w", encoding="utf-8") as f:
+        json.dump({"exposure_time": 22000}, f)
+
+    try:
+        camera = await manager.open(name, test_connection=False, camera_config=str(override_path))
+        assert await camera.get_exposure() == 22000
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_open_missing_camera_config_path_raises(monkeypatch, tmp_path):
+    """A missing camera_config path should fail open and close the backend."""
+    from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    created_backend: CameraBackend | None = None
+
+    original_create = manager._create_camera_instance
+
+    def create_camera_instance_spy(backend: str, device_name: str, **kwargs):
+        nonlocal created_backend
+        created_backend = original_create(backend, device_name, **kwargs)
+        return created_backend
+
+    try:
+        monkeypatch.setattr(manager, "_create_camera_instance", create_camera_instance_spy)
+        with pytest.raises(CameraConfigurationError, match="camera_config path not found"):
+            await manager.open(
+                name,
+                test_connection=False,
+                camera_config=str(tmp_path / "does_not_exist.json"),
+            )
+        assert created_backend is not None
+        assert created_backend.initialized is False
+        assert created_backend.camera is None
+        assert name not in manager._cameras
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_open_camera_config_fails_when_apply_unsuccessful(monkeypatch, tmp_path):
+    """open(camera_config=...) must fail when configure reports success=False."""
+    import json
+
+    from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    config_path = tmp_path / "bad-config.json"
+    config_path.write_text(json.dumps({"exposure_time": 15000, "gan": 2.0}), encoding="utf-8")
+    created_backend: CameraBackend | None = None
+
+    original_create = manager._create_camera_instance
+
+    def create_camera_instance_spy(backend: str, device_name: str, **kwargs):
+        nonlocal created_backend
+        created_backend = original_create(backend, device_name, **kwargs)
+        return created_backend
+
+    try:
+        monkeypatch.setattr(manager, "_create_camera_instance", create_camera_instance_spy)
+        with pytest.raises(CameraConfigurationError, match="open camera_config"):
+            await manager.open(
+                name,
+                test_connection=False,
+                camera_config=str(config_path),
+            )
+        assert created_backend is not None
+        assert created_backend.initialized is False
+        assert created_backend.camera is None
+        assert name not in manager._cameras
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_open_restore_preserves_manager_performance_settings(tmp_path):
+    """Saved profiles must not overwrite manager-owned timeout and retry settings."""
+    import json
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    config_path = manager.get_camera_config_path(name)
+
+    # Legacy profile with stale manager-owned keys plus a real imaging default.
+    config_path_obj = Path(config_path)
+    config_path_obj.parent.mkdir(parents=True, exist_ok=True)
+    with open(config_path_obj, "w") as f:
+        json.dump(
+            {
+                "exposure_time": 15000,
+                "timeout_ms": 2000,
+                "retrieve_retry_count": 1,
+                "buffer_count": 10,
+            },
+            f,
+        )
+
+    manager.timeout_ms = 9000
+    manager.retrieve_retry_count = 7
+
+    try:
+        reopened = await manager.open(name, test_connection=False)
+        assert await reopened.get_exposure() == 15000
+        assert reopened._backend.timeout_ms == 9000
+        assert reopened._backend.retrieve_retry_count == 7
+
+        await manager.close(name)
+
+        explicit = await manager.open(
+            name,
+            test_connection=False,
+            timeout_ms=12345,
+            retrieve_retry_count=4,
+        )
+        assert explicit._backend.timeout_ms == 12345
+        assert explicit._backend.retrieve_retry_count == 4
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_reset_saved_config_then_open_uses_backend_defaults(tmp_path):
+    """Reset clears the saved profile so the next open uses backend defaults."""
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    config_path = manager.get_camera_config_path(name)
+
+    try:
+        camera = await manager.open(name, test_connection=False)
+        assert (await camera.configure(exposure=15000)).success is True
+        await camera.export_config(config_path)
+        assert (await camera.configure(exposure=25000)).success is True
+        await manager.close(name)
+
+        assert manager.reset_saved_config(name) is True
+        assert not Path(config_path).exists()
+
+        reopened = await manager.open(name, test_connection=False)
+        assert await reopened.get_exposure() == 20000
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_reset_saved_config_is_idempotent_when_file_missing(tmp_path):
+    """Reset succeeds when no saved configuration file exists."""
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    assert manager.reset_saved_config(name) is False
+
+
+def test_read_saved_config_returns_none_when_file_missing(tmp_path):
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    assert manager.read_saved_config(name) is None
+
+
+def test_read_saved_config_returns_parsed_json(tmp_path):
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    config_path = Path(manager.get_camera_config_path(name))
+    config_path.write_text(
+        '{"exposure_time": 15000.0, "roi": {"x": 1, "y": 2, "width": 640, "height": 480}}',
+        encoding="utf-8",
+    )
+
+    config = manager.read_saved_config(name)
+
+    assert config["exposure_time"] == 15000.0
+    assert config["roi"]["width"] == 640
+
+
+def test_read_saved_config_raises_on_invalid_json(tmp_path):
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    config_path = Path(manager.get_camera_config_path(name))
+    config_path.write_text("{not-json", encoding="utf-8")
+
+    with pytest.raises(CameraConfigurationError, match="Invalid config JSON"):
+        manager.read_saved_config(name)
+
+
+@pytest.mark.asyncio
+async def test_open_malformed_camera_config_raises(monkeypatch, tmp_path):
+    """Malformed camera_config JSON should fail open with context and close the backend."""
+    from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    bad_path = tmp_path / "bad.json"
+    bad_path.write_text("{not-json", encoding="utf-8")
+    created_backend: CameraBackend | None = None
+
+    original_create = manager._create_camera_instance
+
+    def create_camera_instance_spy(backend: str, device_name: str, **kwargs):
+        nonlocal created_backend
+        created_backend = original_create(backend, device_name, **kwargs)
+        return created_backend
+
+    try:
+        monkeypatch.setattr(manager, "_create_camera_instance", create_camera_instance_spy)
+        with pytest.raises(CameraConfigurationError, match=f"Invalid config JSON at {bad_path}"):
+            await manager.open(
+                name,
+                test_connection=False,
+                camera_config=str(bad_path),
+            )
+        assert created_backend is not None
+        assert created_backend.initialized is False
+        assert created_backend.camera is None
+        assert name not in manager._cameras
+    finally:
+        await manager.close(None)
+
+
+def test_validate_camera_name_accepts_known_backend():
+    manager = AsyncCameraManager(include_mocks=True)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    manager.validate_camera_name(name)
+
+
+def test_validate_camera_name_rejects_unknown_backend():
+    manager = AsyncCameraManager(include_mocks=True)
+
+    with pytest.raises(CameraNotFoundError, match="Backend 'UnknownBackend' not available"):
+        manager.validate_camera_name("UnknownBackend:cam1")
+
+
+def test_validate_camera_name_rejects_invalid_format():
+    manager = AsyncCameraManager(include_mocks=True)
+
+    with pytest.raises(CameraConfigurationError, match="Invalid camera name format"):
+        manager.validate_camera_name("not-a-valid-name")
+
+
+@pytest.mark.asyncio
+async def test_reinit_replays_open_kwargs(monkeypatch):
+    """Auto-reinit must reopen with the same constructor kwargs as the original open."""
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._restore_saved_config_on_open = False
+    manager._max_consecutive_failures = 3
+    manager._reinitialization_cooldown = 0
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    async def failing_capture(self, save_path=None, output_format="pil"):
+        raise CameraConnectionError("simulated capture failure")
+
+    monkeypatch.setattr(
+        "mindtrace.hardware.cameras.core.async_camera.AsyncCamera.capture",
+        failing_capture,
+    )
+
+    try:
+        camera = await manager.open(
+            name,
+            test_connection=False,
+            synthetic_width=640,
+            synthetic_height=480,
+            buffer_count=12,
+        )
+        assert camera._backend.synthetic_width == 640
+        assert camera._backend.synthetic_height == 480
+        assert camera._backend.buffer_count == 12
+
+        for _ in range(3):
+            await manager.batch_capture([name])
+
+        reopened = manager._cameras[name]
+        assert reopened._backend.synthetic_width == 640
+        assert reopened._backend.synthetic_height == 480
+        assert reopened._backend.buffer_count == 12
+        assert manager._open_kwargs[name] == {
+            "synthetic_width": 640,
+            "synthetic_height": 480,
+            "buffer_count": 12,
+        }
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_reinit_serializes_concurrent_open(monkeypatch):
+    """Auto-reinit must hold the per-camera lock for the full close+reopen cycle."""
+    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._restore_saved_config_on_open = False
+    manager._max_consecutive_failures = 3
+    manager._reinitialization_cooldown = 0
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    create_calls: list[str] = []
+    original_create = AsyncCameraManager._create_camera_instance
+
+    def counting_create(self, backend, device_name, **kwargs):
+        create_calls.append(f"{backend}:{device_name}")
+        return original_create(self, backend, device_name, **kwargs)
+
+    original_initialize = MockBaslerCameraBackend.initialize
+
+    async def slow_initialize(self):
+        await asyncio.sleep(0.3)
+        return await original_initialize(self)
+
+    monkeypatch.setattr(AsyncCameraManager, "_create_camera_instance", counting_create)
+    monkeypatch.setattr(MockBaslerCameraBackend, "initialize", slow_initialize)
+
+    try:
+        await manager.open(name, test_connection=False)
+        create_calls.clear()
+
+        reinit_task = asyncio.create_task(manager._handle_camera_failure(name))
+        await asyncio.sleep(0.05)
+        ensure_open_task = asyncio.create_task(manager.open(name, test_connection=False))
+
+        await asyncio.gather(reinit_task, ensure_open_task)
+
+        assert create_calls.count(name) == 1
+        assert name in manager.active_cameras
+        assert name in manager._open_locks
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_reinit_replaces_camera_when_close_fails(monkeypatch):
+    """Reinit must deregister a wedged camera even if backend close raises."""
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._restore_saved_config_on_open = False
+    manager._reinitialization_cooldown = 0
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    async def failing_close(self):
+        raise CameraConnectionError("simulated close failure")
+
+    monkeypatch.setattr(
+        "mindtrace.hardware.cameras.core.async_camera.AsyncCamera.close",
+        failing_close,
+    )
+
+    try:
+        await manager.open(name, test_connection=False)
+        original_proxy = manager._cameras[name]
+        original_backend = original_proxy._backend
+
+        await manager._handle_camera_failure(name)
+
+        reopened = manager._cameras[name]
+        assert reopened is not original_proxy
+        assert reopened._backend is not original_backend
+        assert manager._failure_counts.get(name, 0) == 0
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_reinit_replays_runtime_configure(monkeypatch, tmp_path):
+    """Auto-reinit must replay accumulated runtime configure settings after profile restore."""
+    import json
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    manager._max_consecutive_failures = 3
+    manager._reinitialization_cooldown = 0
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    config_path = manager.get_camera_config_path(name)
+
+    async def failing_capture(self, save_path=None, output_format="pil"):
+        raise CameraConnectionError("simulated capture failure")
+
+    monkeypatch.setattr(
+        "mindtrace.hardware.cameras.core.async_camera.AsyncCamera.capture",
+        failing_capture,
+    )
+
+    try:
+        camera = await manager.open(name, test_connection=False)
+        assert (await manager.configure_camera(name, {"exposure": 15000})).success is True
+        await camera.export_config(config_path)
+        assert (await manager.configure_camera(name, {"exposure": 33333, "gain": 4.0})).success is True
+        assert await camera.get_exposure() == 33333
+        assert await camera.get_gain() == 4.0
+
+        for _ in range(3):
+            await manager.batch_capture([name])
+
+        reopened = manager._cameras[name]
+        assert await reopened.get_exposure() == 33333
+        assert await reopened.get_gain() == 4.0
+        assert manager._runtime_configure[name] == {"exposure_time": 33333, "gain": 4.0}
+
+        with open(config_path) as f:
+            saved = json.load(f)
+        assert saved["exposure_time"] == 15000
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_reinit_replays_partial_runtime_configure_after_failed_keys(monkeypatch, tmp_path):
+    """Successfully applied keys must be merged and replayed even when other keys in the same configure fail."""
+    from mindtrace.hardware.core.exceptions import CameraConfigurationError
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    manager._max_consecutive_failures = 3
+    manager._reinitialization_cooldown = 0
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    async def failing_capture(self, save_path=None, output_format="pil"):
+        raise CameraConnectionError("simulated capture failure")
+
+    monkeypatch.setattr(
+        "mindtrace.hardware.cameras.core.async_camera.AsyncCamera.capture",
+        failing_capture,
+    )
+
+    try:
+        camera = await manager.open(name, test_connection=False)
+        original_set_gain = camera.backend.set_gain
+
+        async def failing_set_gain(gain):
+            raise CameraConfigurationError("gain out of range")
+
+        camera.backend.set_gain = failing_set_gain
+
+        result = await manager.configure_camera(name, {"exposure": 28000, "gain": 99.0})
+        assert result.success is False
+        assert result.applied == 1
+        assert result.total == 2
+        assert await camera.get_exposure() == 28000
+        assert manager._runtime_configure[name] == {"exposure_time": 28000}
+        assert "gain" not in manager._runtime_configure[name]
+
+        camera.backend.set_gain = original_set_gain
+
+        for _ in range(3):
+            await manager.batch_capture([name])
+
+        reopened = manager._cameras[name]
+        assert await reopened.get_exposure() == 28000
+        assert await reopened.get_gain() == 1.0
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_reinit_replays_partial_genicam_nodes_after_failed_nodes(monkeypatch, tmp_path):
+    """Nodes that applied before a genicam_nodes failure must still replay after reinit."""
+    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+    from mindtrace.hardware.core.exceptions import CameraConfigurationError
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    manager._max_consecutive_failures = 3
+    manager._reinitialization_cooldown = 0
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    replayed: dict[str, object] = {}
+
+    async def apply_genicam_nodes(self, node_config):
+        if node_config.get("ReverseX") is True:
+            applied = {key: value for key, value in node_config.items() if key != "ReverseX"}
+            raise CameraConfigurationError(
+                "Failed to apply GenICam nodes: ReverseX: not writable",
+                details={"applied": applied},
+            )
+        replayed.clear()
+        replayed.update(node_config)
+
+    monkeypatch.setattr(MockBaslerCameraBackend, "apply_genicam_nodes", apply_genicam_nodes, raising=False)
+    monkeypatch.setattr(
+        MockBaslerCameraBackend, "nested_merge_config_keys", frozenset({"genicam_nodes"}), raising=False
+    )
+
+    async def failing_capture(self, save_path=None, output_format="pil"):
+        raise CameraConnectionError("simulated capture failure")
+
+    monkeypatch.setattr(
+        "mindtrace.hardware.cameras.core.async_camera.AsyncCamera.capture",
+        failing_capture,
+    )
+
+    try:
+        await manager.open(name, test_connection=False)
+        result = await manager.configure_camera(name, {"genicam_nodes": {"PixelFormat": "Mono8", "ReverseX": True}})
+        assert result.success is False
+        assert result.partial == {"genicam_nodes": {"PixelFormat": "Mono8"}}
+        assert manager._runtime_configure[name] == {"genicam_nodes": {"PixelFormat": "Mono8"}}
+
+        for _ in range(3):
+            await manager.batch_capture([name])
+
+        assert replayed == {"PixelFormat": "Mono8"}
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_reinit_replays_union_of_sequential_genicam_node_configures(monkeypatch, tmp_path):
+    """Later genicam_nodes configures must accumulate nodes for auto-reinit replay."""
+    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    manager._max_consecutive_failures = 3
+    manager._reinitialization_cooldown = 0
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    replayed: dict[str, object] = {}
+
+    async def apply_genicam_nodes(self, node_config):
+        replayed.clear()
+        replayed.update(node_config)
+
+    monkeypatch.setattr(MockBaslerCameraBackend, "apply_genicam_nodes", apply_genicam_nodes, raising=False)
+    monkeypatch.setattr(
+        MockBaslerCameraBackend, "nested_merge_config_keys", frozenset({"genicam_nodes"}), raising=False
+    )
+
+    async def failing_capture(self, save_path=None, output_format="pil"):
+        raise CameraConnectionError("simulated capture failure")
+
+    monkeypatch.setattr(
+        "mindtrace.hardware.cameras.core.async_camera.AsyncCamera.capture",
+        failing_capture,
+    )
+
+    try:
+        await manager.open(name, test_connection=False)
+        first = await manager.configure_camera(name, {"genicam_nodes": {"PixelFormat": "Mono8"}})
+        second = await manager.configure_camera(name, {"genicam_nodes": {"ReverseX": True}})
+
+        assert first.success is True
+        assert second.success is True
+        assert manager._runtime_configure[name] == {
+            "genicam_nodes": {"PixelFormat": "Mono8", "ReverseX": True},
+        }
+
+        for _ in range(3):
+            await manager.batch_capture([name])
+
+        assert replayed == {"PixelFormat": "Mono8", "ReverseX": True}
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_reinit_replays_union_of_sequential_focus_config_configures(monkeypatch, tmp_path):
+    """Later focus_config configures must accumulate keys for auto-reinit replay."""
+    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    manager._max_consecutive_failures = 3
+    manager._reinitialization_cooldown = 0
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    replayed: dict[str, object] = {}
+
+    async def set_focus_config(self, **settings):
+        replayed.clear()
+        replayed.update(settings)
+
+    monkeypatch.setattr(MockBaslerCameraBackend, "set_focus_config", set_focus_config)
+
+    async def failing_capture(self, save_path=None, output_format="pil"):
+        raise CameraConnectionError("simulated capture failure")
+
+    monkeypatch.setattr(
+        "mindtrace.hardware.cameras.core.async_camera.AsyncCamera.capture",
+        failing_capture,
+    )
+
+    try:
+        await manager.open(name, test_connection=False)
+        first = await manager.configure_camera(name, {"focus_config": {"accuracy": "Fast"}})
+        second = await manager.configure_camera(name, {"focus_config": {"roi_size": "Large"}})
+
+        assert first.success is True
+        assert second.success is True
+        assert manager._runtime_configure[name] == {
+            "focus_config": {"accuracy": "Fast", "roi_size": "Large"},
+        }
+
+        for _ in range(3):
+            await manager.batch_capture([name])
+
+        assert replayed == {"accuracy": "Fast", "roi_size": "Large"}
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_reinit_replays_partial_focus_config_after_failed_keys(monkeypatch, tmp_path):
+    """Focus keys that applied before a later failure must still replay after reinit."""
+    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    manager._max_consecutive_failures = 3
+    manager._reinitialization_cooldown = 0
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    replayed: dict[str, object] = {}
+
+    async def set_focus_config(self, **settings):
+        if "stepper" in settings:
+            applied = {key: value for key, value in settings.items() if key != "stepper"}
+            raise CameraConfigurationError(
+                "Failed to set stepper",
+                details={"applied": applied},
+            )
+        replayed.clear()
+        replayed.update(settings)
+
+    monkeypatch.setattr(MockBaslerCameraBackend, "set_focus_config", set_focus_config)
+
+    async def failing_capture(self, save_path=None, output_format="pil"):
+        raise CameraConnectionError("simulated capture failure")
+
+    monkeypatch.setattr(
+        "mindtrace.hardware.cameras.core.async_camera.AsyncCamera.capture",
+        failing_capture,
+    )
+
+    try:
+        await manager.open(name, test_connection=False)
+        result = await manager.configure_camera(name, {"focus_config": {"accuracy": "Accurate", "stepper": 0.2}})
+        assert result.success is False
+        assert result.partial == {"focus_config": {"accuracy": "Accurate"}}
+        assert manager._runtime_configure[name] == {"focus_config": {"accuracy": "Accurate"}}
+
+        for _ in range(3):
+            await manager.batch_capture([name])
+
+        assert replayed == {"accuracy": "Accurate"}
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_apply_saved_config_updates_runtime_configure_for_reinit(monkeypatch, tmp_path):
+    """apply_saved_config must refresh runtime configure so reinit does not replay stale settings."""
+    import json
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    manager._max_consecutive_failures = 3
+    manager._reinitialization_cooldown = 0
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    async def failing_capture(self, save_path=None, output_format="pil"):
+        raise CameraConnectionError("simulated capture failure")
+
+    monkeypatch.setattr(
+        "mindtrace.hardware.cameras.core.async_camera.AsyncCamera.capture",
+        failing_capture,
+    )
+
+    with open(tmp_path / "imported.json", "w", encoding="utf-8") as f:
+        json.dump({"exposure_time": 15000}, f)
+    import_path = str(tmp_path / "imported.json")
+
+    try:
+        camera = await manager.open(name, test_connection=False)
+        assert (await manager.configure_camera(name, {"exposure_time": 25000})).success is True
+        assert await camera.get_exposure() == 25000
+        assert manager._runtime_configure[name] == {"exposure_time": 25000}
+
+        result = await manager.apply_saved_config(name, import_path)
+        assert result.success is True
+        assert await camera.get_exposure() == 15000
+        assert manager._runtime_configure[name] == {"exposure_time": 15000}
+
+        for _ in range(3):
+            await manager.batch_capture([name])
+
+        reopened = manager._cameras[name]
+        assert await reopened.get_exposure() == 15000
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_open_skips_restore_when_disabled_at_manager_level(tmp_path):
+    """Manager-level policy can disable auto-restore on open."""
+    manager = AsyncCameraManager(include_mocks=True, restore_saved_config_on_open=False)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    config_path = manager.get_camera_config_path(name)
+
+    try:
+        camera = await manager.open(name, test_connection=False)
+        assert (await camera.configure(exposure=15000)).success is True
+        await camera.export_config(config_path)
+        await manager.close(name)
+
+        reopened = await manager.open(name, test_connection=False)
+        assert await reopened.get_exposure() == 20000
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_open_registers_camera_only_after_restore_and_connection_test(monkeypatch, tmp_path):
+    """_cameras should only contain fully initialized cameras."""
+    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    registered_during_restore: list[bool] = []
+    registered_during_connection_test: list[bool] = []
+
+    original_import = manager._auto_import_config
+
+    async def track_import(camera_name: str, camera):
+        registered_during_restore.append(camera_name in manager._cameras)
+        await original_import(camera_name, camera)
+
+    monkeypatch.setattr(manager, "_auto_import_config", track_import)
+
+    async def check_connection_with_tracking(self):
+        registered_during_connection_test.append(name in manager._cameras)
+        return True
+
+    monkeypatch.setattr(MockBaslerCameraBackend, "check_connection", check_connection_with_tracking)
+
+    try:
+        camera = await manager.open(name, test_connection=False)
+        assert (await camera.configure(exposure=15000)).success is True
+        await camera.export_config(manager.get_camera_config_path(name))
+        await manager.close(name)
+
+        await manager.open(name, test_connection=True)
+        assert registered_during_restore == [False, False]
+        assert registered_during_connection_test == [False]
+        assert name in manager.active_cameras
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_open_connection_failure_does_not_register_camera(monkeypatch):
+    """A failed connection test must not leave a half-open camera in _cameras."""
+    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+
+    async def failing_check_connection(self):
+        return False
+
+    async def failing_capture(self):
+        return None
+
+    monkeypatch.setattr(MockBaslerCameraBackend, "check_connection", failing_check_connection)
+    monkeypatch.setattr(MockBaslerCameraBackend, "capture", failing_capture)
+
+    with pytest.raises(CameraConnectionError):
+        await manager.open(name, test_connection=True)
+
+    assert name not in manager.active_cameras
+
+
+@pytest.mark.asyncio
+async def test_open_connection_failure_does_not_leak_camera_config_runtime(monkeypatch, tmp_path):
+    """Failed open(camera_config=...) must not leave replay state for a later open."""
+    import json
+
+    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+
+    manager = AsyncCameraManager(include_mocks=True)
+    manager._camera_config_dir = str(tmp_path)
+    name = AsyncCameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+    override_path = tmp_path / "session.json"
+    with open(override_path, "w", encoding="utf-8") as f:
+        json.dump({"exposure_time": 28000}, f)
+
+    async def failing_check_connection(self):
+        return False
+
+    async def failing_capture(self):
+        return None
+
+    monkeypatch.setattr(MockBaslerCameraBackend, "check_connection", failing_check_connection)
+    monkeypatch.setattr(MockBaslerCameraBackend, "capture", failing_capture)
+
+    with pytest.raises(CameraConnectionError):
+        await manager.open(name, test_connection=True, camera_config=str(override_path))
+
+    assert name not in manager.active_cameras
+    assert name not in manager._runtime_configure
+
+    try:
+        camera = await manager.open(name, test_connection=False)
+        assert name not in manager._runtime_configure
+        assert await camera.get_exposure() == 20000
     finally:
         await manager.close(None)
 
@@ -99,11 +1015,11 @@ async def test_camera_proxy_operations(camera_manager):
         await camera_proxy.set_exposure(1000)
         image = await camera_proxy.capture()
         assert image is not None
-        success = await camera_proxy.configure(exposure=20000, gain=2.0, trigger_mode="continuous")
-        assert success is True
+        result = await camera_proxy.configure(exposure=20000, gain=2.0, trigger_mode="continuous")
+        assert result.success is True
         exposure = await camera_proxy.get_exposure()
         assert exposure == 20000
-        gain = camera_proxy.get_gain()
+        gain = await camera_proxy.get_gain()
         assert gain == 2.0
         tm = await camera_proxy.get_trigger_mode()
         assert isinstance(tm, str)
@@ -628,8 +1544,15 @@ async def test_batch_configure_and_capture_with_unknown():
         }
         cfg_res = await mgr.batch_configure(cfg)
         assert set(cfg_res.keys()) == {name, "UnknownBackend:dev"}
-        # Unknown should be False
-        assert cfg_res["UnknownBackend:dev"] is False
+        assert cfg_res[name].success is True
+        assert cfg_res["UnknownBackend:dev"].success is False
+        assert cfg_res["UnknownBackend:dev"].applied == 0
+        assert cfg_res["UnknownBackend:dev"].total == 1
+        assert "_error" in cfg_res["UnknownBackend:dev"].failures
+
+        empty_res = await mgr.batch_configure({"UnknownBackend:dev": {}})
+        assert empty_res["UnknownBackend:dev"].success is False
+        assert empty_res["UnknownBackend:dev"].total == 0
 
         # Capture known + unknown
         cap_res = await mgr.batch_capture([name, "UnknownBackend:dev"])

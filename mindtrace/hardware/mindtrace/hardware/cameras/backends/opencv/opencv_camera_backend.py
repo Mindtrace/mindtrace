@@ -5,7 +5,6 @@ import concurrent.futures
 import contextlib
 import os
 import sys
-import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -91,7 +90,6 @@ class OpenCVCameraBackend(CameraBackend):
     def __init__(
         self,
         camera_name: str,
-        camera_config: Optional[str] = None,
         img_quality_enhancement: Optional[bool] = None,
         retrieve_retry_count: Optional[int] = None,
         **backend_kwargs,
@@ -100,7 +98,6 @@ class OpenCVCameraBackend(CameraBackend):
 
         Args:
             camera_name: Camera identifier (index number or device path)
-            camera_config: Path to camera config file (not used for OpenCV)
             img_quality_enhancement: Whether to apply image quality enhancement (uses config default if None)
             retrieve_retry_count: Number of times to retry capture (uses config default if None)
             **backend_kwargs: Backend-specific parameters:
@@ -122,7 +119,7 @@ class OpenCVCameraBackend(CameraBackend):
         else:
             assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
 
-        super().__init__(camera_name, camera_config, img_quality_enhancement, retrieve_retry_count)
+        super().__init__(camera_name, img_quality_enhancement, retrieve_retry_count)
 
         # Get backend-specific configuration with fallbacks
         width = backend_kwargs.get("width")
@@ -383,7 +380,6 @@ class OpenCVCameraBackend(CameraBackend):
             return {} if include_details else []
         assert cv2 is not None
 
-        import os
         from typing import Iterable, Optional
 
         @contextlib.contextmanager
@@ -913,20 +909,10 @@ class OpenCVCameraBackend(CameraBackend):
     async def get_ROI(self) -> Dict[str, int]:
         """Get current Region of Interest (ROI).
 
-        Returns:
-            Dictionary with full frame dimensions (ROI not supported)
+        Raises:
+            NotImplementedError: ROI is not supported by the OpenCV backend
         """
-        if not self.initialized or not self.cap or not await self._run_blocking(self.cap.isOpened):
-            return {"x": 0, "y": 0, "width": 0, "height": 0}
-        else:
-            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
-        try:
-            width = int(await self._run_blocking(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(await self._run_blocking(self.cap.get, cv2.CAP_PROP_FRAME_HEIGHT))
-            return {"x": 0, "y": 0, "width": width, "height": height}
-        except Exception as e:
-            self.logger.error(f"Failed to get ROI for camera '{self.camera_name}': {str(e)}")
-            return {"x": 0, "y": 0, "width": 0, "height": 0}
+        raise NotImplementedError(f"ROI query not supported by OpenCV backend for camera '{self.camera_name}'")
 
     async def reset_ROI(self):
         """Reset ROI to full sensor size.
@@ -1101,194 +1087,62 @@ class OpenCVCameraBackend(CameraBackend):
         except Exception as e:
             self.logger.error(f"Failed to initialize image enhancement for camera '{self.camera_name}': {str(e)}")
 
-    async def export_config(self, config_path: str):
-        """Export current camera configuration to common JSON format.
+    _OPENCV_PROPERTY_MAP: Dict[str, int] = {}
 
-        Args:
-            config_path (str): Path to save configuration file
-
-        Raises:
-            CameraConnectionError: If camera is not connected
-            CameraConfigurationError: If configuration export fails
-        """
-        await self._ensure_open()
-        assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
-        try:
-            import json
-
-            os.makedirs(os.path.dirname(config_path), exist_ok=True)
-
-            # Common flat format
-            config = {
-                "camera_type": "opencv",
-                "camera_name": self.camera_name,
-                "camera_index": self.camera_index,
-                "timestamp": time.time(),
-                "width": int(await self._run_blocking(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH)),
-                "height": int(await self._run_blocking(self.cap.get, cv2.CAP_PROP_FRAME_HEIGHT)),
-                "fps": await self._run_blocking(self.cap.get, cv2.CAP_PROP_FPS),
-                "exposure_time": await self._run_blocking(self.cap.get, cv2.CAP_PROP_EXPOSURE),
-                "brightness": await self._run_blocking(self.cap.get, cv2.CAP_PROP_BRIGHTNESS),
-                "contrast": await self._run_blocking(self.cap.get, cv2.CAP_PROP_CONTRAST),
-                "saturation": await self._run_blocking(self.cap.get, cv2.CAP_PROP_SATURATION),
-                "hue": await self._run_blocking(self.cap.get, cv2.CAP_PROP_HUE),
-                "gain": await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAIN),
-                "auto_exposure": await self._run_blocking(self.cap.get, cv2.CAP_PROP_AUTO_EXPOSURE),
-                "white_balance": "auto"
-                if (await self._run_blocking(self.cap.get, cv2.CAP_PROP_AUTO_WB)) > 0
-                else "manual",
-                "white_balance_blue_u": await self._run_blocking(self.cap.get, cv2.CAP_PROP_WHITE_BALANCE_BLUE_U),
-                "white_balance_red_v": await self._run_blocking(self.cap.get, cv2.CAP_PROP_WHITE_BALANCE_RED_V),
-                "image_enhancement": self.img_quality_enhancement,
-                "retrieve_retry_count": self.retrieve_retry_count,
-                "timeout_ms": self.timeout_ms,
-                "pixel_format": "RGB8",  # OpenCV converted output
-                "trigger_mode": "continuous",  # OpenCV default
-                "roi": {
-                    "x": 0,
-                    "y": 0,
-                    "width": int(await self._run_blocking(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH)),
-                    "height": int(await self._run_blocking(self.cap.get, cv2.CAP_PROP_FRAME_HEIGHT)),
-                },
+    @classmethod
+    def _opencv_property_map(cls) -> Dict[str, int]:
+        if not cls._OPENCV_PROPERTY_MAP and cv2 is not None:
+            cls._OPENCV_PROPERTY_MAP = {
+                "brightness": cv2.CAP_PROP_BRIGHTNESS,
+                "contrast": cv2.CAP_PROP_CONTRAST,
+                "saturation": cv2.CAP_PROP_SATURATION,
+                "hue": cv2.CAP_PROP_HUE,
+                "gain": cv2.CAP_PROP_GAIN,
+                "auto_exposure": cv2.CAP_PROP_AUTO_EXPOSURE,
+                "white_balance_blue_u": cv2.CAP_PROP_WHITE_BALANCE_BLUE_U,
+                "white_balance_red_v": cv2.CAP_PROP_WHITE_BALANCE_RED_V,
             }
+        return cls._OPENCV_PROPERTY_MAP
 
-            # Write config to file (run in threadpool to avoid blocking event loop)
-            def _save_config():
-                with open(config_path, "w") as f:
-                    json.dump(config, f, indent=2)
-
-            await asyncio.to_thread(_save_config)
-
-            self.logger.debug(
-                f"Configuration exported to '{config_path}' for camera '{self.camera_name}' using common JSON format"
-            )
-
-        except Exception as e:
-            self.logger.error(f"Failed to export config to '{config_path}' for camera '{self.camera_name}': {str(e)}")
-            raise CameraConfigurationError(
-                f"Failed to export config to '{config_path}' for camera '{self.camera_name}': {str(e)}"
-            )
-
-    async def import_config(self, config_path: str):
-        """Import camera configuration from common JSON format.
-
-        Args:
-            config_path: Path to configuration file
-
-        Raises:
-            CameraConnectionError: If camera is not connected
-            CameraConfigurationError: If configuration import fails
-        """
+    async def apply_opencv_property(self, key: str, value: Any) -> bool:
+        """Apply a single OpenCV capture property by canonical key name."""
         await self._ensure_open()
-        assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
-        if not os.path.exists(config_path):
-            raise CameraConfigurationError(f"Configuration file not found: {config_path}")
+        assert cv2 is not None
+        prop_map = self._opencv_property_map()
+        cv_prop = prop_map.get(key)
+        if cv_prop is None:
+            return False
+        return bool(await self._run_blocking(self.cap.set, cv_prop, value))
 
+    async def get_opencv_properties(self) -> Dict[str, Any]:
+        """Read OpenCV capture properties included in the canonical config payload."""
+        await self._ensure_open()
+        assert cv2 is not None
+        result: Dict[str, Any] = {}
+        for key, cv_prop in self._opencv_property_map().items():
+            try:
+                result[key] = await self._run_blocking(self.cap.get, cv_prop)
+            except Exception:
+                pass
         try:
-            import json
+            auto_wb = await self._run_blocking(self.cap.get, cv2.CAP_PROP_AUTO_WB)
+            result["white_balance"] = "auto" if auto_wb > 0 else "manual"
+        except Exception:
+            pass
+        return result
 
-            # Read config from file (run in threadpool to avoid blocking event loop)
-            def _load_config():
-                with open(config_path, "r") as f:
-                    return json.load(f)
+    async def get_configuration_read_context(self) -> Dict[str, Any]:
+        """Bulk-read OpenCV properties once for one get_configuration() call."""
+        return {"opencv_properties": await self.get_opencv_properties()}
 
-            config = await asyncio.to_thread(_load_config)
-
-            if not isinstance(config, dict):
-                raise CameraConfigurationError("Invalid configuration file format")
-
-            success_count = 0
-            total_settings = 0
-
-            # Handle both common format and legacy nested format for backward compatibility
-            settings = config.get("settings", config)  # Use nested if available, otherwise flat
-
-            if "width" in settings and "height" in settings:
-                total_settings += 2
-                if await self._run_blocking(self.cap.set, cv2.CAP_PROP_FRAME_WIDTH, settings["width"]):
-                    success_count += 1
-                if await self._run_blocking(self.cap.set, cv2.CAP_PROP_FRAME_HEIGHT, settings["height"]):
-                    success_count += 1
-
-            if "fps" in settings:
-                total_settings += 1
-                if await self._run_blocking(self.cap.set, cv2.CAP_PROP_FPS, settings["fps"]):
-                    success_count += 1
-
-            # Handle both exposure_time (common format) and exposure (legacy)
-            exposure_key = "exposure_time" if "exposure_time" in settings else "exposure"
-            if exposure_key in settings and settings[exposure_key] >= 0:
-                total_settings += 1
-                if await self._run_blocking(self.cap.set, cv2.CAP_PROP_EXPOSURE, settings[exposure_key]):
-                    success_count += 1
-
-            optional_props = [
-                ("brightness", cv2.CAP_PROP_BRIGHTNESS),
-                ("contrast", cv2.CAP_PROP_CONTRAST),
-                ("saturation", cv2.CAP_PROP_SATURATION),
-                ("hue", cv2.CAP_PROP_HUE),
-                ("gain", cv2.CAP_PROP_GAIN),
-                ("auto_exposure", cv2.CAP_PROP_AUTO_EXPOSURE),
-                ("white_balance_blue_u", cv2.CAP_PROP_WHITE_BALANCE_BLUE_U),
-                ("white_balance_red_v", cv2.CAP_PROP_WHITE_BALANCE_RED_V),
-            ]
-
-            for setting_name, cv_prop in optional_props:
-                if setting_name in settings:
-                    total_settings += 1
-                    try:
-                        if await self._run_blocking(self.cap.set, cv_prop, settings[setting_name]):
-                            success_count += 1
-                        else:
-                            self.logger.debug(
-                                f"Could not set {setting_name} for camera '{self.camera_name}' (not supported)"
-                            )
-                    except Exception as e:
-                        self.logger.debug(f"Failed to set {setting_name} for camera '{self.camera_name}': {str(e)}")
-
-            # Handle white balance mode
-            if "white_balance" in settings:
-                total_settings += 1
-                try:
-                    wb_mode = settings["white_balance"]
-                    if wb_mode.lower() in ["auto", "continuous"]:
-                        if await self._run_blocking(self.cap.set, cv2.CAP_PROP_AUTO_WB, 1):
-                            success_count += 1
-                    elif wb_mode.lower() in ["manual", "off"]:
-                        if await self._run_blocking(self.cap.set, cv2.CAP_PROP_AUTO_WB, 0):
-                            success_count += 1
-                except Exception as e:
-                    self.logger.debug(f"Failed to set white_balance for camera '{self.camera_name}': {str(e)}")
-
-            # Handle both image_enhancement (common format) and img_quality_enhancement (legacy)
-            enhancement_key = "image_enhancement" if "image_enhancement" in settings else "img_quality_enhancement"
-            if enhancement_key in settings:
-                self.img_quality_enhancement = settings[enhancement_key]
-                success_count += 1
-                total_settings += 1
-
-            if "retrieve_retry_count" in settings:
-                self.retrieve_retry_count = settings["retrieve_retry_count"]
-                success_count += 1
-                total_settings += 1
-
-            if "timeout_ms" in settings:
-                self.timeout_ms = settings["timeout_ms"]
-                success_count += 1
-                total_settings += 1
-
-            self.logger.debug(
-                f"Configuration imported from '{config_path}' for camera '{self.camera_name}': "
-                f"{success_count}/{total_settings} settings applied successfully"
-            )
-
-        except CameraConfigurationError:
-            raise
-        except Exception as e:
-            self.logger.error(f"Failed to import config from '{config_path}' for camera '{self.camera_name}': {str(e)}")
-            raise CameraConfigurationError(
-                f"Failed to import config from '{config_path}' for camera '{self.camera_name}': {str(e)}"
-            )
+    async def read_configuration_value(self, key: str, context: Optional[Dict[str, Any]] = None) -> Any:
+        """Read OpenCV-specific configuration values from a cached bulk-read context."""
+        if key not in self._opencv_property_map():
+            raise NotImplementedError(f"{key} not supported by {self.__class__.__name__}")
+        props = context.get("opencv_properties") if context else None
+        if props is None:
+            props = await self.get_opencv_properties()
+        return props.get(key)
 
     # Network functions - not applicable for OpenCV (USB cameras)
     async def get_bandwidth_limit(self) -> float:

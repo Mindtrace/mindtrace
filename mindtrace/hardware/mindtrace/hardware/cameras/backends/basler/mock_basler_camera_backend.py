@@ -1,7 +1,6 @@
 """Mock Basler Camera Backend Module"""
 
 import asyncio
-import json
 import os
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -69,7 +68,6 @@ class MockBaslerCameraBackend(CameraBackend):
     def __init__(
         self,
         camera_name: str,
-        camera_config: Optional[str] = None,
         img_quality_enhancement: Optional[bool] = None,
         retrieve_retry_count: Optional[int] = None,
         **backend_kwargs,
@@ -78,7 +76,6 @@ class MockBaslerCameraBackend(CameraBackend):
 
         Args:
             camera_name: Camera identifier
-            camera_config: Path to configuration file (simulated)
             img_quality_enhancement: Enable image enhancement simulation (uses config default if None)
             retrieve_retry_count: Number of capture retry attempts (uses config default if None)
             **backend_kwargs: Backend-specific parameters:
@@ -102,7 +99,7 @@ class MockBaslerCameraBackend(CameraBackend):
             CameraConfigurationError: If configuration is invalid
             CameraInitializationError: If initialization fails (when simulated)
         """
-        super().__init__(camera_name, camera_config, img_quality_enhancement, retrieve_retry_count)
+        super().__init__(camera_name, img_quality_enhancement, retrieve_retry_count)
 
         # Fast mode for unit tests - skips all timing delays
         self.fast_mode = backend_kwargs.get("fast_mode", os.environ.get("MOCK_BASLER_FAST_MODE") == "1")
@@ -126,7 +123,6 @@ class MockBaslerCameraBackend(CameraBackend):
             raise CameraConfigurationError("Timeout must be at least 100ms")
 
         # Store configuration
-        self.camera_config_path = camera_config
         self.default_pixel_format = pixel_format
         self.buffer_count = buffer_count
         self.timeout_ms = timeout_ms
@@ -262,10 +258,6 @@ class MockBaslerCameraBackend(CameraBackend):
                 "serial": "12345001",
                 "connected": True,
             }
-
-            # Load config if provided
-            if self.camera_config_path and os.path.exists(self.camera_config_path):
-                await self.import_config(self.camera_config_path)
 
             # Set initialized flag
             self.initialized = True
@@ -456,97 +448,6 @@ class MockBaslerCameraBackend(CameraBackend):
             return img is not None and img.shape[0] > 0 and img.shape[1] > 0
         except Exception as e:
             self.logger.warning(f"Connection check failed for mock camera '{self.camera_name}': {str(e)}")
-            return False
-
-    async def import_config(self, config_path: str):
-        """Import camera configuration from common JSON format.
-
-        Args:
-            config_path: Path to configuration file
-
-        Raises:
-            CameraConfigurationError: If configuration file is not found or invalid
-        """
-        try:
-            if not os.path.exists(config_path):
-                raise CameraConfigurationError(f"Configuration file not found: {config_path}")
-
-            # Simulate configuration import
-            await self._sleep(0.01)  # Simulate processing time
-
-            # Load JSON configuration
-            try:
-                with open(config_path, "r") as f:
-                    config_data = json.load(f)
-
-                # Apply configuration settings using common format
-                if "exposure_time" in config_data:
-                    self.exposure_time = float(config_data["exposure_time"])
-                if "gain" in config_data:
-                    self.gain = float(config_data["gain"])
-                if "trigger_mode" in config_data:
-                    self.triggermode = config_data["trigger_mode"]
-                if "white_balance" in config_data:
-                    self.white_balance_mode = config_data["white_balance"]
-                if "image_enhancement" in config_data:
-                    self.img_quality_enhancement = config_data["image_enhancement"]
-                if "roi" in config_data:
-                    self.roi = config_data["roi"]
-                if "retrieve_retry_count" in config_data:
-                    self.retrieve_retry_count = config_data["retrieve_retry_count"]
-                if "timeout_ms" in config_data:
-                    self.timeout_ms = config_data["timeout_ms"]
-                if "pixel_format" in config_data:
-                    self.default_pixel_format = config_data["pixel_format"]
-
-            except (json.JSONDecodeError, KeyError, ValueError) as e:
-                raise CameraConfigurationError(f"Invalid JSON configuration format: {e}")
-
-            self.logger.debug(f"Configuration imported from '{config_path}' for mock camera '{self.camera_name}'")
-        except CameraConfigurationError:
-            raise
-        except Exception as e:
-            self.logger.error(f"Failed to import config from '{config_path}': {str(e)}")
-            raise CameraConfigurationError(f"Failed to import config from '{config_path}': {str(e)}")
-
-    async def export_config(self, config_path: str):
-        """Export camera configuration to common JSON format.
-
-        Args:
-            config_path: Path to save configuration file
-        """
-        try:
-            # Create common format configuration data
-            config_data = {
-                "camera_type": "mock_basler",
-                "camera_name": self.camera_name,
-                "timestamp": time.time(),
-                "exposure_time": self.exposure_time,
-                "gain": self.gain,
-                "trigger_mode": self.triggermode,
-                "white_balance": self.white_balance_mode,
-                "width": self.roi["width"],
-                "height": self.roi["height"],
-                "roi": self.roi,
-                "pixel_format": self.default_pixel_format,
-                "image_enhancement": self.img_quality_enhancement,
-                "retrieve_retry_count": self.retrieve_retry_count,
-                "timeout_ms": self.timeout_ms,
-                "buffer_count": self.buffer_count,
-            }
-
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(config_path), exist_ok=True)
-
-            # Write configuration as JSON
-            with open(config_path, "w") as f:
-                json.dump(config_data, f, indent=2)
-
-            self.logger.debug(
-                f"Configuration exported to '{config_path}' for mock camera '{self.camera_name}' using common JSON format"
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to export config to '{config_path}': {str(e)}")
             return False
 
     async def set_ROI(self, x: int, y: int, width: int, height: int):

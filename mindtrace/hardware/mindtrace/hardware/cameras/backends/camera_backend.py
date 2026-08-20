@@ -5,7 +5,8 @@ import functools
 import uuid
 from abc import abstractmethod
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Optional, Tuple, Union
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -43,13 +44,19 @@ class CameraBackend(MindtraceABC):
 
     Subclass Requirements:
         - Set ``REQUIRES_THREAD_AFFINITY = True`` if the SDK requires thread affinity
+        - Set ``nested_merge_config_keys`` to configure keys whose dict values
+          should accumulate across sequential ``configure()`` calls (for example
+          ``genicam_nodes``). ``focus_config`` is nested-merged by default.
         - Use ``_run_blocking()`` for all SDK calls that may block
         - Call ``await self._cleanup_executor()`` in ``close()`` to release thread resources
+        - Override ``configuration_session`` if a multi-key configure/GET must
+          hold streaming stopped once for the whole payload (for example Basler GigE)
 
     Attributes:
         REQUIRES_THREAD_AFFINITY: Class attribute indicating thread affinity requirement
+        nested_merge_config_keys: Configure keys whose dict values are merged
+            key-by-key into runtime replay state instead of being replaced
         camera_name: Unique identifier for the camera
-        camera_config_file: Path to camera configuration file
         img_quality_enhancement: Whether image quality enhancement is enabled
         retrieve_retry_count: Number of retries for image retrieval
         camera: The initialized camera object (implementation-specific)
@@ -58,11 +65,11 @@ class CameraBackend(MindtraceABC):
     """
 
     REQUIRES_THREAD_AFFINITY: bool = False
+    nested_merge_config_keys: frozenset[str] = frozenset({"focus_config"})
 
     def __init__(
         self,
         camera_name: Optional[str] = None,
-        camera_config: Optional[str] = None,
         img_quality_enhancement: Optional[bool] = None,
         retrieve_retry_count: Optional[int] = None,
     ):
@@ -70,7 +77,6 @@ class CameraBackend(MindtraceABC):
 
         Args:
             camera_name: Unique identifier for the camera (auto-generated if None)
-            camera_config: Path to camera configuration file
             img_quality_enhancement: Whether to apply image quality enhancement (uses config default if None)
             retrieve_retry_count: Number of retries for image retrieval (uses config default if None)
         """
@@ -81,7 +87,6 @@ class CameraBackend(MindtraceABC):
         self._setup_camera_logger_formatting()
 
         self.camera_name = camera_name or str(uuid.uuid4())
-        self.camera_config_file = camera_config
 
         if img_quality_enhancement is None:
             self.img_quality_enhancement = self.camera_config.cameras.image_quality_enhancement
@@ -235,6 +240,17 @@ class CameraBackend(MindtraceABC):
             finally:
                 self._sdk_executor = None
 
+    @asynccontextmanager
+    async def configuration_session(self) -> AsyncIterator[None]:
+        """Scope for a multi-key configure or GET.
+
+        Default is a no-op. Basler overrides this so the first
+        ``_grabbing_suspended()`` inside the scope stops grabbing, further
+        suspends are no-ops, and grabbing resumes only when the session exits.
+        Keys that never suspend leave streaming uninterrupted.
+        """
+        yield
+
     async def setup_camera(self):
         """Common setup method for camera initialization.
 
@@ -301,35 +317,21 @@ class CameraBackend(MindtraceABC):
 
     # Default implementations for optional methods
     def set_config(self, config: str):
-        self.logger.error(f"set_config not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_config not supported by {self.__class__.__name__}")
 
-    async def import_config(self, config_path: str):
-        self.logger.error(f"import_config not implemented for {self.__class__.__name__}")
-        raise NotImplementedError(f"import_config not supported by {self.__class__.__name__}")
-
-    async def export_config(self, config_path: str):
-        self.logger.error(f"export_config not implemented for {self.__class__.__name__}")
-        raise NotImplementedError(f"export_config not supported by {self.__class__.__name__}")
-
     async def get_wb(self) -> str:
-        self.logger.error(f"get_wb not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_wb not supported by {self.__class__.__name__}")
 
     async def set_auto_wb_once(self, value: str):
-        self.logger.error(f"set_auto_wb_once not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_auto_wb_once not supported by {self.__class__.__name__}")
 
     async def get_wb_range(self) -> List[str]:
-        self.logger.error(f"get_wb_range not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_wb_range not supported by {self.__class__.__name__}")
 
     async def get_triggermode(self) -> str:
-        self.logger.error(f"get_triggermode not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_triggermode not supported by {self.__class__.__name__}")
 
     async def set_triggermode(self, triggermode: str = "continuous"):
-        self.logger.error(f"set_triggermode not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_triggermode not supported by {self.__class__.__name__}")
 
     def get_image_quality_enhancement(self) -> bool:
@@ -340,78 +342,61 @@ class CameraBackend(MindtraceABC):
         self.logger.debug(f"Image quality enhancement set to {img_quality_enhancement} for camera '{self.camera_name}'")
 
     async def get_width_range(self) -> List[int]:
-        self.logger.error(f"get_width_range not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_width_range not supported by {self.__class__.__name__}")
 
     async def get_height_range(self) -> List[int]:
-        self.logger.error(f"get_height_range not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_height_range not supported by {self.__class__.__name__}")
 
     async def set_gain(self, gain: Union[int, float]):
-        self.logger.error(f"set_gain not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_gain not supported by {self.__class__.__name__}")
 
     async def get_gain(self) -> float:
-        self.logger.error(f"get_gain not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_gain not supported by {self.__class__.__name__}")
 
     async def get_gain_range(self) -> List[Union[int, float]]:
-        self.logger.error(f"get_gain_range not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_gain_range not supported by {self.__class__.__name__}")
 
     async def set_ROI(self, x: int, y: int, width: int, height: int):
-        self.logger.error(f"set_ROI not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_ROI not supported by {self.__class__.__name__}")
 
     async def get_ROI(self) -> Dict[str, int]:
-        self.logger.error(f"get_ROI not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_ROI not supported by {self.__class__.__name__}")
 
     async def reset_ROI(self):
-        self.logger.error(f"reset_ROI not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"reset_ROI not supported by {self.__class__.__name__}")
 
     async def get_pixel_format_range(self) -> List[str]:
-        self.logger.error(f"get_pixel_format_range not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_pixel_format_range not supported by {self.__class__.__name__}")
 
     async def get_current_pixel_format(self) -> str:
-        self.logger.error(f"get_current_pixel_format not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_current_pixel_format not supported by {self.__class__.__name__}")
 
     async def set_pixel_format(self, pixel_format: str):
-        self.logger.error(f"set_pixel_format not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_pixel_format not supported by {self.__class__.__name__}")
 
     # Network-related functionality for GigE cameras
     async def set_bandwidth_limit(self, limit_mbps: Optional[float]):
         """Set GigE camera bandwidth limit in Mbps."""
-        self.logger.error(f"set_bandwidth_limit not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_bandwidth_limit not supported by {self.__class__.__name__}")
 
-    async def get_bandwidth_limit(self) -> float:
-        """Get current bandwidth limit."""
-        self.logger.error(f"get_bandwidth_limit not implemented for {self.__class__.__name__}")
+    async def get_bandwidth_limit(self) -> Optional[float]:
+        """Get current bandwidth limit in Mbps, or ``None`` when unlimited."""
         raise NotImplementedError(f"get_bandwidth_limit not supported by {self.__class__.__name__}")
 
     async def set_packet_size(self, size: int):
         """Set GigE packet size for network optimization."""
-        self.logger.error(f"set_packet_size not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_packet_size not supported by {self.__class__.__name__}")
 
     async def get_packet_size(self) -> int:
         """Get current packet size."""
-        self.logger.error(f"get_packet_size not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_packet_size not supported by {self.__class__.__name__}")
 
     async def set_inter_packet_delay(self, delay_ticks: int):
         """Set inter-packet delay for network traffic control."""
-        self.logger.error(f"set_inter_packet_delay not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_inter_packet_delay not supported by {self.__class__.__name__}")
 
     async def get_inter_packet_delay(self) -> int:
         """Get current inter-packet delay."""
-        self.logger.error(f"get_inter_packet_delay not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_inter_packet_delay not supported by {self.__class__.__name__}")
 
     async def set_capture_timeout(self, timeout_ms: int):
@@ -423,7 +408,6 @@ class CameraBackend(MindtraceABC):
         Note:
             This is a runtime-configurable parameter that can be changed without reinitializing the camera.
         """
-        self.logger.error(f"set_capture_timeout not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_capture_timeout not supported by {self.__class__.__name__}")
 
     async def get_capture_timeout(self) -> int:
@@ -432,7 +416,6 @@ class CameraBackend(MindtraceABC):
         Returns:
             Current timeout value in milliseconds
         """
-        self.logger.error(f"get_capture_timeout not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_capture_timeout not supported by {self.__class__.__name__}")
 
     # Liquid lens / focus control (optional, requires compatible hardware)
@@ -445,12 +428,10 @@ class CameraBackend(MindtraceABC):
             - status (str): Lens status string (e.g., "Lens OK")
             - optical_power (float | None): Current optical power in diopters
         """
-        self.logger.error(f"get_lens_status not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_lens_status not supported by {self.__class__.__name__}")
 
     async def get_optical_power(self) -> float:
         """Get current lens optical power in diopters."""
-        self.logger.error(f"get_optical_power not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_optical_power not supported by {self.__class__.__name__}")
 
     async def set_optical_power(self, diopters: float):
@@ -459,12 +440,10 @@ class CameraBackend(MindtraceABC):
         Args:
             diopters: Target optical power within the lens range.
         """
-        self.logger.error(f"set_optical_power not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_optical_power not supported by {self.__class__.__name__}")
 
     async def get_optical_power_range(self) -> List[float]:
         """Get optical power range [min, max] in diopters."""
-        self.logger.error(f"get_optical_power_range not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_optical_power_range not supported by {self.__class__.__name__}")
 
     async def trigger_autofocus(self, accuracy: str = "Normal") -> bool:
@@ -476,7 +455,6 @@ class CameraBackend(MindtraceABC):
         Returns:
             True when autofocus completes successfully.
         """
-        self.logger.error(f"trigger_autofocus not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"trigger_autofocus not supported by {self.__class__.__name__}")
 
     async def get_focus_config(self) -> Dict[str, Any]:
@@ -486,7 +464,6 @@ class CameraBackend(MindtraceABC):
             Dict with keys: accuracy, stepper, stepper_lower_limit, stepper_upper_limit,
             roi_size, focus_source, edge_detection, roi_offset_x, roi_offset_y.
         """
-        self.logger.error(f"get_focus_config not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_focus_config not supported by {self.__class__.__name__}")
 
     async def set_focus_config(self, **settings):
@@ -495,8 +472,15 @@ class CameraBackend(MindtraceABC):
         Args:
             **settings: Keys matching get_focus_config() return values.
         """
-        self.logger.error(f"set_focus_config not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_focus_config not supported by {self.__class__.__name__}")
+
+    async def get_configuration_read_context(self) -> Dict[str, Any]:
+        """Return an optional bulk-read context for one get_configuration() call."""
+        return {}
+
+    async def read_configuration_value(self, key: str, context: Optional[Dict[str, Any]] = None) -> Any:
+        """Read a backend-specific configuration value using an optional bulk-read context."""
+        raise NotImplementedError(f"{key} not supported by {self.__class__.__name__}")
 
     async def __aenter__(self):
         await self.setup_camera()

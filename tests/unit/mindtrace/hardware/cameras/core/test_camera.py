@@ -109,7 +109,7 @@ def test_sync_camera_capture_and_config():
 
             try:
                 # Save configuration
-                cam.save_config(config_path)
+                cam.export_config(config_path)
 
                 # Verify config file was created and contains valid JSON
                 import os
@@ -123,7 +123,7 @@ def test_sync_camera_capture_and_config():
                 assert isinstance(config_data, dict), "Configuration should be a dictionary"
 
                 # Load configuration back
-                cam.load_config(config_path)
+                cam.import_config(config_path)
 
             finally:
                 # Clean up
@@ -480,7 +480,7 @@ def test_camera_configure_backend_and_close():
         cam = mgr.open(name)
 
         # Configure multiple settings via wrapper
-        cam.configure(
+        result = cam.configure(
             exposure=20000,
             gain=1.0,
             roi=(0, 0, 10, 10),
@@ -489,6 +489,7 @@ def test_camera_configure_backend_and_close():
             white_balance="auto",
             image_enhancement=True,
         )
+        assert result.success is True
 
         # backend property
         _ = cam.backend

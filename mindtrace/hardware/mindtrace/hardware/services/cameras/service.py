@@ -11,7 +11,7 @@ import io
 import logging
 import os
 import time
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image as PILImage
@@ -19,6 +19,12 @@ from PIL import Image as PILImage
 from mindtrace.core import utcnow
 from mindtrace.core.utils.conversions import ndarray_to_pil
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
+from mindtrace.hardware.cameras.core.configuration import (
+    ConfigurationApplyResult,
+    configuration_apply_result_to_dict,
+    configuration_error_result,
+    settings_to_camera_configuration_dict,
+)
 from mindtrace.hardware.core.exceptions import (
     CameraConfigurationError,
     CameraNotFoundError,
@@ -70,7 +76,12 @@ from mindtrace.hardware.services.cameras.models import (
     ConfigFileExportRequest,
     ConfigFileImportRequest,
     ConfigFileOperationResult,
+    ConfigFileResetRequest,
     ConfigFileResponse,
+    ConfigurationApplyResponse,
+    ConfigurationApplyResultData,
+    ConfigureCamerasBatchResponse,
+    ConfigureCamerasBatchResult,
     ConfigureCaptureGroupsRequest,
     DictResponse,
     FocusConfigRequest,
@@ -97,6 +108,7 @@ from mindtrace.hardware.services.cameras.models import (
     NetworkDiagnostics,
     NetworkDiagnosticsResponse,
     OpticalPowerRequest,
+    SavedCameraConfigurationResponse,
     StreamInfo,
     StreamInfoResponse,
     StreamStartRequest,
@@ -110,6 +122,36 @@ from mindtrace.hardware.services.cameras.models import (
 )
 from mindtrace.hardware.services.cameras.schemas import ALL_SCHEMAS, HealthSchema
 from mindtrace.services import Service
+
+
+def _configuration_apply_response(
+    camera: str,
+    result: ConfigurationApplyResult,
+    *,
+    error_message: str | None = None,
+) -> ConfigurationApplyResponse:
+    """Build a configure response from a core apply result."""
+    payload = configuration_apply_result_to_dict(result)
+    if error_message is not None:
+        payload["success"] = False
+    data = ConfigurationApplyResultData(**payload)
+    if error_message is not None:
+        return ConfigurationApplyResponse(success=False, message=error_message, data=data)
+
+    if result.success:
+        message = f"Camera '{camera}' configured successfully"
+        if result.skipped:
+            message += f" (skipped unrecognized keys: {', '.join(result.skipped)})"
+        return ConfigurationApplyResponse(success=True, message=message, data=data)
+
+    parts = [f"Configuration failed for '{camera}'"]
+    if result.total:
+        parts.append(f"{result.applied}/{result.total} settings applied")
+    if result.failures:
+        parts.append(f"failures: {result.failures}")
+    if result.skipped:
+        parts.append(f"skipped keys: {', '.join(result.skipped)}")
+    return ConfigurationApplyResponse(success=False, message="; ".join(parts), data=data)
 
 
 class CameraManagerService(Service):
@@ -167,6 +209,12 @@ class CameraManagerService(Service):
             self.logger.debug("AsyncCameraManager initialization completed")
         self.logger.debug("Returning camera manager")
         return self._camera_manager
+
+    def _resolve_camera_config_path(self, manager: AsyncCameraManager, camera: str, config_path: Optional[str]) -> str:
+        """Resolve config file path, defaulting to MINDTRACE_HW_CAMERA_CONFIG_DIR per camera."""
+        if config_path:
+            return config_path
+        return manager.get_camera_config_path(camera)
 
     async def shutdown_cleanup(self):
         """Cleanup camera manager on shutdown."""
@@ -253,10 +301,19 @@ class CameraManagerService(Service):
             as_tool=True,
         )
         self.add_endpoint(
+            "cameras/config/saved/get",
+            self.get_saved_camera_configuration,
+            ALL_SCHEMAS["get_saved_camera_configuration"],
+            as_tool=True,
+        )
+        self.add_endpoint(
             "cameras/config/import", self.import_camera_config, ALL_SCHEMAS["import_camera_config"], as_tool=True
         )
         self.add_endpoint(
             "cameras/config/export", self.export_camera_config, ALL_SCHEMAS["export_camera_config"], as_tool=True
+        )
+        self.add_endpoint(
+            "cameras/config/reset", self.reset_camera_config, ALL_SCHEMAS["reset_camera_config"], as_tool=True
         )
 
         # Image Capture
@@ -764,7 +821,7 @@ class CameraManagerService(Service):
             raise
 
     # Camera Configuration Operations
-    async def configure_camera(self, request: CameraConfigureRequest) -> BoolResponse:
+    async def configure_camera(self, request: CameraConfigureRequest) -> ConfigurationApplyResponse:
         """Configure camera parameters."""
         self.logger.info(f"Starting configure_camera for '{request.camera}' with properties: {request.properties}")
         try:
@@ -779,27 +836,28 @@ class CameraManagerService(Service):
                 raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
 
             self.logger.debug(f"Opening camera proxy for '{request.camera}'...")
-            camera_proxy = await manager.open(request.camera)
+            await manager.open(request.camera)
 
             self.logger.debug(f"Calling configure on camera proxy with properties: {request.properties}")
-            success = await camera_proxy.configure(**request.properties)
-            self.logger.debug(f"Configure completed with success: {success}")
-
-            # Handle None return value (convert to False)
-            if success is None:
-                success = False
-
-            return BoolResponse(
-                success=success,
-                message=f"Camera '{request.camera}' configured successfully"
-                if success
-                else f"Configuration failed for '{request.camera}'",
-                data=success,
+            result = await manager.configure_camera(request.camera, request.properties)
+            self.logger.debug(
+                "Configure completed with success=%s applied=%s total=%s skipped=%s failures=%s",
+                result.success,
+                result.applied,
+                result.total,
+                result.skipped,
+                result.failures,
             )
+
+            return _configuration_apply_response(request.camera, result)
         except CameraNotFoundError as e:
             # Handle camera not found errors gracefully
             self.logger.warning(f"Camera not found: {e}")
-            return BoolResponse(success=False, message=str(e), data=False)
+            return _configuration_apply_response(
+                request.camera,
+                configuration_error_result(str(e), request.properties),
+                error_message=str(e),
+            )
         except Exception as e:
             self.logger.error(f"Failed to configure camera '{request.camera}': {e}")
             # Import the exception types
@@ -807,29 +865,38 @@ class CameraManagerService(Service):
 
             # Handle configuration errors gracefully
             if isinstance(e, (CameraConfigurationError, HardwareOperationError, TypeError)):
-                # Return a failure response with the error message instead of raising
-                return BoolResponse(success=False, message=str(e), data=False)
+                return _configuration_apply_response(
+                    request.camera,
+                    configuration_error_result(str(e), request.properties),
+                    error_message=str(e),
+                )
             # For other exceptions, still raise them
             raise
 
-    async def configure_cameras_batch(self, request: CameraConfigureBatchRequest) -> BatchOperationResponse:
+    async def configure_cameras_batch(self, request: CameraConfigureBatchRequest) -> ConfigureCamerasBatchResponse:
         """Configure multiple cameras in batch."""
         try:
             manager = await self._get_camera_manager()
             results = await manager.batch_configure(request.configurations)
 
-            successful = [name for name, success in results.items() if success]
-            failed = [name for name, success in results.items() if not success]
+            result_data: Dict[str, ConfigurationApplyResultData] = {}
+            for camera_name, apply_result in results.items():
+                result_data[camera_name] = ConfigurationApplyResultData(
+                    **configuration_apply_result_to_dict(apply_result)
+                )
 
-            result = BatchOperationResult(
+            successful = [name for name, data in result_data.items() if data.success]
+            failed = [name for name, data in result_data.items() if not data.success]
+
+            result = ConfigureCamerasBatchResult(
                 successful=successful,
                 failed=failed,
-                results=results,
+                results=result_data,
                 successful_count=len(successful),
                 failed_count=len(failed),
             )
 
-            return BatchOperationResponse(
+            return ConfigureCamerasBatchResponse(
                 success=len(failed) == 0,
                 message=f"Batch configure completed: {len(successful)} successful, {len(failed)} failed",
                 data=result,
@@ -843,88 +910,12 @@ class CameraManagerService(Service):
         try:
             manager = await self._get_camera_manager()
 
-            # Check if camera is active
             if request.camera not in manager.active_cameras:
                 raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
 
             camera_proxy = await manager.open(request.camera)
-
-            # Get current configuration
-            try:
-                roi_data = await camera_proxy.get_roi()
-                roi_tuple = (
-                    roi_data.get("x", 0),
-                    roi_data.get("y", 0),
-                    roi_data.get("width", 0),
-                    roi_data.get("height", 0),
-                )
-            except Exception:
-                roi_tuple = None
-
-            # Get individual configuration parameters with error handling
-            try:
-                exposure_time = await camera_proxy.get_exposure()
-            except Exception:
-                exposure_time = None
-
-            try:
-                gain = await camera_proxy.get_gain()
-            except Exception:
-                gain = None
-
-            try:
-                trigger_mode = await camera_proxy.get_trigger_mode()
-            except Exception:
-                trigger_mode = None
-
-            try:
-                pixel_format = await camera_proxy.get_pixel_format()
-            except Exception:
-                pixel_format = None
-
-            try:
-                white_balance = await camera_proxy.get_white_balance()
-            except Exception:
-                white_balance = None
-
-            try:
-                image_enhancement = await camera_proxy.get_image_enhancement()
-            except Exception:
-                image_enhancement = None
-
-            try:
-                optical_power = await camera_proxy.get_optical_power()
-            except Exception:
-                optical_power = None
-            # GigE network settings (camera-level)
-            try:
-                bandwidth_limit = await camera_proxy.get_bandwidth_limit()
-            except Exception:
-                bandwidth_limit = None
-
-            try:
-                packet_size = await camera_proxy.get_packet_size()
-            except Exception:
-                packet_size = None
-
-            try:
-                inter_packet_delay = await camera_proxy.get_inter_packet_delay()
-            except Exception:
-                inter_packet_delay = None
-
-            config = CameraConfiguration(
-                exposure_time=exposure_time,
-                gain=gain,
-                roi=roi_tuple,
-                trigger_mode=trigger_mode,
-                pixel_format=pixel_format,
-                white_balance=white_balance,
-                image_enhancement=image_enhancement,
-                optical_power=optical_power,
-                bandwidth_limit=bandwidth_limit,
-                packet_size=packet_size,
-                inter_packet_delay=inter_packet_delay,
-            )
+            config_dict = await camera_proxy.get_configuration()
+            config = CameraConfiguration(**settings_to_camera_configuration_dict(config_dict))
 
             return CameraConfigurationResponse(
                 success=True, message=f"Retrieved configuration for camera '{request.camera}'", data=config
@@ -933,25 +924,62 @@ class CameraManagerService(Service):
             self.logger.error(f"Failed to get camera configuration for '{request.camera}': {e}")
             raise
 
+    async def get_saved_camera_configuration(self, request: CameraQueryRequest) -> SavedCameraConfigurationResponse:
+        """Get persisted camera configuration from disk without applying it."""
+        try:
+            manager = await self._get_camera_manager()
+            manager.validate_camera_name(request.camera)
+            raw_config = manager.read_saved_config(request.camera)
+
+            if raw_config is None:
+                return SavedCameraConfigurationResponse(
+                    success=True,
+                    message=f"No saved configuration found for camera '{request.camera}'",
+                    data=None,
+                )
+
+            config = CameraConfiguration(**settings_to_camera_configuration_dict(raw_config))
+            return SavedCameraConfigurationResponse(
+                success=True,
+                message=f"Retrieved saved configuration for camera '{request.camera}'",
+                data=config,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to get saved camera configuration for '{request.camera}': {e}")
+            raise
+
     async def import_camera_config(self, request: ConfigFileImportRequest) -> ConfigFileResponse:
         """Import camera configuration from file."""
         try:
             manager = await self._get_camera_manager()
+            config_path = self._resolve_camera_config_path(manager, request.camera, request.config_path)
 
             # Check if camera is active
             if request.camera not in manager.active_cameras:
                 raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
 
-            camera_proxy = await manager.open(request.camera)
-            success = await camera_proxy.load_config(request.config_path)
+            await manager.open(request.camera)
+            apply_result = await manager.apply_saved_config(request.camera, config_path)
+            applied = apply_result.applied
+            total = apply_result.total
+            success = apply_result.success
 
-            result = ConfigFileOperationResult(file_path=request.config_path, operation="import", success=success)
+            result = ConfigFileOperationResult(
+                file_path=config_path,
+                operation="import",
+                success=success,
+                properties_count=applied,
+                total=total,
+            )
 
             return ConfigFileResponse(
                 success=success,
-                message=f"Configuration imported for camera '{request.camera}'"
-                if success
-                else f"Import failed for '{request.camera}'",
+                message=(
+                    f"Configuration imported for camera '{request.camera}'"
+                    if success
+                    else f"Configuration partially imported for camera '{request.camera}' "
+                    f"({applied}/{total} settings applied)"
+                ),
                 data=result,
             )
         except Exception as e:
@@ -962,15 +990,17 @@ class CameraManagerService(Service):
         """Export camera configuration to file."""
         try:
             manager = await self._get_camera_manager()
+            config_path = self._resolve_camera_config_path(manager, request.camera, request.config_path)
 
             # Check if camera is active
             if request.camera not in manager.active_cameras:
                 raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
 
-            camera_proxy = await manager.open(request.camera)
-            success = await camera_proxy.save_config(request.config_path)
+            await manager.open(request.camera)
+            config_path = await manager.persist_camera_config(request.camera, config_path)
+            success = True
 
-            result = ConfigFileOperationResult(file_path=request.config_path, operation="export", success=success)
+            result = ConfigFileOperationResult(file_path=config_path, operation="export", success=success)
 
             return ConfigFileResponse(
                 success=success,
@@ -981,6 +1011,36 @@ class CameraManagerService(Service):
             )
         except Exception as e:
             self.logger.error(f"Failed to export config for camera '{request.camera}': {e}")
+            raise
+
+    async def reset_camera_config(self, request: ConfigFileResetRequest) -> ConfigFileResponse:
+        """Delete a camera's persisted configuration file."""
+        try:
+            manager = await self._get_camera_manager()
+
+            manager.validate_camera_name(request.camera)
+
+            config_path = manager.get_camera_config_path(request.camera)
+            deleted = manager.reset_saved_config(request.camera)
+
+            result = ConfigFileOperationResult(
+                file_path=config_path,
+                operation="reset",
+                success=True,
+                deleted=deleted,
+            )
+
+            return ConfigFileResponse(
+                success=True,
+                message=(
+                    f"Deleted saved configuration for camera '{request.camera}'"
+                    if deleted
+                    else f"No saved configuration found for camera '{request.camera}'"
+                ),
+                data=result,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to reset config for camera '{request.camera}': {e}")
             raise
 
     # Wire encoding map for output_format → (PIL save format, default save kwargs).

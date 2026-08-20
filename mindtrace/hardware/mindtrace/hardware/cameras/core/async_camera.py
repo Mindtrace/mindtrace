@@ -8,6 +8,14 @@ import cv2
 
 from mindtrace.core import Mindtrace
 from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
+from mindtrace.hardware.cameras.core.configuration import (
+    CONFIGURABLE_KEYS,
+    ConfigurationApplyResult,
+    applied_subset_from_exception,
+    find_skipped_keys,
+    load_config_json,
+    parse_configure_settings,
+)
 from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
     CameraConfigurationError,
@@ -17,6 +25,18 @@ from mindtrace.hardware.core.exceptions import (
     CameraTimeoutError,
 )
 from mindtrace.hardware.core.utils import convert_image_format, validate_output_format
+
+_OPENCV_CONFIG_KEYS = frozenset(
+    {
+        "brightness",
+        "contrast",
+        "saturation",
+        "hue",
+        "auto_exposure",
+        "white_balance_blue_u",
+        "white_balance_red_v",
+    }
+)
 
 
 class AsyncCamera(Mindtrace):
@@ -298,46 +318,185 @@ class AsyncCamera(Mindtrace):
                         )
             raise RuntimeError(f"Failed to capture image from camera '{self._full_name}' after {retry_count} attempts")
 
-    async def configure(self, **settings):
-        """Configure multiple camera settings atomically.
+    async def configure(self, **settings) -> ConfigurationApplyResult:
+        """Configure multiple camera settings with per-key apply reporting.
+
+        Unrecognized keys are skipped. Invalid or backend-rejected values are
+        recorded as per-key failures and do not abort the rest of the payload.
+        Connection, timeout, or initialization failures abort the remaining keys.
 
         Args:
-            **settings: Supported keys include exposure, gain, roi=(x, y, w, h), trigger_mode,
-                pixel_format, white_balance, image_enhancement, capture_timeout, optical_power.
+            **settings: Canonical configuration keys (see ``CONFIGURABLE_KEYS``).
+                Legacy aliases (``exposure``, ``triggermode``, etc.) are normalized.
+
+        Returns:
+            ``ConfigurationApplyResult`` with applied/total counts, ``failures``,
+            ``skipped``, and ``success``. Check ``result.success``; the result
+            object itself is always truthy.
 
         Raises:
-            CameraConfigurationError: If a provided value is invalid for the backend.
-            CameraConnectionError: If the camera cannot be configured.
+            CameraConnectionError: On connection loss while applying a key;
+                aborts remaining keys. Partial progress is on ``exc.details``.
+            CameraTimeoutError: On timeout while applying a key; aborts remaining
+                keys. Partial progress is on ``exc.details``.
+            CameraInitializationError: On initialization failure while applying a
+                key; aborts remaining keys. Partial progress is on ``exc.details``.
+
+        Note:
+            When the camera is owned by :class:`AsyncCameraManager`, use
+            :meth:`AsyncCameraManager.configure_camera` so applied settings are
+            recorded for auto-reinit replay. This method only updates the device.
         """
+        skipped = find_skipped_keys(settings)
+        normalized, invalid = parse_configure_settings(settings)
+        applied = 0
+        total = len(invalid)
+        failures: Dict[str, str] = dict(invalid)
+        partial: Dict[str, Any] = {}
+
         async with self._lock:
-            self.logger.debug(f"Configuring camera '{self._full_name}' with settings: {settings}")
-            # Handle both "exposure" and "exposure_time" for backwards compatibility and user convenience
-            if "exposure_time" in settings:
-                await self._backend.set_exposure(settings["exposure_time"])
-            elif "exposure" in settings:
-                await self._backend.set_exposure(settings["exposure"])
-            if "gain" in settings:
-                await self._backend.set_gain(settings["gain"])
-            if "roi" in settings:
-                x, y, w, h = settings["roi"]
-                await self._backend.set_ROI(x, y, w, h)
-            if "trigger_mode" in settings:
-                await self._backend.set_triggermode(settings["trigger_mode"])
-            if "pixel_format" in settings:
-                await self._backend.set_pixel_format(settings["pixel_format"])
-            if "white_balance" in settings:
-                await self._backend.set_auto_wb_once(settings["white_balance"])
-            if "image_enhancement" in settings:
-                self._backend.set_image_quality_enhancement(settings["image_enhancement"])
-            # Handle both "capture_timeout" and "timeout_ms" for backwards compatibility
-            if "capture_timeout" in settings:
-                await self._backend.set_capture_timeout(settings["capture_timeout"])
-            elif "timeout_ms" in settings:
-                await self._backend.set_capture_timeout(settings["timeout_ms"])
-            if "optical_power" in settings:
-                await self._backend.set_optical_power(settings["optical_power"])
-            self.logger.debug(f"Configuration completed for camera '{self._full_name}'")
-            return True
+            self.logger.debug(f"Configuring camera '{self._full_name}' with settings: {normalized}")
+            if skipped:
+                self.logger.warning(
+                    f"Skipped unrecognized configuration keys for camera '{self._full_name}': {skipped}"
+                )
+            async with self._backend.configuration_session():
+                for key in CONFIGURABLE_KEYS:
+                    if key not in normalized:
+                        continue
+                    total += 1
+                    value = normalized[key]
+                    try:
+                        await self._apply_config_key(key, value)
+                        applied += 1
+                    except Exception as exc:
+                        if isinstance(exc, (CameraConnectionError, CameraTimeoutError, CameraInitializationError)):
+                            progress_failures = dict(failures)
+                            progress_failures[key] = str(exc)
+                            progress_details = {
+                                "applied": applied,
+                                "total": total,
+                                "failures": progress_failures,
+                                "partial": dict(partial),
+                                "skipped": skipped,
+                                "failed_key": key,
+                            }
+                            self.logger.error(
+                                "Fatal configuration error while setting '%s' for camera '%s': %s",
+                                key,
+                                self._full_name,
+                                exc,
+                            )
+                            if isinstance(exc, CameraConnectionError):
+                                raise CameraConnectionError(str(exc), details=progress_details) from exc
+                            if isinstance(exc, CameraTimeoutError):
+                                raise CameraTimeoutError(str(exc), details=progress_details) from exc
+                            raise CameraInitializationError(str(exc), details=progress_details) from exc
+                        failures[key] = str(exc)
+                        applied_subset = applied_subset_from_exception(exc)
+                        if applied_subset:
+                            partial[key] = applied_subset
+                        self.logger.warning(f"Could not set '{key}' for camera '{self._full_name}': {exc}")
+
+        self.logger.debug(f"Configuration completed for camera '{self._full_name}': {applied}/{total} settings applied")
+        return ConfigurationApplyResult(
+            applied=applied, total=total, failures=failures, skipped=skipped, partial=partial
+        )
+
+    async def _apply_config_key(self, key: str, value: Any) -> None:
+        """Apply a single normalized configuration key."""
+        if key == "exposure_time":
+            await self._backend.set_exposure(value)
+        elif key == "gain":
+            await self._backend.set_gain(value)
+        elif key == "roi":
+            x, y, w, h = value
+            await self._backend.set_ROI(x, y, w, h)
+        elif key == "trigger_mode":
+            await self._backend.set_triggermode(value)
+        elif key == "pixel_format":
+            await self._backend.set_pixel_format(value)
+        elif key == "white_balance":
+            await self._backend.set_auto_wb_once(value)
+        elif key == "image_enhancement":
+            self._backend.set_image_quality_enhancement(value)
+        elif key == "optical_power":
+            await self._backend.set_optical_power(value)
+        elif key == "packet_size":
+            await self._backend.set_packet_size(int(value))
+        elif key == "inter_packet_delay":
+            await self._backend.set_inter_packet_delay(int(value))
+        elif key == "bandwidth_limit":
+            await self._backend.set_bandwidth_limit(value)
+        elif key == "focus_config":
+            if not isinstance(value, dict):
+                raise CameraConfigurationError("focus_config must be a dict")
+            await self._backend.set_focus_config(**value)
+        elif key == "genicam_nodes":
+            if not isinstance(value, dict):
+                raise CameraConfigurationError("genicam_nodes must be a dict")
+            if not hasattr(self._backend, "apply_genicam_nodes"):
+                raise CameraConfigurationError("genicam_nodes not supported by this backend")
+            await self._backend.apply_genicam_nodes(value)
+        elif key in _OPENCV_CONFIG_KEYS:
+            if not hasattr(self._backend, "apply_opencv_property"):
+                raise CameraConfigurationError(f"{key} not supported by this backend")
+            if not await self._backend.apply_opencv_property(key, value):
+                raise CameraConfigurationError(f"Failed to set {key}")
+        else:
+            raise CameraConfigurationError(f"Unsupported configuration key: {key}")
+
+    async def get_configuration(self) -> Dict[str, Any]:
+        """Read current camera settings using the canonical configure payload keys."""
+        async with self._lock:
+            return await self._collect_configuration()
+
+    async def _collect_configuration(self) -> Dict[str, Any]:
+        config: Dict[str, Any] = {}
+        async with self._backend.configuration_session():
+            read_context: Dict[str, Any] = {}
+            try:
+                read_context = await self._backend.get_configuration_read_context()
+            except Exception as exc:
+                self.logger.debug(f"Could not build configuration read context for camera '{self._full_name}': {exc}")
+            for key in CONFIGURABLE_KEYS:
+                try:
+                    value = await self._read_config_key(key, read_context=read_context)
+                except Exception as exc:
+                    self.logger.debug(f"Could not read '{key}' for camera '{self._full_name}': {exc}")
+                    continue
+                if value is not None:
+                    config[key] = value
+        return config
+
+    async def _read_config_key(self, key: str, *, read_context: Optional[Dict[str, Any]] = None) -> Any:
+        """Read a single canonical configuration key."""
+        if key == "exposure_time":
+            return await self._backend.get_exposure()
+        if key == "gain":
+            return await self._backend.get_gain()
+        if key == "roi":
+            roi = await self._backend.get_ROI()
+            return (roi.get("x", 0), roi.get("y", 0), roi.get("width", 0), roi.get("height", 0))
+        if key == "trigger_mode":
+            return await self._backend.get_triggermode()
+        if key == "pixel_format":
+            return await self._backend.get_current_pixel_format()
+        if key == "white_balance":
+            return await self._backend.get_wb()
+        if key == "image_enhancement":
+            return self._backend.get_image_quality_enhancement()
+        if key == "optical_power":
+            return await self._backend.get_optical_power()
+        if key == "packet_size":
+            return await self._backend.get_packet_size()
+        if key == "inter_packet_delay":
+            return await self._backend.get_inter_packet_delay()
+        if key == "bandwidth_limit":
+            return await self._backend.get_bandwidth_limit()
+        if key == "focus_config":
+            return await self._backend.get_focus_config()
+        return await self._backend.read_configuration_value(key, read_context or {})
 
     async def set_exposure(self, exposure: Union[int, float]):
         """Set the camera exposure.
@@ -517,31 +676,44 @@ class AsyncCamera(Mindtrace):
         """
         return self._backend.get_image_quality_enhancement()
 
-    async def save_config(self, path: str) -> bool:
-        """Export current camera configuration to a file via backend.
+    async def export_config(self, path: str) -> bool:
+        """Export current camera configuration to a JSON file.
 
         Args:
-            path: Destination file path (backend-specific JSON).
+            path: Destination file path.
 
         Returns:
-            bool: True if export succeeds, raises exception on failure.
+            bool: True if export succeeds.
         """
-        async with self._lock:
-            await self._backend.export_config(path)
-            return True
+        import json
+        from pathlib import Path
 
-    async def load_config(self, path: str) -> bool:
-        """Import camera configuration from a file via backend.
+        async with self._lock:
+            config = await self._collect_configuration()
+
+        config_path = Path(path)
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+        return True
+
+    async def import_config(self, path: str) -> Tuple[int, int]:
+        """Import camera configuration from a JSON file via configure().
 
         Args:
-            path: Configuration file path (backend-specific JSON).
+            path: Configuration file path.
 
         Returns:
-            bool: True if import succeeds, raises exception on failure.
+            Tuple of (applied_settings, total_settings).
         """
-        async with self._lock:
-            await self._backend.import_config(path)
-            return True
+        from pathlib import Path
+
+        config_path = Path(path)
+        if not config_path.exists():
+            raise CameraConfigurationError(f"Configuration file not found: {path}")
+
+        raw = load_config_json(config_path)
+        result = await self.configure(**raw)
+        return result.applied, result.total
 
     async def check_connection(self):
         """Check whether the backend connection is healthy."""
@@ -589,11 +761,12 @@ class AsyncCamera(Mindtrace):
         async with self._lock:
             await self._backend.set_inter_packet_delay(delay_ticks)
 
-    async def get_bandwidth_limit(self) -> float:
+    async def get_bandwidth_limit(self) -> Optional[float]:
         """Get bandwidth limit in Mbps.
 
         Returns:
-            Bandwidth limit in Mbps, or unlimited if not set.
+            Bandwidth limit in Mbps when limiting is enabled, or ``None`` when
+            unlimited.
 
         Raises:
             NotImplementedError: If camera doesn't support bandwidth limiting.
@@ -979,16 +1152,6 @@ class AsyncCamera(Mindtrace):
         """Get available white balance modes (backend-specific method)."""
         async with self._lock:
             return await self._backend.get_wb_range()
-
-    async def export_config(self, config_path: str):
-        """Export camera configuration (backend-specific method)."""
-        async with self._lock:
-            return await self._backend.export_config(config_path)
-
-    async def import_config(self, config_path: str):
-        """Import camera configuration (backend-specific method)."""
-        async with self._lock:
-            return await self._backend.import_config(config_path)
 
     async def close(self):
         """Close the camera and release resources."""

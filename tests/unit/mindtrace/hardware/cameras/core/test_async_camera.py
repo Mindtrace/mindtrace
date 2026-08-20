@@ -5,11 +5,14 @@ import numpy as np
 import pytest
 
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
+from mindtrace.hardware.cameras.core.configuration import CONFIGURABLE_KEYS
 from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
+    CameraConfigurationError,
     CameraConnectionError,
     CameraTimeoutError,
 )
+from mindtrace.hardware.services.cameras.models.responses import CameraConfiguration
 
 
 @pytest.mark.asyncio
@@ -87,7 +90,7 @@ async def test_async_camera_configure_all_settings(monkeypatch):
         backend.set_auto_wb_once = _set_wb  # type: ignore[attr-defined]
         backend.set_image_quality_enhancement = _set_ie  # type: ignore[attr-defined]
 
-        await cam.configure(
+        result = await cam.configure(
             exposure=1234,
             gain=1.5,
             roi=(1, 2, 3, 4),
@@ -96,6 +99,8 @@ async def test_async_camera_configure_all_settings(monkeypatch):
             white_balance="auto",
             image_enhancement=True,
         )
+        assert result.success is True
+        assert result.applied == result.total
     finally:
         await manager.close(None)
 
@@ -855,5 +860,426 @@ async def test_async_camera_additional_methods():
             # Test set_roi
             await cam.set_roi(10, 10, 100, 100)
 
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_get_configuration_omits_roi_when_backend_cannot_query_it():
+    """Unsettable keys whose get raises must not be written into exported JSON."""
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        async def unsupported_roi():
+            raise NotImplementedError("ROI query not supported")
+
+        cam.backend.get_ROI = unsupported_roi  # type: ignore[method-assign]
+
+        config = await cam.get_configuration()
+
+        assert "roi" not in config
+        assert "exposure_time" in config
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_get_configuration_includes_white_balance_from_backend():
+    """get_configuration() must read white balance via backend get_wb(), not get_white_balance()."""
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        expected_wb = await cam.get_white_balance()
+        config = await cam.get_configuration()
+
+        assert "white_balance" in config
+        assert config["white_balance"] == expected_wb
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_get_configuration_uses_backend_read_context_once():
+    """Backend-specific bulk-read context should be built once per get_configuration() call."""
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        context_calls = 0
+
+        async def fake_get_configuration_read_context():
+            nonlocal context_calls
+            context_calls += 1
+            return {
+                "fake_backend_values": {
+                    "genicam_nodes": {"PixelFormat": "Mono8"},
+                    "brightness": 0.1,
+                    "contrast": 0.2,
+                }
+            }
+
+        async def fake_read_configuration_value(key, context):
+            return context.get("fake_backend_values", {}).get(key)
+
+        cam.backend.get_configuration_read_context = fake_get_configuration_read_context  # type: ignore[method-assign]
+        cam.backend.read_configuration_value = fake_read_configuration_value  # type: ignore[method-assign]
+
+        config = await cam.get_configuration()
+
+        assert context_calls == 1
+        assert config["genicam_nodes"] == {"PixelFormat": "Mono8"}
+        assert config["brightness"] == 0.1
+        assert config["contrast"] == 0.2
+    finally:
+        await manager.close(None)
+
+
+def test_camera_configuration_fields_match_configurable_keys():
+    """Response model fields should stay in sync with canonical config keys."""
+    assert set(CameraConfiguration.model_fields) == set(CONFIGURABLE_KEYS)
+
+
+@pytest.mark.asyncio
+async def test_configure_reports_skipped_unknown_keys():
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        result = await cam.configure(exposre_time=15000, camera_type="basler")
+
+        assert result.skipped == ("exposre_time", "camera_type")
+        assert result.total == 0
+        assert result.applied == 0
+        assert result.success is False
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_configure_fails_when_unexpected_keys_are_skipped_with_valid_settings():
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        result = await cam.configure(exposure_time=15000, gan=2.0)
+
+        assert result.applied == 1
+        assert result.total == 1
+        assert result.skipped == ("gan",)
+        assert result.skipped_unexpected == ("gan",)
+        assert result.success is False
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_configure_succeeds_when_only_metadata_keys_are_skipped():
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        result = await cam.configure(exposure_time=15000, camera_type="basler", timestamp=1.0)
+
+        assert result.applied == 1
+        assert result.total == 1
+        assert result.skipped == ("camera_type", "timestamp")
+        assert result.skipped_metadata == ("camera_type", "timestamp")
+        assert result.skipped_unexpected == ()
+        assert result.success is True
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_import_config_raises_on_invalid_json(tmp_path):
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+        bad_path = tmp_path / "bad.json"
+        bad_path.write_text("{not-json", encoding="utf-8")
+
+        with pytest.raises(CameraConfigurationError, match=f"Invalid config JSON at {bad_path}"):
+            await cam.import_config(str(bad_path))
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_configure_reports_malformed_roi_as_failure():
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        malformed = await cam.configure(roi="full")
+        incomplete = await cam.configure(roi={"x": 10}, gain=2.0)
+
+        assert malformed.success is False
+        assert malformed.applied == 0
+        assert malformed.total == 1
+        assert "roi" in malformed.failures
+        assert malformed.skipped == ()
+
+        assert incomplete.success is False
+        assert incomplete.applied == 1
+        assert incomplete.total == 2
+        assert "roi" in incomplete.failures
+        assert "gain" not in incomplete.failures
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_configure_reports_genicam_node_failures():
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        async def failing_apply_genicam_nodes(_node_config):
+            raise CameraConfigurationError("Failed to apply GenICam nodes for camera 'test': PixelFormat: bad value")
+
+        cam.backend.apply_genicam_nodes = failing_apply_genicam_nodes  # type: ignore[attr-defined]
+
+        result = await cam.configure(genicam_nodes={"PixelFormat": "Mono8"})
+
+        assert result.success is False
+        assert result.applied == 0
+        assert result.total == 1
+        assert "genicam_nodes" in result.failures
+        assert result.partial == {}
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_configure_propagates_connection_errors_and_stops():
+    """Device-level errors should abort configure instead of returning a partial result."""
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        exposure_called = False
+        gain_called = False
+
+        async def _set_exposure(_value):
+            nonlocal exposure_called
+            exposure_called = True
+
+        async def _set_gain(_value):
+            nonlocal gain_called
+            gain_called = True
+            raise CameraConnectionError("device disconnected")
+
+        cam.backend.set_exposure = _set_exposure  # type: ignore[method-assign]
+        cam.backend.set_gain = _set_gain  # type: ignore[method-assign]
+
+        with pytest.raises(CameraConnectionError, match="device disconnected") as exc_info:
+            await cam.configure(exposure_time=12000, gain=2.0)
+
+        details = getattr(exc_info.value, "details", {})
+        assert details["applied"] == 1
+        assert details["total"] == 2
+        assert details["failed_key"] == "gain"
+        assert details["failures"]["gain"] == "device disconnected"
+        assert exposure_called is True
+        assert gain_called is True
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_configure_records_partial_genicam_nodes_that_applied():
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        async def mixed_apply_genicam_nodes(_node_config):
+            raise CameraConfigurationError(
+                "Failed to apply GenICam nodes for camera 'test': ReverseX: not writable",
+                details={"applied": {"PixelFormat": "Mono8"}},
+            )
+
+        cam.backend.apply_genicam_nodes = mixed_apply_genicam_nodes  # type: ignore[attr-defined]
+
+        result = await cam.configure(genicam_nodes={"PixelFormat": "Mono8", "ReverseX": True})
+
+        assert result.success is False
+        assert result.applied == 0
+        assert result.total == 1
+        assert "genicam_nodes" in result.failures
+        assert result.partial == {"genicam_nodes": {"PixelFormat": "Mono8"}}
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_configure_records_partial_focus_config_that_applied():
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        async def mixed_set_focus_config(**settings):
+            raise CameraConfigurationError(
+                "Failed to set stepper=0.2",
+                details={"applied": {"accuracy": "Accurate"}},
+            )
+
+        cam.backend.set_focus_config = mixed_set_focus_config  # type: ignore[method-assign]
+
+        result = await cam.configure(focus_config={"accuracy": "Accurate", "stepper": 0.2})
+
+        assert result.success is False
+        assert result.applied == 0
+        assert result.total == 1
+        assert "focus_config" in result.failures
+        assert result.partial == {"focus_config": {"accuracy": "Accurate"}}
+    finally:
+        await manager.close(None)
+
+
+def _sample_configurable_values():
+    """
+    Sample canonical values for every key in CONFIGURABLE_KEYS.
+
+    These are used by tests that ensure both the apply and read codepaths handle
+    all configurable keys.
+    """
+
+    return {
+        "exposure_time": 12000.0,
+        "gain": 2.0,
+        "roi": (1, 2, 640, 480),
+        "trigger_mode": "continuous",
+        "pixel_format": "Mono8",
+        "white_balance": "auto",
+        "image_enhancement": True,
+        "optical_power": 1.5,
+        "packet_size": 9000,
+        "inter_packet_delay": 1000,
+        "bandwidth_limit": 100.0,
+        "focus_config": {"accuracy": "Fast"},
+        "genicam_nodes": {"PixelFormat": "Mono8"},
+        "brightness": 0.1,
+        "contrast": 0.2,
+        "saturation": 0.3,
+        "hue": 0.4,
+        "auto_exposure": 1.0,
+        "white_balance_blue_u": 4100.0,
+        "white_balance_red_v": 4200.0,
+    }
+
+
+@pytest.mark.asyncio
+async def test_every_configurable_key_is_handled_by_apply_chain():
+    """Adding a new configurable key must wire it into _apply_config_key."""
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        values = _sample_configurable_values()
+
+        cam.backend.set_exposure = AsyncMock()  # type: ignore[method-assign]
+        cam.backend.set_gain = AsyncMock()  # type: ignore[method-assign]
+        cam.backend.set_ROI = AsyncMock()  # type: ignore[method-assign]
+        cam.backend.set_triggermode = AsyncMock()  # type: ignore[method-assign]
+        cam.backend.set_pixel_format = AsyncMock()  # type: ignore[method-assign]
+        cam.backend.set_auto_wb_once = AsyncMock()  # type: ignore[method-assign]
+        cam.backend.set_image_quality_enhancement = lambda _value: None  # type: ignore[method-assign]
+        cam.backend.set_optical_power = AsyncMock()  # type: ignore[method-assign]
+        cam.backend.set_packet_size = AsyncMock()  # type: ignore[method-assign]
+        cam.backend.set_inter_packet_delay = AsyncMock()  # type: ignore[method-assign]
+        cam.backend.set_bandwidth_limit = AsyncMock()  # type: ignore[method-assign]
+        cam.backend.set_focus_config = AsyncMock()  # type: ignore[method-assign]
+        cam.backend.apply_genicam_nodes = AsyncMock()  # type: ignore[attr-defined,method-assign]
+        cam.backend.apply_opencv_property = AsyncMock(return_value=True)  # type: ignore[attr-defined,method-assign]
+
+        for key in CONFIGURABLE_KEYS:
+            await cam._apply_config_key(key, values[key])
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_every_configurable_key_is_handled_by_read_chain():
+    """Adding a new configurable key must wire it into _read_config_key."""
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        expected = _sample_configurable_values()
+        roi = expected["roi"]
+
+        cam.backend.get_exposure = AsyncMock(return_value=expected["exposure_time"])  # type: ignore[method-assign]
+        cam.backend.get_gain = AsyncMock(return_value=expected["gain"])  # type: ignore[method-assign]
+        cam.backend.get_ROI = AsyncMock(  # type: ignore[method-assign]
+            return_value={"x": roi[0], "y": roi[1], "width": roi[2], "height": roi[3]}
+        )
+        cam.backend.get_triggermode = AsyncMock(return_value=expected["trigger_mode"])  # type: ignore[method-assign]
+        cam.backend.get_current_pixel_format = AsyncMock(return_value=expected["pixel_format"])  # type: ignore[method-assign]
+        cam.backend.get_wb = AsyncMock(return_value=expected["white_balance"])  # type: ignore[method-assign]
+        cam.backend.get_image_quality_enhancement = lambda: expected["image_enhancement"]  # type: ignore[method-assign]
+        cam.backend.get_optical_power = AsyncMock(return_value=expected["optical_power"])  # type: ignore[method-assign]
+        cam.backend.get_packet_size = AsyncMock(return_value=expected["packet_size"])  # type: ignore[method-assign]
+        cam.backend.get_inter_packet_delay = AsyncMock(  # type: ignore[method-assign]
+            return_value=expected["inter_packet_delay"]
+        )
+        cam.backend.get_bandwidth_limit = AsyncMock(return_value=expected["bandwidth_limit"])  # type: ignore[method-assign]
+        cam.backend.get_focus_config = AsyncMock(return_value=expected["focus_config"])  # type: ignore[method-assign]
+
+        async def fake_read_configuration_value(key, _context):
+            return expected[key]
+
+        cam.backend.read_configuration_value = fake_read_configuration_value  # type: ignore[method-assign]
+
+        for key in CONFIGURABLE_KEYS:
+            value = await cam._read_config_key(key, read_context={})
+            assert value == expected[key]
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_configure_and_get_configuration_use_one_backend_session():
+    """configure() and get_configuration() should enter configuration_session once each."""
+    from contextlib import asynccontextmanager
+
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        sessions: list[str] = []
+
+        @asynccontextmanager
+        async def tracking_session():
+            sessions.append("enter")
+            yield
+            sessions.append("exit")
+
+        cam.backend.configuration_session = tracking_session  # type: ignore[method-assign]
+
+        result = await cam.configure(exposure=15000, gain=2.0)
+        assert result.success is True
+        assert sessions == ["enter", "exit"]
+
+        sessions.clear()
+        config = await cam.get_configuration()
+        assert "exposure_time" in config
+        assert sessions == ["enter", "exit"]
     finally:
         await manager.close(None)

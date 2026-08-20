@@ -2,7 +2,6 @@
 
 import asyncio
 import functools
-import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -55,7 +54,6 @@ class BaslerCameraBackend(CameraBackend):
         - Region of Interest (ROI) control
         - Automatic and manual exposure/gain control
         - CLAHE image quality enhancement
-        - Pylon Feature Stream (.pfs) configuration import/export
         - Multicast streaming support for GigE cameras
 
     Requirements:
@@ -83,11 +81,11 @@ class BaslerCameraBackend(CameraBackend):
     """
 
     REQUIRES_THREAD_AFFINITY = True
+    nested_merge_config_keys = frozenset({"focus_config"})
 
     def __init__(
         self,
         camera_name: str,
-        camera_config: Optional[str] = None,
         img_quality_enhancement: Optional[bool] = None,
         retrieve_retry_count: Optional[int] = None,
         multicast_enabled: Optional[bool] = None,
@@ -100,7 +98,6 @@ class BaslerCameraBackend(CameraBackend):
 
         Args:
             camera_name: Camera identifier (serial number, IP, or user-defined name)
-            camera_config: Path to Pylon Feature Stream (.pfs) file (optional)
             img_quality_enhancement: Enable CLAHE image enhancement (uses config default if None)
             retrieve_retry_count: Number of capture retry attempts (uses config default if None)
             multicast_enabled: Enable multicast streaming mode (uses config default if None)
@@ -128,7 +125,7 @@ class BaslerCameraBackend(CameraBackend):
         else:
             assert pylon is not None, "pypylon SDK is available but pylon is not initialized"
 
-        super().__init__(camera_name, camera_config, img_quality_enhancement, retrieve_retry_count)
+        super().__init__(camera_name, img_quality_enhancement, retrieve_retry_count)
 
         # Get backend-specific configuration with fallbacks
         pixel_format = backend_kwargs.get("pixel_format")
@@ -159,7 +156,6 @@ class BaslerCameraBackend(CameraBackend):
             raise CameraConfigurationError("Timeout must be at least 100ms")
 
         # Store configuration
-        self.camera_config_path = camera_config
         self.default_pixel_format = pixel_format
         self.buffer_count = buffer_count
         self.timeout_ms = timeout_ms
@@ -174,6 +170,10 @@ class BaslerCameraBackend(CameraBackend):
         self.converter = None
         self.grabbing_mode = pylon.GrabStrategy_LatestImageOnly
         self.triggermode = self.camera_config.cameras.trigger_mode
+        self._grabbing_suspend_depth = 0
+        self._config_session_depth = 0
+        self._session_suspended = False
+        self._session_was_grabbing = False
 
         # Derived operation timeout for non-capture SDK calls
         self._op_timeout_s = max(1.0, float(self.timeout_ms) / 1000.0)
@@ -447,10 +447,6 @@ class BaslerCameraBackend(CameraBackend):
             self.camera = camera
             await self._configure_camera()
 
-            # Load config if provided
-            if self.camera_config_path and os.path.exists(self.camera_config_path):
-                await self.import_config(self.camera_config_path)
-
             self.initialized = True
             return True, camera, None
 
@@ -492,10 +488,6 @@ class BaslerCameraBackend(CameraBackend):
                     # Configure the camera after opening
                     self.camera = camera
                     await self._configure_camera()
-
-                    # Load config if provided
-                    if self.camera_config_path and os.path.exists(self.camera_config_path):
-                        await self.import_config(self.camera_config_path)
 
                     self.initialized = True
                     return True, camera, None
@@ -543,10 +535,6 @@ class BaslerCameraBackend(CameraBackend):
                     # Configure the camera after opening
                     self.camera = camera
                     await self._configure_camera()
-
-                    # Load config if provided
-                    if self.camera_config_path and os.path.exists(self.camera_config_path):
-                        await self.import_config(self.camera_config_path)
 
                     self.initialized = True
                     return True, camera, None
@@ -608,20 +596,54 @@ class BaslerCameraBackend(CameraBackend):
             raise CameraConnectionError(f"Failed to ensure camera '{self.camera_name}' stopped grabbing: {e}") from e
 
     @asynccontextmanager
-    async def _grabbing_suspended(self):
-        """Context manager that temporarily suspends grabbing.
+    async def configuration_session(self):
+        """Defer grabbing resume until the configure/GET scope exits.
 
-        Useful for configuration operations that require grabbing to be stopped.
+        Entering the session does not stop grabbing. The first
+        :meth:`_grabbing_suspended` inside stops it; further suspends are
+        no-ops; grabbing resumes only when this session exits. A session with
+        no suspend calls leaves streaming running.
         """
-        was_grabbing = False
+        self._config_session_depth += 1
         try:
-            if self.camera is not None:
+            yield
+        finally:
+            self._config_session_depth -= 1
+            if self._config_session_depth == 0 and self._session_suspended:
+                was_grabbing = self._session_was_grabbing
+                self._session_suspended = False
+                self._session_was_grabbing = False
+                if was_grabbing and self.camera is not None:
+                    await self._ensure_grabbing()
+
+    @asynccontextmanager
+    async def _grabbing_suspended(self):
+        """Temporarily suspend grabbing. Nested calls share one stop/start.
+
+        Inside :meth:`configuration_session`, the first suspend stops grabbing
+        and resume is owned by the session exit. Outside a session, outermost
+        exit restores grabbing as before.
+        """
+        in_session = self._config_session_depth > 0
+        nested = self._grabbing_suspend_depth > 0
+        was_grabbing = False
+        self._grabbing_suspend_depth += 1
+        try:
+            if in_session:
+                if not self._session_suspended and self.camera is not None:
+                    was_grabbing = await self._run_blocking(self.camera.IsGrabbing, timeout=self._op_timeout_s)
+                    if was_grabbing:
+                        await self._ensure_stopped_grabbing()
+                    self._session_was_grabbing = was_grabbing
+                    self._session_suspended = True
+            elif not nested and self.camera is not None:
                 was_grabbing = await self._run_blocking(self.camera.IsGrabbing, timeout=self._op_timeout_s)
                 if was_grabbing:
                     await self._ensure_stopped_grabbing()
             yield
         finally:
-            if was_grabbing and self.camera is not None:
+            self._grabbing_suspend_depth -= 1
+            if not in_session and not nested and was_grabbing and self.camera is not None:
                 await self._ensure_grabbing()
 
     async def _configure_camera(self):
@@ -1167,490 +1189,6 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.warning(f"Connection check failed for camera '{self.camera_name}': {str(e)}")
             return False
 
-    async def import_config(self, config_path: str):
-        """Import camera configuration from common JSON format.
-
-        Args:
-            config_path: Path to configuration file
-
-        Raises:
-            CameraConnectionError: If camera is not initialized
-            CameraConfigurationError: If configuration import fails
-        """
-        if self.camera is None:
-            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
-        else:
-            assert genicam is not None, "camera is initialized but genicam is not available"
-
-        if config_path is None or not os.path.exists(config_path):
-            raise CameraConfigurationError(f"Configuration file not found: {config_path}")
-
-        try:
-            import json
-
-            # Read config from file (run in threadpool to avoid blocking event loop)
-            def _load_config():
-                with open(config_path, "r") as f:
-                    return json.load(f)
-
-            config_data = await asyncio.to_thread(_load_config)
-
-            await self._ensure_open()
-
-            success_count = 0
-            total_settings = 0
-
-            async with self._grabbing_suspended():
-                # Set exposure time
-                if "exposure_time" in config_data:
-                    total_settings += 1
-                    try:
-                        # Try ExposureTime first, fallback to ExposureTimeAbs
-                        if hasattr(self.camera, "ExposureTime") and self.camera.ExposureTime.GetAccessMode() in [
-                            genicam.RW,
-                            genicam.WO,
-                        ]:
-                            await self._run_blocking(
-                                self.camera.ExposureTime.SetValue,
-                                float(config_data["exposure_time"]),
-                                timeout=self._op_timeout_s,
-                            )
-                            success_count += 1
-                        elif hasattr(
-                            self.camera, "ExposureTimeAbs"
-                        ) and self.camera.ExposureTimeAbs.GetAccessMode() in [
-                            genicam.RW,
-                            genicam.WO,
-                        ]:
-                            self.logger.debug(f"Using ExposureTimeAbs for config import on camera '{self.camera_name}'")
-                            await self._run_blocking(
-                                self.camera.ExposureTimeAbs.SetValue,
-                                float(config_data["exposure_time"]),
-                                timeout=self._op_timeout_s,
-                            )
-                            success_count += 1
-                    except Exception as e:
-                        self.logger.warning(f"Could not set exposure time for camera '{self.camera_name}': {e}")
-
-                # Set gain
-                if "gain" in config_data:
-                    total_settings += 1
-                    try:
-                        if hasattr(self.camera, "Gain") and self.camera.Gain.GetAccessMode() in [
-                            genicam.RW,
-                            genicam.WO,
-                        ]:
-                            await self._run_blocking(
-                                self.camera.Gain.SetValue, float(config_data["gain"]), timeout=self._op_timeout_s
-                            )
-                            success_count += 1
-                    except Exception as e:
-                        self.logger.warning(f"Could not set gain for camera '{self.camera_name}': {e}")
-
-                # Set trigger mode
-                if "trigger_mode" in config_data:
-                    total_settings += 1
-                    try:
-                        if hasattr(self.camera, "TriggerMode") and self.camera.TriggerMode.GetAccessMode() in [
-                            genicam.RW,
-                            genicam.WO,
-                        ]:
-                            if config_data["trigger_mode"] == "continuous":
-                                await self._run_blocking(
-                                    self.camera.TriggerMode.SetValue, "Off", timeout=self._op_timeout_s
-                                )
-                            else:
-                                if hasattr(self.camera, "TriggerSelector"):
-                                    await self._run_blocking(
-                                        self.camera.TriggerSelector.SetValue, "FrameStart", timeout=self._op_timeout_s
-                                    )
-                                await self._run_blocking(
-                                    self.camera.TriggerMode.SetValue, "On", timeout=self._op_timeout_s
-                                )
-                                if hasattr(self.camera, "TriggerSource"):
-                                    await self._run_blocking(
-                                        self.camera.TriggerSource.SetValue, "Software", timeout=self._op_timeout_s
-                                    )
-                            self.triggermode = config_data["trigger_mode"]
-                            success_count += 1
-                    except Exception as e:
-                        self.logger.warning(f"Could not set trigger mode for camera '{self.camera_name}': {e}")
-
-                # Set white balance
-                if "white_balance" in config_data:
-                    total_settings += 1
-                    try:
-                        if hasattr(
-                            self.camera, "BalanceWhiteAuto"
-                        ) and self.camera.BalanceWhiteAuto.GetAccessMode() in [
-                            genicam.RW,
-                            genicam.WO,
-                        ]:
-                            wb_mode = config_data["white_balance"]
-                            if wb_mode == "off":
-                                await self._run_blocking(
-                                    self.camera.BalanceWhiteAuto.SetValue, "Off", timeout=self._op_timeout_s
-                                )
-                            elif wb_mode == "once":
-                                await self._run_blocking(
-                                    self.camera.BalanceWhiteAuto.SetValue, "Once", timeout=self._op_timeout_s
-                                )
-                            elif wb_mode == "continuous":
-                                await self._run_blocking(
-                                    self.camera.BalanceWhiteAuto.SetValue, "Continuous", timeout=self._op_timeout_s
-                                )
-                            success_count += 1
-                    except Exception as e:
-                        self.logger.warning(f"Could not set white balance for camera '{self.camera_name}': {e}")
-
-                # Set ROI
-                if "roi" in config_data:
-                    roi = config_data["roi"]
-                    roi_success = 0
-                    total_settings += 1
-
-                    try:
-                        if hasattr(self.camera, "Width") and self.camera.Width.GetAccessMode() in [
-                            genicam.RW,
-                            genicam.WO,
-                        ]:
-                            await self._run_blocking(
-                                self.camera.Width.SetValue, int(roi.get("width", 1920)), timeout=self._op_timeout_s
-                            )
-                            roi_success += 1
-                    except Exception as e:
-                        self.logger.warning(f"Could not set ROI Width for camera '{self.camera_name}': {e}")
-
-                    try:
-                        if hasattr(self.camera, "Height") and self.camera.Height.GetAccessMode() in [
-                            genicam.RW,
-                            genicam.WO,
-                        ]:
-                            await self._run_blocking(
-                                self.camera.Height.SetValue, int(roi.get("height", 1080)), timeout=self._op_timeout_s
-                            )
-                            roi_success += 1
-                    except Exception as e:
-                        self.logger.warning(f"Could not set ROI Height for camera '{self.camera_name}': {e}")
-
-                    try:
-                        if hasattr(self.camera, "OffsetX") and self.camera.OffsetX.GetAccessMode() in [
-                            genicam.RW,
-                            genicam.WO,
-                        ]:
-                            await self._run_blocking(
-                                self.camera.OffsetX.SetValue, int(roi.get("x", 0)), timeout=self._op_timeout_s
-                            )
-                            roi_success += 1
-                    except Exception as e:
-                        self.logger.warning(f"Could not set ROI OffsetX for camera '{self.camera_name}': {e}")
-
-                    try:
-                        if hasattr(self.camera, "OffsetY") and self.camera.OffsetY.GetAccessMode() in [
-                            genicam.RW,
-                            genicam.WO,
-                        ]:
-                            await self._run_blocking(
-                                self.camera.OffsetY.SetValue, int(roi.get("y", 0)), timeout=self._op_timeout_s
-                            )
-                            roi_success += 1
-                    except Exception as e:
-                        self.logger.warning(f"Could not set ROI OffsetY for camera '{self.camera_name}': {e}")
-
-                    if roi_success > 0:
-                        success_count += 1
-
-                # Set pixel format
-                if "pixel_format" in config_data:
-                    total_settings += 1
-                    try:
-                        if hasattr(self.camera, "PixelFormat") and self.camera.PixelFormat.GetAccessMode() in [
-                            genicam.RW,
-                            genicam.WO,
-                        ]:
-                            available_formats = await self.get_pixel_format_range()
-                            pixel_format = config_data["pixel_format"]
-                            if pixel_format in available_formats:
-                                await self._run_blocking(
-                                    self.camera.PixelFormat.SetValue, pixel_format, timeout=self._op_timeout_s
-                                )
-                                success_count += 1
-                    except Exception as e:
-                        self.logger.warning(f"Could not set pixel format for camera '{self.camera_name}': {e}")
-
-                # Apply other settings
-                if "image_enhancement" in config_data:
-                    self.img_quality_enhancement = config_data["image_enhancement"]
-                    success_count += 1
-                    total_settings += 1
-
-                if "retrieve_retry_count" in config_data:
-                    self.retrieve_retry_count = config_data["retrieve_retry_count"]
-                    success_count += 1
-                    total_settings += 1
-
-                if "timeout_ms" in config_data:
-                    self.timeout_ms = config_data["timeout_ms"]
-                    success_count += 1
-                    total_settings += 1
-
-                # Restore liquid lens / focus settings
-                if "optical_power" in config_data:
-                    total_settings += 1
-                    try:
-                        if self._has_liquid_lens() and self._is_lens_connected():
-                            await self.set_optical_power(float(config_data["optical_power"]))
-                            success_count += 1
-                    except Exception as e:
-                        self.logger.warning(f"Could not restore optical power for camera '{self.camera_name}': {e}")
-
-                if "focus_config" in config_data:
-                    total_settings += 1
-                    try:
-                        if self._has_liquid_lens() and self._is_lens_connected():
-                            await self.set_focus_config(**config_data["focus_config"])
-                            success_count += 1
-                    except Exception as e:
-                        self.logger.warning(f"Could not restore focus config for camera '{self.camera_name}': {e}")
-                # Restore GigE network transport settings
-                if config_data.get("packet_size") is not None:
-                    total_settings += 1
-                    try:
-                        await self._run_blocking(
-                            self.camera.GevSCPSPacketSize.SetValue,
-                            int(config_data["packet_size"]),
-                            timeout=self._op_timeout_s,
-                        )
-                        success_count += 1
-                    except Exception as e:
-                        self.logger.warning(f"Could not restore packet size for camera '{self.camera_name}': {e}")
-
-                if config_data.get("inter_packet_delay") is not None:
-                    total_settings += 1
-                    try:
-                        await self._run_blocking(
-                            self.camera.GevSCPD.SetValue,
-                            int(config_data["inter_packet_delay"]),
-                            timeout=self._op_timeout_s,
-                        )
-                        success_count += 1
-                    except Exception as e:
-                        self.logger.warning(
-                            f"Could not restore inter-packet delay for camera '{self.camera_name}': {e}"
-                        )
-
-                if config_data.get("bandwidth_limit") is not None:
-                    total_settings += 1
-                    try:
-                        if hasattr(self.camera, "DeviceLinkThroughputLimit"):
-                            await self._run_blocking(
-                                self.camera.DeviceLinkThroughputLimit.SetValue,
-                                int(config_data["bandwidth_limit"]),
-                                timeout=self._op_timeout_s,
-                            )
-                            success_count += 1
-                    except Exception as e:
-                        self.logger.warning(f"Could not restore bandwidth limit for camera '{self.camera_name}': {e}")
-
-            self.logger.debug(
-                f"Configuration imported from '{config_path}' for camera '{self.camera_name}': "
-                f"{success_count}/{total_settings} settings applied successfully"
-            )
-
-        except CameraConfigurationError:
-            raise
-        except Exception as e:
-            self.logger.error(f"Error importing configuration for camera '{self.camera_name}': {str(e)}")
-            raise CameraConfigurationError(f"Failed to import configuration: {str(e)}")
-
-    async def export_config(self, config_path: str):
-        """Export current camera configuration to common JSON format.
-
-        Args:
-            config_path: Path where to save configuration file
-
-        Raises:
-            CameraConnectionError: If camera is not initialized
-            CameraConfigurationError: If configuration export fails
-        """
-        if not self.initialized or self.camera is None:
-            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
-        else:
-            assert genicam is not None, "camera is initialized but genicam is not available"
-
-        try:
-            import json
-
-            os.makedirs(os.path.dirname(os.path.abspath(config_path)), exist_ok=True)
-
-            await self._ensure_open()
-
-            # Default configuration values for Basler cameras
-            defaults = {
-                "exposure_time": 20000.0,
-                "gain": 1.0,
-                "trigger_mode": "continuous",
-                "white_balance": "off",
-                "width": 1920,
-                "height": 1080,
-                "roi_x": 0,
-                "roi_y": 0,
-                "pixel_format": "BayerRG8",
-            }
-
-            # Get current camera settings with fallbacks
-            exposure_time = defaults["exposure_time"]
-            try:
-                # Try ExposureTime first, fallback to ExposureTimeAbs
-                try:
-                    exposure_time = await self._run_blocking(
-                        self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s
-                    )
-                except Exception:
-                    self.logger.debug(
-                        f"ExposureTime not available for camera '{self.camera_name}', trying ExposureTimeAbs"
-                    )
-                    exposure_time = await self._run_blocking(
-                        self.camera.ExposureTimeAbs.GetValue, timeout=self._op_timeout_s
-                    )
-            except Exception as e:
-                self.logger.warning(f"Could not get exposure time for camera '{self.camera_name}': {e}")
-
-            gain = defaults["gain"]
-            try:
-                if hasattr(self.camera, "Gain"):
-                    gain = await self._run_blocking(self.camera.Gain.GetValue, timeout=self._op_timeout_s)
-            except Exception as e:
-                self.logger.warning(f"Could not get gain for camera '{self.camera_name}': {e}")
-
-            trigger_mode = defaults["trigger_mode"]
-            try:
-                trigger_enabled = (
-                    await self._run_blocking(self.camera.TriggerMode.GetValue, timeout=self._op_timeout_s) == "On"
-                )
-                trigger_source = (
-                    await self._run_blocking(self.camera.TriggerSource.GetValue, timeout=self._op_timeout_s)
-                    == "Software"
-                )
-                trigger_mode = "trigger" if (trigger_enabled and trigger_source) else "continuous"
-            except Exception as e:
-                self.logger.warning(f"Could not get trigger mode for camera '{self.camera_name}': {e}")
-
-            white_balance = defaults["white_balance"]
-            try:
-                if (
-                    self.camera.BalanceWhiteAuto.GetAccessMode() == genicam.RO
-                    or self.camera.BalanceWhiteAuto.GetAccessMode() == genicam.RW
-                ):
-                    wb_auto = await self._run_blocking(
-                        self.camera.BalanceWhiteAuto.GetValue, timeout=self._op_timeout_s
-                    )
-                    white_balance = wb_auto.lower()
-            except Exception as e:
-                self.logger.warning(f"Could not get white balance for camera '{self.camera_name}': {e}")
-
-            # Get image dimensions and ROI
-            width = defaults["width"]
-            height = defaults["height"]
-            try:
-                width = int(await self._run_blocking(self.camera.Width.GetValue, timeout=self._op_timeout_s))
-                height = int(await self._run_blocking(self.camera.Height.GetValue, timeout=self._op_timeout_s))
-            except Exception as e:
-                self.logger.warning(f"Could not get image dimensions for camera '{self.camera_name}': {e}")
-
-            roi_x = defaults["roi_x"]
-            roi_y = defaults["roi_y"]
-            try:
-                roi_x = int(await self._run_blocking(self.camera.OffsetX.GetValue, timeout=self._op_timeout_s))
-                roi_y = int(await self._run_blocking(self.camera.OffsetY.GetValue, timeout=self._op_timeout_s))
-            except Exception as e:
-                self.logger.warning(f"Could not get ROI offsets for camera '{self.camera_name}': {e}")
-
-            pixel_format = defaults["pixel_format"]
-            try:
-                pixel_format = await self._run_blocking(self.camera.PixelFormat.GetValue, timeout=self._op_timeout_s)
-            except Exception as e:
-                self.logger.warning(f"Could not get pixel format for camera '{self.camera_name}': {e}")
-
-            # Liquid lens / focus (if available)
-            optical_power = None
-            focus_config = None
-            try:
-                if self._has_liquid_lens() and self._is_lens_connected():
-                    optical_power = await self.get_optical_power()
-                    focus_config = await self.get_focus_config()
-            except Exception as e:
-                self.logger.debug(f"Could not export lens config for camera '{self.camera_name}': {e}")
-            # Get GigE network transport settings
-            packet_size = None
-            try:
-                packet_size = int(
-                    await self._run_blocking(self.camera.GevSCPSPacketSize.GetValue, timeout=self._op_timeout_s)
-                )
-            except Exception as e:
-                self.logger.debug(f"Could not get packet size for camera '{self.camera_name}': {e}")
-
-            inter_packet_delay = None
-            try:
-                inter_packet_delay = int(
-                    await self._run_blocking(self.camera.GevSCPD.GetValue, timeout=self._op_timeout_s)
-                )
-            except Exception as e:
-                self.logger.debug(f"Could not get inter-packet delay for camera '{self.camera_name}': {e}")
-
-            bandwidth_limit = None
-            try:
-                if hasattr(self.camera, "DeviceLinkThroughputLimit"):
-                    bandwidth_limit = float(
-                        await self._run_blocking(
-                            self.camera.DeviceLinkThroughputLimit.GetValue, timeout=self._op_timeout_s
-                        )
-                    )
-            except Exception as e:
-                self.logger.debug(f"Could not get bandwidth limit for camera '{self.camera_name}': {e}")
-
-            # Create common format configuration
-            config_data = {
-                "camera_type": "basler",
-                "camera_name": self.camera_name,
-                "timestamp": time.time(),
-                "exposure_time": exposure_time,
-                "gain": gain,
-                "trigger_mode": trigger_mode,
-                "white_balance": white_balance,
-                "width": width,
-                "height": height,
-                "roi": {"x": roi_x, "y": roi_y, "width": width, "height": height},
-                "pixel_format": pixel_format,
-                "image_enhancement": self.img_quality_enhancement,
-                "retrieve_retry_count": self.retrieve_retry_count,
-                "timeout_ms": self.timeout_ms,
-                "buffer_count": getattr(self, "buffer_count", 25),
-                "packet_size": packet_size,
-                "inter_packet_delay": inter_packet_delay,
-                "bandwidth_limit": bandwidth_limit,
-            }
-
-            if optical_power is not None:
-                config_data["optical_power"] = optical_power
-            if focus_config is not None:
-                config_data["focus_config"] = focus_config
-
-            # Write config to file (run in threadpool to avoid blocking event loop)
-            def _save_config():
-                with open(config_path, "w") as f:
-                    json.dump(config_data, f, indent=2)
-
-            await asyncio.to_thread(_save_config)
-
-            self.logger.debug(
-                f"Configuration exported to '{config_path}' for camera '{self.camera_name}' using common JSON format"
-            )
-
-        except Exception as e:
-            self.logger.error(f"Error exporting configuration for camera '{self.camera_name}': {str(e)}")
-            raise CameraConfigurationError(f"Failed to export configuration: {str(e)}")
-
     async def set_ROI(self, x: int, y: int, width: int, height: int):
         """Set the Region of Interest (ROI) for image acquisition.
 
@@ -1899,7 +1437,11 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
-            if hasattr(self.camera, "DeviceLinkThroughputLimitMode"):
+            if not hasattr(self.camera, "DeviceLinkThroughputLimitMode"):
+                self.logger.error(f"Bandwidth limiting not supported for camera '{self.camera_name}'")
+                raise NotImplementedError(f"Bandwidth limiting not supported for camera '{self.camera_name}'")
+
+            async with self._grabbing_suspended():
                 if limit_mbps is not None and hasattr(self.camera, "DeviceLinkThroughputLimit"):
                     # Enable bandwidth limiting and set limit
                     await self._run_blocking(
@@ -1917,16 +1459,18 @@ class BaslerCameraBackend(CameraBackend):
                         self.camera.DeviceLinkThroughputLimitMode.SetValue, "Off", timeout=self._op_timeout_s
                     )
                     self.logger.debug(f"Disabled bandwidth limit for camera '{self.camera_name}'")
-            else:
-                self.logger.error(f"Bandwidth limiting not supported for camera '{self.camera_name}'")
-                raise NotImplementedError(f"Bandwidth limiting not supported for camera '{self.camera_name}'")
 
         except Exception as e:
             self.logger.error(f"Error setting bandwidth limit for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to set bandwidth limit: {str(e)}")
 
-    async def get_bandwidth_limit(self) -> float:
-        """Get current bandwidth limit in Mbps."""
+    async def get_bandwidth_limit(self) -> Optional[float]:
+        """Get current bandwidth limit in Mbps.
+
+        Returns:
+            Limit in Mbps when limiting is enabled, or ``None`` when unlimited
+            (``DeviceLinkThroughputLimitMode`` is ``Off``).
+        """
         if not self.initialized or not self.camera:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
@@ -1938,7 +1482,7 @@ class BaslerCameraBackend(CameraBackend):
                     self.camera.DeviceLinkThroughputLimitMode.GetValue, timeout=self._op_timeout_s
                 )
                 if mode == "Off":
-                    return 0.0  # No limit
+                    return None
 
                 if hasattr(self.camera, "DeviceLinkThroughputLimit"):
                     limit_bps = await self._run_blocking(
@@ -1948,7 +1492,7 @@ class BaslerCameraBackend(CameraBackend):
                     limit_mbps = (limit_bps * 8) / (1024 * 1024)
                     return float(limit_mbps)
 
-            return 0.0  # No limit or not supported
+            return None
 
         except Exception as e:
             self.logger.error(f"Error getting bandwidth limit for camera '{self.camera_name}': {str(e)}")
@@ -1962,12 +1506,13 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
-            if hasattr(self.camera, "GevSCPSPacketSize"):
-                await self._run_blocking(self.camera.GevSCPSPacketSize.SetValue, size, timeout=self._op_timeout_s)
-                self.logger.debug(f"Set packet size to {size} bytes for camera '{self.camera_name}'")
-            else:
+            if not hasattr(self.camera, "GevSCPSPacketSize"):
                 self.logger.error(f"Packet size control not supported for camera '{self.camera_name}'")
                 raise NotImplementedError(f"Packet size control not supported for camera '{self.camera_name}'")
+
+            async with self._grabbing_suspended():
+                await self._run_blocking(self.camera.GevSCPSPacketSize.SetValue, size, timeout=self._op_timeout_s)
+            self.logger.debug(f"Set packet size to {size} bytes for camera '{self.camera_name}'")
 
         except Exception as e:
             self.logger.error(f"Error setting packet size for camera '{self.camera_name}': {str(e)}")
@@ -1999,12 +1544,13 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
-            if hasattr(self.camera, "GevSCPD"):
-                await self._run_blocking(self.camera.GevSCPD.SetValue, delay_ticks, timeout=self._op_timeout_s)
-                self.logger.debug(f"Set inter-packet delay to {delay_ticks} ticks for camera '{self.camera_name}'")
-            else:
+            if not hasattr(self.camera, "GevSCPD"):
                 self.logger.error(f"Inter-packet delay control not supported for camera '{self.camera_name}'")
                 raise NotImplementedError(f"Inter-packet delay control not supported for camera '{self.camera_name}'")
+
+            async with self._grabbing_suspended():
+                await self._run_blocking(self.camera.GevSCPD.SetValue, delay_ticks, timeout=self._op_timeout_s)
+            self.logger.debug(f"Set inter-packet delay to {delay_ticks} ticks for camera '{self.camera_name}'")
 
         except Exception as e:
             self.logger.error(f"Error setting inter-packet delay for camera '{self.camera_name}': {str(e)}")
@@ -2595,7 +2141,14 @@ class BaslerCameraBackend(CameraBackend):
         return config
 
     async def set_focus_config(self, **settings):
-        """Set focus/autofocus parameters."""
+        """Set focus/autofocus parameters.
+
+        Raises:
+            CameraConnectionError: If the camera is not initialized.
+            CameraConfigurationError: If the camera has no connected liquid lens,
+                or a recognized key fails to apply. When some keys applied before
+                a failure, the successful subset is stored as ``details["applied"]``.
+        """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
         if not self._has_liquid_lens() or not self._is_lens_connected():
@@ -2603,6 +2156,7 @@ class BaslerCameraBackend(CameraBackend):
 
         await self._ensure_open()
 
+        applied: Dict[str, Any] = {}
         for key, value in settings.items():
             node_name = self._FOCUS_CONFIG_NODE_MAP.get(key)
             if node_name is None:
@@ -2613,9 +2167,13 @@ class BaslerCameraBackend(CameraBackend):
                 continue
             try:
                 await self._run_blocking(getattr(self.camera, node_name).SetValue, value, timeout=self._op_timeout_s)
+                applied[key] = value
                 self.logger.debug(f"Set {node_name}={value} for camera '{self.camera_name}'")
             except Exception as e:
-                raise CameraConfigurationError(f"Failed to set {key}={value} for camera '{self.camera_name}': {e}")
+                raise CameraConfigurationError(
+                    f"Failed to set {key}={value} for camera '{self.camera_name}': {e}",
+                    details={"applied": applied},
+                ) from e
 
     async def close(self):
         """Close the camera and release resources.

@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 import tempfile
 from unittest.mock import patch
@@ -21,7 +20,7 @@ from mindtrace.hardware.core.exceptions import (
 
 @pytest_asyncio.fixture
 async def mock_basler_camera():
-    camera = MockBaslerCameraBackend(camera_name="mock_basler_1", camera_config=None)
+    camera = MockBaslerCameraBackend(camera_name="mock_basler_1")
     yield camera
     try:
         await camera.close()
@@ -62,37 +61,6 @@ async def test_get_current_pixel_format():
     await camera.close()
 
 
-@pytest_asyncio.fixture
-async def temp_config_file():
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-        config_data = {
-            "camera_type": "mock_basler",
-            "camera_name": "test_camera",
-            "timestamp": 1234567890.123,
-            "exposure_time": 15000.0,
-            "gain": 2.5,
-            "trigger_mode": "continuous",
-            "white_balance": "auto",
-            "width": 1920,
-            "height": 1080,
-            "roi": {"x": 0, "y": 0, "width": 1920, "height": 1080},
-            "pixel_format": "BGR8",
-            "image_enhancement": True,
-            "retrieve_retry_count": 3,
-            "timeout_ms": 5000,
-            "buffer_count": 25,
-        }
-        json.dump(config_data, f, indent=2)
-        temp_path = f.name
-    try:
-        yield temp_path
-    finally:
-        try:
-            os.unlink(temp_path)
-        except Exception:
-            pass
-
-
 @pytest.mark.asyncio
 async def test_camera_initialization(mock_basler_camera):
     camera = mock_basler_camera
@@ -123,38 +91,8 @@ async def test_basler_specific_features(mock_basler_camera):
 
 
 @pytest.mark.asyncio
-async def test_configuration_compatibility(mock_basler_camera, temp_config_file):
-    camera = mock_basler_camera
-    await camera.initialize()
-    await camera.import_config(temp_config_file)
-    assert await camera.get_exposure() == 15000.0
-    assert await camera.get_gain() == 2.5
-
-
 @pytest.mark.asyncio
-async def test_common_format_export(mock_basler_camera):
-    camera = mock_basler_camera
-    await camera.initialize()
-    await camera.set_exposure(30000)
-    await camera.set_gain(4.0)
-    await camera.set_triggermode("trigger")
-    camera.set_image_quality_enhancement(True)
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-        export_path = f.name
-
-    try:
-        await camera.export_config(export_path)
-        with open(export_path, "r") as f:
-            config = json.load(f)
-        assert config["exposure_time"] == 30000
-        assert config["gain"] == 4.0
-        assert config["trigger_mode"] == "trigger"
-        assert config["image_enhancement"] is True
-    finally:
-        os.unlink(export_path)
-
-
+@pytest.mark.asyncio
 class TestMockBaslerErrorSimulation:
     """Test error simulation capabilities."""
 
@@ -391,50 +329,17 @@ class TestMockBaslerROIOperations:
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
 
-        # Test invalid dimensions
         with pytest.raises(CameraConfigurationError, match="Invalid ROI dimensions"):
-            await camera.set_ROI(0, 0, 0, 480)  # Width = 0
+            await camera.set_ROI(0, 0, 0, 480)
 
         with pytest.raises(CameraConfigurationError, match="Invalid ROI dimensions"):
-            await camera.set_ROI(0, 0, 640, -10)  # Negative height
-
-        # Test invalid offsets
-        with pytest.raises(CameraConfigurationError, match="Invalid ROI offset"):
-            await camera.set_ROI(-10, 0, 640, 480)  # Negative x
+            await camera.set_ROI(0, 0, 640, -10)
 
         with pytest.raises(CameraConfigurationError, match="Invalid ROI offset"):
-            await camera.set_ROI(0, -5, 640, 480)  # Negative y
+            await camera.set_ROI(-10, 0, 640, 480)
 
-        await camera.close()
-
-    @pytest.mark.asyncio
-    async def test_set_triggermode_exception_handling(self):
-        """Test exception handling in set_triggermode."""
-        camera = MockBaslerCameraBackend("test_cam")
-        await camera.initialize()
-
-        # Mock the attribute assignment to raise an exception
-        original_setattr = type(camera).__setattr__
-
-        def mock_setattr(self, name, value):
-            if name == "triggermode" and value == "continuous":
-                raise RuntimeError("Setting error")
-            return original_setattr(self, name, value)
-
-        with patch.object(type(camera), "__setattr__", mock_setattr):
-            with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
-                await camera.set_triggermode("continuous")
-
-        await camera.close()
-
-    @pytest.mark.asyncio
-    async def test_get_current_pixel_format(self):
-        """Test get_current_pixel_format method."""
-        camera = MockBaslerCameraBackend("test_cam")
-        await camera.initialize()
-
-        pixel_format = await camera.get_current_pixel_format()
-        assert pixel_format == "BGR8"
+        with pytest.raises(CameraConfigurationError, match="Invalid ROI offset"):
+            await camera.set_ROI(0, -5, 640, 480)
 
         await camera.close()
 
@@ -444,24 +349,19 @@ class TestMockBaslerROIOperations:
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
 
-        # Get initial ROI
         initial_roi = await camera.get_ROI()
         _initial_width, _initial_height = initial_roi["width"], initial_roi["height"]
 
-        # Set custom ROI
         roi_params = (100, 50, 800, 600)
         await camera.set_ROI(*roi_params)
 
-        # Get ROI and verify
         roi = await camera.get_ROI()
         assert roi["x"] == 100
         assert roi["y"] == 50
         assert roi["width"] == 800
         assert roi["height"] == 600
 
-        # Test image generation with custom ROI
         image = await camera.capture()
-        # ROI should affect the generated image size
         assert image.shape == (600, 800, 3), f"Expected (600, 800, 3) for custom ROI, got {image.shape}"
 
         await camera.close()
@@ -472,13 +372,9 @@ class TestMockBaslerROIOperations:
         camera = MockBaslerCameraBackend("test_cam")
         await camera.initialize()
 
-        # Set custom ROI
         await camera.set_ROI(100, 100, 640, 480)
-
-        # Reset ROI
         await camera.reset_ROI()
 
-        # Verify reset to full size
         roi = await camera.get_ROI()
         assert roi["x"] == 0
         assert roi["y"] == 0
@@ -688,120 +584,6 @@ class TestMockBaslerStateManagement:
 
         with pytest.raises(CameraConnectionError, match="is not initialized"):
             await camera.capture()
-
-
-class TestMockBaslerConfigurationFiles:
-    """Test configuration file import/export functionality."""
-
-    @pytest.mark.asyncio
-    async def test_import_config_missing_file(self):
-        """Test importing from non-existent config file."""
-        camera = MockBaslerCameraBackend("test_cam")
-        await camera.initialize()
-
-        with pytest.raises(CameraConfigurationError, match="Configuration file not found"):
-            await camera.import_config("/nonexistent/path/config.json")
-
-        await camera.close()
-
-    @pytest.mark.asyncio
-    async def test_set_triggermode_exception_handling(self):
-        """Test exception handling in set_triggermode."""
-        camera = MockBaslerCameraBackend("test_cam")
-        await camera.initialize()
-
-        # Mock the attribute assignment to raise an exception
-        original_setattr = type(camera).__setattr__
-
-        def mock_setattr(self, name, value):
-            if name == "triggermode" and value == "continuous":
-                raise RuntimeError("Setting error")
-            return original_setattr(self, name, value)
-
-        with patch.object(type(camera), "__setattr__", mock_setattr):
-            with pytest.raises(CameraConfigurationError, match="Failed to set trigger mode"):
-                await camera.set_triggermode("continuous")
-
-        await camera.close()
-
-    @pytest.mark.asyncio
-    async def test_get_current_pixel_format(self):
-        """Test get_current_pixel_format method."""
-        camera = MockBaslerCameraBackend("test_cam")
-        await camera.initialize()
-
-        pixel_format = await camera.get_current_pixel_format()
-        assert pixel_format == "BGR8"
-
-        await camera.close()
-
-    @pytest.mark.asyncio
-    async def test_import_config_invalid_json(self):
-        """Test importing invalid JSON configuration."""
-        camera = MockBaslerCameraBackend("test_cam")
-        await camera.initialize()
-
-        # Create invalid JSON file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            f.write("invalid json content {")
-            invalid_path = f.name
-
-        try:
-            with pytest.raises(CameraConfigurationError, match="Invalid JSON configuration format"):
-                await camera.import_config(invalid_path)
-        finally:
-            os.unlink(invalid_path)
-
-        await camera.close()
-
-    @pytest.mark.asyncio
-    async def test_export_config_directory_creation(self):
-        """Test config export with automatic directory creation."""
-        camera = MockBaslerCameraBackend("test_cam")
-        await camera.initialize()
-
-        # Create path in non-existent directory
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config_path = os.path.join(temp_dir, "nested", "config.json")
-
-            await camera.export_config(config_path)
-            assert os.path.exists(config_path)
-
-            # Verify content
-            with open(config_path, "r") as f:
-                config = json.load(f)
-            assert config["camera_type"] == "mock_basler"
-            assert config["camera_name"] == "test_cam"
-
-        await camera.close()
-
-    @pytest.mark.asyncio
-    async def test_partial_configuration_import(self):
-        """Test importing configuration with missing optional fields."""
-        camera = MockBaslerCameraBackend("test_cam")
-        await camera.initialize()
-
-        # Create config with only some fields
-        partial_config = {
-            "exposure_time": 25000.0,
-            "gain": 3.0,
-            # Missing other optional fields
-        }
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(partial_config, f)
-            partial_path = f.name
-
-        try:
-            await camera.import_config(partial_path)
-
-            # Verify imported values
-            assert await camera.get_exposure() == 25000.0
-            assert await camera.get_gain() == 3.0
-        finally:
-            os.unlink(partial_path)
-
-        await camera.close()
 
 
 class TestMockBaslerWhiteBalance:
@@ -1341,26 +1123,6 @@ class TestMockBaslerExceptionHandling:
                 await camera3.initialize()
 
     @pytest.mark.asyncio
-    async def test_initialize_with_existing_config_file(self):
-        """Test initialize when config file exists."""
-        camera = MockBaslerCameraBackend("test_cam")
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            config_data = {"exposure_time": 30000.0}
-            json.dump(config_data, f)
-            config_path = f.name
-
-        try:
-            camera.camera_config_path = config_path
-            success, _, _ = await camera.initialize()
-            assert success is True
-            assert await camera.get_exposure() == 30000.0
-        finally:
-            os.unlink(config_path)
-
-        await camera.close()
-
-    @pytest.mark.asyncio
     async def test_set_triggermode_exception_handling(self):
         """Test exception handling in set_triggermode."""
         camera = MockBaslerCameraBackend("test_cam")
@@ -1486,51 +1248,7 @@ class TestMockBaslerExceptionHandling:
         await camera.close()
 
     @pytest.mark.asyncio
-    async def test_import_config_exception_handling(self):
-        """Test exception handling in import_config."""
-        camera = MockBaslerCameraBackend("test_cam")
-        await camera.initialize()
-
-        # Test with a file that exists but causes an exception during processing
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            f.write('{"exposure_time": "invalid"}')  # Invalid type
-            config_path = f.name
-
-        try:
-            # This should raise CameraConfigurationError due to ValueError in float conversion
-            with pytest.raises(CameraConfigurationError):
-                await camera.import_config(config_path)
-        finally:
-            os.unlink(config_path)
-
-        # Test generic exception handling
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump({"exposure_time": 30000}, f)
-            config_path = f.name
-
-        try:
-            # Mock open to raise an exception
-            with patch("builtins.open", side_effect=IOError("File error")):
-                with pytest.raises(CameraConfigurationError, match="Failed to import config"):
-                    await camera.import_config(config_path)
-        finally:
-            os.unlink(config_path)
-
-        await camera.close()
-
     @pytest.mark.asyncio
-    async def test_export_config_exception_handling(self):
-        """Test exception handling in export_config."""
-        camera = MockBaslerCameraBackend("test_cam")
-        await camera.initialize()
-
-        # Mock open to raise an exception
-        with patch("builtins.open", side_effect=IOError("File error")):
-            result = await camera.export_config("/nonexistent/path/config.json")
-            assert result is False
-
-        await camera.close()
-
     @pytest.mark.asyncio
     async def test_set_roi_exception_handling(self):
         """Test exception handling in set_ROI."""
