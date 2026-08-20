@@ -465,8 +465,11 @@ class AsyncCamera(Mindtrace):
                 except Exception as exc:
                     self.logger.debug(f"Could not read '{key}' for camera '{self._full_name}': {exc}")
                     continue
-                if value is not None:
-                    config[key] = value
+                if value is None:
+                    continue
+                if isinstance(value, dict) and not value:
+                    continue
+                config[key] = value
         return config
 
     async def _read_config_key(self, key: str, *, read_context: Optional[Dict[str, Any]] = None) -> Any:

@@ -299,6 +299,19 @@ def test_parse_configure_settings_rejects_roi_with_wrong_length():
     assert "roi" in invalid
 
 
+def test_parse_configure_settings_skips_empty_nested_dict_values():
+    normalized, invalid = parse_configure_settings(
+        {
+            "exposure_time": 1000.0,
+            "focus_config": {},
+            "genicam_nodes": {},
+        }
+    )
+
+    assert normalized == {"exposure_time": 1000.0}
+    assert invalid == {}
+
+
 def test_normalize_settings_skips_null_gige_keys_from_legacy_profiles():
     data = {
         "exposure_time": 1000.0,

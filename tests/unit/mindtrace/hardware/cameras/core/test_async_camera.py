@@ -1125,6 +1125,50 @@ async def test_configure_records_partial_genicam_nodes_that_applied():
 
 
 @pytest.mark.asyncio
+async def test_configure_empty_focus_config_is_noop():
+    """Saved profiles with focus_config: {} should round-trip without backend calls."""
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        async def should_not_run(**_settings):
+            raise AssertionError("set_focus_config should not be called for an empty dict")
+
+        cam.backend.set_focus_config = should_not_run  # type: ignore[method-assign]
+
+        result = await cam.configure(focus_config={})
+
+        assert result.success is True
+        assert result.applied == result.total == 0
+        assert result.failures == {}
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_get_configuration_omits_empty_dict_values():
+    """Empty nested configure maps should not be exported for round-trip."""
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+
+        cam.backend.get_focus_config = AsyncMock(return_value={})  # type: ignore[method-assign]
+        cam.backend.apply_genicam_nodes = AsyncMock()  # type: ignore[method-assign]
+        cam.backend.read_configuration_value = AsyncMock(  # type: ignore[method-assign]
+            side_effect=lambda key, _context: {} if key == "genicam_nodes" else None
+        )
+
+        config = await cam.get_configuration()
+
+        assert "focus_config" not in config
+        assert "genicam_nodes" not in config
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_configure_records_partial_focus_config_that_applied():
     manager = AsyncCameraManager(include_mocks=True)
     try:
