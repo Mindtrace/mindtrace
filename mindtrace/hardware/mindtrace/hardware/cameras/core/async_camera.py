@@ -431,10 +431,14 @@ class AsyncCamera(Mindtrace):
         elif key == "focus_config":
             if not isinstance(value, dict):
                 raise CameraConfigurationError("focus_config must be a dict")
+            if not value:
+                return
             await self._backend.set_focus_config(**value)
         elif key == "genicam_nodes":
             if not isinstance(value, dict):
                 raise CameraConfigurationError("genicam_nodes must be a dict")
+            if not value:
+                return
             if not hasattr(self._backend, "apply_genicam_nodes"):
                 raise CameraConfigurationError("genicam_nodes not supported by this backend")
             await self._backend.apply_genicam_nodes(value)
@@ -465,8 +469,11 @@ class AsyncCamera(Mindtrace):
                 except Exception as exc:
                     self.logger.debug(f"Could not read '{key}' for camera '{self._full_name}': {exc}")
                     continue
-                if value is not None:
-                    config[key] = value
+                if value is None:
+                    continue
+                if isinstance(value, dict) and not value:
+                    continue
+                config[key] = value
         return config
 
     async def _read_config_key(self, key: str, *, read_context: Optional[Dict[str, Any]] = None) -> Any:
