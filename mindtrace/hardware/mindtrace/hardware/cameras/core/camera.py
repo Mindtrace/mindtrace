@@ -250,11 +250,11 @@ class Camera(Mindtrace):
         """
         self._submit(self._backend.set_gamma(gamma))
 
-    def get_gamma(self) -> float:
+    def get_gamma(self) -> Optional[float]:
         """Get the current camera gamma.
 
         Returns:
-            The current gamma as a float.
+            The current gamma as a float, or ``None`` when gamma is not supported.
         """
         return self._submit(self._backend.get_gamma())
 

@@ -732,17 +732,17 @@ async def test_async_camera_supports_feature_gamma_false_when_unsupported():
     try:
         name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
         cam = await manager.open(name)
-        original_get_gamma_range = cam._backend.get_gamma_range
+        original_get_gamma_range = cam.backend.get_gamma_range
 
         async def unsupported_gamma_range():
             return None
 
-        cam._backend.get_gamma_range = unsupported_gamma_range  # type: ignore[method-assign]
+        cam.backend.get_gamma_range = unsupported_gamma_range  # type: ignore[method-assign]
 
         assert await cam.get_gamma_range() is None
         assert await cam.supports_feature("gamma") is False
 
-        cam._backend.get_gamma_range = original_get_gamma_range  # type: ignore[method-assign]
+        cam.backend.get_gamma_range = original_get_gamma_range  # type: ignore[method-assign]
     finally:
         await manager.close(None)
 
@@ -931,6 +931,30 @@ async def test_get_configuration_omits_roi_when_backend_cannot_query_it():
 
         assert "roi" not in config
         assert "exposure_time" in config
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_get_configuration_omits_gamma_when_unsupported():
+    """Unsupported optional keys must not be written into exported JSON."""
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+        original_get_gamma_range = cam.backend.get_gamma_range
+
+        async def unsupported_gamma_range():
+            return None
+
+        cam.backend.get_gamma_range = unsupported_gamma_range  # type: ignore[method-assign]
+
+        config = await cam.get_configuration()
+
+        assert "gamma" not in config
+        assert "exposure_time" in config
+
+        cam.backend.get_gamma_range = original_get_gamma_range  # type: ignore[method-assign]
     finally:
         await manager.close(None)
 

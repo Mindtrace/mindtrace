@@ -565,11 +565,11 @@ class AsyncCamera(Mindtrace):
         await self._backend.set_gamma(gamma)
         return True
 
-    async def get_gamma(self) -> float:
+    async def get_gamma(self) -> Optional[float]:
         """Get the current camera gamma.
 
         Returns:
-            The current gamma as a float.
+            The current gamma as a float, or ``None`` when gamma is not supported.
         """
         return await self._backend.get_gamma()
 

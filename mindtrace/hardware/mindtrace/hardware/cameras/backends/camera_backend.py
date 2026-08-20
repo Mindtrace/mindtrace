@@ -365,11 +365,12 @@ class CameraBackend(MindtraceABC):
         self.logger.error(f"set_gamma not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"set_gamma not supported by {self.__class__.__name__}")
 
-    async def get_gamma(self) -> float:
+    async def get_gamma(self) -> Optional[float]:
         """Get the current camera gamma correction value.
 
         Returns:
-            Current gamma value.
+            Current gamma value, or ``None`` when gamma is not implemented or
+            writable on this camera.
         """
         self.logger.error(f"get_gamma not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_gamma not supported by {self.__class__.__name__}")

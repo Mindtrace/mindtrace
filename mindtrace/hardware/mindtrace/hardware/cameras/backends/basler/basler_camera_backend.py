@@ -1508,14 +1508,16 @@ class BaslerCameraBackend(CameraBackend):
         except Exception as e:
             raise HardwareOperationError(f"Failed to set gamma for camera '{self.camera_name}': {str(e)}") from e
 
-    async def get_gamma(self) -> float:
+    async def get_gamma(self) -> Optional[float]:
         """Get current camera gamma.
 
         Returns:
-            Current gamma value, or 1.0 (linear) if the camera has no Gamma node
+            Current gamma value, or ``None`` when gamma is not implemented or
+            writable on this camera.
 
         Raises:
             CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If gamma retrieval fails on a supported camera
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
@@ -1523,12 +1525,13 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
+            if await self.get_gamma_range() is None:
+                return None
+
             return await self._run_blocking(self.camera.Gamma.GetValue, timeout=self._op_timeout_s)
 
         except Exception as e:
-            self.logger.warning(f"Gamma not available for camera '{self.camera_name}': {str(e)}")
-            # Return reasonable default if gamma feature is not available
-            return 1.0  # Linear gamma default
+            raise HardwareOperationError(f"Failed to get gamma for camera '{self.camera_name}': {e}") from e
 
     async def get_gamma_range(self) -> Optional[List[Union[int, float]]]:
         """Get camera gamma range.

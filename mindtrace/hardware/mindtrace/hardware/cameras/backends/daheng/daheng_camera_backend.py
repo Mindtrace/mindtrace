@@ -658,14 +658,22 @@ class DahengCameraBackend(CameraBackend):
         except Exception as e:
             raise CameraConfigurationError(f"Failed to set gain for camera '{self.camera_name}': {e}") from e
 
-    async def get_gamma(self) -> float:
+    async def get_gamma(self) -> Optional[float]:
         """Get current camera gamma value.
 
         Returns:
-            Current gamma value, or 1.0 (linear) if the camera has no Gamma feature
+            Current gamma value, or ``None`` when gamma is not implemented or
+            writable on this camera.
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If gamma retrieval fails on a supported camera
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        if await self.get_gamma_range() is None:
+            return None
 
         try:
 
@@ -674,7 +682,7 @@ class DahengCameraBackend(CameraBackend):
                 gamma = getattr(cam, "Gamma", None)
                 if gamma is not None and gamma.is_implemented():
                     return gamma.get()
-                return 1.0
+                return None
 
             return await self._run_blocking(_get)
         except Exception as e:

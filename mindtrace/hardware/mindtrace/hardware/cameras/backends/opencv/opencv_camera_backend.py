@@ -982,22 +982,31 @@ class OpenCVCameraBackend(CameraBackend):
             self.logger.error(f"Failed to set gamma for camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to set gamma for camera '{self.camera_name}': {str(e)}")
 
-    async def get_gamma(self) -> float:
+    async def get_gamma(self) -> Optional[float]:
         """Get current camera gamma.
 
         Returns:
-            Current gamma value, or 1.0 (linear) if the property is unavailable
+            Current gamma value, or ``None`` when gamma control is not supported.
+
+        Raises:
+            CameraConnectionError: If camera is not initialized or not open
+            HardwareOperationError: If gamma retrieval fails on a supported camera
         """
-        if not self.initialized or not self.cap or not await self._run_blocking(self.cap.isOpened):
-            return 1.0
-        else:
-            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
+        if not self.initialized or self.cap is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+        if not await self._run_blocking(self.cap.isOpened):
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not open")
+
+        assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
+
+        if not await self.is_gamma_control_supported():
+            return None
+
         try:
             gamma = await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAMMA)
             return float(gamma)
         except Exception as e:
-            self.logger.error(f"Failed to get gamma for camera '{self.camera_name}': {str(e)}")
-            return 1.0
+            raise HardwareOperationError(f"Failed to get gamma for camera '{self.camera_name}': {e}") from e
 
     async def set_ROI(self, x: int, y: int, width: int, height: int):
         """Set Region of Interest (ROI).

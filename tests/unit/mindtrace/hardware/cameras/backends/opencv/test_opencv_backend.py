@@ -1547,16 +1547,17 @@ class TestOpenCVCameraBackendGamma:
         await cam.close()
 
     @pytest.mark.asyncio
-    async def test_get_gamma_early_return_not_initialized(self, fake_cv):
-        """Test get_gamma returns linear gamma when camera is not initialized."""
+    async def test_get_gamma_raises_when_not_initialized(self, fake_cv):
+        """Test get_gamma raises when camera is not initialized."""
         cam = OpenCVCameraBackend("0")
         cam.initialized = False
 
-        assert await cam.get_gamma() == 1.0
+        with pytest.raises(CameraConnectionError, match="not initialized"):
+            await cam.get_gamma()
 
     @pytest.mark.asyncio
     async def test_get_gamma_exception(self, fake_cv, monkeypatch):
-        """Test get_gamma exception handling."""
+        """Test get_gamma propagates retrieval failures on supported cameras."""
         cam = OpenCVCameraBackend("0")
         await cam.initialize()
 
@@ -1571,8 +1572,13 @@ class TestOpenCVCameraBackendGamma:
 
         monkeypatch.setattr(cam, "_run_blocking", failing_run_blocking, raising=False)
 
-        # Should return the linear default on exception
-        assert await cam.get_gamma() == 1.0
+        async def gamma_supported():
+            return True
+
+        monkeypatch.setattr(cam, "is_gamma_control_supported", gamma_supported, raising=False)
+
+        with pytest.raises(HardwareOperationError, match="Failed to get gamma"):
+            await cam.get_gamma()
 
         await cam.close()
 

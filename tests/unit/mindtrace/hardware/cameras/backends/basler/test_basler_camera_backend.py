@@ -865,12 +865,12 @@ class TestBaslerCameraBackendConfiguration:
         assert gamma_range == [0.25, 2.0]  # Range from our mock
 
     @pytest.mark.asyncio
-    async def test_get_gamma_without_node_returns_linear_default(self, basler_camera):
-        """Test that a camera without a Gamma node reports linear gamma."""
+    async def test_get_gamma_without_node_returns_none(self, basler_camera):
+        """Test that a camera without a Gamma node reports no gamma value."""
         basler_camera.initialized = True
         basler_camera.camera = MockPylonCameraWithoutGamma()
 
-        assert await basler_camera.get_gamma() == 1.0
+        assert await basler_camera.get_gamma() is None
         assert await basler_camera.get_gamma_range() is None
 
     @pytest.mark.asyncio

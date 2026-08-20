@@ -419,7 +419,7 @@ class TestDahengConfiguration:
         del initialized_daheng.camera.Gamma
 
         assert await initialized_daheng.get_gamma_range() is None
-        assert await initialized_daheng.get_gamma() == 1.0
+        assert await initialized_daheng.get_gamma() is None
 
         with pytest.raises(CameraConfigurationError, match="not implemented"):
             await initialized_daheng.set_gamma(1.2)

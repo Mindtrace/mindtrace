@@ -581,14 +581,16 @@ class MockBaslerCameraBackend(CameraBackend):
         await self._sleep(0.001)
         return [0.25, 2.0]
 
-    async def get_gamma(self) -> float:
+    async def get_gamma(self) -> Optional[float]:
         """Get current camera gamma.
 
         Returns:
-            Current gamma value
+            Current gamma value, or ``None`` when gamma is not supported.
         """
         # Simulate async operation
         await self._sleep(0.001)
+        if await self.get_gamma_range() is None:
+            return None
         return self.gamma
 
     async def get_wb(self) -> str:

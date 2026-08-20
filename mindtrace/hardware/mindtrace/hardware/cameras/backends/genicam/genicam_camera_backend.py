@@ -1410,14 +1410,25 @@ class GenICamCameraBackend(CameraBackend):
         except Exception:
             return None
 
-    async def get_gamma(self) -> float:
-        """Get current camera gamma."""
+    async def get_gamma(self) -> Optional[float]:
+        """Get current camera gamma.
+
+        Returns:
+            Current gamma value, or ``None`` when gamma is not implemented or
+            writable on this camera.
+
+        Raises:
+            HardwareOperationError: If gamma retrieval fails on a supported camera
+        """
+        if await self.get_gamma_range() is None:
+            return None
+
         try:
             node_name = self.vendor_quirks.get("gamma_node_name", "Gamma")
             gamma = await self._get_node_value(node_name, ["Gamma", "GammaRaw"])
             return float(gamma)
-        except Exception:
-            return 1.0  # Default gamma (linear)
+        except Exception as e:
+            raise HardwareOperationError(f"Failed to get gamma for camera '{self.camera_name}': {e}") from e
 
     async def set_gamma(self, gamma: Union[int, float]):
         """Set camera gamma.

@@ -572,11 +572,13 @@ class MockGenICamCameraBackend(CameraBackend):
         """Get simulated camera gamma range."""
         return [0.25, 2.0]
 
-    async def get_gamma(self) -> float:
+    async def get_gamma(self) -> Optional[float]:
         """Get current simulated camera gamma."""
         if not self.initialized:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
 
+        if await self.get_gamma_range() is None:
+            return None
         return self.gamma
 
     async def set_gamma(self, gamma: Union[int, float]):
