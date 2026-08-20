@@ -865,6 +865,30 @@ class TestBaslerCameraBackendConfiguration:
         assert gamma_range == [0.25, 2.0]  # Range from our mock
 
     @pytest.mark.asyncio
+    async def test_get_gamma_range_prepares_gated_gamma(self, basler_camera, monkeypatch):
+        """Gamma range is available after enabling user gamma on gated models."""
+        import mindtrace.hardware.cameras.backends.basler.basler_camera_backend as mod
+
+        basler_camera.initialized = True
+        basler_camera.camera = MockPylonCamera()
+
+        def ro_until_prepared():
+            if basler_camera.camera.gamma_selector == "User" and basler_camera.camera.gamma_enable:
+                return mod.genicam.RW
+            return mod.genicam.RO
+
+        monkeypatch.setattr(
+            basler_camera.camera._gamma_param,
+            "GetAccessMode",
+            ro_until_prepared,
+        )
+
+        gamma_range = await basler_camera.get_gamma_range()
+        assert gamma_range == [0.25, 2.0]
+        assert basler_camera.camera.gamma_selector == "User"
+        assert basler_camera.camera.gamma_enable is True
+
+    @pytest.mark.asyncio
     async def test_get_gamma_without_node_returns_none(self, basler_camera):
         """Test that a camera without a Gamma node reports no gamma value."""
         basler_camera.initialized = True

@@ -1428,6 +1428,13 @@ class BaslerCameraBackend(CameraBackend):
             # Return reasonable defaults if gain feature is not available
             return [1.0, 16.0]  # Common gain range
 
+    def _has_gamma_node(self) -> bool:
+        """Return True when the camera exposes a Gamma GenICam node."""
+        try:
+            return getattr(self.camera, "Gamma", None) is not None
+        except Exception:
+            return False
+
     def _is_gamma_writable(self) -> bool:
         """Check whether the Gamma node exists and is writable.
 
@@ -1548,6 +1555,13 @@ class BaslerCameraBackend(CameraBackend):
 
         try:
             await self._ensure_open()
+
+            if not self._has_gamma_node():
+                return None
+
+            # SFNC 1.x Basler models gate Gamma behind GammaSelector/GammaEnable.
+            # Prepare first so capability queries match set_gamma() behaviour.
+            await self._prepare_gamma_node()
 
             if not self._is_gamma_writable():
                 return None
