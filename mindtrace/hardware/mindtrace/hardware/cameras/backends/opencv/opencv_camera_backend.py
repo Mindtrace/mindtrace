@@ -953,6 +953,7 @@ class OpenCVCameraBackend(CameraBackend):
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
 
+        await self._ensure_open()
         if not await self.is_gamma_control_supported():
             raise CameraConfigurationError(f"Gamma not supported by camera '{self.camera_name}'")
 
@@ -963,13 +964,15 @@ class OpenCVCameraBackend(CameraBackend):
             if gamma < gamma_range[0] or gamma > gamma_range[1]:
                 raise CameraConfigurationError(f"Gamma {gamma} out of range {gamma_range}")
 
-            success = await self._run_blocking(self.cap.set, cv2.CAP_PROP_GAMMA, float(gamma))
+            async with self._io_lock:
+                success = await self._run_blocking(self.cap.set, cv2.CAP_PROP_GAMMA, float(gamma))
             if not success:
                 raise CameraConfigurationError(
                     f"Gamma not supported by camera '{self.camera_name}' (driver rejected CAP_PROP_GAMMA)"
                 )
 
-            actual_gamma = await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAMMA)
+            async with self._io_lock:
+                actual_gamma = await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAMMA)
             if abs(float(actual_gamma) - float(gamma)) > 0.01 * max(1.0, float(gamma)):
                 raise CameraConfigurationError(
                     f"Gamma not supported by camera '{self.camera_name}': requested={gamma}, readback={actual_gamma}"
@@ -1003,7 +1006,9 @@ class OpenCVCameraBackend(CameraBackend):
             return None
 
         try:
-            gamma = await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAMMA)
+            async with self._io_lock:
+                await self._ensure_open()
+                gamma = await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAMMA)
             return float(gamma)
         except Exception as e:
             raise HardwareOperationError(f"Failed to get gamma for camera '{self.camera_name}': {e}") from e
