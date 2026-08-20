@@ -1445,6 +1445,57 @@ class TestOpenCVCameraBackendGamma:
     """Test suite for gamma-related methods."""
 
     @pytest.mark.asyncio
+    async def test_gamma_support_probe_is_cached(self, fake_cv, monkeypatch):
+        """Gamma capability is probed once per open session, not on every API call."""
+        import cv2
+
+        gamma_prop_accesses = {"get": 0, "set": 0}
+        original_get = FakeCap.get
+        original_set = FakeCap.set
+
+        def counting_get(self, prop):
+            if prop == cv2.CAP_PROP_GAMMA:
+                gamma_prop_accesses["get"] += 1
+            return original_get(self, prop)
+
+        def counting_set(self, prop, value):
+            if prop == cv2.CAP_PROP_GAMMA:
+                gamma_prop_accesses["set"] += 1
+            return original_set(self, prop, value)
+
+        monkeypatch.setattr(FakeCap, "get", counting_get)
+        monkeypatch.setattr(FakeCap, "set", counting_set)
+
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+
+        assert await cam.is_gamma_control_supported() is True
+        assert gamma_prop_accesses == {"get": 2, "set": 1}
+
+        gamma_prop_accesses = {"get": 0, "set": 0}
+        assert await cam.get_gamma_range() == [0.25, 2.0]
+        assert await cam.is_gamma_control_supported() is True
+        assert gamma_prop_accesses == {"get": 0, "set": 0}
+
+        gamma_prop_accesses = {"get": 0, "set": 0}
+        await cam.set_gamma(0.8)
+        assert gamma_prop_accesses == {"get": 1, "set": 1}
+
+        gamma_prop_accesses = {"get": 0, "set": 0}
+        assert await cam.get_gamma() == pytest.approx(0.8)
+        assert gamma_prop_accesses == {"get": 1, "set": 0}
+
+        await cam.close()
+
+        cam = OpenCVCameraBackend("0")
+        await cam.initialize()
+        gamma_prop_accesses = {"get": 0, "set": 0}
+        assert await cam.is_gamma_control_supported() is True
+        assert gamma_prop_accesses == {"get": 2, "set": 1}
+
+        await cam.close()
+
+    @pytest.mark.asyncio
     async def test_gamma_set_get_round_trip(self, fake_cv):
         """Test setting and reading back gamma on a driver that honours the property."""
         cam = OpenCVCameraBackend("0")

@@ -164,6 +164,8 @@ class OpenCVCameraBackend(CameraBackend):
 
         # Lock for serializing mutating operations
         self._io_lock: asyncio.Lock = asyncio.Lock()
+        # Cached result of the gamma get/set/readback probe for this open session.
+        self._gamma_control_supported: Optional[bool] = None
 
         self.logger.info(
             f"OpenCV camera '{camera_name}' initialized with configuration: "
@@ -255,6 +257,7 @@ class OpenCVCameraBackend(CameraBackend):
             assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
 
         self.logger.debug(f"Initializing OpenCV camera: {self.camera_name}")
+        self._reset_gamma_control_cache()
 
         try:
             # Create VideoCapture (constructor call is quick in practice)
@@ -300,6 +303,7 @@ class OpenCVCameraBackend(CameraBackend):
                     pass
                 self.cap = None
             self.initialized = False
+            self._reset_gamma_control_cache()
             raise CameraInitializationError(f"Failed to initialize OpenCV camera '{self.camera_name}': {str(e)}")
 
     async def _configure_camera(self):
@@ -692,7 +696,12 @@ class OpenCVCameraBackend(CameraBackend):
                 self.cap = None
 
         self.initialized = False
+        self._reset_gamma_control_cache()
         self.logger.info(f"OpenCV camera '{self.camera_name}' closed successfully")
+
+    def _reset_gamma_control_cache(self) -> None:
+        """Clear cached gamma capability probe state."""
+        self._gamma_control_supported = None
 
     async def is_exposure_control_supported(self) -> bool:
         """
@@ -891,35 +900,46 @@ class OpenCVCameraBackend(CameraBackend):
             return 0.0
 
     async def is_gamma_control_supported(self) -> bool:
-        """Check whether gamma can be read and written for this camera."""
+        """Check whether gamma can be read and written for this camera.
+
+        The get/set/readback probe is expensive on real V4L drivers, so the
+        result is cached for the current open session and cleared on close or
+        re-initialize.
+        """
         if not self.initialized or not self.cap or not await self._run_blocking(self.cap.isOpened):
             return False
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
+
+        if self._gamma_control_supported is not None:
+            return self._gamma_control_supported
+
         try:
             async with self._io_lock:
                 current_gamma = await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAMMA, timeout=2.0)
 
-            if current_gamma is None or float(current_gamma) < 0:
-                return False
+                if current_gamma is None or float(current_gamma) < 0:
+                    self._gamma_control_supported = False
+                    return False
 
-            async with self._io_lock:
                 set_success = await self._run_blocking(
                     self.cap.set, cv2.CAP_PROP_GAMMA, float(current_gamma), timeout=2.0
                 )
 
-            if not set_success:
-                self.logger.debug(
-                    f"Camera '{self.camera_name}' can read gamma but cannot set it - gamma control not supported"
-                )
-                return False
+                if not set_success:
+                    self.logger.debug(
+                        f"Camera '{self.camera_name}' can read gamma but cannot set it - gamma control not supported"
+                    )
+                    self._gamma_control_supported = False
+                    return False
 
-            async with self._io_lock:
                 actual_gamma = await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAMMA, timeout=2.0)
-
-            return self._gamma_values_match(current_gamma, actual_gamma)
+                supported = self._gamma_values_match(current_gamma, actual_gamma)
+                self._gamma_control_supported = supported
+                return supported
         except Exception as e:
             self.logger.debug(f"Gamma control check failed for camera '{self.camera_name}': {e}")
+            self._gamma_control_supported = False
             return False
 
     @staticmethod
