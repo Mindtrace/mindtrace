@@ -1471,8 +1471,8 @@ class BaslerCameraBackend(CameraBackend):
 
         Raises:
             CameraConnectionError: If camera is not initialized
-            CameraConfigurationError: If gamma value is out of range
-            HardwareOperationError: If the camera has no writable Gamma node or setting fails
+            CameraConfigurationError: If gamma is unsupported, out of range, or setting fails
+            HardwareOperationError: If gamma verification fails after a successful SDK write
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
@@ -1482,7 +1482,7 @@ class BaslerCameraBackend(CameraBackend):
 
             gamma_range = await self.get_gamma_range()
             if gamma_range is None:
-                raise HardwareOperationError(f"Gamma not supported on camera '{self.camera_name}'")
+                raise CameraConfigurationError(f"Gamma not supported on camera '{self.camera_name}'")
 
             min_gamma, max_gamma = gamma_range
             if gamma < min_gamma or gamma > max_gamma:

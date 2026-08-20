@@ -879,7 +879,7 @@ class TestBaslerCameraBackendConfiguration:
         basler_camera.initialized = True
         basler_camera.camera = MockPylonCameraWithoutGamma()
 
-        with pytest.raises(HardwareOperationError, match="[Gg]amma"):
+        with pytest.raises(CameraConfigurationError, match="[Gg]amma"):
             await basler_camera.set_gamma(1.5)
 
 
