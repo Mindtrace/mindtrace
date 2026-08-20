@@ -1418,8 +1418,20 @@ class GenICamCameraBackend(CameraBackend):
             raise HardwareOperationError(f"Failed to set gain for camera '{self.camera_name}': {str(e)}")
 
     async def get_gamma_range(self) -> Optional[List[Union[int, float]]]:
-        """Get camera gamma range."""
+        """Get camera gamma range.
+
+        Returns:
+            List containing [min_gamma, max_gamma], or ``None`` when gamma is not
+            implemented or writable on this camera.
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+        """
+        if not self.initialized or self.image_acquirer is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+
         try:
+            await self._ensure_connected()
 
             def _get_gamma_range():
                 node_map = self.image_acquirer.remote_device.node_map
@@ -1429,6 +1441,8 @@ class GenICamCameraBackend(CameraBackend):
                 return [node.min, node.max]
 
             return await self._run_blocking(_get_gamma_range, timeout=self._op_timeout_s)
+        except CameraConnectionError:
+            raise
         except Exception:
             return None
 
@@ -1440,13 +1454,17 @@ class GenICamCameraBackend(CameraBackend):
             writable on this camera.
 
         Raises:
+            CameraConnectionError: If camera is not initialized
             HardwareOperationError: If gamma retrieval fails on a supported camera
         """
-        if await self.get_gamma_range() is None:
-            return None
+        if not self.initialized or self.image_acquirer is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
         try:
             await self._ensure_connected()
+
+            if await self.get_gamma_range() is None:
+                return None
 
             def _get_gamma():
                 node_map = self.image_acquirer.remote_device.node_map
@@ -1458,6 +1476,8 @@ class GenICamCameraBackend(CameraBackend):
                 return float(node.value)
 
             return await self._run_blocking(_get_gamma, timeout=self._op_timeout_s)
+        except CameraConnectionError:
+            raise
         except Exception as e:
             raise HardwareOperationError(f"Failed to get gamma for camera '{self.camera_name}': {e}") from e
 
@@ -1469,10 +1489,16 @@ class GenICamCameraBackend(CameraBackend):
         expose ``Gamma`` directly, which is not an error.
 
         Raises:
+            CameraConnectionError: If camera is not initialized
             CameraConfigurationError: If gamma is unsupported or out of range.
-            HardwareOperationError: If applying gamma to the device fails.
+            HardwareOperationError: If applying gamma to the device fails or verification fails.
         """
+        if not self.initialized or self.image_acquirer is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+
         try:
+            await self._ensure_connected()
+
             gamma_range = await self.get_gamma_range()
             if gamma_range is None:
                 raise CameraConfigurationError(f"Gamma feature is not implemented on camera '{self.camera_name}'")
@@ -1489,8 +1515,6 @@ class GenICamCameraBackend(CameraBackend):
                 except Exception as e:
                     self.logger.debug(f"Could not set '{enable_node}' for camera '{self.camera_name}': {e}")
 
-            await self._ensure_connected()
-
             def _set_gamma():
                 node_map = self.image_acquirer.remote_device.node_map
                 _name, node = self._find_writable_gamma_node(node_map)
@@ -1501,7 +1525,19 @@ class GenICamCameraBackend(CameraBackend):
                 node.value = float(gamma)
 
             await self._run_blocking(_set_gamma, timeout=self._op_timeout_s)
-        except CameraConfigurationError:
+
+            actual_gamma = await self.get_gamma()
+            if actual_gamma is None:
+                raise HardwareOperationError(
+                    f"Gamma verification failed for camera '{self.camera_name}': "
+                    f"requested={gamma}, could not read back gamma value"
+                )
+            if not (abs(actual_gamma - gamma) < 0.01 * max(1.0, float(gamma))):
+                raise HardwareOperationError(
+                    f"Gamma verification failed for camera '{self.camera_name}': "
+                    f"requested={gamma}, actual={actual_gamma}"
+                )
+        except (CameraConnectionError, CameraConfigurationError):
             raise
         except Exception as e:
             raise HardwareOperationError(f"Failed to set gamma for camera '{self.camera_name}': {str(e)}") from e

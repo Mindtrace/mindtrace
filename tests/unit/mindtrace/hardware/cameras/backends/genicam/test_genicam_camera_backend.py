@@ -746,6 +746,25 @@ class TestExposureAndGain:
                 await genicam_backend.set_gamma(1.2)
 
     @pytest.mark.asyncio
+    async def test_set_gamma_verification_failure(self, genicam_backend):
+        """Test readback mismatch after set raises HardwareOperationError like exposure."""
+        with patch.object(genicam_backend, "get_gamma", new=AsyncMock(return_value=999.0)):
+            with pytest.raises(HardwareOperationError, match="verification failed"):
+                await genicam_backend.set_gamma(1.0)
+
+    @pytest.mark.asyncio
+    async def test_gamma_when_not_initialized(self, genicam_backend_uninitialized):
+        """Test gamma methods raise CameraConnectionError when not initialized."""
+        with pytest.raises(CameraConnectionError):
+            await genicam_backend_uninitialized.get_gamma_range()
+
+        with pytest.raises(CameraConnectionError):
+            await genicam_backend_uninitialized.get_gamma()
+
+        with pytest.raises(CameraConnectionError):
+            await genicam_backend_uninitialized.set_gamma(1.0)
+
+    @pytest.mark.asyncio
     async def test_exposure_range_validation(self, genicam_backend):
         """Test exposure range validation."""
         with pytest.raises((CameraConfigurationError, ValueError)):

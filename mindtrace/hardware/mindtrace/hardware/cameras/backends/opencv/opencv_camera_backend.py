@@ -999,17 +999,17 @@ class OpenCVCameraBackend(CameraBackend):
 
             async with self._io_lock:
                 success = await self._run_blocking(self.cap.set, cv2.CAP_PROP_GAMMA, float(gamma))
-            if not success:
-                raise CameraConfigurationError(
-                    f"Gamma not supported by camera '{self.camera_name}' (driver rejected CAP_PROP_GAMMA)"
-                )
+                if not success:
+                    raise CameraConfigurationError(
+                        f"Gamma not supported by camera '{self.camera_name}' (driver rejected CAP_PROP_GAMMA)"
+                    )
 
-            async with self._io_lock:
                 actual_gamma = await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAMMA)
-            if not self._gamma_values_match(gamma, actual_gamma):
-                raise CameraConfigurationError(
-                    f"Gamma not supported by camera '{self.camera_name}': requested={gamma}, readback={actual_gamma}"
-                )
+                if not self._gamma_values_match(gamma, actual_gamma):
+                    raise CameraConfigurationError(
+                        f"Gamma not supported by camera '{self.camera_name}': "
+                        f"requested={gamma}, readback={actual_gamma}"
+                    )
 
             self.logger.debug(f"Gamma set to {gamma} for camera '{self.camera_name}'")
         except CameraConfigurationError:
