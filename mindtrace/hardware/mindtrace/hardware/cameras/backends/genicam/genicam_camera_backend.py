@@ -88,10 +88,19 @@ class GenICamCameraBackend(CameraBackend):
     REQUIRES_THREAD_AFFINITY = True
     nested_merge_config_keys = frozenset({"genicam_nodes", "focus_config"})
 
+    # Harvesters/GenTL node access modes (see GenICam SFNC AccessMode enum).
+    _GENICAM_ACCESS_RO = 3
+    _GENICAM_ACCESS_RW = 4
+
     # Class-level singleton Harvester instance shared across all backend instances
     _shared_harvester: Optional[Harvester] = None
     _harvester_cti_path: Optional[str] = None
     _harvester_lock = None
+
+    @classmethod
+    def _is_node_read_write(cls, access_mode: int) -> bool:
+        """Return True when a GenICam node access mode allows read/write."""
+        return access_mode == cls._GENICAM_ACCESS_RW
 
     def __init__(
         self,
@@ -570,7 +579,7 @@ class GenICamCameraBackend(CameraBackend):
                 # Check access mode (3 = Read Only, 4 = Read/Write)
                 try:
                     access_mode = trigger_mode_node.get_access_mode()
-                    is_writable = access_mode == 4  # 4 = RW (Read/Write)
+                    is_writable = self._is_node_read_write(access_mode)
                 except Exception:
                     # Fallback: assume writable if we can't check
                     is_writable = True
@@ -1399,7 +1408,7 @@ class GenICamCameraBackend(CameraBackend):
                         continue
                     try:
                         access_mode = node.get_access_mode()
-                        if access_mode != 4:  # 4 = RW (Read/Write)
+                        if not GenICamCameraBackend._is_node_read_write(access_mode):
                             continue
                         return [node.min, node.max]
                     except Exception:
@@ -1463,7 +1472,7 @@ class GenICamCameraBackend(CameraBackend):
         except CameraConfigurationError:
             raise
         except Exception as e:
-            raise HardwareOperationError(f"Failed to set gamma for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to set gamma for camera '{self.camera_name}': {str(e)}") from e
 
     async def get_wb(self) -> str:
         """Get current white balance mode using GenICam nodes.
