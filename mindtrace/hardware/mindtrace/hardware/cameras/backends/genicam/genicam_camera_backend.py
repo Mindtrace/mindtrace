@@ -102,6 +102,28 @@ class GenICamCameraBackend(CameraBackend):
         """Return True when a GenICam node access mode allows read/write."""
         return access_mode == cls._GENICAM_ACCESS_RW
 
+    def _gamma_node_names(self) -> tuple[str, ...]:
+        """Return deduplicated gamma node names in vendor-preferred order."""
+        primary = self.vendor_quirks.get("gamma_node_name", "Gamma")
+        names: list[str] = []
+        for name in (primary, "Gamma", "GammaRaw"):
+            if name not in names:
+                names.append(name)
+        return tuple(names)
+
+    def _find_writable_gamma_node(self, node_map) -> tuple[Optional[str], Any]:
+        """Return the first read/write gamma node on ``node_map``, if any."""
+        for name in self._gamma_node_names():
+            node = getattr(node_map, name, None)
+            if node is None:
+                continue
+            try:
+                if self._is_node_read_write(node.get_access_mode()):
+                    return name, node
+            except Exception:
+                continue
+        return None, None
+
     def __init__(
         self,
         camera_name: str,
@@ -1398,22 +1420,13 @@ class GenICamCameraBackend(CameraBackend):
     async def get_gamma_range(self) -> Optional[List[Union[int, float]]]:
         """Get camera gamma range."""
         try:
-            node_name = self.vendor_quirks.get("gamma_node_name", "Gamma")
 
             def _get_gamma_range():
                 node_map = self.image_acquirer.remote_device.node_map
-                for name in (node_name, "Gamma", "GammaRaw"):
-                    node = getattr(node_map, name, None)
-                    if node is None:
-                        continue
-                    try:
-                        access_mode = node.get_access_mode()
-                        if not GenICamCameraBackend._is_node_read_write(access_mode):
-                            continue
-                        return [node.min, node.max]
-                    except Exception:
-                        continue
-                return None
+                _name, node = self._find_writable_gamma_node(node_map)
+                if node is None:
+                    return None
+                return [node.min, node.max]
 
             return await self._run_blocking(_get_gamma_range, timeout=self._op_timeout_s)
         except Exception:
@@ -1433,9 +1446,18 @@ class GenICamCameraBackend(CameraBackend):
             return None
 
         try:
-            node_name = self.vendor_quirks.get("gamma_node_name", "Gamma")
-            gamma = await self._get_node_value(node_name, ["Gamma", "GammaRaw"])
-            return float(gamma)
+            await self._ensure_connected()
+
+            def _get_gamma():
+                node_map = self.image_acquirer.remote_device.node_map
+                _name, node = self._find_writable_gamma_node(node_map)
+                if node is None:
+                    raise HardwareOperationError(
+                        f"Could not access writable gamma node for camera '{self.camera_name}'"
+                    )
+                return float(node.value)
+
+            return await self._run_blocking(_get_gamma, timeout=self._op_timeout_s)
         except Exception as e:
             raise HardwareOperationError(f"Failed to get gamma for camera '{self.camera_name}': {e}") from e
 
@@ -1467,8 +1489,18 @@ class GenICamCameraBackend(CameraBackend):
                 except Exception as e:
                     self.logger.debug(f"Could not set '{enable_node}' for camera '{self.camera_name}': {e}")
 
-            node_name = self.vendor_quirks.get("gamma_node_name", "Gamma")
-            await self._set_node_value(node_name, gamma, ["Gamma", "GammaRaw"])
+            await self._ensure_connected()
+
+            def _set_gamma():
+                node_map = self.image_acquirer.remote_device.node_map
+                _name, node = self._find_writable_gamma_node(node_map)
+                if node is None:
+                    raise HardwareOperationError(
+                        f"Could not access writable gamma node for camera '{self.camera_name}'"
+                    )
+                node.value = float(gamma)
+
+            await self._run_blocking(_set_gamma, timeout=self._op_timeout_s)
         except CameraConfigurationError:
             raise
         except Exception as e:

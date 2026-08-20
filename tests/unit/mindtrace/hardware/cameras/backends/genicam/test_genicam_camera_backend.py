@@ -709,6 +709,24 @@ class TestExposureAndGain:
         assert await backend.get_gamma_range() == [0.1, 3.0]
 
     @pytest.mark.asyncio
+    async def test_set_gamma_uses_gamma_raw_when_gamma_read_only(self, genicam_backend_uninitialized):
+        """get/set must use the same writable node selected for range queries."""
+        node_map = MockNodeMap(
+            Gamma=MockGenICamNode(0.5, writable=False, readable=True, min_val=0.25, max_val=2.0),
+            GammaRaw=MockGenICamNode(1.0, writable=True, readable=True, min_val=0.1, max_val=3.0),
+        )
+        backend = attach_mock_acquirer(genicam_backend_uninitialized, node_map)
+
+        assert await backend.get_gamma() == 1.0
+        assert node_map.Gamma.value == 0.5
+
+        await backend.set_gamma(2.2)
+
+        assert node_map.GammaRaw.value == 2.2
+        assert node_map.Gamma.value == 0.5
+        assert await backend.get_gamma() == 2.2
+
+    @pytest.mark.asyncio
     async def test_set_gamma(self, genicam_backend):
         """Test setting gamma."""
         await genicam_backend.set_gamma(1.5)
