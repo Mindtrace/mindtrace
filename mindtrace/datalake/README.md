@@ -599,6 +599,9 @@ construction fails if fewer than `classes_per_batch` eligible classes remain. Th
 group identities, change dataset splits, integrate with trainer epoch hooks, or shard batches across distributed
 ranks.
 
+See the [grouped class batch sampler sample](../../samples/models/09_grouped_class_batch_sampler.py) for a complete
+standalone example with transforms and returned group metadata.
+
 Detection and instance targets follow torchvision conventions. The detection adapter is source-dataset-generic but
 expects the canonical Mindtrace HF detection schema: embedded image media, absolute pixel-space `xywh` boxes, and
 contiguous category IDs. VOC `difficult` remains available as its own boolean tensor and is also projected into the
