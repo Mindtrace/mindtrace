@@ -346,6 +346,8 @@ def parse_configure_settings(data: Dict[str, Any]) -> tuple[Dict[str, Any], Dict
         value = source[key]
         if value is None and key in _GIGE_PASSTHROUGH_KEYS:
             continue
+        if isinstance(value, dict) and not value:
+            continue
         normalized[key] = value
 
     return normalized, invalid

@@ -2151,8 +2151,6 @@ class BaslerCameraBackend(CameraBackend):
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
-        if not settings:
-            return
         if not self._has_liquid_lens() or not self._is_lens_connected():
             raise CameraConfigurationError(f"Camera '{self.camera_name}' does not have a connected liquid lens")
 

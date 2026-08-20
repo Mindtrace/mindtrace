@@ -3921,12 +3921,6 @@ class TestBaslerCameraBackendFocusConfig:
             await basler_camera_no_lens.get_focus_config()
 
     @pytest.mark.asyncio
-    async def test_set_focus_config_empty_is_noop_without_lens(self, basler_camera_no_lens):
-        """Empty focus_config must not touch liquid-lens checks."""
-        await basler_camera_no_lens.initialize()
-        await basler_camera_no_lens.set_focus_config()
-
-    @pytest.mark.asyncio
     async def test_set_focus_config_accuracy(self, basler_camera_with_lens):
         """Set focus accuracy to Accurate."""
         await basler_camera_with_lens.initialize()

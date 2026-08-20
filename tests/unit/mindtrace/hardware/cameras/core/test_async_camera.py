@@ -1140,7 +1140,7 @@ async def test_configure_empty_focus_config_is_noop():
         result = await cam.configure(focus_config={})
 
         assert result.success is True
-        assert result.applied == result.total == 1
+        assert result.applied == result.total == 0
         assert result.failures == {}
     finally:
         await manager.close(None)

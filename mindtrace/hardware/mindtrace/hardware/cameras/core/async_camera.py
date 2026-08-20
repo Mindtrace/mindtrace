@@ -431,14 +431,10 @@ class AsyncCamera(Mindtrace):
         elif key == "focus_config":
             if not isinstance(value, dict):
                 raise CameraConfigurationError("focus_config must be a dict")
-            if not value:
-                return
             await self._backend.set_focus_config(**value)
         elif key == "genicam_nodes":
             if not isinstance(value, dict):
                 raise CameraConfigurationError("genicam_nodes must be a dict")
-            if not value:
-                return
             if not hasattr(self._backend, "apply_genicam_nodes"):
                 raise CameraConfigurationError("genicam_nodes not supported by this backend")
             await self._backend.apply_genicam_nodes(value)
