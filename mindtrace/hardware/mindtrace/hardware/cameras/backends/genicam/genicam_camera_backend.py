@@ -1400,7 +1400,7 @@ class GenICamCameraBackend(CameraBackend):
                     try:
                         access_mode = node.get_access_mode()
                         if access_mode != 4:  # 4 = RW (Read/Write)
-                            return None
+                            continue
                         return [node.min, node.max]
                     except Exception:
                         continue
