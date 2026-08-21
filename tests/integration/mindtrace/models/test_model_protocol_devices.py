@@ -1,4 +1,4 @@
-"""Accelerator integration coverage for the Model protocol sample."""
+"""Accelerator integration coverage for task-level PyTorch models."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from PIL import Image
 from torch import Tensor, nn
 
 import mindtrace.models as models_module
-from mindtrace.models import TorchModel
+from mindtrace.models import TorchEmbeddingModel, TorchModel
 
 _MODEL_PROTOCOL_SAMPLE = Path(__file__).resolve().parents[4] / "samples" / "models" / "09_model_protocol.py"
 _MPS_AVAILABLE = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
@@ -50,6 +50,11 @@ class _CpuProcessor:
 class _EmptyPostprocessor:
     def __call__(self, outputs: Tensor, **params: Any) -> list[Any]:
         return []
+
+
+class _EmbeddingPostprocessor:
+    def __call__(self, outputs: Tensor, **params: Any) -> list[list[float]]:
+        return outputs.detach().cpu().tolist()
 
 
 class _DeviceCheckingNetwork(nn.Module):
@@ -92,3 +97,18 @@ def test_model_protocol_sample_runs_on_available_accelerators(
     monkeypatch.setattr(Image, "open", lambda path: _FakeImage())
 
     runpy.run_path(str(_MODEL_PROTOCOL_SAMPLE), run_name="__main__")
+
+
+@pytest.mark.parametrize("device", _ACCELERATOR_CASES)
+def test_torch_embedding_model_moves_processed_batches_to_available_accelerators(device: str) -> None:
+    model = TorchEmbeddingModel(
+        network=_DeviceCheckingNetwork(expected_device=device),
+        processor=_CpuProcessor(),
+        postprocessor=_EmbeddingPostprocessor(),
+        device=device,
+    )
+
+    embeddings = model.embed(object())
+
+    assert len(embeddings) == 1
+    assert len(embeddings[0]) == 2

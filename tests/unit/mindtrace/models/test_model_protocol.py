@@ -19,6 +19,7 @@ from mindtrace.models import (
     EmbeddingModel,
     HuggingFaceImageProcessor,
     Model,
+    TorchEmbeddingModel,
     TorchModel,
 )
 
@@ -122,6 +123,111 @@ def _build_test_model() -> TorchModel[Any, dict[str, Any]]:
         processor=_ImageSizeProcessor(),
         postprocessor=_PassthroughPostprocessor(),
     )
+
+
+def _build_test_embedding_model() -> TorchEmbeddingModel[Any, dict[str, Any]]:
+    return TorchEmbeddingModel(
+        network=_RecordingNetwork(),
+        processor=_ImageSizeProcessor(),
+        postprocessor=_PassthroughPostprocessor(),
+    )
+
+
+def test_torch_embedding_model_is_available_from_public_models_namespace() -> None:
+    model = _build_test_embedding_model()
+    embedding_model: EmbeddingModel[Any, dict[str, Any]] = model
+
+    assert models_module.TorchEmbeddingModel is TorchEmbeddingModel
+    assert embedding_model is model
+    assert not hasattr(model, "predict")
+
+
+def test_embedding_forward_delegates_to_wrapped_network() -> None:
+    model = _build_test_embedding_model()
+    inputs = torch.tensor([[2.0, 3.0]])
+
+    outputs = model(inputs)
+
+    assert torch.equal(outputs, torch.tensor([[3.0, 2.0]]))
+
+
+def test_embed_composes_processor_network_and_postprocessor() -> None:
+    model = _build_test_embedding_model()
+    model.train()
+    image = Image.new("RGB", (4, 6))
+
+    result = model.embed(image, normalize=True)
+
+    assert result == {
+        "outputs": [[5.0, 5.0]],
+        "params": {"normalize": True},
+    }
+    assert model.network.training_during_forward is False
+    assert model.network.grad_enabled_during_forward is False
+    assert model.training is True
+    assert model.network.training is True
+
+
+def test_embed_runs_the_complete_pipeline_in_eval_and_inference_mode() -> None:
+    processor = _RecordingProcessor()
+    postprocessor = _RecordingParameterizedPostprocessor()
+    model = TorchEmbeddingModel(
+        network=_RecordingNetwork(),
+        processor=processor,
+        postprocessor=postprocessor,
+    )
+    model.train()
+
+    result = model.embed(torch.ones((1, 2)))
+
+    assert result.shape == (1, 2)
+    assert processor.training_during_call is False
+    assert processor.grad_enabled_during_call is False
+    assert processor.inference_mode_during_call is True
+    assert model.network.training_during_forward is False
+    assert model.network.grad_enabled_during_forward is False
+    assert model.network.inference_mode_during_forward is True
+    assert postprocessor.training_during_call is False
+    assert postprocessor.grad_enabled_during_call is False
+    assert postprocessor.inference_mode_during_call is True
+    assert model.training is True
+    assert processor.training is True
+    assert model.network.training is True
+    assert postprocessor.training is True
+
+
+def test_embed_restores_training_state_after_inference_error() -> None:
+    class RaisingNetwork(nn.Module):
+        def forward(self, inputs: Tensor) -> Tensor:
+            raise RuntimeError("embedding failed")
+
+    model = TorchEmbeddingModel(
+        network=RaisingNetwork(),
+        processor=lambda inputs: inputs,
+        postprocessor=_PassthroughPostprocessor(),
+    )
+    model.train()
+
+    with pytest.raises(RuntimeError, match="embedding failed"):
+        model.embed(torch.ones((1, 2)))
+
+    assert model.training is True
+    assert model.network.training is True
+
+
+def test_embed_rejects_non_tensor_processor_output() -> None:
+    class InvalidProcessor:
+        def __call__(self, inputs: Any) -> list[Any]:
+            return [inputs]
+
+    model = TorchEmbeddingModel(
+        network=nn.Identity(),
+        processor=InvalidProcessor(),
+        postprocessor=_PassthroughPostprocessor(),
+    )
+
+    with pytest.raises(TypeError, match="processor must return torch.Tensor"):
+        model.embed(Image.new("RGB", (1, 1)))
 
 
 def test_forward_delegates_to_wrapped_network() -> None:
