@@ -16,11 +16,16 @@ dependencies = [
     "mindtrace-registry>=0.14.1.dev0",
     "mindtrace-database>=0.14.1.dev0",
     "mindtrace-services>=0.14.1.dev0",
+    "numpy>=1.24.0",
     "Pillow>=10.0.0",
     "tqdm>=4.66.0",
 ]
 
 [project.optional-dependencies]
+import-flowers102 = [
+    "scipy>=1.11.0",
+    "torchvision>=0.15.0",
+]
 export-huggingface = [
     "datasets>=2.19.0",
 ]
@@ -29,7 +34,9 @@ export-all = [
 ]
 
 [project.scripts]
+mindtrace-datalake-import-flowers102 = "mindtrace.datalake.importers.flowers102:main"
 mindtrace-datalake-import-pascal-voc = "mindtrace.datalake.importers.pascal_voc:main"
+mindtrace-datalake-import-penn-fudan = "mindtrace.datalake.importers.penn_fudan:main"
 
 [project.entry-points."mindtrace.benchmark_suites"]
 datalake = "mindtrace.datalake.testing:register_benchmark_suites"

@@ -29,6 +29,7 @@ wandb  = ["wandb>=0.16"]
 
 # Training extras
 train = ["torchvision>=0.15", "optuna>=4.8.0"]
+dataloaders = ["datasets>=2.19.0", "torchvision>=0.15.0"]
 
 # Architecture extras
 timm         = ["timm>=0.9"]
@@ -40,6 +41,7 @@ peft = ["peft>=0.6"]
 
 # Install everything
 all = [
+    "datasets>=2.19.0",
     "mlflow>=2.0",
     "wandb>=0.16",
     "torchvision>=0.15",

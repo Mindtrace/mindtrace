@@ -53,7 +53,12 @@ models-peft = ["mindtrace-models[peft]>=0.14.1.dev0"]
 models-mlflow = ["mindtrace-models[mlflow]>=0.14.1.dev0"]
 models-wandb = ["mindtrace-models[wandb]>=0.14.1.dev0"]
 models-onnx = ["mindtrace-models[onnx]>=0.14.1.dev0"]
+models-dataloaders = ["mindtrace-models[dataloaders]>=0.14.1.dev0"]
 models-all = ["mindtrace-models[all]>=0.14.1.dev0"]
+# Datalake extras
+datalake-import-flowers102 = ["mindtrace-datalake[import-flowers102]>=0.14.1.dev0"]
+datalake-export-huggingface = ["mindtrace-datalake[export-huggingface]>=0.14.1.dev0"]
+datalake-export-all = ["mindtrace-datalake[export-all]>=0.14.1.dev0"]
 
 
 [dependency-groups]
