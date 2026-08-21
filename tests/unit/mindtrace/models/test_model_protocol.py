@@ -20,6 +20,7 @@ from mindtrace.models import (
     HuggingFaceImageProcessor,
     Model,
     TorchEmbeddingModel,
+    TorchInferencePipeline,
     TorchModel,
 )
 
@@ -131,6 +132,89 @@ def _build_test_embedding_model() -> TorchEmbeddingModel[Any, dict[str, Any]]:
         processor=_ImageSizeProcessor(),
         postprocessor=_PassthroughPostprocessor(),
     )
+
+
+def test_torch_inference_pipeline_is_available_from_public_models_namespace() -> None:
+    pipeline = TorchInferencePipeline(
+        network=_RecordingNetwork(),
+        processor=_ImageSizeProcessor(),
+    )
+
+    assert models_module.TorchInferencePipeline is TorchInferencePipeline
+    assert pipeline.network is not None
+
+
+def test_prediction_and_embedding_models_can_share_one_runtime_pipeline() -> None:
+    class TaggedPostprocessor:
+        def __init__(self, capability: str) -> None:
+            self.capability = capability
+
+        def __call__(self, outputs: Tensor, **params: Any) -> dict[str, Any]:
+            return {
+                "capability": self.capability,
+                "outputs": outputs.cpu().tolist(),
+                "params": params,
+            }
+
+    network = _RecordingNetwork()
+    processor = _ImageSizeProcessor()
+    pipeline = TorchInferencePipeline(network=network, processor=processor)
+    prediction_model = TorchModel(
+        pipeline=pipeline,
+        postprocessor=TaggedPostprocessor("prediction"),
+    )
+    embedding_model = TorchEmbeddingModel(
+        pipeline=pipeline,
+        postprocessor=TaggedPostprocessor("embedding"),
+    )
+
+    prediction = prediction_model.predict(Image.new("RGB", (4, 6)), threshold=0.5)
+    embedding = embedding_model.embed(Image.new("RGB", (4, 6)), normalize=True)
+
+    assert prediction_model.pipeline is embedding_model.pipeline is pipeline
+    assert prediction_model.network is embedding_model.network is network
+    assert prediction_model.processor is embedding_model.processor is processor
+    assert prediction == {
+        "capability": "prediction",
+        "outputs": [[5.0, 5.0]],
+        "params": {"threshold": 0.5},
+    }
+    assert embedding == {
+        "capability": "embedding",
+        "outputs": [[5.0, 5.0]],
+        "params": {"normalize": True},
+    }
+    assert not hasattr(prediction_model, "embed")
+    assert not hasattr(embedding_model, "predict")
+
+
+def test_direct_torch_model_construction_exposes_its_created_pipeline() -> None:
+    network = _RecordingNetwork()
+    processor = _ImageSizeProcessor()
+    model = TorchModel(
+        network=network,
+        processor=processor,
+        postprocessor=_PassthroughPostprocessor(),
+    )
+
+    assert isinstance(model.pipeline, TorchInferencePipeline)
+    assert model.network is network
+    assert model.processor is processor
+
+
+def test_shared_pipeline_cannot_be_combined_with_pipeline_components() -> None:
+    pipeline = TorchInferencePipeline(
+        network=_RecordingNetwork(),
+        processor=_ImageSizeProcessor(),
+    )
+
+    with pytest.raises(ValueError, match="pipeline cannot be combined"):
+        TorchModel(
+            network=_RecordingNetwork(),
+            processor=_ImageSizeProcessor(),
+            postprocessor=_PassthroughPostprocessor(),
+            pipeline=pipeline,
+        )
 
 
 def test_torch_embedding_model_is_available_from_public_models_namespace() -> None:

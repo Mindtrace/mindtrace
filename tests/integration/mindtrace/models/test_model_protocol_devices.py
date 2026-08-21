@@ -12,7 +12,7 @@ from PIL import Image
 from torch import Tensor, nn
 
 import mindtrace.models as models_module
-from mindtrace.models import TorchEmbeddingModel, TorchModel
+from mindtrace.models import TorchEmbeddingModel, TorchInferencePipeline, TorchModel
 
 _MODEL_PROTOCOL_SAMPLE = Path(__file__).resolve().parents[4] / "samples" / "models" / "09_model_protocol.py"
 _MPS_AVAILABLE = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
@@ -100,15 +100,26 @@ def test_model_protocol_sample_runs_on_available_accelerators(
 
 
 @pytest.mark.parametrize("device", _ACCELERATOR_CASES)
-def test_torch_embedding_model_moves_processed_batches_to_available_accelerators(device: str) -> None:
-    model = TorchEmbeddingModel(
+def test_shared_pipeline_moves_prediction_and_embedding_batches_to_available_accelerators(device: str) -> None:
+    pipeline = TorchInferencePipeline(
         network=_DeviceCheckingNetwork(expected_device=device),
         processor=_CpuProcessor(),
-        postprocessor=_EmbeddingPostprocessor(),
         device=device,
     )
+    prediction_model = TorchModel(
+        pipeline=pipeline,
+        postprocessor=_EmbeddingPostprocessor(),
+    )
+    embedding_model = TorchEmbeddingModel(
+        pipeline=pipeline,
+        postprocessor=_EmbeddingPostprocessor(),
+    )
 
-    embeddings = model.embed(object())
+    predictions = prediction_model.predict(object())
+    embeddings = embedding_model.embed(object())
 
+    assert prediction_model.pipeline is embedding_model.pipeline is pipeline
+    assert len(predictions) == 1
+    assert len(predictions[0]) == 2
     assert len(embeddings) == 1
     assert len(embeddings[0]) == 2
