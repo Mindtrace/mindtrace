@@ -252,18 +252,54 @@ image = Image.open("tests/resources/hopper.png").convert("RGB")
 predictions = model.predict(image, include_probabilities=True)
 ```
 
-`model.predict(input, **params)` runs the complete task-level pipeline and forwards prediction options to the
-postprocessor. Calling `model(tensor)` invokes standard `nn.Module.forward` behavior and accepts only a preprocessed
-Tensor batch. `HuggingFaceImageProcessor` also accepts floating-point CHW or BCHW tensors, treating them as already
-normalized and adding a batch dimension to CHW input.
+`TorchEmbeddingModel` provides the same processor, network, and postprocessor composition for the independent
+embedding capability:
 
-When loading a state dict saved from the bare network, load it through the child module before prediction:
+```python
+import torch
+import torch.nn.functional as F
+from PIL import Image
+from torch import Tensor, nn
+
+from mindtrace.models import TorchEmbeddingModel
+
+
+class ImageSizeProcessor:
+    def __call__(self, image: Image.Image) -> Tensor:
+        return torch.tensor([[image.width, image.height]], dtype=torch.float32)
+
+
+class NormalizedEmbeddingNetwork(nn.Module):
+    def forward(self, inputs: Tensor) -> Tensor:
+        return F.normalize(inputs, p=2, dim=1)
+
+
+embedding_model = TorchEmbeddingModel(
+    network=NormalizedEmbeddingNetwork(),
+    processor=ImageSizeProcessor(),
+    postprocessor=lambda outputs, **params: outputs.cpu().tolist(),
+    device="auto",
+)
+
+image = Image.open("tests/resources/hopper.png").convert("RGB")
+embeddings = embedding_model.embed(image)
+```
+
+`model.predict(input, **params)` and `embedding_model.embed(input, **params)` run their complete task-level pipelines
+and forward task options to their postprocessors. `TorchModel` exposes only `predict()`, while `TorchEmbeddingModel`
+exposes only `embed()`; a higher-level implementation may compose both capabilities explicitly when needed.
+
+Calling either wrapper with `wrapper(tensor)` invokes standard `nn.Module.forward` behavior and accepts only a
+preprocessed Tensor batch. `HuggingFaceImageProcessor` also accepts floating-point CHW or BCHW tensors, treating them
+as already normalized and adding a batch dimension to CHW input.
+
+When loading a state dict saved from the bare network, load it through the child module before task-level inference:
 
 ```python
 model.network.load_state_dict(network_state_dict)
 ```
 
-Complete `TorchModel` Registry persistence is intentionally outside this API. See
+Complete `TorchModel` and `TorchEmbeddingModel` Registry persistence is intentionally outside this API. See
 [the composite archiver design issue](https://github.com/Mindtrace/mindtrace/issues/544).
 
 See [`samples/models/09_model_protocol.py`](../../samples/models/09_model_protocol.py) for a complete local example.
@@ -580,6 +616,7 @@ from mindtrace.models import (
     # -- Inference --
     EmbeddingModel,                 # Structural task-level embedding protocol
     Model,                          # Structural task-level prediction protocol
+    TorchEmbeddingModel,            # Composable PyTorch embedding pipeline
     TorchModel,                     # Composable processor/network/postprocessor
     HuggingFaceImageProcessor,      # Lazy raw-image and tensor preprocessing
     ClassificationPostprocessor,   # Labelled classification result conversion
