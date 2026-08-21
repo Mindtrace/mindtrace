@@ -36,6 +36,7 @@ from mindtrace.models.inference import (
     ClassificationPostprocessor,
     HuggingFaceImageProcessor,
     TorchEmbeddingModel,
+    TorchInferencePipeline,
     TorchModel,
 )
 from mindtrace.models.protocols import EmbeddingModel, Model
@@ -128,6 +129,7 @@ __all__ = [
     "EmbeddingModel",
     "Model",
     "TorchEmbeddingModel",
+    "TorchInferencePipeline",
     "TorchModel",
     "HuggingFaceImageProcessor",
     "ClassificationPostprocessor",
