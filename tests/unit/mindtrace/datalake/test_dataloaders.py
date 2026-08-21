@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from mindtrace.models.training import GroupedClassBatchSampler
 from mindtrace.models.training import huggingface_dataloaders as dataloaders
 
 
@@ -883,6 +884,30 @@ def test_build_dataloaders_forwards_native_dataloader_kwargs(monkeypatch):
 
     assert loaders["train"].kwargs["sampler"] is sampler
     assert loaders["train"].kwargs["shuffle"] is False
+
+
+def test_build_dataloaders_forwards_grouped_batch_sampler(monkeypatch):
+    payload = _FakeDatasetDict(train=_FakeSplitDataset([{"image": _FakeImage(), "label": 0}]))
+    monkeypatch.setattr(
+        dataloaders,
+        "_require_huggingface_dataloader_dependencies",
+        lambda: _dependency_bundle(payload),
+    )
+    batch_sampler = GroupedClassBatchSampler(
+        [0, 0, 1, 1],
+        ["a", "b", "c", "d"],
+        classes_per_batch=2,
+        samples_per_class=2,
+    )
+
+    loaders = dataloaders.build_dataloaders(
+        "/export",
+        per_split_dataloader_kwargs={"train": {"batch_sampler": batch_sampler}},
+    )
+
+    assert loaders["train"].kwargs["batch_sampler"] is batch_sampler
+    for incompatible in ("batch_size", "shuffle", "sampler", "drop_last"):
+        assert incompatible not in loaders["train"].kwargs
 
 
 def test_semantic_dataset_reads_constants_without_decoding_first_sample(monkeypatch):

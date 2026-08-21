@@ -26,6 +26,7 @@ The training sub-package provides:
 - **Loss Functions**: 9 task-specific losses for classification, detection, segmentation, and composite use
 - **Optimizer Factory**: `build_optimizer` with differential learning rate support
 - **Scheduler Factory**: `build_scheduler` with warmup-cosine, step, plateau, and 1-cycle options
+- **Grouped Sampling**: Class-balanced batches with distinct sample groups per class
 - **Hugging Face Data Adapters**: typed datasets and DataLoaders over exported artifacts
 
 ## Architecture
@@ -36,6 +37,7 @@ training/
 ├── trainer.py               # Trainer class (AMP, DDP, grad accum)
 ├── callbacks.py             # Callback base + 6 built-in callbacks
 ├── optimizers.py            # build_optimizer, build_scheduler, WarmupCosineScheduler
+├── samplers.py              # GroupedClassBatchSampler
 ├── huggingface_dataloaders.py # Exported-artifact datasets and DataLoaders
 └── losses/
     ├── __init__.py          # All loss exports
@@ -354,6 +356,9 @@ from mindtrace.models.training import (
     build_scheduler,            # name -> LRScheduler
 
     # Datalake
+    GroupedClassBatchSampler,    # balanced classes with distinct groups
+    build_datasets,              # exported artifact -> split datasets
+    build_dataloaders,           # exported artifact -> split DataLoaders
 )
 
 from mindtrace.models.training.losses import (

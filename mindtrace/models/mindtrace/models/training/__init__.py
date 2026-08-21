@@ -23,6 +23,11 @@ Optimizers & Schedulers
   differential learning rates (``backbone_lr_multiplier``).
 - ``build_scheduler``: Factory for named PyTorch LR schedulers.
 
+Samplers
+--------
+- ``GroupedClassBatchSampler``: Builds class-balanced batches from distinct
+  sample groups.
+
 Hugging Face Data Adapters
 --------------------------
 - Native Hugging Face datasets with PyTorch transforms and DataLoader builders.
@@ -44,6 +49,7 @@ from mindtrace.models.training.huggingface_dataloaders import (
     build_datasets,
 )
 from mindtrace.models.training.optimizers import build_optimizer, build_scheduler
+from mindtrace.models.training.samplers import GroupedClassBatchSampler
 from mindtrace.models.training.trainer import Trainer
 
 __all__ = [
@@ -62,4 +68,5 @@ __all__ = [
     "build_scheduler",
     "build_datasets",
     "build_dataloaders",
+    "GroupedClassBatchSampler",
 ]

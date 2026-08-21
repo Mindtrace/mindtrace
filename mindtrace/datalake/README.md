@@ -559,6 +559,49 @@ loaders = build_dataloaders(
 Requested keys must exist in the saved Hugging Face schema. They are read directly from the typed fields without
 reparsing `metadata_json`.
 
+### Grouped class batches
+
+Use `GroupedClassBatchSampler` when a label-based metric-learning batch needs multiple classes and multiple
+distinct groups per class. The sampler is dataset-agnostic: callers define the group identity from typed exported
+columns and pass the resulting batch sampler through the existing per-split DataLoader options.
+
+```python
+from datasets import load_from_disk
+
+from mindtrace.models.training import GroupedClassBatchSampler, build_dataloaders
+
+export_path = export_root / "selected-classification"
+train = load_from_disk(str(export_path))["train"]
+group_ids = list(zip(train["subject_id"], train["session_id"], strict=True))
+batch_sampler = GroupedClassBatchSampler(
+    train["label"],
+    group_ids,
+    classes_per_batch=4,
+    samples_per_class=2,
+    seed=42,
+)
+train_loader = build_dataloaders(
+    export_path,
+    splits=("train",),
+    per_split_dataloader_kwargs={"train": {"batch_sampler": batch_sampler}},
+)["train"]
+
+for epoch in range(10):
+    batch_sampler.set_epoch(epoch)
+    for images, targets in train_loader:
+        # Compute a label-based metric-learning loss.
+        ...
+```
+
+Each class contributes `samples_per_class` observations from distinct groups within a batch. Classes, groups, and
+observations may be selected again in later batches. Classes without enough distinct groups are ineligible; sampler
+construction fails if fewer than `classes_per_batch` eligible classes remain. The initial sampler does not derive
+group identities, change dataset splits, integrate with trainer epoch hooks, or shard batches across distributed
+ranks.
+
+See the [grouped class batch sampler sample](../../samples/models/09_grouped_class_batch_sampler.py) for a complete
+standalone example with transforms and returned group metadata.
+
 Detection and instance targets follow torchvision conventions. The detection adapter is source-dataset-generic but
 expects the canonical Mindtrace HF detection schema: embedded image media, absolute pixel-space `xywh` boxes, and
 contiguous category IDs. VOC `difficult` remains available as its own boolean tensor and is also projected into the
