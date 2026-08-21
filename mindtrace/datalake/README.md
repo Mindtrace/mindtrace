@@ -411,6 +411,35 @@ with Datalake.create(
 The exports embed media for relocation, preserve ordered class mappings and source lineage, and normalize task
 records into stable HF schemas.
 
+For a DatasetVersion with multiple logical classification annotations, select one field by its exact annotation
+attributes. When the selected annotations do not have label IDs, provide an explicit class order. Required top-level
+row metadata can be copied into typed fields in the same export pass:
+
+```python
+datalake.export_dataset_version_to_format(
+    "multi-field-classification",
+    "1.0.0",
+    format="huggingface",
+    destination=export_root / "selected-classification",
+    include_media=True,
+    exporter_options={
+        "task": "classification",
+        "annotation_attributes": {"field": "primary_target"},
+        "class_names": ["negative", "positive"],
+        "metadata_keys": {
+            "subject_id": "string",
+            "group_id": "string",
+        },
+    },
+)
+```
+
+The attribute mapping is matched exactly against classification records, and every item must have exactly one
+match. Metadata keys refer to required, top-level Datum metadata; the key name is preserved in the Hugging Face
+artifact. Supported scalar dtypes are `string`, `bool`, signed and unsigned integer widths from 8 through 64 bits,
+and `float16`, `float32`, and `float64`. The resolved selector, class mapping, and metadata-key types are recorded in
+`mindtrace_metadata.json`. Existing exports without these options are unchanged.
+
 #### Build all associated Datasets and DataLoaders
 
 ```python
@@ -511,7 +540,24 @@ training-facing `(images, targets)` batch structure below:
 - Instance segmentation: target mappings containing `boxes`, `labels`, `masks`, `area`, and `iscrowd`.
 
 Pass `return_metadata=True` to include a separate `metadata` mapping in dataset samples and a third metadata
-column in DataLoader batches.
+column in DataLoader batches. By default that mapping contains `asset_id`. Pass `metadata_keys=(...)` to add typed
+top-level fields that were selected during export:
+
+```python
+datasets = build_datasets(
+    export_root / "selected-classification",
+    return_metadata=True,
+    metadata_keys=("subject_id", "group_id"),
+)
+loaders = build_dataloaders(
+    export_root / "selected-classification",
+    return_metadata=True,
+    metadata_keys=("subject_id", "group_id"),
+)
+```
+
+Requested keys must exist in the saved Hugging Face schema. They are read directly from the typed fields without
+reparsing `metadata_json`.
 
 Detection and instance targets follow torchvision conventions. The detection adapter is source-dataset-generic but
 expects the canonical Mindtrace HF detection schema: embedded image media, absolute pixel-space `xywh` boxes, and

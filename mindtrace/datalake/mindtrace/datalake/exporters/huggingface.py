@@ -3,29 +3,117 @@ from __future__ import annotations
 import importlib
 import io
 import json
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from .base import prepare_export_destination, write_export_file
 from .types import ExportableDataset, ExportResult
 
-
-def _configured_class_names(dataset: ExportableDataset, task: str) -> list[str] | None:
-    configured = dataset.metadata.get(f"{task}_class_names") or dataset.metadata.get("class_names")
-    if configured:
-        return [str(name) for name in configured]
-    return None
+_INTEGER_DTYPES = {"int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"}
+_FLOAT_DTYPES = {"float16", "float32", "float64"}
+_METADATA_DTYPES = {"string", "bool", *_INTEGER_DTYPES, *_FLOAT_DTYPES}
 
 
-def _classification_class_names(dataset: ExportableDataset) -> list[str]:
-    configured = _configured_class_names(dataset, "classification")
+def _configured_class_names(
+    dataset: ExportableDataset,
+    task: str,
+    options: Mapping[str, Any] | None = None,
+) -> list[str] | None:
+    configured = None
+    if options is not None:
+        configured = options.get(f"{task}_class_names") or options.get("class_names")
+    configured = configured or dataset.metadata.get(f"{task}_class_names") or dataset.metadata.get("class_names")
+    if configured is None:
+        return None
+    if isinstance(configured, (str, bytes)) or not isinstance(configured, Sequence):
+        raise ValueError("Classification class_names must be an ordered sequence of label names.")
+    class_names = [str(name) for name in configured]
+    if not class_names:
+        raise ValueError("Classification class_names cannot be empty.")
+    if len(set(class_names)) != len(class_names):
+        raise ValueError("Classification class_names must not contain duplicate label names.")
+    return class_names
+
+
+def _annotation_attributes(options: Mapping[str, Any] | None) -> dict[str, Any]:
+    configured = (options or {}).get("annotation_attributes")
+    if configured is None:
+        return {}
+    if not isinstance(configured, Mapping) or any(not isinstance(key, str) or not key for key in configured):
+        raise ValueError("annotation_attributes must be a mapping with non-empty string keys.")
+    return dict(configured)
+
+
+def _metadata_keys(options: Mapping[str, Any] | None) -> dict[str, str]:
+    configured = (options or {}).get("metadata_keys")
+    if configured is None:
+        return {}
+    if not isinstance(configured, Mapping):
+        raise ValueError("metadata_keys must map top-level row metadata keys to Hugging Face scalar dtypes.")
+    metadata_keys: dict[str, str] = {}
+    for key, dtype in configured.items():
+        if not isinstance(key, str) or not key:
+            raise ValueError("metadata_keys must contain non-empty string keys.")
+        if not isinstance(dtype, str) or dtype not in _METADATA_DTYPES:
+            raise ValueError(
+                f"metadata_keys[{key!r}] must use a supported scalar dtype; found {dtype!r}. "
+                f"Supported dtypes: {sorted(_METADATA_DTYPES)}."
+            )
+        metadata_keys[key] = dtype
+    return metadata_keys
+
+
+def _annotation_matches_attributes(annotation: Any, attributes: Mapping[str, Any]) -> bool:
+    return annotation.kind == "classification" and all(
+        (annotation.attributes or {}).get(key) == value for key, value in attributes.items()
+    )
+
+
+def _metadata_value_matches_dtype(value: Any, dtype: str) -> bool:
+    if dtype == "string":
+        return isinstance(value, str)
+    if dtype == "bool":
+        return isinstance(value, bool)
+    if dtype in _INTEGER_DTYPES:
+        return isinstance(value, int) and not isinstance(value, bool)
+    if dtype in _FLOAT_DTYPES:
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    return False
+
+
+def _project_metadata_keys(item: Any, metadata_keys: Mapping[str, str]) -> dict[str, Any]:
+    projected: dict[str, Any] = {}
+    for key, dtype in metadata_keys.items():
+        if key not in item.metadata or item.metadata[key] is None:
+            raise ValueError(
+                f"Hugging Face export requires row metadata key {key!r}; asset {item.asset.asset_id!r} is missing it."
+            )
+        value = item.metadata[key]
+        if not _metadata_value_matches_dtype(value, dtype):
+            raise ValueError(
+                f"Hugging Face export metadata key {key!r} on asset {item.asset.asset_id!r} "
+                f"must match dtype {dtype!r}; found {type(value).__name__}."
+            )
+        projected[key] = value
+    return projected
+
+
+def _classification_class_names(
+    dataset: ExportableDataset,
+    *,
+    options: Mapping[str, Any] | None = None,
+    annotation_attributes: Mapping[str, Any] | None = None,
+) -> list[str]:
+    configured = _configured_class_names(dataset, "classification", options)
     if configured:
         return configured
 
+    selected_attributes = annotation_attributes or {}
     labels_by_id: dict[int, str] = {}
     for item in dataset.items:
         for annotation in item.annotations:
-            if annotation.kind != "classification" or annotation.label_id is None:
+            if not _annotation_matches_attributes(annotation, selected_attributes) or annotation.label_id is None:
                 continue
             previous = labels_by_id.setdefault(annotation.label_id, annotation.label)
             if previous != annotation.label:
@@ -33,7 +121,7 @@ def _classification_class_names(dataset: ExportableDataset) -> list[str]:
                     f"Classification label id {annotation.label_id} maps to both {previous!r} and {annotation.label!r}."
                 )
     if not labels_by_id:
-        raise ValueError("Classification export requires annotation label IDs or dataset metadata class_names.")
+        raise ValueError("Classification export requires annotation label IDs or explicit exporter option class_names.")
     expected_ids = list(range(len(labels_by_id)))
     if sorted(labels_by_id) != expected_ids:
         raise ValueError(
@@ -55,36 +143,42 @@ def _detection_class_names(dataset: ExportableDataset) -> list[str]:
     return sorted(labels)
 
 
-def _classification_annotation(item) -> Any:
-    annotations = [annotation for annotation in item.annotations if annotation.kind == "classification"]
+def _classification_annotation(item: Any, annotation_attributes: Mapping[str, Any] | None = None) -> Any:
+    selected_attributes = annotation_attributes or {}
+    annotations = [
+        annotation for annotation in item.annotations if _annotation_matches_attributes(annotation, selected_attributes)
+    ]
     if len(annotations) != 1:
+        selector = f" matching attributes {dict(selected_attributes)!r}" if selected_attributes else ""
         raise ValueError(
-            "Single-label classification export requires exactly one classification annotation per image; "
+            f"Single-label classification export requires exactly one classification annotation{selector} per image; "
             f"asset {item.asset.asset_id!r} has {len(annotations)}."
         )
-    annotation = annotations[0]
-    if annotation.label_id is None:
-        raise ValueError(
-            f"Classification annotation {annotation.annotation_id!r} must define a contiguous zero-based label_id."
-        )
-    return annotation
+    return annotations[0]
 
 
-def _single_label_classification_features(datasets_module: Any, class_names: list[str]):
-    return datasets_module.Features(
-        {
-            "image": datasets_module.Image(),
-            "asset_id": datasets_module.Value("string"),
-            "label": datasets_module.ClassLabel(names=class_names),
-            "label_name": datasets_module.Value("string"),
-            "split": datasets_module.Value("string"),
-            "source_image_asset_id": datasets_module.Value("string"),
-            "source_annotation_id": datasets_module.Value("string"),
-            "source_bbox": datasets_module.Sequence(datasets_module.Value("float32"), length=4),
-            "metadata_json": datasets_module.Value("string"),
-            "asset_metadata_json": datasets_module.Value("string"),
-        }
-    )
+def _single_label_classification_features(
+    datasets_module: Any,
+    class_names: list[str],
+    metadata_keys: Mapping[str, str] | None = None,
+):
+    fields = {
+        "image": datasets_module.Image(),
+        "asset_id": datasets_module.Value("string"),
+        "label": datasets_module.ClassLabel(names=class_names),
+        "label_name": datasets_module.Value("string"),
+        "split": datasets_module.Value("string"),
+        "source_image_asset_id": datasets_module.Value("string"),
+        "source_annotation_id": datasets_module.Value("string"),
+        "source_bbox": datasets_module.Sequence(datasets_module.Value("float32"), length=4),
+        "metadata_json": datasets_module.Value("string"),
+        "asset_metadata_json": datasets_module.Value("string"),
+    }
+    collisions = sorted(set(metadata_keys or {}) & set(fields))
+    if collisions:
+        raise ValueError(f"metadata_keys collide with reserved Hugging Face fields: {collisions}.")
+    fields.update({key: datasets_module.Value(dtype) for key, dtype in (metadata_keys or {}).items()})
+    return datasets_module.Features(fields)
 
 
 def _multi_label_classification_features(datasets_module: Any, class_names: list[str]):
@@ -235,40 +329,64 @@ def _export_single_label_classification_dataset(
     *,
     destination: Path,
     include_media: bool,
+    options: Mapping[str, Any] | None = None,
 ) -> ExportResult:
-    class_names = _classification_class_names(dataset)
-    features = _single_label_classification_features(datasets_module, class_names)
+    selected_attributes = _annotation_attributes(options)
+    selected_metadata_keys = _metadata_keys(options)
+    class_names = _classification_class_names(
+        dataset,
+        options=options,
+        annotation_attributes=selected_attributes,
+    )
+    class_ids = {name: label_id for label_id, name in enumerate(class_names)}
+    features = _single_label_classification_features(datasets_module, class_names, selected_metadata_keys)
     rows_by_split: dict[str, list[dict[str, Any]]] = {}
 
     for item in dataset.items:
-        annotation = _classification_annotation(item)
-        if not 0 <= annotation.label_id < len(class_names):
+        annotation = _classification_annotation(item, selected_attributes)
+        if annotation.label not in class_ids:
             raise ValueError(
-                f"Classification label id {annotation.label_id} is outside the exported class range "
-                f"0..{len(class_names) - 1}."
+                f"Classification annotation {annotation.annotation_id!r} on asset {item.asset.asset_id!r} "
+                f"uses label {annotation.label!r}, which is not present in class_names."
             )
-        expected_label = class_names[annotation.label_id]
-        if annotation.label != expected_label:
+        label_id = class_ids[annotation.label]
+        if annotation.label_id is not None and annotation.label_id != label_id:
             raise ValueError(
-                f"Classification label id {annotation.label_id} maps to {expected_label!r}, "
-                f"but annotation {annotation.annotation_id!r} uses {annotation.label!r}."
+                f"Classification annotation {annotation.annotation_id!r} maps label {annotation.label!r} "
+                f"to configured id {label_id}, but the annotation uses label_id {annotation.label_id}."
             )
         split_name = item.split or "default"
         image = _embedded_image(item, include_media=include_media, task="classification")
-        rows_by_split.setdefault(split_name, []).append(
-            {
-                "image": image,
-                "asset_id": item.asset.asset_id,
-                "label": annotation.label_id,
-                "label_name": annotation.label,
-                "split": item.split or "",
-                "source_image_asset_id": item.asset.asset_id,
-                "source_annotation_id": annotation.annotation_id,
-                "source_bbox": None,
-                "metadata_json": json.dumps(item.metadata or {}, sort_keys=True, default=str),
-                "asset_metadata_json": json.dumps(item.asset.metadata or {}, sort_keys=True, default=str),
-            }
-        )
+        row = {
+            "image": image,
+            "asset_id": item.asset.asset_id,
+            "label": label_id,
+            "label_name": annotation.label,
+            "split": item.split or "",
+            "source_image_asset_id": item.asset.asset_id,
+            "source_annotation_id": annotation.annotation_id,
+            "source_bbox": None,
+            "metadata_json": json.dumps(item.metadata or {}, sort_keys=True, default=str),
+            "asset_metadata_json": json.dumps(item.asset.metadata or {}, sort_keys=True, default=str),
+        }
+        row.update(_project_metadata_keys(item, selected_metadata_keys))
+        rows_by_split.setdefault(split_name, []).append(row)
+
+    requested_provenance = bool(
+        selected_attributes
+        or selected_metadata_keys
+        or (options or {}).get("class_names")
+        or (options or {}).get("classification_class_names")
+    )
+    artifact_metadata = None
+    if requested_provenance:
+        artifact_metadata = {
+            "task": "classification",
+            "annotation_attributes": selected_attributes,
+            "class_names": class_names,
+            "label_to_id": class_ids,
+            "metadata_keys": selected_metadata_keys,
+        }
 
     return _save_huggingface_rows(
         datasets_module,
@@ -278,6 +396,7 @@ def _export_single_label_classification_dataset(
         features=features,
         asset_count=dataset.asset_count,
         annotation_count=dataset.asset_count,
+        artifact_metadata=artifact_metadata,
     )
 
 
@@ -723,6 +842,7 @@ def export_dataset_as_huggingface(
                 dataset,
                 destination=destination_path,
                 include_media=include_media,
+                options=options,
             )
         if classification_type == "multi_label":
             if classification_source != "annotations":
