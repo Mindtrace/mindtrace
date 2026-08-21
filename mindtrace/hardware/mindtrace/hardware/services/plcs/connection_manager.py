@@ -93,7 +93,6 @@ class PLCManagerConnectionManager(ConnectionManager):
         connection_timeout: Optional[float] = None,
         read_timeout: Optional[float] = None,
         write_timeout: Optional[float] = None,
-        retry_count: Optional[int] = None,
         retry_delay: Optional[float] = None,
     ) -> bool:
         """Connect to a PLC.
@@ -106,7 +105,6 @@ class PLCManagerConnectionManager(ConnectionManager):
             connection_timeout: Connection timeout in seconds
             read_timeout: Tag read timeout in seconds
             write_timeout: Tag write timeout in seconds
-            retry_count: Number of retry attempts
             retry_delay: Delay between retries in seconds
 
         Returns:
@@ -120,7 +118,6 @@ class PLCManagerConnectionManager(ConnectionManager):
             connection_timeout=connection_timeout,
             read_timeout=read_timeout,
             write_timeout=write_timeout,
-            retry_count=retry_count,
             retry_delay=retry_delay,
         )
         response = await self.post("/plcs/connect", request.model_dump())

@@ -22,7 +22,7 @@ Exception Hierarchy:
     │   ├── PLCConnectionError
     │   ├── PLCInitializationError
     │   ├── PLCCommunicationError
-    │   ├── PLCTimeoutError
+    │   │   └── PLCTimeoutError
     │   ├── PLCConfigurationError
     │   └── PLCTagError (tag-specific base)
     │       ├── PLCTagNotFoundError
@@ -172,8 +172,10 @@ class PLCTagWriteError(PLCTagError):
     pass
 
 
-class PLCTimeoutError(PLCError):
-    """Raised when PLC operation times out."""
+class PLCTimeoutError(PLCCommunicationError):
+    """The exchange outlived its timeout knob: communication-class (the channel
+    closes and reopens at the next call), distinguishable for callers that
+    want to treat slowness differently from breakage."""
 
     pass
 
