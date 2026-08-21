@@ -1,4 +1,4 @@
-"""Composable PyTorch model with task-level prediction behavior."""
+"""Composable PyTorch models with task-level inference behavior."""
 
 from __future__ import annotations
 
@@ -11,20 +11,18 @@ from torch import Tensor, nn
 
 InputT = TypeVar("InputT", contravariant=True)
 OutputT = TypeVar("OutputT", covariant=True)
+EmbeddingT = TypeVar("EmbeddingT", covariant=True)
+ResultT = TypeVar("ResultT", covariant=True)
 
 
-class TorchModel(nn.Module, Generic[InputT, OutputT]):
-    """Compose preprocessing, a PyTorch network, and postprocessing.
-
-    ``forward`` preserves normal ``nn.Module`` tensor semantics, while
-    ``predict`` provides the higher-level Mindtrace model contract.
-    """
+class _TorchInferencePipeline(nn.Module, Generic[InputT, ResultT]):
+    """Share tensor and task-level execution mechanics across PyTorch models."""
 
     def __init__(
         self,
         network: nn.Module,
         processor: Callable[[InputT], Tensor],
-        postprocessor: Callable[..., OutputT],
+        postprocessor: Callable[..., ResultT],
         *,
         device: str | torch.device | None = None,
     ) -> None:
@@ -45,17 +43,14 @@ class TorchModel(nn.Module, Generic[InputT, OutputT]):
     def forward(self, inputs: Tensor) -> Any:
         """Run the wrapped network on a preprocessed tensor batch.
 
-        Use :meth:`predict` for task-level inputs that still require processing.
+        Use the public task-level method for inputs that still require
+        processing.
         """
         if not isinstance(inputs, Tensor):
             raise TypeError(f"forward inputs must be torch.Tensor, got {type(inputs).__name__}")
         return self.network(inputs)
 
-    def predict(self, inputs: InputT, **params: Any) -> OutputT:
-        """Run the full prediction pipeline.
-
-        ``params`` are task-specific options forwarded to the postprocessor.
-        """
+    def _run(self, inputs: InputT, **params: Any) -> ResultT:
         training_states = [(module, module.training) for module in self.modules()]
 
         self.eval()
@@ -79,4 +74,34 @@ class TorchModel(nn.Module, Generic[InputT, OutputT]):
         return next(network_state, self._device_anchor).device
 
 
-__all__ = ["TorchModel"]
+class TorchModel(_TorchInferencePipeline[InputT, OutputT]):
+    """Compose a PyTorch network into a task-level prediction model.
+
+    ``forward`` preserves normal ``nn.Module`` tensor semantics, while
+    ``predict`` provides the higher-level Mindtrace model contract.
+    """
+
+    def predict(self, inputs: InputT, **params: Any) -> OutputT:
+        """Run the full prediction pipeline.
+
+        ``params`` are task-specific options forwarded to the postprocessor.
+        """
+        return self._run(inputs, **params)
+
+
+class TorchEmbeddingModel(_TorchInferencePipeline[InputT, EmbeddingT]):
+    """Compose a PyTorch network into a task-level embedding model.
+
+    ``forward`` preserves normal ``nn.Module`` tensor semantics, while
+    ``embed`` provides the higher-level Mindtrace embedding model contract.
+    """
+
+    def embed(self, inputs: InputT, **params: Any) -> EmbeddingT:
+        """Run the full embedding pipeline.
+
+        ``params`` are task-specific options forwarded to the postprocessor.
+        """
+        return self._run(inputs, **params)
+
+
+__all__ = ["TorchEmbeddingModel", "TorchModel"]
