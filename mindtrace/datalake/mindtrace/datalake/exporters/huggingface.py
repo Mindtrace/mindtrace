@@ -837,7 +837,8 @@ def _append_staged_rows(path: Path, rows: list[dict[str, Any]]) -> None:
             stream.write("\n")
 
 
-def _iter_staged_rows(path: Path):
+def _iter_staged_rows(path: str | Path):
+    path = Path(path)
     with path.open(encoding="utf-8") as stream:
         for line in stream:
             row = json.loads(line)
@@ -938,6 +939,7 @@ async def export_dataset_version_as_huggingface_streaming(
     asset_count = 0
     warnings: list[str] = []
     split_manifests: dict[str, Path] = {}
+    split_counts: dict[str, int] = defaultdict(int)
     semaphore = asyncio.Semaphore(_STREAMING_MEDIA_CONCURRENCY)
 
     async def stage_row(row: Any, ordinal: int):
@@ -993,6 +995,7 @@ async def export_dataset_version_as_huggingface_streaming(
                     staged_manifests_path / f"split-{len(split_manifests):04d}.jsonl",
                 )
                 await asyncio.to_thread(_append_staged_rows, manifest_path, rows)
+                split_counts[split_name] += len(rows)
 
             completed += len(page.items)
             _report_progress(progress_callback, stage="staging", completed=completed, total=total)
@@ -1009,21 +1012,18 @@ async def export_dataset_version_as_huggingface_streaming(
         finalized = 0
         dataset_payload = {}
         for split_name, manifest_path in split_manifests.items():
-
-            def generate_rows(path: Path = manifest_path):
-                nonlocal finalized
-                for exported_row in _iter_staged_rows(path):
-                    yield exported_row
-                    finalized += 1
-                    if finalized % page_size == 0 or finalized == asset_count:
-                        _report_progress(
-                            progress_callback,
-                            stage="finalizing",
-                            completed=finalized,
-                            total=asset_count,
-                        )
-
-            dataset_payload[split_name] = datasets_module.Dataset.from_generator(generate_rows, features=features)
+            dataset_payload[split_name] = datasets_module.Dataset.from_generator(
+                _iter_staged_rows,
+                features=features,
+                gen_kwargs={"path": str(manifest_path)},
+            )
+            finalized += split_counts[split_name]
+            _report_progress(
+                progress_callback,
+                stage="finalizing",
+                completed=finalized,
+                total=asset_count,
+            )
 
         hf_dataset = (
             dataset_payload["default"]
