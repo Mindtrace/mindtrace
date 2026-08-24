@@ -20,7 +20,7 @@ from .base import (
     prepare_export_destination,
     write_export_file,
 )
-from .types import ExportableDataset, ExportProgress, ExportResult, ExportableItem
+from .types import ExportableDataset, ExportableItem, ExportProgress, ExportResult
 
 _INTEGER_DTYPES = {"int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"}
 _FLOAT_DTYPES = {"float16", "float32", "float64"}
@@ -926,9 +926,7 @@ async def export_dataset_version_as_huggingface_streaming(
     if destination_path.exists() and not overwrite:
         raise FileExistsError(f"Export destination already exists: {destination_path}")
     destination_path.parent.mkdir(parents=True, exist_ok=True)
-    work_path = Path(
-        tempfile.mkdtemp(prefix=f".{destination_path.name}.streaming-", dir=str(destination_path.parent))
-    )
+    work_path = Path(tempfile.mkdtemp(prefix=f".{destination_path.name}.streaming-", dir=str(destination_path.parent)))
     artifact_path = work_path / "artifact"
     staged_media_path = work_path / "media"
     staged_manifests_path = work_path / "manifests"
@@ -979,9 +977,7 @@ async def export_dataset_version_as_huggingface_streaming(
                 expand=DatasetViewExpand(assets=True, annotation_sets=True, annotation_records=True),
                 include_total=False,
             )
-            staged = await asyncio.gather(
-                *(stage_row(row, completed + index) for index, row in enumerate(page.items))
-            )
+            staged = await asyncio.gather(*(stage_row(row, completed + index) for index, row in enumerate(page.items)))
             rows_by_split: dict[str, list[dict[str, Any]]] = defaultdict(list)
             for staged_row, item_warnings in staged:
                 warnings.extend(item_warnings)
