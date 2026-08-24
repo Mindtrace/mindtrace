@@ -1,18 +1,31 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
 import io
 import json
+import shutil
+import tempfile
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from .base import prepare_export_destination, write_export_file
-from .types import ExportableDataset, ExportResult
+from mindtrace.datalake.pagination_types import DatasetViewExpand
+from mindtrace.datalake.types import DatasetVersion
+
+from .base import (
+    _load_asset_payload_async,
+    build_exportable_item_from_view_row,
+    prepare_export_destination,
+    write_export_file,
+)
+from .types import ExportableDataset, ExportableItem, ExportProgress, ExportResult
 
 _INTEGER_DTYPES = {"int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"}
 _FLOAT_DTYPES = {"float16", "float32", "float64"}
 _METADATA_DTYPES = {"string", "bool", *_INTEGER_DTYPES, *_FLOAT_DTYPES}
+_STREAMING_MEDIA_CONCURRENCY = 8
 
 
 def _configured_class_names(
@@ -281,6 +294,42 @@ def _embedded_role_image(item, role: str, *, include_media: bool, task: str):
     return {"bytes": payload_bytes, "path": f"{asset.asset_id}.png"}
 
 
+def _single_label_classification_row(
+    item: ExportableItem,
+    *,
+    annotation_attributes: Mapping[str, Any],
+    metadata_keys: Mapping[str, str],
+    class_ids: Mapping[str, int],
+    image: Any,
+) -> dict[str, Any]:
+    annotation = _classification_annotation(item, annotation_attributes)
+    if annotation.label not in class_ids:
+        raise ValueError(
+            f"Classification annotation {annotation.annotation_id!r} on asset {item.asset.asset_id!r} "
+            f"uses label {annotation.label!r}, which is not present in class_names."
+        )
+    label_id = class_ids[annotation.label]
+    if annotation.label_id is not None and annotation.label_id != label_id:
+        raise ValueError(
+            f"Classification annotation {annotation.annotation_id!r} maps label {annotation.label!r} "
+            f"to configured id {label_id}, but the annotation uses label_id {annotation.label_id}."
+        )
+    row = {
+        "image": image,
+        "asset_id": item.asset.asset_id,
+        "label": label_id,
+        "label_name": annotation.label,
+        "split": item.split or "",
+        "source_image_asset_id": item.asset.asset_id,
+        "source_annotation_id": annotation.annotation_id,
+        "source_bbox": None,
+        "metadata_json": json.dumps(item.metadata or {}, sort_keys=True, default=str),
+        "asset_metadata_json": json.dumps(item.asset.metadata or {}, sort_keys=True, default=str),
+    }
+    row.update(_project_metadata_keys(item, metadata_keys))
+    return row
+
+
 def _save_huggingface_rows(
     datasets_module: Any,
     dataset: ExportableDataset,
@@ -343,33 +392,14 @@ def _export_single_label_classification_dataset(
     rows_by_split: dict[str, list[dict[str, Any]]] = {}
 
     for item in dataset.items:
-        annotation = _classification_annotation(item, selected_attributes)
-        if annotation.label not in class_ids:
-            raise ValueError(
-                f"Classification annotation {annotation.annotation_id!r} on asset {item.asset.asset_id!r} "
-                f"uses label {annotation.label!r}, which is not present in class_names."
-            )
-        label_id = class_ids[annotation.label]
-        if annotation.label_id is not None and annotation.label_id != label_id:
-            raise ValueError(
-                f"Classification annotation {annotation.annotation_id!r} maps label {annotation.label!r} "
-                f"to configured id {label_id}, but the annotation uses label_id {annotation.label_id}."
-            )
         split_name = item.split or "default"
-        image = _embedded_image(item, include_media=include_media, task="classification")
-        row = {
-            "image": image,
-            "asset_id": item.asset.asset_id,
-            "label": label_id,
-            "label_name": annotation.label,
-            "split": item.split or "",
-            "source_image_asset_id": item.asset.asset_id,
-            "source_annotation_id": annotation.annotation_id,
-            "source_bbox": None,
-            "metadata_json": json.dumps(item.metadata or {}, sort_keys=True, default=str),
-            "asset_metadata_json": json.dumps(item.asset.metadata or {}, sort_keys=True, default=str),
-        }
-        row.update(_project_metadata_keys(item, selected_metadata_keys))
+        row = _single_label_classification_row(
+            item,
+            annotation_attributes=selected_attributes,
+            metadata_keys=selected_metadata_keys,
+            class_ids=class_ids,
+            image=_embedded_image(item, include_media=include_media, task="classification"),
+        )
         rows_by_split.setdefault(split_name, []).append(row)
 
     requested_provenance = bool(
@@ -797,6 +827,240 @@ def _export_instance_segmentation_dataset(
         asset_count=dataset.asset_count,
         annotation_count=annotation_count,
     )
+
+
+def _append_staged_rows(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as stream:
+        for row in rows:
+            stream.write(json.dumps(row, sort_keys=True))
+            stream.write("\n")
+
+
+def _iter_staged_rows(path: str | Path):
+    path = Path(path)
+    with path.open(encoding="utf-8") as stream:
+        for line in stream:
+            row = json.loads(line)
+            staged_image_path = row.pop("_mindtrace_staged_image_path", None)
+            image_name = row.pop("_mindtrace_image_name", None)
+            row["image"] = (
+                {"bytes": Path(staged_image_path).read_bytes(), "path": image_name}
+                if staged_image_path is not None
+                else None
+            )
+            yield row
+
+
+def _report_progress(
+    callback: Callable[[ExportProgress], None] | None,
+    *,
+    stage: str,
+    completed: int,
+    total: int,
+) -> None:
+    if callback is not None:
+        callback(ExportProgress(stage=stage, completed=completed, total=total))
+
+
+def _replace_streaming_destination(artifact_path: Path, destination: Path, *, overwrite: bool) -> None:
+    if destination.exists():
+        if not overwrite:
+            raise FileExistsError(f"Export destination already exists: {destination}")
+        if destination.is_file() or destination.is_symlink():
+            destination.unlink()
+        else:
+            shutil.rmtree(destination)
+    artifact_path.replace(destination)
+
+
+async def export_dataset_version_as_huggingface_streaming(
+    object_loader: Any,
+    dataset_version: DatasetVersion,
+    *,
+    destination: str | Path,
+    include_media: bool = True,
+    overwrite: bool = False,
+    split_map: dict[str, str] | None = None,
+    options: dict[str, Any] | None = None,
+    page_size: int = 256,
+    progress_callback: Callable[[ExportProgress], None] | None = None,
+) -> ExportResult:
+    """Stream a single-label classification DatasetVersion to Hugging Face format."""
+
+    if isinstance(page_size, bool) or not isinstance(page_size, int) or page_size <= 0:
+        raise ValueError("page_size must be a positive integer")
+    try:
+        datasets_module = importlib.import_module("datasets")
+    except ImportError as exc:
+        raise ImportError(
+            "Hugging Face export requires the optional 'datasets' dependency. "
+            "Install mindtrace-datalake[export-huggingface]."
+        ) from exc
+
+    dataset = ExportableDataset(
+        name=dataset_version.dataset_name,
+        description=dataset_version.description,
+        metadata=dict(dataset_version.metadata or {}),
+    )
+    requested_task = (options or {}).get("task") or dataset.metadata.get("task_type")
+    classification_type = (options or {}).get("classification_type") or dataset.metadata.get(
+        "classification_type", "single_label"
+    )
+    classification_source = (options or {}).get("classification_source") or dataset.metadata.get(
+        "classification_source", "annotations"
+    )
+    if requested_task != "classification" or classification_type != "single_label":
+        raise ValueError("Streaming Hugging Face export currently supports only single-label classification.")
+    if classification_source != "annotations":
+        raise ValueError("Streaming Hugging Face classification export currently supports only annotation labels.")
+
+    selected_attributes = _annotation_attributes(options)
+    selected_metadata_keys = _metadata_keys(options)
+    class_names = _configured_class_names(dataset, "classification", options)
+    if class_names is None:
+        raise ValueError("Streaming Hugging Face classification export requires explicit class_names.")
+    class_ids = {name: label_id for label_id, name in enumerate(class_names)}
+    features = _single_label_classification_features(datasets_module, class_names, selected_metadata_keys)
+
+    destination_path = Path(destination)
+    if destination_path.exists() and not overwrite:
+        raise FileExistsError(f"Export destination already exists: {destination_path}")
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    work_path = Path(tempfile.mkdtemp(prefix=f".{destination_path.name}.streaming-", dir=str(destination_path.parent)))
+    artifact_path = work_path / "artifact"
+    staged_media_path = work_path / "media"
+    staged_manifests_path = work_path / "manifests"
+    staged_media_path.mkdir(parents=True)
+    staged_manifests_path.mkdir(parents=True)
+
+    total = len(dataset_version.manifest)
+    completed = 0
+    asset_count = 0
+    warnings: list[str] = []
+    split_manifests: dict[str, Path] = {}
+    split_counts: dict[str, int] = defaultdict(int)
+    semaphore = asyncio.Semaphore(_STREAMING_MEDIA_CONCURRENCY)
+
+    async def stage_row(row: Any, ordinal: int):
+        item, item_warnings = build_exportable_item_from_view_row(row, split_map=split_map)
+        if item is None:
+            return None, item_warnings
+
+        staged_image = None
+        if include_media:
+            async with semaphore:
+                payload = await _load_asset_payload_async(object_loader, item.asset)
+                suffix = Path(item.source_filename).suffix or ".bin"
+                staged_image = staged_media_path / f"{ordinal:012d}{suffix}"
+                await asyncio.to_thread(staged_image.write_bytes, payload)
+
+        exported_row = _single_label_classification_row(
+            item,
+            annotation_attributes=selected_attributes,
+            metadata_keys=selected_metadata_keys,
+            class_ids=class_ids,
+            image=None,
+        )
+        exported_row["_mindtrace_staged_image_path"] = str(staged_image) if staged_image is not None else None
+        exported_row["_mindtrace_image_name"] = item.source_filename if staged_image is not None else None
+        return (item.split or "default", exported_row), item_warnings
+
+    try:
+        _report_progress(progress_callback, stage="staging", completed=0, total=total)
+        cursor: str | None = None
+        while True:
+            page = await object_loader.view_dataset_version_page(
+                dataset_version.dataset_name,
+                dataset_version.version,
+                limit=page_size,
+                cursor=cursor,
+                sort="manifest_order",
+                expand=DatasetViewExpand(assets=True, annotation_sets=True, annotation_records=True),
+                include_total=False,
+            )
+            staged = await asyncio.gather(*(stage_row(row, completed + index) for index, row in enumerate(page.items)))
+            rows_by_split: dict[str, list[dict[str, Any]]] = defaultdict(list)
+            for staged_row, item_warnings in staged:
+                warnings.extend(item_warnings)
+                if staged_row is None:
+                    continue
+                split_name, exported_row = staged_row
+                rows_by_split[split_name].append(exported_row)
+                asset_count += 1
+
+            for split_name, rows in rows_by_split.items():
+                manifest_path = split_manifests.setdefault(
+                    split_name,
+                    staged_manifests_path / f"split-{len(split_manifests):04d}.jsonl",
+                )
+                await asyncio.to_thread(_append_staged_rows, manifest_path, rows)
+                split_counts[split_name] += len(rows)
+
+            completed += len(page.items)
+            _report_progress(progress_callback, stage="staging", completed=completed, total=total)
+            if not page.page.has_more:
+                break
+            if page.page.next_cursor is None:
+                raise RuntimeError("Dataset view reported more rows without a continuation cursor.")
+            cursor = page.page.next_cursor
+
+        if asset_count == 0:
+            raise ValueError("Streaming Hugging Face export produced no classification rows.")
+
+        _report_progress(progress_callback, stage="finalizing", completed=0, total=asset_count)
+        finalized = 0
+        dataset_payload = {}
+        for split_name, manifest_path in split_manifests.items():
+            dataset_payload[split_name] = datasets_module.Dataset.from_generator(
+                _iter_staged_rows,
+                features=features,
+                gen_kwargs={"path": str(manifest_path)},
+            )
+            finalized += split_counts[split_name]
+            _report_progress(
+                progress_callback,
+                stage="finalizing",
+                completed=finalized,
+                total=asset_count,
+            )
+
+        hf_dataset = (
+            dataset_payload["default"]
+            if len(dataset_payload) == 1 and "default" in dataset_payload
+            else datasets_module.DatasetDict(dataset_payload)
+        )
+        hf_dataset.save_to_disk(str(artifact_path))
+        metadata_file = write_export_file(
+            artifact_path,
+            "mindtrace_metadata.json",
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "mindtrace": {
+                        "task": "classification",
+                        "annotation_attributes": selected_attributes,
+                        "class_names": class_names,
+                        "label_to_id": class_ids,
+                        "metadata_keys": selected_metadata_keys,
+                    },
+                },
+                sort_keys=True,
+            ).encode("utf-8"),
+        )
+        _replace_streaming_destination(artifact_path, destination_path, overwrite=overwrite)
+        _report_progress(progress_callback, stage="complete", completed=asset_count, total=asset_count)
+        return ExportResult(
+            format="huggingface",
+            destination=destination_path,
+            dataset_name=dataset_version.dataset_name,
+            asset_count=asset_count,
+            annotation_count=asset_count,
+            files_written=[metadata_file, "."],
+            warnings=warnings,
+        )
+    finally:
+        shutil.rmtree(work_path, ignore_errors=True)
 
 
 def export_dataset_as_huggingface(

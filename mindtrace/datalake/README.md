@@ -440,6 +440,32 @@ artifact. Supported scalar dtypes are `string`, `bool`, signed and unsigned inte
 and `float16`, `float32`, and `float64`. The resolved selector, class mapping, and metadata-key types are recorded in
 `mindtrace_metadata.json`. Existing exports without these options are unchanged.
 
+Large single-label classification versions can be exported with bounded memory by paging the Datalake view and
+staging media before the final Hugging Face artifact is written. Streaming currently requires an explicit class
+order:
+
+```python
+def report_export(progress):
+    print(f"{progress.stage}: {progress.completed}/{progress.total}")
+
+
+datalake.export_dataset_version_to_format(
+    "multi-field-classification",
+    "1.0.0",
+    format="huggingface",
+    destination=export_root / "selected-classification",
+    streaming=True,
+    page_size=256,
+    progress_callback=report_export,
+    exporter_options={
+        "task": "classification",
+        "class_names": ["negative", "positive"],
+    },
+)
+```
+
+Other task profiles continue to use the existing in-memory export path and reject `streaming=True` explicitly.
+
 #### Build all associated Datasets and DataLoaders
 
 ```python

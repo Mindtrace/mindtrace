@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 import warnings
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -19,6 +19,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from mindtrace.core import Mindtrace, as_utc, utcnow
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
+from mindtrace.datalake.exporters import ExportProgress
 from mindtrace.datalake.pagination_types import (
     CursorEnvelope,
     CursorPage,
@@ -2506,10 +2507,31 @@ class AsyncDatalake(Mindtrace):
         overwrite: bool = False,
         split_map: dict[str, str] | None = None,
         exporter_options: dict[str, Any] | None = None,
+        streaming: bool = False,
+        page_size: int = 256,
+        progress_callback: Callable[[ExportProgress], None] | None = None,
     ):
         """Export an immutable dataset version to a named external format."""
         from mindtrace.datalake.exporters import export_dataset_to_format
         from mindtrace.datalake.exporters.base import build_exportable_dataset_from_resolved_version_async
+
+        if streaming:
+            if format.strip().lower() != "huggingface":
+                raise ValueError("Streaming dataset export currently supports only format='huggingface'.")
+            from mindtrace.datalake.exporters.huggingface import export_dataset_version_as_huggingface_streaming
+
+            dataset_version = await self.get_dataset_version(dataset_name, version)
+            return await export_dataset_version_as_huggingface_streaming(
+                self,
+                dataset_version,
+                destination=destination,
+                include_media=include_media,
+                overwrite=overwrite,
+                split_map=split_map,
+                options=exporter_options,
+                page_size=page_size,
+                progress_callback=progress_callback,
+            )
 
         resolved_dataset_version = await self.resolve_dataset_version(dataset_name, version)
         exportable_dataset = await build_exportable_dataset_from_resolved_version_async(
