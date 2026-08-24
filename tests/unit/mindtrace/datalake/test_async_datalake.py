@@ -2745,6 +2745,53 @@ class TestAsyncDatalakeUnit:
         assert (tmp_path / "coco" / "annotations" / "train.json").exists()
         fake_datalake.resolve_dataset_version.assert_awaited_once_with("dataset-a", "1.0.0")
 
+    @pytest.mark.asyncio
+    async def test_export_dataset_version_to_format_dispatches_streaming_huggingface(self, tmp_path: Path):
+        dataset_version = DatasetVersion(
+            dataset_name="dataset-a",
+            version="1.0.0",
+            manifest=["datum-1"],
+        )
+        fake_datalake = SimpleNamespace(
+            get_dataset_version=AsyncMock(return_value=dataset_version),
+            resolve_dataset_version=AsyncMock(),
+        )
+
+        with patch(
+            "mindtrace.datalake.exporters.huggingface.export_dataset_version_as_huggingface_streaming",
+            new=AsyncMock(return_value="streamed"),
+        ) as streaming_export:
+            result = await AsyncDatalake.export_dataset_version_to_format(
+                fake_datalake,
+                "dataset-a",
+                "1.0.0",
+                format="huggingface",
+                destination=tmp_path / "huggingface",
+                streaming=True,
+                page_size=32,
+                exporter_options={"task": "classification", "class_names": ["healthy"]},
+            )
+
+        assert result == "streamed"
+        fake_datalake.resolve_dataset_version.assert_not_awaited()
+        streaming_export.assert_awaited_once()
+        _, kwargs = streaming_export.await_args
+        assert kwargs["page_size"] == 32
+
+    @pytest.mark.asyncio
+    async def test_streaming_export_rejects_non_huggingface_format(self, tmp_path: Path):
+        fake_datalake = SimpleNamespace()
+
+        with pytest.raises(ValueError, match="format='huggingface'"):
+            await AsyncDatalake.export_dataset_version_to_format(
+                fake_datalake,
+                "dataset-a",
+                "1.0.0",
+                format="coco",
+                destination=tmp_path / "coco",
+                streaming=True,
+            )
+
 
 def _alias_fixture_make_store():
     store = MagicMock()
