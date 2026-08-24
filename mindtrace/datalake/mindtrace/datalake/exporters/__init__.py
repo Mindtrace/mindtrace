@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
-from .types import ExportableDataset, ExportableItem, ExportResult
+from .types import ExportableDataset, ExportableItem, ExportProgress, ExportResult
 
 ExporterFunc = Callable[..., ExportResult]
 
@@ -44,6 +44,7 @@ def export_dataset_to_format(
 
 __all__ = [
     "ExportResult",
+    "ExportProgress",
     "ExportableDataset",
     "ExportableItem",
     "export_dataset_to_format",
