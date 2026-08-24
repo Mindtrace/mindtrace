@@ -754,14 +754,22 @@ class TestDatalakeSyncFacade:
         datalake._backend = Mock()
         datalake._submit_coro = Mock(return_value="exported")
 
+        progress_callback = Mock()
         result = Datalake.export_dataset_version_to_format(
             datalake,
             "dataset-a",
             "1.0.0",
             format="huggingface",
             destination=tmp_path / "hf",
+            streaming=True,
+            page_size=32,
+            progress_callback=progress_callback,
         )
 
         assert result == "exported"
         datalake._backend.export_dataset_version_to_format.assert_called_once()
+        _, kwargs = datalake._backend.export_dataset_version_to_format.call_args
+        assert kwargs["streaming"] is True
+        assert kwargs["page_size"] == 32
+        assert kwargs["progress_callback"] is progress_callback
         datalake._submit_coro.assert_called_once()

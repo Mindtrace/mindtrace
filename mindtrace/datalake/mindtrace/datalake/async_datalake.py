@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 import warnings
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -29,6 +29,7 @@ from mindtrace.datalake.pagination_types import (
     PageInfo,
     StructuredFilter,
 )
+from mindtrace.datalake.exporters import ExportProgress
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -2506,10 +2507,16 @@ class AsyncDatalake(Mindtrace):
         overwrite: bool = False,
         split_map: dict[str, str] | None = None,
         exporter_options: dict[str, Any] | None = None,
+        streaming: bool = False,
+        page_size: int = 256,
+        progress_callback: Callable[[ExportProgress], None] | None = None,
     ):
         """Export an immutable dataset version to a named external format."""
         from mindtrace.datalake.exporters import export_dataset_to_format
         from mindtrace.datalake.exporters.base import build_exportable_dataset_from_resolved_version_async
+
+        if streaming:
+            raise NotImplementedError("Streaming dataset export is not implemented yet.")
 
         resolved_dataset_version = await self.resolve_dataset_version(dataset_name, version)
         exportable_dataset = await build_exportable_dataset_from_resolved_version_async(
