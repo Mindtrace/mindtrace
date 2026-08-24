@@ -18,8 +18,8 @@ class _FakeDataset:
         self.features = features
 
     @classmethod
-    def from_generator(cls, generator, features=None):
-        return cls(list(generator()), features=features)
+    def from_generator(cls, generator, features=None, gen_kwargs=None):
+        return cls(list(generator(**(gen_kwargs or {}))), features=features)
 
     def save_to_disk(self, path: str):
         target = Path(path)
