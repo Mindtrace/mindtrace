@@ -329,7 +329,6 @@ See [`samples/models/09_model_protocol.py`](../../samples/models/09_model_protoc
 | `Trainer` | Yes | Yes | Yes | Yes |
 | `build_optimizer` | -- | -- | -- | -- |
 | `build_scheduler` | -- | -- | -- | -- |
-| `DatalakeDataset` | -- | -- | -- | -- |
 
 ### Basic Usage
 
@@ -666,8 +665,6 @@ from mindtrace.models import (
     OptunaCallback,                 # Optuna hyperparameter search integration
     build_optimizer,                # Factory: "adamw" -> AdamW with param groups
     build_scheduler,                # Factory: "cosine_warmup" -> scheduler
-    DatalakeDataset,                # torch Dataset backed by Datalake query
-    build_datalake_loader,          # Factory: Datalake query -> DataLoader
 
     # -- Losses --
     FocalLoss,                      # Class-imbalanced classification

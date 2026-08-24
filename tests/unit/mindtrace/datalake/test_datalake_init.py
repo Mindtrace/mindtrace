@@ -9,14 +9,18 @@ import pytest
         ("PascalVocImportConfig", "PascalVocImportConfig"),
         ("PascalVocImportSummary", "PascalVocImportSummary"),
         ("import_pascal_voc", "import_pascal_voc"),
+        ("PennFudanImportConfig", "PennFudanImportConfig"),
+        ("PennFudanImportSummary", "PennFudanImportSummary"),
+        ("import_penn_fudan", "import_penn_fudan"),
     ],
 )
-def test_datalake_lazy_exports_resolve_pascal_voc_symbols(export_name, expected_name):
+def test_datalake_lazy_exports_resolve_importer_symbols(export_name, expected_name):
     datalake_module = importlib.import_module("mindtrace.datalake")
-    pascal_voc_module = importlib.import_module("mindtrace.datalake.importers.pascal_voc")
+    module_name = "penn_fudan" if "PennFudan" in export_name or export_name == "import_penn_fudan" else "pascal_voc"
+    importer_module = importlib.import_module(f"mindtrace.datalake.importers.{module_name}")
 
     exported = getattr(datalake_module, export_name)
-    expected = getattr(pascal_voc_module, expected_name)
+    expected = getattr(importer_module, expected_name)
 
     assert exported is expected
 

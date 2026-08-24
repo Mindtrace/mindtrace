@@ -3462,6 +3462,11 @@ class _FakeHfDataset:
     def from_list(cls, rows):
         return cls(rows)
 
+    @classmethod
+    def from_generator(cls, generator, features=None):
+        rows = generator() if callable(generator) else generator
+        return cls(list(rows))
+
     def save_to_disk(self, path: str):
         target = Path(path)
         target.mkdir(parents=True, exist_ok=True)
