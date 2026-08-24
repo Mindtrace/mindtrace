@@ -2516,7 +2516,22 @@ class AsyncDatalake(Mindtrace):
         from mindtrace.datalake.exporters.base import build_exportable_dataset_from_resolved_version_async
 
         if streaming:
-            raise NotImplementedError("Streaming dataset export is not implemented yet.")
+            if format.strip().lower() != "huggingface":
+                raise ValueError("Streaming dataset export currently supports only format='huggingface'.")
+            from mindtrace.datalake.exporters.huggingface import export_dataset_version_as_huggingface_streaming
+
+            dataset_version = await self.get_dataset_version(dataset_name, version)
+            return await export_dataset_version_as_huggingface_streaming(
+                self,
+                dataset_version,
+                destination=destination,
+                include_media=include_media,
+                overwrite=overwrite,
+                split_map=split_map,
+                options=exporter_options,
+                page_size=page_size,
+                progress_callback=progress_callback,
+            )
 
         resolved_dataset_version = await self.resolve_dataset_version(dataset_name, version)
         exportable_dataset = await build_exportable_dataset_from_resolved_version_async(
