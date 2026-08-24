@@ -19,6 +19,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from mindtrace.core import Mindtrace, as_utc, utcnow
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
+from mindtrace.datalake.exporters import ExportProgress
 from mindtrace.datalake.pagination_types import (
     CursorEnvelope,
     CursorPage,
@@ -29,7 +30,6 @@ from mindtrace.datalake.pagination_types import (
     PageInfo,
     StructuredFilter,
 )
-from mindtrace.datalake.exporters import ExportProgress
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
