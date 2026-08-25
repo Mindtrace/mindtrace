@@ -70,6 +70,7 @@ from mindtrace.datalake.async_datalake import (
     SlowOperationWarning,
     SlowOpsPolicy,
 )
+from mindtrace.datalake.card import DatasetCard
 from mindtrace.datalake.data_vault_backends import (
     _ASYNC_VAULT_METHOD_NAMES,
     _SYNC_VAULT_METHOD_NAMES,
@@ -1268,6 +1269,7 @@ class AsyncDataVault:
         *,
         snapshot_name: str | None = None,
         snapshot_version: str | None = None,
+        card: DatasetCard | dict[str, Any] | None = None,
         persist: bool = True,
         created_by: str | None = None,
     ) -> DatasetVersion | ResolvedDatasetVersion:
@@ -1277,6 +1279,7 @@ class AsyncDataVault:
             persist_snapshot=persist,
             snapshot_name=snapshot_name,
             snapshot_version=snapshot_version,
+            card=card,
             created_by=created_by,
         )
         return resolved.dataset_version if persist else resolved
@@ -1288,6 +1291,7 @@ class AsyncDataVault:
         persist_snapshot: bool = False,
         snapshot_name: str | None = None,
         snapshot_version: str | None = None,
+        card: DatasetCard | dict[str, Any] | None = None,
         created_by: str | None = None,
     ) -> ResolvedDatasetVersion:
         collection = await self._get_dataset_collection(dataset)
@@ -1347,6 +1351,7 @@ class AsyncDataVault:
                         }
                     },
                 ),
+                card=card,
                 created_by=created_by,
             )
             return await self._backend.resolve_dataset_version(dataset_name, version)
@@ -1412,6 +1417,7 @@ class AsyncDataVault:
                         }
                     },
                 ),
+                card=card,
                 created_by=created_by,
             ),
             datums=resolved_datums,
@@ -2355,6 +2361,7 @@ class DataVault:
         *,
         snapshot_name: str | None = None,
         snapshot_version: str | None = None,
+        card: DatasetCard | dict[str, Any] | None = None,
         persist: bool = True,
         created_by: str | None = None,
     ) -> DatasetVersion | ResolvedDatasetVersion:
@@ -2364,6 +2371,7 @@ class DataVault:
             persist_snapshot=persist,
             snapshot_name=snapshot_name,
             snapshot_version=snapshot_version,
+            card=card,
             created_by=created_by,
         )
         return resolved.dataset_version if persist else resolved
@@ -2375,6 +2383,7 @@ class DataVault:
         persist_snapshot: bool = False,
         snapshot_name: str | None = None,
         snapshot_version: str | None = None,
+        card: DatasetCard | dict[str, Any] | None = None,
         created_by: str | None = None,
     ) -> ResolvedDatasetVersion:
         collection = self._get_dataset_collection(dataset)
@@ -2432,6 +2441,7 @@ class DataVault:
                         }
                     },
                 ),
+                card=card,
                 created_by=created_by,
             )
             return self._backend.resolve_dataset_version(dataset_name, version)
@@ -2497,6 +2507,7 @@ class DataVault:
                         }
                     },
                 ),
+                card=card,
                 created_by=created_by,
             ),
             datums=resolved_datums,

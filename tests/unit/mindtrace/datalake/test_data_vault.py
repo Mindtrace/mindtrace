@@ -13,7 +13,7 @@ from urllib3.util import parse_url
 
 from mindtrace.core import CoreConfig
 from mindtrace.database.core.exceptions import DocumentNotFoundError
-from mindtrace.datalake import AsyncDatalake, DatalakeService
+from mindtrace.datalake import AsyncDatalake, DatalakeService, DatasetCard
 from mindtrace.datalake.annotations import BboxAnnotation, ClassificationAnnotation, PolygonAnnotation
 from mindtrace.datalake.async_datalake import SlowOperationDisabledError, SlowOperationWarning, SlowOpsPolicy
 from mindtrace.datalake.data_vault import (
@@ -2055,6 +2055,7 @@ async def test_async_data_vault_eager_dataset_methods_obey_slow_ops_policy_warn(
 
 
 def test_sync_data_vault_freeze_dataset_persists_snapshot():
+    card = DatasetCard(task="classification")
     collection = Collection(name="training", collection_id="collection_1")
     item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1", split="train")
     asset = Asset(
@@ -2102,7 +2103,9 @@ def test_sync_data_vault_freeze_dataset_persists_snapshot():
     datalake.create_dataset_version = Mock(return_value=DatasetVersion(dataset_name="training", version="1.2.3"))
     datalake.resolve_dataset_version = Mock(return_value=resolved)
 
-    snapshot = DataVault(datalake)._freeze_dataset("training", persist_snapshot=True, snapshot_version="1.2.3")
+    snapshot = DataVault(datalake)._freeze_dataset(
+        "training", persist_snapshot=True, snapshot_version="1.2.3", card=card
+    )
 
     assert snapshot == resolved
     datalake.create_datum.assert_called_once()
@@ -2112,6 +2115,7 @@ def test_sync_data_vault_freeze_dataset_persists_snapshot():
     assert datalake.create_dataset_version.call_args.kwargs["dataset_name"] == "training"
     assert datalake.create_dataset_version.call_args.kwargs["version"] == "1.2.3"
     assert datalake.create_dataset_version.call_args.kwargs["manifest"] == ["datum_1"]
+    assert datalake.create_dataset_version.call_args.kwargs["card"] == card
     assert (
         datalake.create_dataset_version.call_args.kwargs["metadata"]["mindtrace"]["data_vault"]["source_dataset_id"]
         == "collection_1"
@@ -2120,6 +2124,7 @@ def test_sync_data_vault_freeze_dataset_persists_snapshot():
 
 @pytest.mark.asyncio
 async def test_async_data_vault_freeze_dataset_persists_snapshot():
+    card = DatasetCard(task="classification")
     collection = Collection(name="training", collection_id="collection_1")
     item = CollectionItem(collection_id="collection_1", asset_id="asset_1", collection_item_id="ci_1", split="train")
     asset = Asset(
@@ -2168,7 +2173,7 @@ async def test_async_data_vault_freeze_dataset_persists_snapshot():
     datalake.resolve_dataset_version = AsyncMock(return_value=resolved)
 
     snapshot = await AsyncDataVault(datalake)._freeze_dataset(
-        "training", persist_snapshot=True, snapshot_version="1.2.3"
+        "training", persist_snapshot=True, snapshot_version="1.2.3", card=card
     )
 
     assert snapshot == resolved
@@ -2176,6 +2181,19 @@ async def test_async_data_vault_freeze_dataset_persists_snapshot():
     datalake.create_annotation_set.assert_awaited_once()
     datalake.add_annotation_records.assert_awaited_once()
     datalake.create_dataset_version.assert_awaited_once()
+    assert datalake.create_dataset_version.await_args.kwargs["card"] == card
+
+
+def test_sync_data_vault_freeze_dataset_attaches_card_to_non_persisted_snapshot():
+    card = DatasetCard(task="classification")
+    collection = Collection(name="training", collection_id="collection_1")
+    datalake = Mock()
+    datalake.list_collections = Mock(return_value=[collection])
+    datalake.list_collection_items = Mock(return_value=[])
+
+    snapshot = DataVault(datalake)._freeze_dataset("training", card=card)
+
+    assert snapshot.dataset_version.card == card
 
 
 @pytest.mark.asyncio
@@ -2833,30 +2851,32 @@ async def test_async_data_vault_import_dataset_version_skips_empty_datums_and_no
 
 
 def test_sync_data_vault_freeze_dataset_returns_dataset_version_when_persisting():
+    card = DatasetCard(task="classification")
     resolved = ResolvedDatasetVersion(
         dataset_version=DatasetVersion(dataset_name="training", version="1.2.3"), datums=[]
     )
     vault = object.__new__(DataVault)
     vault._freeze_dataset = Mock(return_value=resolved)
 
-    result = vault.freeze_dataset("training", persist=True, snapshot_version="1.2.3")
+    result = vault.freeze_dataset("training", persist=True, snapshot_version="1.2.3", card=card)
 
     assert result == resolved.dataset_version
-    vault._freeze_dataset.assert_called_once()
+    assert vault._freeze_dataset.call_args.kwargs["card"] == card
 
 
 @pytest.mark.asyncio
 async def test_async_data_vault_freeze_dataset_returns_resolved_snapshot_when_not_persisting():
+    card = DatasetCard(task="classification")
     resolved = ResolvedDatasetVersion(
         dataset_version=DatasetVersion(dataset_name="training", version="1.2.3"), datums=[]
     )
     vault = object.__new__(AsyncDataVault)
     vault._freeze_dataset = AsyncMock(return_value=resolved)
 
-    result = await vault.freeze_dataset("training", persist=False, snapshot_version="1.2.3")
+    result = await vault.freeze_dataset("training", persist=False, snapshot_version="1.2.3", card=card)
 
     assert result == resolved
-    vault._freeze_dataset.assert_awaited_once()
+    assert vault._freeze_dataset.await_args.kwargs["card"] == card
 
 
 # --- Normalization and alias-indexing behavior (``data_vault`` + backends) ---

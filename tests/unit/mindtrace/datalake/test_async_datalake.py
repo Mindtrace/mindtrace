@@ -19,7 +19,7 @@ from export_test_utils import (
 
 from mindtrace.core import utcnow
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
-from mindtrace.datalake import AsyncDatalake
+from mindtrace.datalake import AsyncDatalake, DatasetCard
 from mindtrace.datalake.async_datalake import (
     PAGINATION_RESOURCE_MODELS,
     PAGINATION_SORT_SPECS,
@@ -1747,6 +1747,68 @@ class TestAsyncDatalakeUnit:
         mock_odm.find.return_value = [existing]
         with pytest.raises(ValueError):
             await async_datalake.create_dataset_version(dataset_name="demo", version="0.1.0", manifest=[])
+
+    @pytest.mark.asyncio
+    async def test_create_dataset_version_accepts_card(self, async_datalake, mock_odm):
+        mock_odm.find.return_value = []
+        async_datalake.get_datum = AsyncMock(return_value=Datum(asset_refs={"image": "asset_1"}))
+
+        created = await async_datalake.create_dataset_version(
+            dataset_name="demo",
+            version="0.1.0",
+            manifest=["datum_1"],
+            card={
+                "summary": "Demo card",
+                "task": "classification",
+                "splits": {"train": {"count": 1}},
+            },
+        )
+
+        assert created.description is None
+        assert isinstance(created.card, DatasetCard)
+        assert created.card.summary == "Demo card"
+        assert created.card.task == "classification"
+        assert created.card.splits["train"].count == 1
+
+    @pytest.mark.asyncio
+    async def test_dataset_version_card_persists_and_reconstructs_from_database(self, async_datalake):
+        stored: dict[str, str] = {}
+        database = MagicMock()
+
+        async def insert(document):
+            stored["document"] = document.model_dump_json()
+            return DatasetVersion.model_validate_json(stored["document"])
+
+        async def find(_filters):
+            if "document" not in stored:
+                return []
+            return [DatasetVersion.model_validate_json(stored["document"])]
+
+        database.insert = AsyncMock(side_effect=insert)
+        database.find = AsyncMock(side_effect=find)
+        async_datalake.dataset_version_database = database
+        async_datalake.get_datum = AsyncMock(return_value=Datum(asset_refs={"image": "asset_1"}))
+
+        created = await async_datalake.create_dataset_version(
+            dataset_name="demo",
+            version="0.1.0",
+            manifest=["datum_1"],
+            card={
+                "task": "classification",
+                "provenance": {
+                    "creation_method": "Reviewed importer",
+                    "split_strategy": "Deterministic stratification",
+                    "split_key": "source_path",
+                },
+                "splits": {"train": {"count": 1}},
+            },
+        )
+        loaded = await async_datalake.get_dataset_version("demo", "0.1.0")
+
+        assert isinstance(created.card, DatasetCard)
+        assert isinstance(loaded.card, DatasetCard)
+        assert loaded.card == created.card
+        assert loaded.card.provenance.split_key == "source_path"
 
     @pytest.mark.asyncio
     async def test_create_dataset_version_rejects_duplicate_manifest_ids(self, async_datalake, mock_odm):
