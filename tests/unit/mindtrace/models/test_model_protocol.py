@@ -553,11 +553,17 @@ def test_hugging_face_processor_rejects_integer_tensor() -> None:
         processor(torch.ones((1, 3, 8, 8), dtype=torch.uint8))
 
 
+@pytest.mark.parametrize(
+    ("processor_kwargs", "expected_use_fast"),
+    [({}, True), ({"use_fast": False}, False)],
+)
 def test_hugging_face_processor_lazily_processes_single_and_multiple_pil_images(
     monkeypatch: pytest.MonkeyPatch,
+    processor_kwargs: dict[str, bool],
+    expected_use_fast: bool,
 ) -> None:
     pixel_values = torch.ones((2, 3, 8, 8))
-    factory_calls: list[tuple[str, str | None]] = []
+    factory_calls: list[tuple[str, str | None, bool]] = []
     processor_calls: list[tuple[list[Image.Image], str]] = []
 
     class FakeProcessor:
@@ -567,8 +573,14 @@ def test_hugging_face_processor_lazily_processes_single_and_multiple_pil_images(
 
     class FakeAutoImageProcessor:
         @classmethod
-        def from_pretrained(cls, model_id: str, *, cache_dir: str | None = None) -> FakeProcessor:
-            factory_calls.append((model_id, cache_dir))
+        def from_pretrained(
+            cls,
+            model_id: str,
+            *,
+            cache_dir: str | None = None,
+            use_fast: bool,
+        ) -> FakeProcessor:
+            factory_calls.append((model_id, cache_dir, use_fast))
             return FakeProcessor()
 
     monkeypatch.setitem(
@@ -576,13 +588,17 @@ def test_hugging_face_processor_lazily_processes_single_and_multiple_pil_images(
         "transformers",
         SimpleNamespace(AutoImageProcessor=FakeAutoImageProcessor),
     )
-    processor = HuggingFaceImageProcessor("example/model", cache_dir="/tmp/model-cache")
+    processor = HuggingFaceImageProcessor(
+        "example/model",
+        cache_dir="/tmp/model-cache",
+        **processor_kwargs,
+    )
     first_image = Image.new("RGB", (8, 8))
     second_image = Image.new("RGB", (8, 8))
 
     assert processor(first_image) is pixel_values
     assert processor([first_image, second_image]) is pixel_values
-    assert factory_calls == [("example/model", "/tmp/model-cache")]
+    assert factory_calls == [("example/model", "/tmp/model-cache", expected_use_fast)]
     assert processor_calls == [
         ([first_image], "pt"),
         ([first_image, second_image], "pt"),
