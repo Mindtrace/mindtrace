@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from mindtrace.datalake.pagination_types import DatasetViewRow
 from mindtrace.datalake.types import AnnotationRecord, AnnotationSet, Asset, ResolvedDatasetVersion, ResolvedDatum
 
 from .types import ExportableDataset, ExportableItem
@@ -107,6 +108,63 @@ def _build_exportable_item(
             annotations=annotations,
             annotation_sets=annotation_sets,
             payloads=dict(payloads or {}),
+        ),
+        warnings,
+    )
+
+
+def build_exportable_item_from_view_row(
+    row: DatasetViewRow,
+    *,
+    split_map: dict[str, str] | None = None,
+) -> tuple[ExportableItem | None, list[str]]:
+    """Build one export item from a bounded dataset-view row."""
+
+    assets = dict(row.assets or {})
+    primary_entry = None
+    for role in ("image", "asset"):
+        asset = assets.get(role)
+        if asset is not None:
+            primary_entry = (role, asset)
+            break
+    if primary_entry is None:
+        primary_entry = next(iter(assets.items()), None)
+    if primary_entry is None:
+        return None, [f"Skipped datum {row.datum_id} because it does not reference any assets."]
+
+    role, asset = primary_entry
+    annotation_sets: list[AnnotationSet] = []
+    annotations: list[AnnotationRecord] = []
+    warnings: list[str] = []
+    records_by_set = row.annotation_records or {}
+    for annotation_set in row.annotation_sets or []:
+        set_records = list(records_by_set.get(annotation_set.annotation_set_id, []))
+        matching_records = [
+            record for record in set_records if _annotation_subject_asset_id(record) in {None, asset.asset_id}
+        ]
+        if matching_records:
+            annotation_sets.append(annotation_set)
+            annotations.extend(matching_records)
+            skipped_count = len(set_records) - len(matching_records)
+            if skipped_count:
+                warnings.append(
+                    f"Skipped {skipped_count} annotation(s) in set {annotation_set.annotation_set_id} "
+                    "because they target a non-primary asset."
+                )
+        elif set_records:
+            warnings.append(
+                f"Skipped annotation set {annotation_set.annotation_set_id} for datum {row.datum_id} "
+                f"because it has no records for asset {asset.asset_id}."
+            )
+
+    return (
+        ExportableItem(
+            assets=assets,
+            primary_role=role,
+            split=_mapped_split(row.split, split_map),
+            metadata=dict(row.metadata or {}),
+            annotations=annotations,
+            annotation_sets=annotation_sets,
         ),
         warnings,
     )
