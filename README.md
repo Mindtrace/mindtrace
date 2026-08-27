@@ -289,7 +289,7 @@ print(result)
 | [`agents`](mindtrace/agents) | LLM agents with tools, memory, callbacks, streaming, and MCP integration |
 | [`hardware`](mindtrace/hardware) | Hardware interfaces and service tooling for cameras, scanners, PLCs, and sensors |
 | [`datalake`](mindtrace/datalake) | Dataset, model, label, and datum management |
-| [`models`](mindtrace/models) | Model definitions, inference workflows, and related evaluation utilities |
+| [`models`](mindtrace/models) | Model definitions, training, evaluation, and edge optimization (quantize / prune / compile) unified across torch · torchvision · Ultralytics behind one `load_model` / `profile` surface — see the [capability matrix](mindtrace/models/mindtrace/models/optimization/README.md#what-works-where--capability-matrix) for what works where, and clear `UnsupportedOptimizationError`s for what doesn't |
 | [`automation`](mindtrace/automation) | Pipeline orchestration and workflow integrations |
 | [`ui`](mindtrace/ui) | UI components and visualization tools |
 | [`apps`](mindtrace/apps) | End-user applications and demos |

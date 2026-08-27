@@ -31,6 +31,29 @@ def test_require_onnxruntime_import_error_message(monkeypatch: pytest.MonkeyPatc
         onnx_service._require_onnxruntime()
 
 
+def test_onnx_service_discovery_mode_needs_no_model_source(monkeypatch: pytest.MonkeyPatch) -> None:
+    # generate_connection_manager instantiates service_cls(live_service=False) with no
+    # model_path/registry; discovery mode must not raise or require onnxruntime.
+    monkeypatch.setenv("MINDTRACE_DEFAULT_HOST_URLS__SERVICE", "http://localhost:8000")
+    monkeypatch.setenv("MINDTRACE_DIR_PATHS__LOGGER_DIR", "/tmp/logs")
+    monkeypatch.setenv("MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR", "/tmp/pids")
+
+    from mindtrace.core import CoreConfig
+    from mindtrace.models.serving.edge import EdgeModelService
+    from mindtrace.models.serving.onnx.service import OnnxModelService
+    from mindtrace.services import Service
+
+    Service.config = CoreConfig()
+
+    onnx_svc = OnnxModelService(live_service=False)
+    assert onnx_svc.model_path is None
+    assert onnx_svc.providers == []
+
+    edge_svc = EdgeModelService(live_service=False)
+    assert edge_svc.provider_chain == []
+    assert edge_svc.runtime_probes == {}
+
+
 def test_torchserve_load_model_non_success_http_status(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MINDTRACE_DEFAULT_HOST_URLS__SERVICE", "http://localhost:8000")
     monkeypatch.setenv("MINDTRACE_DIR_PATHS__LOGGER_DIR", "/tmp/logs")

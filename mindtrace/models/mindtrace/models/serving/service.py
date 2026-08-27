@@ -59,6 +59,45 @@ def resolve_device(device: str) -> str:
     return "cpu"
 
 
+def registry_from_env(logger: Any) -> Any:
+    """Construct a Registry from environment variables, if configured.
+
+    ``MINDTRACE_REGISTRY_URI`` (``gs://`` URIs) takes precedence over
+    ``MINDTRACE_REGISTRY_PATH`` (local path).  Shared by
+    :class:`ModelService` and
+    :class:`~mindtrace.models.serving.compile_agent.CompileAgentService` so the
+    resolution rules stay in one place.
+
+    Args:
+        logger: Logger used to report a construction failure.
+
+    Returns:
+        A registry instance, or ``None`` when nothing is configured or
+        construction fails.
+    """
+    registry_uri = os.environ.get("MINDTRACE_REGISTRY_URI", "")
+    registry_path = os.environ.get("MINDTRACE_REGISTRY_PATH", "")
+    if registry_uri.startswith("gs://"):
+        try:
+            from mindtrace.registry import Registry
+            from mindtrace.registry.backends.gcp_registry_backend import GCPRegistryBackend
+
+            backend = GCPRegistryBackend(uri=registry_uri)
+            registry = Registry(backend=backend, use_cache=True)
+            logger.info("Created GCS-backed Registry: uri=%s", registry_uri)
+            return registry
+        except Exception:
+            logger.warning("Failed to create GCS Registry from MINDTRACE_REGISTRY_URI=%s", registry_uri, exc_info=True)
+    elif registry_path:
+        try:
+            from mindtrace.registry import Registry
+
+            return Registry(registry_path)
+        except Exception:
+            logger.warning("Failed to create Registry from MINDTRACE_REGISTRY_PATH=%s", registry_path, exc_info=True)
+    return None
+
+
 class ModelService(Service):
     """Abstract base class for model-serving microservices.
 
@@ -92,7 +131,7 @@ class ModelService(Service):
 
         Args:
             model_name: Human-readable model identifier
-                (e.g. ``"yolov8-weld-detector"``).
+                (e.g. ``"yolov8-detector"``).
             model_version: Semantic version string for the model weights.
             device: Compute device.  ``"auto"`` selects CUDA when available,
                 otherwise CPU.  Pass ``"cuda"``, ``"cuda:0"``, ``"cpu"``, etc.
@@ -134,36 +173,7 @@ class ModelService(Service):
         # When launched as a subprocess via Service.launch(), registry objects
         # cannot be JSON-serialised.  Fall back to env-var-based construction.
         if self.registry is None:
-            registry_uri = os.environ.get("MINDTRACE_REGISTRY_URI", "")
-            registry_path = os.environ.get("MINDTRACE_REGISTRY_PATH", "")
-            if registry_uri.startswith("gs://"):
-                try:
-                    from mindtrace.registry import Registry
-                    from mindtrace.registry.backends.gcp_registry_backend import GCPRegistryBackend
-
-                    backend = GCPRegistryBackend(uri=registry_uri)
-                    self.registry = Registry(backend=backend, use_cache=True)
-                    self.logger.info(
-                        "Created GCS-backed Registry: uri=%s",
-                        registry_uri,
-                    )
-                except Exception:
-                    self.logger.warning(
-                        "Failed to create GCS Registry from MINDTRACE_REGISTRY_URI=%s",
-                        registry_uri,
-                        exc_info=True,
-                    )
-            elif registry_path:
-                try:
-                    from mindtrace.registry import Registry
-
-                    self.registry = Registry(registry_path)
-                except Exception:
-                    self.logger.warning(
-                        "Failed to create Registry from MINDTRACE_REGISTRY_PATH=%s",
-                        registry_path,
-                        exc_info=True,
-                    )
+            self.registry = registry_from_env(self.logger)
 
         if self.registry is None:
             self.logger.error(
@@ -302,7 +312,7 @@ class ModelService(Service):
 
         Example::
 
-            class WeldDetector(OnnxModelService):
+            class ObjectDetector(OnnxModelService):
                 _task = "detection"
 
                 def predict(self, request):
@@ -310,10 +320,10 @@ class ModelService(Service):
                     return PredictResponse(results=postprocess(outputs))
 
             # Blocking — runs until Ctrl-C:
-            WeldDetector.serve(
-                model_name="weld-detector",
+            ObjectDetector.serve(
+                model_name="object-detector",
                 model_version="v2",
-                model_path="weld-v2.onnx",
+                model_path="detector.onnx",
                 host="0.0.0.0",
                 port=8080,
             )

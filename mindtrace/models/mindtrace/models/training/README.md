@@ -1,6 +1,6 @@
 [![PyPI version](https://img.shields.io/pypi/v/mindtrace-models)](https://pypi.org/project/mindtrace-models/)
 
-# Mindtrace Models -- Training
+# Mindtrace Models: Training
 
 Supervised training loop with automatic mixed precision, gradient accumulation, gradient checkpointing, gradient clipping, DDP multi-GPU support, a callback system, optimizer/scheduler factories, task-specific loss functions, and a Datalake bridge.
 
@@ -21,9 +21,9 @@ Supervised training loop with automatic mixed precision, gradient accumulation, 
 
 The training sub-package provides:
 
-- **Trainer**: Core supervised training loop extending the Mindtrace base class
-- **Callbacks**: 7 built-in callbacks (checkpoint, early stopping, LR monitoring, unfreezing, Optuna)
-- **Loss Functions**: 9 task-specific losses for classification, detection, segmentation, and composite use
+- **Trainer**: supervised training loop extending the Mindtrace base class, with per-batch validation metrics and multi-task loss support
+- **Callbacks**: 6 built-in callbacks (checkpoint, early stopping, LR monitoring, progress, unfreezing, Optuna)
+- **Loss Functions**: task-specific losses for classification, detection, and segmentation, plus `build_loss`, `ComboLoss`, and `MultiTaskLoss`
 - **Optimizer Factory**: `build_optimizer` with differential learning rate support
 - **Scheduler Factory**: `build_scheduler` with warmup-cosine, step, plateau, and 1-cycle options
 - **Datalake Bridge**: `DatalakeDataset` and `build_datalake_loader` for direct data integration
@@ -33,17 +33,51 @@ The training sub-package provides:
 ```
 training/
 ├── __init__.py              # Public API exports
-├── trainer.py               # Trainer class (AMP, DDP, grad accum)
+├── trainer.py               # Trainer: the generic engine (AMP, DDP, grad accum)
+├── detection.py             # DetectionTrainer + build_detection_model (torchvision)
+├── ultralytics.py           # UltralyticsTrainer + UltralyticsDistiller (YOLO adapter)
+├── protocol.py              # DetectionTrainerProtocol: the shared trainer surface
 ├── callbacks.py             # Callback base + 6 built-in callbacks
 ├── optimizers.py            # build_optimizer, build_scheduler, WarmupCosineScheduler
-├── datalake.py              # DatalakeDataset, build_datalake_loader
+├── datalake_bridge.py       # DatalakeDataset, build_datalake_loader (data source adapter)
 └── losses/
     ├── __init__.py          # All loss exports
     ├── classification.py    # FocalLoss, LabelSmoothingCrossEntropy, SupConLoss
     ├── detection.py         # GIoULoss, CIoULoss
     ├── segmentation.py      # DiceLoss, TverskyLoss, IoULoss
-    └── composite.py         # ComboLoss
+    ├── composite.py         # ComboLoss
+    ├── distillation.py      # DistillationLoss, FeatureDistillation
+    └── factory.py           # build_loss, MultiTaskLoss, TaskSpec
 ```
+
+### How this package is organized
+
+Two rules govern the package layout:
+
+1. **Split by what actually varies.** Losses vary by task, so `losses/` has a
+   module per task (classification, detection, segmentation). The training loop
+   does not vary by task; it varies by who owns the loop. There is one generic
+   `Trainer`, plus a trainer per loop-owner only where the generic engine cannot
+   do the job:
+
+   | Trainer | Loop owner | Why it exists |
+   |---------|-----------|----------------|
+   | `Trainer` | mindtrace | The default. Trains anything expressible as `(inputs, targets) -> loss` (classification, segmentation) over a `DataLoader`. |
+   | `DetectionTrainer` | mindtrace | The generic loop cannot do detection (list-collate, label assignment, NMS, mAP). Wraps torchvision detectors; the model owns the loss. |
+   | `UltralyticsTrainer` | Ultralytics | The provider owns the entire loop; this is a thin adapter. |
+
+   There is no `ClassificationTrainer` or `SegmentationTrainer`: the generic
+   `Trainer` covers both, so a wrapper would add a class and no capability.
+
+2. **Unify the interface, not the implementation.** The two detection trainers share
+   `DetectionTrainerProtocol` (`fit` / `evaluate` / `save` plus `tracker` / `registry`),
+   a structural type rather than a base class, so a benchmark sweep drives them
+   polymorphically while each keeps its native loop. Data stays a `DataLoader`
+   (task shape comes from the batch, not a per-task `Dataset` class); data sources
+   are adapted per-source (`datalake_bridge`), and the one provider that needs a
+   different data form (Ultralytics' `data.yaml`) takes it at its own boundary.
+
+See [Detection Training](#detection-training) below.
 
 ## Trainer
 
@@ -56,7 +90,9 @@ training/
 | `model` | `nn.Module` | required | Model to train |
 | `loss_fn` | `nn.Module` or `Callable` or `None` | required | Loss function; `None` = model computes loss |
 | `optimizer` | `torch.optim.Optimizer` | required | Optimizer instance |
+| `metrics` | `dict[str, Callable]` or `None` | `None` | `{name: fn(outputs, targets) -> float}`, reported as `val/<name>` |
 | `scheduler` | `LRScheduler` or `None` | `None` | Learning rate scheduler |
+| `scheduler_interval` | `str` | `"step"` | Step non-plateau schedulers per optimizer step (`"step"`) or per epoch (`"epoch"`) |
 | `tracker` | `Tracker` or `None` | `None` | Experiment tracker |
 | `callbacks` | `list[Callback]` or `None` | `None` | Callback instances |
 | `device` | `str` | `"auto"` | `"auto"`, `"cuda"`, `"cuda:1"`, `"cpu"` |
@@ -101,6 +137,40 @@ history = trainer.fit(train_loader, val_loader, epochs=50)
 # history["val/loss"]    -> [0.92, 0.78, 0.69, ...]
 ```
 
+### Validation Metrics
+
+`metrics` maps a name to `fn(outputs, targets) -> float`. Each function runs per
+validation batch, is sample-weighted, averaged over the validation set, and
+reported in `history` as `val/<name>`. A multi-task model returning `(logits,
+score)` can report several metrics in one pass:
+
+```python
+def category_acc(outputs, targets):
+    logits, _ = outputs
+    return (logits.argmax(1) == targets["category"]).float().mean().item()
+
+def score_mae(outputs, targets):
+    _, score = outputs
+    return (score.squeeze(-1) - targets["score"]).abs().mean().item()
+
+trainer = Trainer(
+    model=model,
+    loss_fn=loss_fn,
+    optimizer=optimizer,
+    metrics={"category_acc": category_acc, "mae": score_mae},
+)
+# history["val/category_acc"], history["val/mae"]
+```
+
+### Scheduler Interval
+
+Non-plateau schedulers step per optimizer step by default (`scheduler_interval="step"`),
+correct for step-based schedules such as cosine over `total_steps`. Set
+`scheduler_interval="epoch"` for epoch-based schedules (for example warmup+cosine
+defined over epochs), which decay far too fast when stepped per batch.
+`ReduceLROnPlateau` is always stepped after validation against `val/loss`,
+regardless of this setting.
+
 ### `train()` Method
 
 An alternative entry point used by `TrainingPipeline`. Delegates to `fit()` using loaders stored at construction time and returns a flat dict of last-epoch values.
@@ -138,6 +208,56 @@ The internal `_optimizer_step()` method executes:
 3. Step the optimizer (via AMP scaler or directly)
 4. Zero gradients
 5. Step the LR scheduler (`ReduceLROnPlateau` is stepped after validation against `val/loss`)
+
+## Detection Training
+
+Object detection needs a loop the generic `Trainer` does not own. Two provider-backed
+trainers fill that gap behind one shared surface (`DetectionTrainerProtocol`).
+
+### Torchvision detectors: `DetectionTrainer`
+
+mindtrace owns the loop; the torchvision model owns the loss. Consumes a torch
+`DataLoader` of `(image, target)` pairs (use `detection_collate`).
+
+```python
+from mindtrace.models.training import (
+    DetectionTrainer, build_detection_model, detection_collate,
+)
+from torch.utils.data import DataLoader
+
+model = build_detection_model("fasterrcnn_resnet50_fpn", num_classes=1)  # +1 bg internally
+train_loader = DataLoader(dataset, batch_size=2, collate_fn=detection_collate)
+
+trainer = DetectionTrainer(model, num_classes=1, tracker=tracker, registry=registry)
+trainer.fit(train_loader, val_loader, epochs=20)
+metrics = trainer.evaluate(val_loader)   # {"mAP50": ..., "mAP5095": ...}
+```
+
+### YOLO / RT-DETR: `UltralyticsTrainer`
+
+Ultralytics owns the whole loop; this is a thin adapter that takes a `data.yaml`.
+
+```python
+from mindtrace.models.training import UltralyticsTrainer
+
+trainer = UltralyticsTrainer("yolov8n.pt", tracker=tracker, registry=registry)
+trainer.fit(data="dataset.yaml", epochs=100, imgsz=640)
+metrics = trainer.evaluate("dataset.yaml")   # {"mAP50": ..., "mAP5095": ...}, same keys
+```
+
+### One surface, two providers
+
+Both satisfy `DetectionTrainerProtocol`, so a sweep drives the uniform part
+polymorphically even though `fit`'s data form differs per provider:
+
+```python
+from mindtrace.models.training import DetectionTrainerProtocol
+
+trainers: list[DetectionTrainerProtocol] = [det_trainer, yolo_trainer]
+for t in trainers:
+    print(t.evaluate(val_data))   # both -> {"mAP50": ..., "mAP5095": ...}
+    t.save(f"detector-{key}")
+```
 
 ## Callbacks
 
@@ -224,6 +344,37 @@ combo = ComboLoss(
 )
 loss = combo(logits, targets)
 print(combo.named_losses)  # {"dice": 0.23, "focal": 0.18}
+```
+
+### Loss Factory
+
+`build_loss(name, **kwargs)` constructs a loss by name from one registry spanning
+torch built-ins (`"cross_entropy"`, `"mse"`, `"bce_with_logits"`, ...) and mindtrace
+losses (`"focal"`, `"dice"`, `"tversky"`, ...), mirroring `build_optimizer` /
+`build_scheduler`.
+
+```python
+from mindtrace.models.training.losses import build_loss
+
+loss_fn = build_loss("focal", gamma=2.0)
+```
+
+### Multi-Task Loss
+
+`MultiTaskLoss` composes per-task losses for a multi-head model, routing each
+sub-loss to its own output head and target key (unlike `ComboLoss`, which shares
+one `(output, target)` across every sub-loss). Per-task weighted values are cached
+in `named_losses`.
+
+```python
+from mindtrace.models.training.losses import MultiTaskLoss, TaskSpec, build_loss
+
+loss_fn = MultiTaskLoss({
+    "category": TaskSpec(build_loss("cross_entropy"), output=0, target="category"),
+    "score":    TaskSpec(build_loss("mse"), output=1, target="score", weight=0.5),
+})
+# model returns (logits, score); targets is {"category": ..., "score": ...}
+loss = loss_fn(outputs, targets)
 ```
 
 ## Optimizers
@@ -358,7 +509,15 @@ trainer = Trainer(..., gradient_checkpointing=True)
 ```python
 from mindtrace.models.training import (
     # Core
-    Trainer,                    # extends Mindtrace; supervised training loop
+    Trainer,                    # extends Mindtrace; generic supervised training loop
+
+    # Detection (provider-backed; share DetectionTrainerProtocol)
+    DetectionTrainer,           # torchvision detectors (mindtrace owns loop)
+    build_detection_model,      # torchvision detector factory (Faster R-CNN / RetinaNet / FCOS)
+    detection_collate,          # DataLoader collate for (image, target) pairs
+    UltralyticsTrainer,         # YOLO / RT-DETR adapter (Ultralytics owns loop)
+    UltralyticsDistiller,       # response-based KD for YOLO (experimental)
+    DetectionTrainerProtocol,   # shared fit/evaluate/save surface
 
     # Callbacks
     Callback,                   # abstract base class
@@ -394,6 +553,11 @@ from mindtrace.models.training.losses import (
     IoULoss,                    # Jaccard / IoU
 
     # Composite
-    ComboLoss,                  # weighted sum of sub-losses
+    ComboLoss,                  # weighted sum of sub-losses (shared output/target)
+
+    # Factory + multi-task
+    build_loss,                 # name -> loss nn.Module
+    MultiTaskLoss,              # per-task losses routed to their own output/target
+    TaskSpec,                   # one task entry in a MultiTaskLoss
 )
 ```

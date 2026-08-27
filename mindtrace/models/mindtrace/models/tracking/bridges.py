@@ -18,9 +18,21 @@ Usage::
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Trackers such as MLflow only accept metric names made of alphanumerics, ``_``,
+# ``-``, ``.``, space, ``:``, and ``/``. Ultralytics emits names like
+# ``metrics/precision(B)`` with parentheses, which would reject the whole batch,
+# so disallowed characters are stripped before logging.
+_INVALID_METRIC_CHARS = re.compile(r"[^0-9A-Za-z_./: -]")
+
+
+def _sanitize_metric_name(name: str) -> str:
+    """Strip characters a tracker backend may reject from a metric name."""
+    return _INVALID_METRIC_CHARS.sub("", name)
 
 
 class UltralyticsTrackerBridge:
@@ -34,19 +46,6 @@ class UltralyticsTrackerBridge:
         tracker: A mindtrace ``Tracker`` instance.  When ``None`` the bridge
             is a no-op (metrics are still logged via Python logging).
     """
-
-    EPOCH_METRIC_KEYS: tuple[str, ...] = (
-        "train/box_loss",
-        "train/cls_loss",
-        "train/dfl_loss",
-        "metrics/precision(B)",
-        "metrics/recall(B)",
-        "metrics/mAP50(B)",
-        "metrics/mAP50-95(B)",
-        "val/box_loss",
-        "val/cls_loss",
-        "val/dfl_loss",
-    )
 
     def __init__(self, tracker: Any | None = None) -> None:
         self._tracker = tracker
@@ -69,16 +68,13 @@ class UltralyticsTrackerBridge:
             bridge._current_epoch = epoch
 
             raw_metrics: dict = getattr(ultralytics_trainer, "metrics", {})
+            # Forward every numeric metric Ultralytics reports (loss terms plus
+            # precision/recall/mAP), sanitizing keys MLflow would otherwise reject.
             loggable: dict[str, float] = {}
-            for key in bridge.EPOCH_METRIC_KEYS:
-                if key in raw_metrics:
-                    val = raw_metrics[key]
-                    if isinstance(val, (int, float)):
-                        loggable[key] = float(val)
-
             for key, val in raw_metrics.items():
-                if key not in loggable and isinstance(val, (int, float)):
-                    loggable[key] = float(val)
+                sk = _sanitize_metric_name(key)
+                if sk not in loggable and isinstance(val, (int, float)):
+                    loggable[sk] = float(val)
 
             logger.debug("UltralyticsTrackerBridge: epoch=%d metrics=%s", epoch, loggable)
 
@@ -104,7 +100,7 @@ class UltralyticsTrackerBridge:
             if bridge._tracker is not None and final_loggable:
                 try:
                     bridge._tracker.log(
-                        {f"final/{k}": v for k, v in final_loggable.items()},
+                        {f"final/{_sanitize_metric_name(k)}": v for k, v in final_loggable.items()},
                         step=bridge._current_epoch,
                     )
                 except Exception as exc:

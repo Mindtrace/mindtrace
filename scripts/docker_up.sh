@@ -54,3 +54,20 @@ export REDIS_OM_URL=redis://localhost:6380
 # resolve GCP via CoreConfig (env vars already set by the user or CI, else config.ini).
 # Forcing placeholder buckets/projects would override repo config when this script is
 # sourced by scripts/run_tests.sh before pytest.
+
+# Best-effort wait for RabbitMQ. This runs AFTER the exports above and is non-fatal:
+# this script is sourced by run_tests.sh, so returning/exiting on a slow or unhealthy
+# broker would skip every export above and make ALL integration tests fall back to
+# default endpoints (e.g. MinIO on :9000 instead of :9100). On timeout we warn and
+# continue, so only genuinely broker-dependent tests are affected.
+echo "Waiting for RabbitMQ to be ready..."
+RABBITMQ_WAIT_SECONDS=0
+until $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml exec -T rabbitmq rabbitmq-diagnostics -q ping > /dev/null 2>&1; do
+    sleep 1
+    RABBITMQ_WAIT_SECONDS=$((RABBITMQ_WAIT_SECONDS + 1))
+    if [ "$RABBITMQ_WAIT_SECONDS" -ge 90 ]; then
+        echo "Warning: RabbitMQ not ready within 90s; continuing (broker-dependent tests may fail). Recent logs:" >&2
+        $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml logs --tail 20 rabbitmq >&2
+        break
+    fi
+done

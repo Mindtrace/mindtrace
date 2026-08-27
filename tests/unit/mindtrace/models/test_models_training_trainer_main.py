@@ -963,3 +963,121 @@ class TestFitIntegration:
             for v in values:
                 assert v > 0.0
                 assert v < float("inf")
+
+
+# ---------------------------------------------------------------------------
+# Metrics & multi-task training
+# ---------------------------------------------------------------------------
+
+
+class _TwoHead(nn.Module):
+    """Multi-task model: shared trunk, a classification head and a regression head."""
+
+    def __init__(self):
+        super().__init__()
+        self.trunk = nn.Linear(IN_FEATURES, 16)
+        self.cls = nn.Linear(16, OUT_FEATURES)
+        self.reg = nn.Linear(16, 1)
+
+    def forward(self, x):
+        h = torch.relu(self.trunk(x))
+        return self.cls(h), self.reg(h).squeeze(-1)
+
+
+def _mt_loss(outputs, targets):
+    logits, reg = outputs
+    return nn.functional.cross_entropy(logits, targets["cls"]) + nn.functional.mse_loss(reg, targets["reg"])
+
+
+def _mt_loader(n_batches: int = 3, batch_size: int = BATCH_SIZE):
+    batches = []
+    for _ in range(n_batches):
+        x = torch.randn(batch_size, IN_FEATURES)
+        batches.append((x, {"cls": torch.randint(0, OUT_FEATURES, (batch_size,)), "reg": torch.randn(batch_size)}))
+    return batches
+
+
+class TestMetrics:
+    def test_single_task_accuracy_metric_reported(self, simple_model, loss_fn, optimizer):
+        def accuracy(outputs, targets):
+            return (outputs.argmax(1) == targets).float().mean().item()
+
+        trainer = Trainer(simple_model, loss_fn, optimizer, metrics={"accuracy": accuracy})
+        history = trainer.fit(_make_loader(), _make_loader(), epochs=1)
+        assert "val/accuracy" in history
+        assert 0.0 <= history["val/accuracy"][-1] <= 1.0
+
+    def test_multi_task_reports_both_metrics(self):
+        model = _TwoHead()
+        optimizer = SGD(model.parameters(), lr=0.01)
+
+        def category_acc(outputs, targets):
+            logits, _ = outputs
+            return (logits.argmax(1) == targets["cls"]).float().mean().item()
+
+        def mae(outputs, targets):
+            _, reg = outputs
+            return (reg - targets["reg"]).abs().mean().item()
+
+        trainer = Trainer(model, _mt_loss, optimizer, metrics={"category_acc": category_acc, "mae": mae})
+        history = trainer.fit(_mt_loader(), _mt_loader(), epochs=1)
+
+        # Multi-task loss trained, and BOTH task metrics were tracked — no hand-rolled loop.
+        assert "val/loss" in history
+        assert "val/category_acc" in history and "val/mae" in history
+        assert 0.0 <= history["val/category_acc"][-1] <= 1.0
+        assert history["val/mae"][-1] >= 0.0
+
+    def test_metrics_are_sample_weighted(self, simple_model, loss_fn, optimizer):
+        # Two uneven batches; a metric that returns the batch mean must pool correctly.
+        val = [
+            (torch.zeros(2, IN_FEATURES), torch.zeros(2, dtype=torch.long)),
+            (torch.zeros(6, IN_FEATURES), torch.zeros(6, dtype=torch.long)),
+        ]
+
+        def const_batchmean(outputs, targets):
+            # 1.0 for the 2-sample batch, 0.0 for the 6-sample batch
+            return 1.0 if targets.shape[0] == 2 else 0.0
+
+        trainer = Trainer(simple_model, loss_fn, optimizer, metrics={"m": const_batchmean})
+        history = trainer.fit(_make_loader(), val, epochs=1)
+        # Sample-weighted mean = (1.0*2 + 0.0*6) / 8 = 0.25 (unweighted would be 0.5).
+        assert history["val/m"][-1] == pytest.approx(0.25)
+
+    def test_batch_size_inference(self):
+        assert Trainer._batch_size(torch.zeros(5, 3)) == 5
+        assert Trainer._batch_size({"a": torch.zeros(7)}) == 7
+        assert Trainer._batch_size((torch.zeros(4, 2), torch.zeros(4))) == 4
+        assert Trainer._batch_size("not a tensor") == 1
+
+
+# ---------------------------------------------------------------------------
+# Scheduler interval (epoch vs step)
+# ---------------------------------------------------------------------------
+
+
+class TestSchedulerInterval:
+    def test_invalid_interval_raises(self, simple_model, loss_fn, optimizer):
+        with pytest.raises(ValueError, match="scheduler_interval"):
+            Trainer(simple_model, loss_fn, optimizer, scheduler_interval="minute")
+
+    def test_epoch_interval_steps_once_per_epoch(self, simple_model, loss_fn, optimizer):
+        # StepLR(step_size=1, gamma=0.1): lr = base * 0.1 ** (num scheduler steps).
+        sched = StepLR(optimizer, step_size=1, gamma=0.1)
+        base = optimizer.param_groups[0]["lr"]
+        trainer = Trainer(simple_model, loss_fn, optimizer, scheduler=sched, scheduler_interval="epoch")
+        trainer.fit(_make_loader(n_batches=3), epochs=2)
+        # 2 epochs -> 2 steps, regardless of the 3 batches/epoch.
+        assert optimizer.param_groups[0]["lr"] == pytest.approx(base * (0.1**2))
+
+    def test_step_interval_steps_every_batch(self, simple_model, loss_fn, optimizer):
+        sched = StepLR(optimizer, step_size=1, gamma=0.1)
+        base = optimizer.param_groups[0]["lr"]
+        trainer = Trainer(simple_model, loss_fn, optimizer, scheduler=sched, scheduler_interval="step")
+        trainer.fit(_make_loader(n_batches=3), epochs=2)
+        # 2 epochs * 3 batches = 6 optimizer steps -> 6 scheduler steps (the default).
+        assert optimizer.param_groups[0]["lr"] == pytest.approx(base * (0.1**6))
+
+    def test_default_interval_is_step(self, simple_model, loss_fn, optimizer):
+        trainer = Trainer(simple_model, loss_fn, optimizer)
+        assert trainer.scheduler_interval == "step"

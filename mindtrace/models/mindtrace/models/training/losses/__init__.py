@@ -22,6 +22,14 @@ Segmentation
 Composite
 ---------
 - ``ComboLoss``: Weighted sum of heterogeneous sub-losses.
+
+Distillation
+------------
+- ``DistillationLoss``: Knowledge distillation combining a base loss with a
+  temperature-scaled KL term against teacher logits, optionally augmented
+  with a feature-matching term.
+- ``FeatureDistillation``: FitNets-style intermediate feature matching
+  between student and teacher submodules via forward hooks.
 """
 
 from __future__ import annotations
@@ -32,7 +40,14 @@ from mindtrace.models.training.losses.classification import (
     SupConLoss,
 )
 from mindtrace.models.training.losses.composite import ComboLoss
-from mindtrace.models.training.losses.detection import CIoULoss, GIoULoss
+from mindtrace.models.training.losses.detection import (
+    CIoULoss,
+    DetectionSetCriterion,
+    GIoULoss,
+    HungarianMatcher,
+)
+from mindtrace.models.training.losses.distillation import DistillationLoss, FeatureDistillation
+from mindtrace.models.training.losses.factory import MultiTaskLoss, TaskSpec, build_loss
 from mindtrace.models.training.losses.segmentation import DiceLoss, IoULoss, TverskyLoss
 
 __all__ = [
@@ -42,6 +57,8 @@ __all__ = [
     "SupConLoss",
     # detection
     "GIoULoss",
+    "HungarianMatcher",
+    "DetectionSetCriterion",
     "CIoULoss",
     # segmentation
     "DiceLoss",
@@ -49,4 +66,11 @@ __all__ = [
     "IoULoss",
     # composite
     "ComboLoss",
+    # distillation
+    "DistillationLoss",
+    "FeatureDistillation",
+    # factory + multi-task
+    "build_loss",
+    "MultiTaskLoss",
+    "TaskSpec",
 ]

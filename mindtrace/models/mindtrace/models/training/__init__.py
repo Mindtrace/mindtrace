@@ -5,7 +5,25 @@ Provides the core supervised training infrastructure:
 Training Loop
 -------------
 - ``Trainer``: Main training loop with AMP, gradient accumulation,
-  gradient checkpointing, and DDP support.
+  gradient checkpointing, and DDP support.  Task-agnostic: it trains anything
+  expressible as ``(inputs, targets) -> loss`` (classification, segmentation)
+  over a torch ``DataLoader``.
+
+Detection Training
+------------------
+Object detection needs a loop the generic ``Trainer`` does not own (label
+assignment, box loss, NMS, mAP).  Two provider-backed trainers fill that gap
+behind one shared surface (``DetectionTrainerProtocol``: ``fit`` / ``evaluate``
+/ ``save`` / ``tracker`` / ``registry``):
+
+- ``DetectionTrainer`` + ``build_detection_model``: torchvision detectors
+  (Faster R-CNN, RetinaNet, FCOS).  mindtrace owns the loop; the model owns the
+  loss.  Consumes a torch ``DataLoader`` (use ``detection_collate``).
+- ``UltralyticsTrainer``: YOLO / RT-DETR.  Ultralytics owns the whole loop;
+  this is a thin adapter that consumes a ``data.yaml`` path.
+
+The surface is unified; the data contract is intentionally per-provider (loader
+vs yaml) — that is the only place the providers genuinely differ.
 
 Callbacks
 ---------
@@ -42,12 +60,24 @@ from mindtrace.models.training.callbacks import (
     UnfreezeSchedule,
 )
 from mindtrace.models.training.datalake_bridge import DatalakeDataset, build_datalake_loader
+from mindtrace.models.training.detection import DetectionTrainer, build_detection_model, detection_collate
 from mindtrace.models.training.optimizers import build_optimizer, build_scheduler
+from mindtrace.models.training.protocol import DetectionTrainerProtocol
 from mindtrace.models.training.trainer import Trainer
+from mindtrace.models.training.ultralytics import UltralyticsDistiller, UltralyticsTrainer
 
 __all__ = [
     # Training loop
     "Trainer",
+    # Ultralytics (YOLO) training adapter
+    "UltralyticsTrainer",
+    "UltralyticsDistiller",
+    # Object detection (torchvision-backed)
+    "DetectionTrainer",
+    "build_detection_model",
+    "detection_collate",
+    # Shared detection-trainer surface
+    "DetectionTrainerProtocol",
     # Callbacks
     "Callback",
     "ModelCheckpoint",

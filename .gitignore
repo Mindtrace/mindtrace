@@ -187,3 +187,12 @@ assets/external/
 
 # Mac stuff
 .DS_Store
+
+# ML training / inference run artifacts and generated engines
+runs/
+wandb/
+mlruns/
+lightning_logs/
+*.engine
+*.plan
+*.pte

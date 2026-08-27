@@ -15,9 +15,10 @@ Backbone API::
 Head classes::
 
     from mindtrace.models.architectures import (
+        CrossAttentionMultiTaskHead,           # cross-attention multi-task head
         LinearHead, MLPHead, MultiLabelHead,   # classification
         LinearSegHead, FPNSegHead,              # segmentation
-        DetectionHead,                          # detection
+        DetectionHead, QueryDetectionHead,      # detection
     )
 
 High-level factory::
@@ -50,12 +51,14 @@ from mindtrace.models.architectures.factory import ModelWrapper, build_model, bu
 
 # Heads
 from mindtrace.models.architectures.heads import (
+    CrossAttentionMultiTaskHead,
     DetectionHead,
     FPNSegHead,
     LinearHead,
     LinearSegHead,
     MLPHead,
     MultiLabelHead,
+    QueryDetectionHead,
 )
 
 __all__ = [
@@ -77,4 +80,7 @@ __all__ = [
     "LinearSegHead",
     # Detection heads
     "DetectionHead",
+    "QueryDetectionHead",
+    # Multi-task head
+    "CrossAttentionMultiTaskHead",
 ]

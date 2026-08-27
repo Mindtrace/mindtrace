@@ -21,6 +21,17 @@ Optional subpackages (each requires additional dependencies):
     Requires: ``torch-model-archiver``, ``torchserve``.
 """
 
+from mindtrace.models.serving.compile_agent import (
+    CompileAgentService,
+    CompileJobInput,
+    CompileJobOutput,
+    TargetInfo,
+    TargetsOutput,
+)
+from mindtrace.models.serving.edge import EdgeModelService, probe_runtimes, select_providers
+from mindtrace.models.serving.inprocess import InProcessPredictor
+from mindtrace.models.serving.openvino_service import OpenVINOModelService
+from mindtrace.models.serving.queue import InferenceQueue
 from mindtrace.models.serving.results import (
     ClassificationResult,
     DetectionResult,
@@ -28,15 +39,35 @@ from mindtrace.models.serving.results import (
 )
 from mindtrace.models.serving.schemas import ModelInfo, PredictRequest, PredictResponse
 from mindtrace.models.serving.service import ModelService, resolve_device
+from mindtrace.models.serving.tensorrt_service import TensorRTModelService
+from mindtrace.models.serving.tiling import TileDetection, TiledInference
 
 __all__ = [
+    "CompileAgentService",
+    "CompileJobInput",
+    "CompileJobOutput",
+    "EdgeModelService",
+    "TargetInfo",
+    "TargetsOutput",
     "ModelInfo",
     "ModelService",
     "PredictRequest",
     "PredictResponse",
+    "probe_runtimes",
+    "select_providers",
     "resolve_device",
+    # Tiled inference for large frames
+    "TileDetection",
+    "TiledInference",
     # Typed results
     "ClassificationResult",
     "DetectionResult",
     "SegmentationResult",
+    # Async inference queue (capture/inference decoupling)
+    "InferenceQueue",
+    # In-process (zero-copy) and native OpenVINO inference
+    "InProcessPredictor",
+    "OpenVINOModelService",
+    # Native TensorRT inference
+    "TensorRTModelService",
 ]

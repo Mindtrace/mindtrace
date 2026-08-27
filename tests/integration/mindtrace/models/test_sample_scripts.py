@@ -22,24 +22,47 @@ import torch
 _SAMPLES_DIR = Path(__file__).resolve().parents[4] / "samples" / "models"
 _SCRIPTS = sorted(_SAMPLES_DIR.glob("*.py"))
 _REPO_ROOT = str(_SAMPLES_DIR.parents[1])
-_TIMEOUT = 120
-_MAX_WORKERS = 4
+# The edge-optimization samples (pruning, distillation, quantization, QAT) are
+# CPU-heavy and each spawns many BLAS/torch threads. On a small CI runner, running
+# four at once with unbounded threads oversubscribes the cores and pushes each past
+# a tight timeout. Cap concurrency at 2 and cap threads per subprocess so total load
+# stays bounded and timing is predictable, with a generous per-script budget.
+_TIMEOUT = 300
+_MAX_WORKERS = 2
+_THREAD_CAP = "2"
 
-# Skip the ~2-3 s CUDA probe per subprocess on GPU-less CI runners.
-_ENV: dict[str, str] | None = None
+# On GPU-less CI runners, skip the CUDA probe and bound BLAS/torch thread counts so
+# concurrent samples do not spawn dozens of threads fighting over a couple of cores.
+_ENV = {
+    **os.environ,
+    "OMP_NUM_THREADS": _THREAD_CAP,
+    "MKL_NUM_THREADS": _THREAD_CAP,
+    "OPENBLAS_NUM_THREADS": _THREAD_CAP,
+    "NUMEXPR_NUM_THREADS": _THREAD_CAP,
+}
 if not torch.cuda.is_available():
-    _ENV = {**os.environ, "CUDA_VISIBLE_DEVICES": ""}
+    _ENV["CUDA_VISIBLE_DEVICES"] = ""
 
 
 def _run_script(script: Path) -> tuple[Path, subprocess.CompletedProcess[str]]:
-    result = subprocess.run(
-        [sys.executable, str(script)],
-        capture_output=True,
-        text=True,
-        timeout=_TIMEOUT,
-        env=_ENV,
-        cwd=_REPO_ROOT,
-    )
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            capture_output=True,
+            text=True,
+            timeout=_TIMEOUT,
+            env=_ENV,
+            cwd=_REPO_ROOT,
+        )
+    except subprocess.TimeoutExpired as exc:
+        # Report a timeout as a clean failure for this one script rather than
+        # letting the exception abort the whole test and hide the other results.
+        return script, subprocess.CompletedProcess(
+            exc.cmd,
+            returncode=-1,
+            stdout=(exc.stdout or "") + f"\n[timed out after {_TIMEOUT}s]",
+            stderr=(exc.stderr or ""),
+        )
     return script, result
 
 

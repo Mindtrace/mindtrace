@@ -24,9 +24,9 @@ except ImportError:  # pragma: no cover
 from mindtrace.models.evaluation.metrics.classification import (
     accuracy,
     classification_report,
+    precision_recall_f1,
 )
 from mindtrace.models.evaluation.metrics.detection import (
-    mean_average_precision,
     mean_average_precision_50_95,
 )
 from mindtrace.models.evaluation.metrics.regression import mae, mse, r2_score, rmse
@@ -38,9 +38,12 @@ from mindtrace.models.evaluation.metrics.segmentation import (
 
 _SUPPORTED_TASKS = frozenset({"classification", "detection", "regression", "segmentation"})
 
-_ZERO_METRICS: dict[str, dict[str, float]] = {
+# Zero-metric fallbacks returned for empty loaders. Each entry must carry the
+# SAME keys as the corresponding populated result, so callers can index the
+# result shape unconditionally (e.g. detection's "AP_per_class").
+_ZERO_METRICS: dict[str, dict[str, Any]] = {
     "classification": {"accuracy": 0.0, "precision": 0.0, "recall": 0.0, "f1": 0.0},
-    "detection": {"mAP@50": 0.0, "mAP@75": 0.0, "mAP@50:95": 0.0},
+    "detection": {"mAP@50": 0.0, "mAP@75": 0.0, "mAP@50:95": 0.0, "AP_per_class": {}},
     "segmentation": {"mIoU": 0.0, "mean_dice": 0.0, "pixel_accuracy": 0.0, "iou_per_class": [], "dice_per_class": []},
     "regression": {"mae": 0.0, "mse": 0.0, "rmse": 0.0, "r2": 0.0},
 }
@@ -57,8 +60,8 @@ class EvaluationRunner(Mindtrace):
     Args:
         model: PyTorch ``nn.Module``.  Moved to *device* automatically on
             construction.
-        task: One of ``"classification"``, ``"detection"``, or
-            ``"segmentation"``.
+        task: One of ``"classification"``, ``"detection"``,
+            ``"segmentation"``, or ``"regression"``.
         num_classes: Number of output classes.
         loader: Optional default evaluation data loader.  Stored and used
             by :meth:`evaluate` and as a fallback by :meth:`run` when the
@@ -192,9 +195,11 @@ class EvaluationRunner(Mindtrace):
 
             * **classification**: ``accuracy``, ``precision``, ``recall``,
               ``f1``, ``classification_report``.
-            * **detection**: ``mAP@50``, ``mAP@75``, ``mAP@50:95``.
+            * **detection**: ``mAP@50``, ``mAP@75``, ``mAP@50:95``,
+              ``AP_per_class``.
             * **segmentation**: ``mIoU``, ``mean_dice``, ``pixel_accuracy``,
               ``iou_per_class``, ``dice_per_class``.
+            * **regression**: ``mae``, ``mse``, ``rmse``, ``r2``.
         """
         # Fall back to default loader when None is passed
         if loader is None:
@@ -287,8 +292,6 @@ class EvaluationRunner(Mindtrace):
         preds_arr = np.concatenate(all_preds, axis=0)
         targets_arr = np.concatenate(all_targets, axis=0)
 
-        from mindtrace.models.evaluation.metrics.classification import precision_recall_f1
-
         acc = accuracy(preds_arr, targets_arr)
         prec, rec, f1 = precision_recall_f1(preds_arr, targets_arr, self._num_classes, average="macro")
         report = classification_report(
@@ -363,14 +366,15 @@ class EvaluationRunner(Mindtrace):
             self.logger.warning("EvaluationRunner: loader was empty; returning zero metrics.")
             return dict(_ZERO_METRICS["detection"])
 
+        # mean_average_precision_50_95 already runs the IoU-0.50 pass internally and
+        # surfaces both mAP@50 and its per-class AP, so no separate 0.50 call is needed.
         coco_result = mean_average_precision_50_95(all_preds, all_targets, self._num_classes)
-        map50_result = mean_average_precision(all_preds, all_targets, self._num_classes, iou_threshold=0.5)
 
         results: dict[str, Any] = {
-            "mAP@50": map50_result["mAP"],
+            "mAP@50": coco_result["mAP@50"],
             "mAP@75": coco_result["mAP@75"],
             "mAP@50:95": coco_result["mAP@50:95"],
-            "AP_per_class": map50_result["AP_per_class"],
+            "AP_per_class": coco_result["AP_per_class"],
         }
 
         self.logger.info(

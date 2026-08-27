@@ -1,6 +1,6 @@
 [![PyPI version](https://img.shields.io/pypi/v/mindtrace-models)](https://pypi.org/project/mindtrace-models/)
 
-# Mindtrace Models -- Tracking
+# Mindtrace Models: Tracking
 
 Unified experiment-tracking layer supporting MLflow, Weights & Biases, and TensorBoard backends. A `CompositeTracker` fans out to multiple backends simultaneously. A `RegistryBridge` adapts the Mindtrace Registry as a model artifact store. Framework bridges for Ultralytics and HuggingFace connect third-party training loops to the same tracking interface.
 
@@ -175,7 +175,7 @@ If the provided registry object does not satisfy `RegistryProtocol`, a `TypeErro
 
 ## Framework Bridges
 
-Bridges connect third-party training frameworks to the Mindtrace Tracker so metrics flow into your experiment tracking backend without custom glue code.
+Bridges connect third-party training frameworks to the Mindtrace Tracker, forwarding their metrics through the same Tracker interface.
 
 ### Bridge Comparison
 

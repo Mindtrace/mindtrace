@@ -1,7 +1,7 @@
 # mindtrace.models.evaluation.metrics
 
 Pure NumPy metric functions organised by task. All functions accept `np.ndarray`
-inputs and return Python scalars or plain dicts — no PyTorch dependency.
+inputs and return Python scalars or plain dicts, with no PyTorch dependency.
 
 ---
 
@@ -17,10 +17,10 @@ inputs and return Python scalars or plain dicts — no PyTorch dependency.
 | `classification_report(preds, targets, num_classes, class_names=None)` | `(N,)` int arrays | `dict` |
 
 `average` options for `precision_recall_f1` and `roc_auc_score`:
-- `"macro"` — unweighted mean across classes
-- `"micro"` — global TP/FP/FN counts
-- `"weighted"` — class-frequency weighted mean
-- `"none"` — per-class array
+- `"macro"`: unweighted mean across classes
+- `"micro"`: global TP/FP/FN counts
+- `"weighted"`: class-frequency weighted mean
+- `"none"`: per-class array
 
 `classification_report` keys: `per_class`, `macro`, `micro`, `weighted`, `accuracy`, `num_samples`, `num_classes`.
 

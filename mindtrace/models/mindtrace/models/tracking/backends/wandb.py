@@ -84,8 +84,6 @@ class WandBTracker(Tracker):
             raise ImportError(_WANDB_INSTALL_MSG)
 
         # Point WandB data directory to mindtrace's managed cache
-        import os
-
         if "WANDB_DIR" not in os.environ:
             root = self.config["MINDTRACE_DIR_PATHS"]["ROOT"]
             wandb_dir = os.path.join(root, "wandb")
@@ -177,9 +175,14 @@ class WandBTracker(Tracker):
         if not _TORCH_AVAILABLE:
             raise ImportError(_TORCH_INSTALL_MSG)
 
+        # Stage the checkpoint under the config-managed TEMP_DIR rather than the
+        # system /tmp, consistent with the rest of the mindtrace paradigm.
+        temp_base = self.config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]
+        os.makedirs(temp_base, exist_ok=True)
+
         tmp_path: str | None = None
         try:
-            with tempfile.NamedTemporaryFile(suffix=".pt", delete=False, prefix=f"{name}_") as tmp:
+            with tempfile.NamedTemporaryFile(suffix=".pt", delete=False, prefix=f"{name}_", dir=temp_base) as tmp:
                 tmp_path = tmp.name
 
             torch.save(model.state_dict(), tmp_path)

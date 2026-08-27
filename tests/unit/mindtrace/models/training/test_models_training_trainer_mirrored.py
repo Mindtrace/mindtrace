@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import builtins
 from contextlib import nullcontext
-from types import ModuleType
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
 torch = pytest.importorskip("torch")
@@ -65,38 +64,28 @@ class LenlessLoader:
 
 
 class TestTrainerMirroredInit:
-    def test_ddp_wraps_model_with_cluster_helper(self, simple_model, loss_fn):
+    def test_ddp_wraps_model_with_native_ddp(self, simple_model, loss_fn):
         optimizer = SGD(simple_model.parameters(), lr=0.01)
-        wrapped_model = MagicMock(name="wrapped_model")
-        fake_module = ModuleType("mindtrace.cluster.distributed")
-        fake_module.wrap_ddp = Mock(return_value=wrapped_model)
 
-        with patch.dict("sys.modules", {"mindtrace.cluster.distributed": fake_module}):
-            trainer = _make_trainer(simple_model, loss_fn, optimizer, ddp=True)
-
-        assert trainer.model is wrapped_model
-        fake_module.wrap_ddp.assert_called_once()
-
-    def test_ddp_falls_back_to_native_ddp(self, simple_model, loss_fn):
-        optimizer = SGD(simple_model.parameters(), lr=0.01)
-        original_import = builtins.__import__
-
-        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
-            if name == "mindtrace.cluster.distributed":
-                raise ImportError("no cluster distributed")
-            return original_import(name, globals, locals, fromlist, level)
-
-        with patch("builtins.__import__", side_effect=fake_import):
-            with patch("torch.distributed.is_initialized", return_value=True):
-                with patch("torch.distributed.get_world_size", return_value=2):
-                    with patch(
-                        "torch.nn.parallel.DistributedDataParallel",
-                        side_effect=lambda model, device_ids=None: ("ddp", model, device_ids),
-                    ) as mock_ddp:
-                        trainer = _make_trainer(simple_model, loss_fn, optimizer, ddp=True)
+        with patch("torch.distributed.is_initialized", return_value=True):
+            with patch("torch.distributed.get_world_size", return_value=2):
+                with patch(
+                    "torch.nn.parallel.DistributedDataParallel",
+                    side_effect=lambda model, device_ids=None: ("ddp", model, device_ids),
+                ) as mock_ddp:
+                    trainer = _make_trainer(simple_model, loss_fn, optimizer, ddp=True)
 
         assert trainer.model[0] == "ddp"
         mock_ddp.assert_called_once_with(simple_model, device_ids=None)
+
+    def test_ddp_noop_when_no_process_group(self, simple_model, loss_fn):
+        optimizer = SGD(simple_model.parameters(), lr=0.01)
+
+        with patch("torch.distributed.is_initialized", return_value=False):
+            trainer = _make_trainer(simple_model, loss_fn, optimizer, ddp=True)
+
+        # No active process group => model is left unwrapped (single-process).
+        assert trainer.model is simple_model
 
 
 class TestTrainerMirroredEpochs:
@@ -135,36 +124,17 @@ class TestTrainerMirroredEpochs:
         trainer._scaler.step.assert_called_once_with(trainer.optimizer)
         trainer._scaler.update.assert_called_once()
 
-    def test_train_epoch_uses_cluster_all_reduce_mean(self, simple_model, loss_fn, optimizer):
+    def test_train_epoch_averages_loss_across_ddp_workers(self, simple_model, loss_fn, optimizer):
         trainer = _make_trainer(simple_model, loss_fn, optimizer)
         trainer._ddp = True
-        fake_module = ModuleType("mindtrace.cluster.distributed")
-        fake_module.all_reduce_mean = Mock(return_value=torch.tensor(123.0))
-
-        with patch.dict("sys.modules", {"mindtrace.cluster.distributed": fake_module}):
-            metrics = trainer._train_epoch(_make_loader(n_batches=1))
-
-        assert metrics["train/loss"] == pytest.approx(123.0)
-        fake_module.all_reduce_mean.assert_called_once()
-
-    def test_train_epoch_uses_native_all_reduce_fallback(self, simple_model, loss_fn, optimizer):
-        trainer = _make_trainer(simple_model, loss_fn, optimizer)
-        trainer._ddp = True
-        original_import = builtins.__import__
-
-        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
-            if name == "mindtrace.cluster.distributed":
-                raise ImportError("no cluster distributed")
-            return original_import(name, globals, locals, fromlist, level)
 
         def fake_all_reduce(tensor, op=None):
             tensor.mul_(2.0)
 
-        with patch("builtins.__import__", side_effect=fake_import):
-            with patch("torch.distributed.is_initialized", return_value=True):
-                with patch("torch.distributed.get_world_size", return_value=2):
-                    with patch("torch.distributed.all_reduce", side_effect=fake_all_reduce) as mock_reduce:
-                        metrics = trainer._train_epoch(_make_loader(n_batches=1))
+        with patch("torch.distributed.is_initialized", return_value=True):
+            with patch("torch.distributed.get_world_size", return_value=2):
+                with patch("torch.distributed.all_reduce", side_effect=fake_all_reduce) as mock_reduce:
+                    metrics = trainer._train_epoch(_make_loader(n_batches=1))
 
         assert isinstance(metrics["train/loss"], float)
         mock_reduce.assert_called_once()
@@ -193,3 +163,36 @@ class TestTrainerMirroredEpochs:
 
         assert "val/loss" in metrics
         assert mock_autocast.call_count == 2
+
+    def test_val_epoch_passes_detached_cpu_tensors_to_metrics(self, simple_model, loss_fn, optimizer):
+        # Metric fns are numpy-based (np.asarray raises on CUDA / grad tensors), so
+        # the trainer must hand them detached CPU tensors. A metric that itself calls
+        # np.asarray(...) proves the contract holds regardless of training device.
+        seen = {}
+
+        def numpy_metric(outputs, targets):
+            preds = np.asarray(outputs.argmax(dim=1))  # would raise if grad/CUDA
+            seen["requires_grad"] = outputs.requires_grad
+            seen["is_cpu"] = outputs.device.type == "cpu"
+            return float((preds == np.asarray(targets)).mean())
+
+        trainer = _make_trainer(simple_model, loss_fn, optimizer, metrics={"acc": numpy_metric})
+        metrics = trainer._val_epoch(_make_loader(n_batches=2))
+
+        assert "val/acc" in metrics
+        assert seen["requires_grad"] is False
+        assert seen["is_cpu"] is True
+
+    def test_dict_loss_fn_is_unwrapped(self, simple_model, optimizer):
+        # Set-prediction criteria (e.g. DetectionSetCriterion) return a dict of
+        # loss components keyed by "loss"; the trainer must unwrap it so the scalar
+        # can be divided/backward-ed/.item()-ed instead of crashing on the dict.
+        class DictLoss(nn.Module):
+            def forward(self, outputs, targets):
+                return {"loss": nn.functional.cross_entropy(outputs, targets), "loss_aux": 0.0}
+
+        trainer = _make_trainer(simple_model, DictLoss(), optimizer)
+        metrics = trainer._train_epoch(_make_loader(n_batches=2))
+
+        assert isinstance(metrics["train/loss"], float)
+        assert metrics["train/loss"] > 0.0

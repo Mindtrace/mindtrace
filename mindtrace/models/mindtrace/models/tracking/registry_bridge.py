@@ -19,17 +19,20 @@ logger = logging.getLogger(__name__)
 class RegistryProtocol(Protocol):
     """Structural protocol for objects that can act as a model registry.
 
-    Any object that exposes a ``save(key, model)`` method satisfies this
-    protocol and can be used with :class:`RegistryBridge`.
+    Any object that exposes a ``save(name, obj, *, version=...)`` method
+    satisfies this protocol and can be used with :class:`RegistryBridge`.  This
+    mirrors :meth:`mindtrace.registry.Registry.save`, where the object *name*
+    and its *version* are distinct arguments — the registry owns versioning.
     """
 
-    def save(self, key: str, model: Any) -> None:
-        """Persist ``model`` under the given ``key``.
+    def save(self, name: str, obj: Any, *, version: str | None = None) -> Any:
+        """Persist ``obj`` under ``name`` at the given ``version``.
 
         Args:
-            key: Unique storage key, typically formatted as
-                ``"<name>:<version>"``.
-            model: Model object to persist.
+            name: Registry object name (e.g. ``"detectors:yolov8"``).
+            obj: Model object to persist.
+            version: Explicit version string.  ``None`` lets the registry
+                auto-assign the next version.
         """
         ...
 
@@ -39,9 +42,9 @@ class RegistryBridge:
     and an external model registry.
 
     A ``RegistryBridge`` wraps any registry object that exposes a
-    ``save(key, model)`` method and translates the tracker's ``(name, version)``
-    pair into the ``"<name>:<version>"`` key format expected by
-    :class:`mindtrace.registry.Registry`.
+    ``save(name, obj, *, version=...)`` method and forwards the tracker's
+    ``(name, version)`` pair to it directly, letting the registry own
+    versioning — matching :class:`mindtrace.registry.Registry`.
 
     This keeps tracker backends decoupled from the concrete registry
     implementation: a tracker receives a ``RegistryBridge`` and calls
@@ -50,7 +53,7 @@ class RegistryBridge:
 
     Args:
         registry: Any object that satisfies :class:`RegistryProtocol`, i.e.
-            exposes ``registry.save(key, model)``.
+            exposes ``registry.save(name, obj, *, version=...)``.
 
     Raises:
         TypeError: If ``registry`` does not satisfy :class:`RegistryProtocol`.
@@ -63,8 +66,8 @@ class RegistryBridge:
         registry = Registry(uri="s3://my-bucket/models")
         bridge = RegistryBridge(registry)
 
-        key = bridge.save(model, name="resnet50", version="v1.2.0")
-        print(key)  # "resnet50:v1.2.0"
+        ref = bridge.save(model, name="resnet50", version="v1.2.0")
+        print(ref)  # "resnet50:v1.2.0"
         ```
     """
 
@@ -72,7 +75,8 @@ class RegistryBridge:
         """Initialise the bridge with a registry instance.
 
         Args:
-            registry: Registry object that exposes ``save(key, model)``.
+            registry: Registry object that exposes
+                ``save(name, obj, *, version=...)``.
 
         Raises:
             TypeError: If ``registry`` does not expose a callable ``save``
@@ -81,37 +85,39 @@ class RegistryBridge:
         if not isinstance(registry, RegistryProtocol):
             raise TypeError(
                 f"registry must implement the RegistryProtocol (i.e. have a "
-                f"'save(key, model)' method). Got: {type(registry).__name__!r}."
+                f"'save(name, obj, *, version=...)' method). Got: {type(registry).__name__!r}."
             )
         self.registry = registry
         logger.debug("RegistryBridge initialised with registry: %s", type(registry).__name__)
 
     def save(self, model: Any, name: str, version: str) -> str:
-        """Save a model to the registry and return the registry key.
+        """Save a model to the registry and return a ``"<name>:<version>"`` reference.
 
-        Formats the storage key as ``"<name>:<version>"`` and delegates to
-        ``self.registry.save(key, model)``.
+        Forwards ``name`` and ``version`` to ``self.registry.save`` as distinct
+        arguments (``registry.save(name, model, version=version)``) so the
+        registry versions the model correctly — the version must *not* be baked
+        into the name.
 
         Args:
             model: Model object to persist.
-            name: Model name component of the registry key.
-            version: Version string component of the registry key.
+            name: Registry object name.
+            version: Explicit version string passed to the registry.
 
         Returns:
-            The registry key used to store the model, formatted as
+            A human-readable reference to the saved model version, formatted as
             ``"<name>:<version>"``.
 
         Example:
             ```python
-            key = bridge.save(model, name="mobilenet_v3", version="2.0.0")
-            # key == "mobilenet_v3:2.0.0"
+            ref = bridge.save(model, name="mobilenet_v3", version="2.0.0")
+            # ref == "mobilenet_v3:2.0.0"
             ```
         """
-        key = f"{name}:{version}"
-        logger.debug("Saving model to registry: key=%s", key)
-        self.registry.save(key, model)
-        logger.info("Model saved to registry: key=%s", key)
-        return key
+        logger.debug("Saving model to registry: name=%s version=%s", name, version)
+        self.registry.save(name, model, version=version)
+        ref = f"{name}:{version}"
+        logger.info("Model saved to registry: %s", ref)
+        return ref
 
 
 __all__ = [

@@ -15,11 +15,11 @@ Run:
     python samples/models/01_quick_start.py
 """
 
+import os
 import tempfile
 from pathlib import Path
 
 import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from mindtrace.models import (
@@ -31,11 +31,17 @@ from mindtrace.models import (
     ProgressLogger,
     RegistryBridge,
     Trainer,
+    build_loss,
     build_model,
     build_optimizer,
     build_scheduler,
 )
 from mindtrace.registry import Registry
+
+# Share CPU cores fairly when several sample scripts run concurrently
+# (e.g. the CI integration harness runs four at once); GPU runs are unaffected.
+if not torch.cuda.is_available():
+    torch.set_num_threads(max(1, (os.cpu_count() or 8) // 4))
 
 # ── Synthetic dataset ──────────────────────────────────────────────────────────
 
@@ -88,7 +94,7 @@ print(f"\n[3] Registry initialised at: {registry._core.backend.uri if hasattr(re
 print(f"\n[4] Training for {EPOCHS} epochs...")
 trainer = Trainer(
     model=model,
-    loss_fn=nn.CrossEntropyLoss(),
+    loss_fn=build_loss("cross_entropy"),
     optimizer=optimizer,
     scheduler=scheduler,
     callbacks=[
@@ -173,9 +179,14 @@ print(f"  round-tripped card: name={card2.name}  version={card2.version}  stage=
 
 print("\n[7] Saving model to registry via RegistryBridge...")
 bridge = RegistryBridge(registry)
-key = bridge.save(model, name="beans-resnet18", version="v1")
+# Use a name distinct from the ModelCheckpoint/ModelCard above ("beans-resnet18");
+# the bridge forwards (name, version) to the registry, so reusing the same name
+# would collide with the version already stored under it.
+key = bridge.save(model, name="beans-resnet18-bridge", version="v1")
 print(f"  saved under key: {key!r}")
-loaded_model = registry.load(key)
+# The bridge saves name and version separately, so load by (name, version) rather
+# than by the returned display key.
+loaded_model = registry.load("beans-resnet18-bridge", version="v1")
 print(f"  loaded model type: {type(loaded_model).__name__}")
 
 # ── ONNX export snippet ────────────────────────────────────────────────────────

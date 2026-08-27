@@ -38,6 +38,26 @@ transformers = ["transformers>=4.35"]
 onnx = ["onnxruntime>=1.16", "onnx>=1.14"]
 peft = ["peft>=0.6"]
 
+# Edge optimization extras
+edge       = ["onnxruntime>=1.16", "onnx>=1.14", "onnxsim>=0.4.36", "onnxscript>=0.7"]
+pruning    = ["torch-pruning>=1.4"]
+openvino   = ["openvino>=2024.4"]
+executorch = ["executorch>=1.0"]
+
+# GPU inference extra (opt-in; deliberately NOT in `all` and NOT forwarded as a
+# root workspace extra, so `uv sync --all-extras` never enables it).
+#
+# edge-gpu is the CUDA counterpart of `edge`. onnxruntime-gpu and onnxruntime are
+# mutually exclusive (both provide the `onnxruntime` import), so this is a SEPARATE
+# extra — install it INSTEAD OF `edge`, not alongside it:
+#   uv pip install "mindtrace-models[edge-gpu]"
+#
+# TensorRT is intentionally NOT an extra: its pip package is sdist-only without
+# NVIDIA's package index, which would force a heavy build into every lock
+# resolution. Install it directly on a CUDA workstation (`uv pip install tensorrt`);
+# on Jetson it ships with JetPack. See README for details.
+edge-gpu   = ["onnxruntime-gpu>=1.16", "onnx>=1.14", "onnxsim>=0.4.36", "onnxscript>=0.7"]
+
 # Install everything
 all = [
     "mlflow>=2.0",
@@ -48,6 +68,11 @@ all = [
     "transformers>=4.35",
     "onnxruntime>=1.16",
     "onnx>=1.14",
+    "onnxsim>=0.4.36",
+    "onnxscript>=0.7",
+    "torch-pruning>=1.4",
+    "openvino>=2024.4",
+    "executorch>=1.0",
     "peft>=0.6",
 ]
 

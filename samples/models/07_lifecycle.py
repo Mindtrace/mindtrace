@@ -36,7 +36,7 @@ card = ModelCard(
     architecture="ResNet50+LinearHead",
     framework="pytorch",
     training_data="imagenet",
-    description="Weld defect classifier trained on imagenet-style synthetic data.",
+    description="Image classifier trained on imagenet-style synthetic data.",
 )
 print(f"  registry_key()          : {card.registry_key()}")
 print(f"  stage (default)         : {card.stage}")

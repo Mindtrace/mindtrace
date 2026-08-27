@@ -1,6 +1,6 @@
 [![PyPI version](https://img.shields.io/pypi/v/mindtrace-models)](https://pypi.org/project/mindtrace-models/)
 
-# Mindtrace Models -- Lifecycle
+# Mindtrace Models: Lifecycle
 
 Model lifecycle management with structured metadata cards, stage definitions, and promotion/demotion workflows with optional metric-gated thresholds.
 
@@ -142,8 +142,8 @@ card.registry_key(stage=ModelStage.STAGING)                     # "image-classif
 ### Persistence
 
 ```python
-card.save("/models/model_v3_card.json")
-card2 = ModelCard.load("/models/model_v3_card.json")
+card.save_json("/models/model_v3_card.json")
+card2 = ModelCard.load_json("/models/model_v3_card.json")
 
 # JSON round-trip
 data = card.to_dict()
@@ -176,7 +176,7 @@ r2 = EvalResult.from_dict(d)
 
 ### `card.promote()`
 
-Validates stage transition, checks metric thresholds, updates `card.stage`, and persists the card to the registry under `{name}:{version}:{stage}`. Called as a method on a `ModelCard` instance (the card must have a `registry` set).
+Validates stage transition, checks metric thresholds, updates `card.stage`, and persists the card to the registry under `{name}:{version}:card:{stage}`. Called as a method on a `ModelCard` instance (the card must have a `registry` set).
 
 ```python
 from mindtrace.models.lifecycle import ModelCard, ModelStage, PromotionResult, PromotionError
@@ -260,7 +260,7 @@ card.demote(to_stage=ModelStage.STAGING,
 card.demote(to_stage=ModelStage.ARCHIVED, reason="superseded by v2")
 
 # 6. Later, load a card from registry
-restored_card = ModelCard.from_registry("my-model", "v1", registry=registry)
+restored_card = ModelCard.from_registry(registry, "my-model", "v1")
 restored_model = restored_card.load_model()
 ```
 
@@ -270,8 +270,8 @@ restored_model = restored_card.load_model()
 from mindtrace.models.lifecycle import (
     # Stage definitions
     ModelStage,             # enum: DEV, STAGING, PRODUCTION, ARCHIVED
-    VALID_PROMOTIONS,      # dict[ModelStage, set[ModelStage]] -- forward promotions
-    VALID_DEMOTIONS,        # dict[ModelStage, set[ModelStage]] -- backward demotions
+    VALID_PROMOTIONS,       # forward promotions: dict[ModelStage, set[ModelStage]]
+    VALID_DEMOTIONS,        # backward demotions: dict[ModelStage, set[ModelStage]]
 
     # Metadata
     EvalResult,             # metric name + value + dataset + split + timestamp
@@ -281,7 +281,7 @@ from mindtrace.models.lifecycle import (
                             #   .promote(to_stage, require)  - promote with metric threshold checks
                             #   .demote(to_stage, reason)    - demote (rollback / archive)
                             #   .persist()                   - persist card metadata to registry
-                            #   .from_registry(name, ver)    - class method: load card from registry
+                            #   .from_registry(registry, name, version) - class method: load card from registry
 
     # Errors / results
     PromotionError,         # raised when promotion is blocked

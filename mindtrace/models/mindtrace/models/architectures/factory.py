@@ -37,7 +37,7 @@ try:
     )
 
     _HF_GENERIC_AVAILABLE = True
-except Exception:
+except ImportError:
     _HFGenericBackbone = None  # type: ignore[assignment,misc]
     _HF_GENERIC_AVAILABLE = False
 from mindtrace.models.architectures.heads.classification import (
@@ -57,7 +57,7 @@ try:
     )
 
     _HF_DINO_AVAILABLE = True
-except Exception:
+except ImportError:
     _HFBackbone = None  # type: ignore[assignment,misc]
     _HF_DINO_AVAILABLE = False
 
@@ -220,7 +220,7 @@ def build_model(
     freeze_backbone: bool = False,
     dropout: float = 0.0,
     **backbone_kwargs: object,
-) -> ModelWrapper:
+) -> nn.Module:
     """Assemble a backbone + head model from registered components.
 
     Args:
@@ -251,8 +251,10 @@ def build_model(
             intercepted for the MLP head and *not* forwarded to the backbone.
 
     Returns:
-        A :class:`ModelWrapper` containing the assembled model, ready for
-        training or inference.
+        The assembled model, ready for training or inference.  Normally a
+        :class:`ModelWrapper`; when an HF DINO backbone is paired with a
+        segmentation head it is an :class:`HFDINOSegWrapper` (spatial patch-map
+        path).  Both are plain ``nn.Module`` s — call ``model(x)`` directly.
 
     Raises:
         KeyError: If *backbone* is not registered.
@@ -268,9 +270,12 @@ def build_model(
         raise ValueError(f"Unknown head type '{head}'. Supported types: {sorted(_HEAD_TYPES)}")
 
     # Extract head-specific kwargs before forwarding to backbone factory.
-    hidden_dim_cls: int = int(backbone_kwargs.pop("hidden_dim", 512))
+    # A user-supplied hidden_dim overrides both head families; otherwise each
+    # falls back to its documented default (MLP 512, FPN seg 256).
     num_layers: int = int(backbone_kwargs.pop("num_layers", 2))
-    hidden_dim_seg: int = hidden_dim_cls  # re-use same kwarg for seg heads
+    hidden_dim_arg = backbone_kwargs.pop("hidden_dim", None)
+    hidden_dim_cls: int = int(hidden_dim_arg) if hidden_dim_arg is not None else 512
+    hidden_dim_seg: int = int(hidden_dim_arg) if hidden_dim_arg is not None else 256
 
     # Build backbone.
     backbone_info: BackboneInfo = build_backbone(backbone, pretrained=pretrained, **backbone_kwargs)
@@ -280,6 +285,20 @@ def build_model(
     if freeze_backbone:
         for param in backbone_info.model.parameters():
             param.requires_grad_(False)
+
+    # Segmentation heads consume a spatial (B, D, H, W) feature map, which only
+    # the HF DINO backbones expose via forward_spatial(). Every other backbone
+    # emits a pooled (B, D) vector that a Conv2d seg head cannot accept, so
+    # reject the pairing up front instead of returning a model that crashes at
+    # forward() (build_model_from_hf rejects the same combination).
+    is_hf = _HF_DINO_AVAILABLE and _HFBackbone is not None and isinstance(backbone_info.model, _HFBackbone)
+    if head in _SEG_HEAD_TYPES and not (is_hf and hasattr(backbone_info.model, "forward_spatial")):
+        raise ValueError(
+            f"Segmentation head '{head}' requires a backbone that emits a spatial feature map "
+            f"(forward_spatial), which currently only the HuggingFace DINO backbones provide. "
+            f"Backbone '{backbone}' emits a pooled vector — pair it with a classification head, "
+            f"or use an HF DINO backbone (e.g. 'dino_v3_small') for segmentation."
+        )
 
     # Build head.
     head_module: nn.Module
@@ -305,7 +324,7 @@ def build_model(
         )
 
     # HF DINO + segmentation head → spatial patch-token path with auto-upsample
-    is_hf = _HF_DINO_AVAILABLE and _HFBackbone is not None and isinstance(backbone_info.model, _HFBackbone)
+    # (the seg-vs-backbone compatibility guard above already ran).
     if is_hf and head in _SEG_HEAD_TYPES:
         return HFDINOSegWrapper(backbone_info=backbone_info, head=head_module)
 

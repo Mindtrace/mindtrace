@@ -19,6 +19,7 @@ Run:
     python samples/models/04_experiment_tracking.py
 """
 
+import os
 import tempfile
 
 import torch
@@ -32,12 +33,18 @@ from mindtrace.models import (
     TensorBoardTracker,
     Trainer,
     WandBTracker,
+    build_loss,
     build_model,
     build_optimizer,
     build_scheduler,
 )
 from mindtrace.models.tracking import Tracker
 from mindtrace.registry import Registry
+
+# Share CPU cores fairly when several sample scripts run concurrently
+# (e.g. the CI integration harness runs four at once); GPU runs are unaffected.
+if not torch.cuda.is_available():
+    torch.set_num_threads(max(1, (os.cpu_count() or 8) // 4))
 
 # ── Shared synthetic data ──────────────────────────────────────────────────────
 
@@ -204,7 +211,9 @@ bridge = RegistryBridge(registry)
 model = _fresh_model()
 key = bridge.save(model, name="resnet18-bridge", version="v2")
 print(f"  Saved via bridge under key: {key!r}")
-loaded = registry.load(key)
+# The bridge forwards name and version separately to the registry, so load by
+# (name, version) rather than by the returned display key.
+loaded = registry.load("resnet18-bridge", version="v2")
 print(f"  Loaded from registry: {type(loaded).__name__}")
 
 # ── 6. tracker= in Trainer ────────────────────────────────────────────────────
@@ -250,7 +259,7 @@ sched = build_scheduler("cosine_warmup", opt, warmup_steps=max(1, total_s // 5),
 with mem_tracker.run("trainer_run", config={"lr": 1e-3, "epochs": 2}):
     trainer = Trainer(
         model=model,
-        loss_fn=nn.CrossEntropyLoss(),
+        loss_fn=build_loss("cross_entropy"),
         optimizer=opt,
         scheduler=sched,
         tracker=mem_tracker,

@@ -7,6 +7,7 @@ training, LR scheduling, callback dispatch, and metric history tracking.
 
 from __future__ import annotations
 
+import inspect
 from typing import Any, Callable
 
 import torch
@@ -63,9 +64,11 @@ class Trainer(Mindtrace):
         loss_fn: nn.Module | Callable | None,
         optimizer: Optimizer,
         *,
+        metrics: dict[str, Callable] | None = None,
         train_loader: Any | None = None,
         val_loader: Any | None = None,
         scheduler: LRScheduler | None = None,
+        scheduler_interval: str = "step",
         tracker: Any | None = None,
         callbacks: list[Callback] | None = None,
         device: str = "auto",
@@ -75,24 +78,44 @@ class Trainer(Mindtrace):
         batch_fn: Callable | None = None,
         gradient_checkpointing: bool = False,
         ddp: bool = False,
+        teacher: nn.Module | None = None,
     ) -> None:
         """Initialise the trainer.
 
         Args:
             model: PyTorch module to train.
             loss_fn: Loss function. Called as ``loss_fn(outputs, targets)``.
-                When ``None`` the model is expected to compute its own loss:
-                ``model(inputs, targets)`` must return a dict with a ``"loss"``
-                key or a tuple whose first element is the loss tensor.
+                For multi-task models this may return the combined loss from a
+                tuple/dict of outputs and a dict of targets — the trainer treats
+                the loss as opaque. When ``None`` the model is expected to compute
+                its own loss: ``model(inputs, targets)`` must return a dict with a
+                ``"loss"`` key or a tuple whose first element is the loss tensor.
             optimizer: Optimizer that updates ``model`` parameters.
+            metrics: Optional ``{name: fn}`` where each ``fn(outputs, targets) ->
+                float`` computes a validation metric per batch (e.g. accuracy, MAE).
+                ``outputs`` and ``targets`` are detached and moved to CPU before the
+                call, so numpy-based metrics (like those in
+                :mod:`mindtrace.models.evaluation`) work even when training on GPU;
+                the return is coerced with ``float(...)``, so a Python number or a
+                0-dim tensor are both fine. Metrics are sample-weighted, averaged
+                over the validation set, and reported in ``history`` as
+                ``val/<name>``. This is what makes multi-task training first-class:
+                a model returning ``(logits, score)`` can report both
+                ``val/category_acc`` and ``val/mae``.
             train_loader: Optional default training data loader.  Stored and
                 used by :meth:`train` and as a fallback by :meth:`fit` when
                 the *train_loader* argument is ``None``.
             val_loader: Optional default validation data loader.  Stored and
                 used by :meth:`train` and as a fallback by :meth:`fit` when
                 the *val_loader* argument is ``None``.
-            scheduler: Optional LR scheduler. ``ReduceLROnPlateau`` is
-                stepped after validation; all others after each optimizer step.
+            scheduler: Optional LR scheduler. ``ReduceLROnPlateau`` is always
+                stepped after validation against the val loss; all others are
+                stepped according to ``scheduler_interval``.
+            scheduler_interval: ``"step"`` (default) steps non-plateau schedulers
+                after every optimizer step — right for step-based schedules (e.g.
+                cosine over total steps). ``"epoch"`` steps once per epoch — right
+                for epoch-based schedules (warmup+cosine over epochs), which
+                otherwise decay far too fast when stepped per batch.
             tracker: Optional experiment-tracking object (e.g. a
                 ``mindtrace.models.tracking.Tracker``) with a
                 ``log(metrics, step)`` interface.
@@ -114,10 +137,14 @@ class Trainer(Mindtrace):
                 ignored when the model does not expose that method.
             ddp: Wrap the model in
                 :class:`~torch.nn.parallel.DistributedDataParallel` for
-                multi-GPU training.  Uses ``mindtrace.cluster.distributed``
-                when available; falls back to native PyTorch DDP.  Has no
-                effect when no distributed process group is initialised or
-                when world size is 1.
+                multi-GPU training.  Has no effect when no distributed process
+                group is initialised or when world size is 1.
+            teacher: Optional frozen teacher model for knowledge distillation.
+                When set, it is moved to the trainer device, put in eval mode,
+                and its outputs are computed under ``torch.no_grad()`` and
+                passed to ``loss_fn`` as the ``teacher_outputs`` keyword —
+                only when ``loss_fn`` accepts that keyword (e.g.
+                ``DistillationLoss``); otherwise behaviour is unchanged.
 
         Raises:
             ValueError: If *gradient_accumulation_steps* < 1.
@@ -126,18 +153,32 @@ class Trainer(Mindtrace):
 
         if gradient_accumulation_steps < 1:
             raise ValueError(f"gradient_accumulation_steps must be >= 1, got {gradient_accumulation_steps}")
+        if scheduler_interval not in ("step", "epoch"):
+            raise ValueError(f"scheduler_interval must be 'step' or 'epoch', got '{scheduler_interval}'")
 
         self.model = model
         self.loss_fn = loss_fn
+        self.metrics: dict[str, Callable] = metrics or {}
         self.optimizer = optimizer
         self.scheduler = scheduler
+        self.scheduler_interval = scheduler_interval
         self.tracker = tracker
         self.callbacks: list[Callback] = callbacks or []
         self.mixed_precision = mixed_precision
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.clip_grad_norm = clip_grad_norm
         self.batch_fn = batch_fn
+        self.teacher = teacher
         self._ddp = ddp
+
+        # Distillation: does loss_fn accept a 'teacher_outputs' keyword?
+        self._loss_accepts_teacher_outputs = False
+        if loss_fn is not None:
+            _loss_callable = loss_fn.forward if isinstance(loss_fn, nn.Module) else loss_fn
+            try:
+                self._loss_accepts_teacher_outputs = "teacher_outputs" in inspect.signature(_loss_callable).parameters
+            except (TypeError, ValueError):
+                self._loss_accepts_teacher_outputs = False
         self._default_train_loader = train_loader
         self._default_val_loader = val_loader
 
@@ -162,6 +203,17 @@ class Trainer(Mindtrace):
 
         self.model.to(self.device)
 
+        # Move a stateful loss (registered buffers/params, e.g. a class-weight
+        # buffer in DetectionSetCriterion) to the device too, or it stays on CPU
+        # and F.cross_entropy(logits[cuda], ..., weight=class_weight[cpu]) crashes.
+        if isinstance(self.loss_fn, nn.Module):
+            self.loss_fn.to(self.device)
+
+        # Teacher model for knowledge distillation: frozen, on-device, eval mode
+        if self.teacher is not None:
+            self.teacher.to(self.device)
+            self.teacher.eval()
+
         # Gradient checkpointing — reduces VRAM at the cost of recomputation
         if gradient_checkpointing:
             if hasattr(self.model, "gradient_checkpointing_enable"):
@@ -173,32 +225,25 @@ class Trainer(Mindtrace):
                     "gradient_checkpointing_enable() method — ignored."
                 )
 
-        # DDP wrapping — prefer mindtrace.cluster, fall back to native torch
+        # DDP wrapping — native torch DistributedDataParallel.
         if ddp:
             try:
-                from mindtrace.cluster.distributed import wrap_ddp as _wrap_ddp  # noqa: PLC0415
+                import torch.distributed as _dist  # noqa: PLC0415
 
-                self.model = _wrap_ddp(self.model)
+                if _dist.is_initialized() and _dist.get_world_size() > 1:
+                    from torch.nn.parallel import DistributedDataParallel as _DDP  # noqa: PLC0415
+
+                    _device_ids = (
+                        [self.device.index] if self.device.type == "cuda" and self.device.index is not None else None
+                    )
+                    self.model = _DDP(self.model, device_ids=_device_ids)
+                    self.logger.info("Trainer: wrapped model in DistributedDataParallel.")
+                else:
+                    self.logger.debug(
+                        "Trainer: ddp=True but no distributed process group active — running single-process."
+                    )
             except ImportError:
-                try:
-                    import torch.distributed as _dist  # noqa: PLC0415
-
-                    if _dist.is_initialized() and _dist.get_world_size() > 1:
-                        from torch.nn.parallel import DistributedDataParallel as _DDP  # noqa: PLC0415
-
-                        _device_ids = (
-                            [self.device.index]
-                            if self.device.type == "cuda" and self.device.index is not None
-                            else None
-                        )
-                        self.model = _DDP(self.model, device_ids=_device_ids)
-                        self.logger.info("Trainer: wrapped model in DistributedDataParallel.")
-                    else:
-                        self.logger.debug(
-                            "Trainer: ddp=True but no distributed process group active — running single-process."
-                        )
-                except ImportError:
-                    self.logger.debug("Trainer: ddp=True but torch.distributed unavailable.")
+                self.logger.debug("Trainer: ddp=True but torch.distributed unavailable.")
 
         self.logger.info(
             "Trainer initialised — device=%s, amp=%s, grad_accum=%d, grad_ckpt=%s, ddp=%s",
@@ -295,6 +340,14 @@ class Trainer(Mindtrace):
                     if val_loss is not None:
                         self.scheduler.step(val_loss)
 
+            # Epoch-interval schedulers advance once per epoch (plateau handled above).
+            if (
+                self.scheduler_interval == "epoch"
+                and self.scheduler is not None
+                and not isinstance(self.scheduler, ReduceLROnPlateau)
+            ):
+                self.scheduler.step()
+
             # Accumulate history
             for metric, value in logs.items():
                 self.history.setdefault(metric, []).append(value)
@@ -388,20 +441,14 @@ class Trainer(Mindtrace):
         # Average loss across DDP workers so the reported value is consistent
         if self._ddp:
             try:
-                from mindtrace.cluster.distributed import all_reduce_mean as _arm  # noqa: PLC0415
+                import torch.distributed as _dist  # noqa: PLC0415
 
-                _t = torch.tensor(avg_loss, device=self.device)
-                avg_loss = float(_arm(_t).item())
+                if _dist.is_initialized() and _dist.get_world_size() > 1:
+                    _t = torch.tensor(avg_loss, device=self.device)
+                    _dist.all_reduce(_t, op=_dist.ReduceOp.SUM)
+                    avg_loss = float((_t / _dist.get_world_size()).item())
             except ImportError:
-                try:
-                    import torch.distributed as _dist  # noqa: PLC0415
-
-                    if _dist.is_initialized() and _dist.get_world_size() > 1:
-                        _t = torch.tensor(avg_loss, device=self.device)
-                        _dist.all_reduce(_t, op=_dist.ReduceOp.SUM)
-                        avg_loss = float((_t / _dist.get_world_size()).item())
-                except ImportError:
-                    pass
+                pass
 
         return {"train/loss": avg_loss}
 
@@ -427,8 +474,13 @@ class Trainer(Mindtrace):
 
         self.optimizer.zero_grad()
 
-        # Step non-Plateau schedulers after optimizer update
-        if self.scheduler is not None and not isinstance(self.scheduler, ReduceLROnPlateau):
+        # Step-interval schedulers advance after each optimizer update (plateau is
+        # always epoch-based; epoch-interval schedulers advance in fit()).
+        if (
+            self.scheduler_interval == "step"
+            and self.scheduler is not None
+            and not isinstance(self.scheduler, ReduceLROnPlateau)
+        ):
             self.scheduler.step()
 
     def _val_epoch(self, loader: Any) -> dict[str, float]:
@@ -447,6 +499,8 @@ class Trainer(Mindtrace):
 
         total_loss = 0.0
         num_batches = 0
+        metric_sums: dict[str, float] = {name: 0.0 for name in self.metrics}
+        total_samples = 0
 
         with torch.no_grad():
             for raw_batch in loader:
@@ -456,15 +510,45 @@ class Trainer(Mindtrace):
 
                 if self._amp_enabled:
                     with torch.amp.autocast(device_type=self.device.type):
-                        loss, _outputs = self._compute_loss(inputs, targets)
+                        loss, outputs = self._compute_loss(inputs, targets)
                 else:
-                    loss, _outputs = self._compute_loss(inputs, targets)
+                    loss, outputs = self._compute_loss(inputs, targets)
 
                 total_loss += loss.item()
                 num_batches += 1
 
+                if self.metrics:
+                    batch_size = self._batch_size(targets)
+                    total_samples += batch_size
+                    # Metric fns (e.g. mindtrace.models.evaluation) are numpy-based:
+                    # they call np.asarray(...), which raises on CUDA tensors. Detach
+                    # to CPU first so metrics work regardless of the training device.
+                    cpu_outputs = self._detach_cpu(outputs)
+                    cpu_targets = self._detach_cpu(targets)
+                    for name, fn in self.metrics.items():
+                        metric_sums[name] += float(fn(cpu_outputs, cpu_targets)) * batch_size
+
         avg_loss = total_loss / max(num_batches, 1)
-        return {"val/loss": avg_loss}
+        result = {"val/loss": avg_loss}
+        for name, summed in metric_sums.items():
+            result[f"val/{name}"] = summed / max(total_samples, 1)
+        return result
+
+    @staticmethod
+    def _batch_size(data: Any) -> int:
+        """Infer the number of samples in a batch (for sample-weighted metrics)."""
+        if isinstance(data, torch.Tensor):
+            return data.shape[0] if data.dim() > 0 else 1
+        if isinstance(data, dict):
+            for value in data.values():
+                if isinstance(value, torch.Tensor):
+                    return value.shape[0] if value.dim() > 0 else 1
+        if isinstance(data, (list, tuple)):
+            for value in data:
+                size = Trainer._batch_size(value)
+                if size:
+                    return size
+        return 1
 
     # ------------------------------------------------------------------
     # Utility helpers
@@ -523,18 +607,44 @@ class Trainer(Mindtrace):
         # Fallback: return unchanged (e.g. custom types)
         return data
 
+    @staticmethod
+    def _detach_cpu(data: Any) -> Any:
+        """Detach tensors and move them to CPU for numpy-based metric functions.
+
+        Mirrors :meth:`_to_device` in structure handling (tensor / dict / list /
+        tuple), returning the same layout with every tensor detached and moved
+        to CPU.  Non-tensor leaves are returned unchanged.
+        """
+        if isinstance(data, torch.Tensor):
+            return data.detach().cpu()
+        if isinstance(data, dict):
+            return {k: Trainer._detach_cpu(v) for k, v in data.items()}
+        if isinstance(data, (list, tuple)):
+            moved = [Trainer._detach_cpu(v) for v in data]
+            return type(data)(moved)
+        return data
+
     def _compute_loss(self, inputs: Any, targets: Any) -> tuple[torch.Tensor, Any]:
         """Run the forward pass and return ``(loss, raw_output)``.
 
         When ``loss_fn`` is set the standard two-step pattern is used:
-        ``model(inputs)`` followed by ``loss_fn(outputs, targets)``.  When
-        ``loss_fn`` is ``None`` the model is called as
-        ``model(inputs, targets)`` and must return a dict with a ``"loss"``
-        key or a tuple whose first element is the loss tensor.
+        ``model(inputs)`` followed by ``loss_fn(outputs, targets)``.  A loss that
+        returns a dict (e.g. :class:`DetectionSetCriterion`) is unwrapped via its
+        ``"loss"`` key.  When ``loss_fn`` is ``None`` the model is called as
+        ``model(inputs, targets)`` and must return a dict with a ``"loss"`` key
+        or a tuple whose first element is the loss tensor.
         """
         if self.loss_fn is not None:
             outputs = self.model(inputs)
-            loss: torch.Tensor = self.loss_fn(outputs, targets)
+            if self.teacher is not None and self._loss_accepts_teacher_outputs:
+                with torch.no_grad():
+                    teacher_outputs = self.teacher(inputs)
+                loss_out = self.loss_fn(outputs, targets, teacher_outputs=teacher_outputs)
+            else:
+                loss_out = self.loss_fn(outputs, targets)
+            # Set-prediction criteria (e.g. DetectionSetCriterion) return a dict of
+            # loss components keyed by "loss"; scalar losses are returned as-is.
+            loss: torch.Tensor = loss_out["loss"] if isinstance(loss_out, dict) else loss_out
             return loss, outputs
 
         result = self.model(inputs, targets)

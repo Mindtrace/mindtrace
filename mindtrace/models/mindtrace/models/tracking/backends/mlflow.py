@@ -34,9 +34,11 @@ class MLflowTracker(Tracker):
     interface for logging metrics, parameters, models, and artifacts.
 
     Args:
-        tracking_uri: URI of the MLflow tracking server.  When ``None`` the
-            value from the ``MLFLOW_TRACKING_URI`` environment variable (or
-            MLflow's default local file-store) is used.
+        tracking_uri: URI of the MLflow tracking server.  When ``None`` it
+            defaults to ``file://<MINDTRACE_DIR_PATHS.ROOT>/mlflow`` (a managed
+            local file-store), derived from ``self.config`` — matching the
+            TensorBoard/WandB config-derived defaults.  Because an explicit URI
+            is passed to MLflow, ``MLFLOW_TRACKING_URI`` is not consulted.
         experiment_name: MLflow experiment name.  Created automatically if it
             does not already exist.  Defaults to ``"default"``.
         **kwargs: Accepted for forward compatibility; not forwarded.
@@ -65,8 +67,9 @@ class MLflowTracker(Tracker):
         """Initialise the MLflow tracker.
 
         Args:
-            tracking_uri: MLflow tracking server URI.  ``None`` defers to the
-                MLflow client's own default resolution.
+            tracking_uri: MLflow tracking server URI.  ``None`` defaults to
+                ``file://<MINDTRACE_DIR_PATHS.ROOT>/mlflow`` (managed local
+                file-store), not MLflow's own env-var resolution.
             experiment_name: Name of the MLflow experiment to use or create.
             **kwargs: Ignored; present for API compatibility.
 

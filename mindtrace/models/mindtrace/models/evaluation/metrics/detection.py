@@ -125,13 +125,13 @@ def average_precision(
 ) -> float:
     """Compute Average Precision (AP) using 101-point interpolation.
 
-    The predictions must already be sorted by descending confidence score
-    *before* calling this function when *pred_scores* and *pred_matched* were
-    accumulated across images.  Typically you sort by score outside and pass
-    the matched flags directly.
+    Predictions need not be pre-sorted: this function sorts by descending
+    confidence internally (``np.argsort(-pred_scores)``) and reorders
+    *pred_matched* to match, so callers may pass matched flags aligned to the
+    unsorted scores.
 
     Args:
-        pred_scores: (N,) confidence scores.  Used only for sorting.
+        pred_scores: (N,) confidence scores.  Used only for the internal sort.
         pred_matched: (N,) bool array.  ``True`` where the prediction was
             successfully matched to a ground-truth box.
         num_gt: Total number of ground-truth boxes (used as the denominator
@@ -290,13 +290,19 @@ def mean_average_precision_50_95(
         * ``"mAP@50:95"`` — COCO primary metric (mean over 10 thresholds).
         * ``"mAP@50"`` — mAP at IoU 0.50.
         * ``"mAP@75"`` — mAP at IoU 0.75.
+        * ``"AP_per_class"`` — per-class AP at IoU 0.50 (``{class_id: float}``),
+          surfaced from the 0.50 pass so callers need not recompute it.
     """
     thresholds = np.arange(0.50, 1.00, 0.05)  # [0.50, 0.55, …, 0.95]
     map_at_threshold: dict[float, float] = {}
+    ap_per_class_50: dict[int, float] = {}
 
     for iou_t in thresholds:
         result = mean_average_precision(predictions, targets, num_classes, iou_threshold=float(iou_t))
-        map_at_threshold[round(float(iou_t), 2)] = result["mAP"]
+        key = round(float(iou_t), 2)
+        map_at_threshold[key] = result["mAP"]
+        if key == 0.5:
+            ap_per_class_50 = result["AP_per_class"]
 
     map_50_95 = float(np.mean(list(map_at_threshold.values())))
 
@@ -304,6 +310,7 @@ def mean_average_precision_50_95(
         "mAP@50:95": map_50_95,
         "mAP@50": map_at_threshold.get(0.5, 0.0),
         "mAP@75": map_at_threshold.get(0.75, 0.0),
+        "AP_per_class": ap_per_class_50,
     }
 
 

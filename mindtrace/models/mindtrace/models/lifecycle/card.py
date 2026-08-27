@@ -41,7 +41,7 @@ import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from mindtrace.core import utcnow
 from mindtrace.models.lifecycle.stages import (
@@ -119,6 +119,56 @@ class PromotionResult:
 
 
 @dataclass
+class ModelVariant:
+    """A per-target build of a model (e.g. an edge-optimized artifact).
+
+    Variants track alternate deployable forms of the same logical model —
+    a quantized ONNX export, a pruned OpenVINO build, etc. — each with its
+    own artifact reference, optimization recipe, metrics, and lifecycle
+    stage that is promoted independently of the parent card.
+
+    Attributes:
+        name: Variant identifier, typically the target name (e.g. ``"cpu-int8"``).
+        artifact: Path or registry key of the compiled/exported artifact.
+        recipe_json: JSON-encoded optimization recipe that produced the artifact.
+        stage: Lifecycle stage of this variant.
+        metrics: Flat ``{metric: value}`` map (benchmark metrics use a
+            ``"bench/"`` prefix).
+        created_at: ISO-format UTC timestamp at which the variant was recorded.
+    """
+
+    name: str
+    artifact: str = ""
+    recipe_json: str = ""
+    stage: ModelStage = ModelStage.DEV
+    metrics: dict[str, float] = field(default_factory=dict)
+    created_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a JSON-safe dict."""
+        return {
+            "name": self.name,
+            "artifact": self.artifact,
+            "recipe_json": self.recipe_json,
+            "stage": self.stage.value,
+            "metrics": dict(self.metrics),
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ModelVariant:
+        """Deserialize from a dict."""
+        return cls(
+            name=data["name"],
+            artifact=data.get("artifact", ""),
+            recipe_json=data.get("recipe_json", ""),
+            stage=ModelStage(data.get("stage", ModelStage.DEV.value)),
+            metrics={k: float(v) for k, v in data.get("metrics", {}).items()},
+            created_at=data.get("created_at", ""),
+        )
+
+
+@dataclass
 class ModelCard:
     """Lifecycle handle for a trained model.
 
@@ -136,6 +186,7 @@ class ModelCard:
         framework: Framework used (default ``"pytorch"``).
         training_data: Description of the training dataset.
         eval_results: Evaluation metrics in insertion order.
+        variants: Per-target builds of this model, keyed by variant name.
         known_limitations: Known failure modes or limitations.
         description: Human-readable description.
         created_at: Creation timestamp (UTC).
@@ -155,6 +206,7 @@ class ModelCard:
     description: str = ""
     created_at: datetime = field(default_factory=utcnow)
     extra: dict[str, Any] = field(default_factory=dict)
+    variants: dict[str, ModelVariant] = field(default_factory=dict)
     _model_saved: bool = field(default=False, init=False, repr=False)
 
     # ------------------------------------------------------------------
@@ -221,7 +273,17 @@ class ModelCard:
             return False
         try:
             return self.registry.has_object(self.name, self.version)
-        except Exception:
+        except Exception as exc:
+            # The registry is duck-typed, so a probe can fail for many reasons
+            # (backend offline, auth, transient IO). Fall back to the locally
+            # tracked save state, but log so the failure is not silent.
+            logger.debug(
+                "ModelCard: registry.has_object('%s', '%s') failed (%s); falling back to local save state (%s).",
+                self.name,
+                self.version,
+                exc,
+                self._model_saved,
+            )
             return self._model_saved
 
     # ------------------------------------------------------------------
@@ -251,6 +313,199 @@ class ModelCard:
         return result
 
     # ------------------------------------------------------------------
+    # Variants
+    # ------------------------------------------------------------------
+
+    def add_variant(
+        self,
+        name: str,
+        *,
+        artifact: str = "",
+        recipe_json: str = "",
+        metrics: dict[str, float] | None = None,
+        report: Any = None,
+    ) -> ModelVariant:
+        """Record a per-target variant of this model.
+
+        Args:
+            name: Variant identifier (e.g. ``"cpu-int8"``).
+            artifact: Path or registry key of the compiled/exported artifact.
+            recipe_json: JSON-encoded optimization recipe.
+            metrics: Initial ``{metric: value}`` entries.
+            report: Optional ``BenchmarkReport``-like object exposing
+                ``to_dict()``; its numeric entries are merged into the
+                variant metrics under a ``"bench/"`` prefix.
+
+        Returns:
+            The newly registered :class:`ModelVariant`.
+        """
+        merged: dict[str, float] = dict(metrics or {})
+        if report is not None:
+            for key, value in report.to_dict().items():
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    continue
+                merged[f"bench/{key}"] = float(value)
+        variant = ModelVariant(
+            name=name,
+            artifact=artifact,
+            recipe_json=recipe_json,
+            metrics=merged,
+            created_at=utcnow().isoformat(),
+        )
+        self.variants[name] = variant
+        logger.info("ModelCard: added variant '%s' to %s:%s.", name, self.name, self.version)
+        return variant
+
+    def get_variant(self, name: str) -> ModelVariant:
+        """Return a registered variant by name.
+
+        Args:
+            name: Variant identifier.
+
+        Returns:
+            The matching :class:`ModelVariant`.
+
+        Raises:
+            KeyError: If no such variant exists; the message lists the
+                available variant names.
+        """
+        try:
+            return self.variants[name]
+        except KeyError:
+            available = sorted(self.variants)
+            raise KeyError(
+                f"Unknown variant {name!r} for {self.name}:{self.version}. Available: {available}."
+            ) from None
+
+    def promote_variant(
+        self,
+        name: str,
+        *,
+        to_stage: ModelStage,
+        require: dict[str, float] | None = None,
+        dry_run: bool = False,
+    ) -> PromotionResult:
+        """Promote a variant to a new lifecycle stage, gated on its metrics.
+
+        Gate semantics per requirement key: keys ending in ``"_max"``
+        (e.g. ``"bench/p95_ms_max"``) pass when the variant metric named by
+        the key without the suffix is ``<=`` the threshold; all other keys
+        pass when the metric is ``>=`` the threshold. Unlike
+        :meth:`promote`, failed gates do not raise — they are reported via
+        ``PromotionResult(success=False, failed_requirements=...)``.
+
+        Args:
+            name: Variant identifier.
+            to_stage: Target stage.
+            require: ``{metric_or_metric_max: threshold}`` gates.
+            dry_run: Evaluate gates without applying the stage change.
+
+        Returns:
+            :class:`PromotionResult` describing the outcome.
+
+        Raises:
+            KeyError: If the variant does not exist.
+            PromotionError: If the stage transition is invalid.
+        """
+        variant = self.get_variant(name)
+        from_stage = variant.stage
+
+        if not from_stage.can_promote_to(to_stage):
+            allowed = sorted(s.value for s in VALID_PROMOTIONS.get(from_stage, set()))
+            raise PromotionError(
+                f"Invalid promotion for variant {name!r}: {from_stage.value!r} -> {to_stage.value!r}. "
+                f"Allowed: {allowed}."
+            )
+
+        failures = self._evaluate_gates(variant.metrics.get, require) if require else {}
+        result = PromotionResult(
+            success=len(failures) == 0,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            model_name=f"{self.name}/{name}",
+            model_version=self.version,
+            failed_requirements=failures,
+        )
+
+        if failures or dry_run:
+            return result
+
+        variant.stage = to_stage
+        if self.registry is not None:
+            try:
+                self.persist()
+            except Exception:
+                variant.stage = from_stage
+                raise
+        logger.info(
+            "Promoted variant %s of %s:%s from %s to %s.",
+            name,
+            self.name,
+            self.version,
+            from_stage.value,
+            to_stage.value,
+        )
+        return result
+
+    def demote_variant(
+        self,
+        name: str,
+        *,
+        to_stage: ModelStage,
+        reason: str = "",
+    ) -> PromotionResult:
+        """Demote a variant to an earlier or archival stage.
+
+        Args:
+            name: Variant identifier.
+            to_stage: Target stage.
+            reason: Human-readable reason for demotion.
+
+        Returns:
+            :class:`PromotionResult` describing the outcome.
+
+        Raises:
+            KeyError: If the variant does not exist.
+            PromotionError: If the stage transition is invalid.
+        """
+        variant = self.get_variant(name)
+        from_stage = variant.stage
+
+        if not from_stage.can_demote_to(to_stage):
+            allowed = sorted(s.value for s in VALID_DEMOTIONS.get(from_stage, set()))
+            raise PromotionError(
+                f"Invalid demotion for variant {name!r}: {from_stage.value!r} -> {to_stage.value!r}. "
+                f"Allowed: {allowed}."
+            )
+
+        if reason:
+            self.extra[f"demotion_reason/{name}"] = reason
+
+        variant.stage = to_stage
+        if self.registry is not None:
+            try:
+                self.persist()
+            except Exception:
+                variant.stage = from_stage
+                raise
+        logger.info(
+            "Demoted variant %s of %s:%s from %s to %s.%s",
+            name,
+            self.name,
+            self.version,
+            from_stage.value,
+            to_stage.value,
+            f" Reason: {reason}" if reason else "",
+        )
+        return PromotionResult(
+            success=True,
+            from_stage=from_stage,
+            to_stage=to_stage,
+            model_name=f"{self.name}/{name}",
+            model_version=self.version,
+        )
+
+    # ------------------------------------------------------------------
     # Lifecycle: promote / demote
     # ------------------------------------------------------------------
 
@@ -267,9 +522,15 @@ class ModelCard:
         gates, persists the card to the registry, then updates the stage.
         The stage is only updated after a successful persist.
 
+        Gate semantics match :meth:`promote_variant`: a key ending in ``"_max"``
+        (e.g. ``"bench/p95_ms_max"``) passes when the metric named by the key
+        without the suffix is ``<=`` the threshold; every other key passes when
+        its metric is ``>=`` the threshold.
+
         Args:
             to_stage: Target stage.
-            require: ``{metric: minimum_value}`` thresholds.
+            require: ``{metric_or_metric_max: threshold}`` gates — lower-bound
+                by default, upper-bound for ``"_max"``-suffixed keys.
             dry_run: Validate without applying changes.
 
         Returns:
@@ -307,7 +568,8 @@ class ModelCard:
         if dry_run:
             return result
 
-        # Persist BEFORE updating stage -- if persist fails, stage stays unchanged.
+        # Update the stage, then persist so the stored record reflects it; if
+        # persist fails, revert the stage so in-memory state stays consistent.
         old_stage = self.stage
         self.stage = to_stage
         try:
@@ -370,7 +632,8 @@ class ModelCard:
         if reason:
             self.extra["demotion_reason"] = reason
 
-        # Persist BEFORE updating stage.
+        # Update the stage, then persist so the stored record reflects it; if
+        # persist fails, revert the stage so in-memory state stays consistent.
         old_stage = self.stage
         self.stage = to_stage
         try:
@@ -452,6 +715,7 @@ class ModelCard:
             "description": self.description,
             "created_at": self.created_at.isoformat(),
             "extra": dict(self.extra),
+            "variants": {name: variant.to_dict() for name, variant in self.variants.items()},
         }
 
     @classmethod
@@ -473,6 +737,7 @@ class ModelCard:
             description=data.get("description", ""),
             created_at=created_at,
             extra=dict(data.get("extra", {})),
+            variants={name: ModelVariant.from_dict(v) for name, v in data.get("variants", {}).items()},
         )
 
     def save_json(self, path: str | Path) -> None:
@@ -499,11 +764,33 @@ class ModelCard:
             raise RuntimeError(f"ModelCard.{operation}() requires a registry. Pass registry= when creating the card.")
 
     def _check_requirements(self, require: dict[str, float]) -> dict[str, tuple[float, float]]:
+        return self._evaluate_gates(self.get_metric, require)
+
+    @staticmethod
+    def _evaluate_gates(
+        lookup: Callable[[str], float | None],
+        require: dict[str, float],
+    ) -> dict[str, tuple[float, float]]:
+        """Evaluate metric gates against a metric lookup function.
+
+        Keys ending in ``"_max"`` are upper-bound gates: the metric named by
+        the key without the suffix must be ``<=`` the threshold. All other
+        keys are lower-bound gates: the metric must be ``>=`` the threshold.
+        Missing metrics fail with an actual value of NaN.
+
+        Args:
+            lookup: Callable returning the metric value or None if missing.
+            require: ``{metric_or_metric_max: threshold}`` gates.
+
+        Returns:
+            ``{requirement_key: (actual, required)}`` for failed gates.
+        """
         failures: dict[str, tuple[float, float]] = {}
-        for metric, threshold in require.items():
-            actual = self.get_metric(metric)
+        for key, threshold in require.items():
+            is_max = key.endswith("_max")
+            actual = lookup(key[: -len("_max")] if is_max else key)
             if actual is None:
-                failures[metric] = (float("nan"), threshold)
-            elif actual < threshold:
-                failures[metric] = (actual, threshold)
+                failures[key] = (float("nan"), threshold)
+            elif (actual > threshold) if is_max else (actual < threshold):
+                failures[key] = (actual, threshold)
         return failures

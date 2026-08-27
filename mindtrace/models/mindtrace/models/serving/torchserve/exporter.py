@@ -8,12 +8,12 @@ full archive can be built from a single registry key::
 
     from mindtrace.registry import Registry
     from mindtrace.models.serving.torchserve.exporter import TorchServeExporter
-    from my_handlers import WeldDetectorHandler
+    from my_handlers import ObjectDetectorHandler
 
     TorchServeExporter.export(
-        model_name="weld-detector",
+        model_name="object-detector",
         version="v3",
-        handler=WeldDetectorHandler,    # MindtraceHandler subclass
+        handler=ObjectDetectorHandler,    # MindtraceHandler subclass
         registry=Registry(),            # weights pulled automatically
         output_dir="/serve/model-store",
     )
@@ -21,8 +21,8 @@ full archive can be built from a single registry key::
 Or from a local file::
 
     TorchServeExporter.export(
-        model_path="weights/weld-detector-v3.pt",
-        model_name="weld-detector",
+        model_path="weights/detector-v3.pt",
+        model_name="object-detector",
         version="v3",
         handler="handler.py",
         output_dir="/serve/model-store",
