@@ -3,6 +3,7 @@
 Sub-packages
 ------------
 serving       Model inference services and request/response schemas.
+inference     Task-level contracts and composable local inference.
 tracking      Unified experiment tracking (MLflow, WandB, TensorBoard).
 training      Training loop, loss functions, optimizer/scheduler builders.
 architectures Reusable backbones, task heads, and model factory.
@@ -31,6 +32,12 @@ from mindtrace.models.architectures.backbones import (
     BackboneFeatures,
     BackboneProtocol,
 )
+from mindtrace.models.inference import (
+    ClassificationPostprocessor,
+    HuggingFaceImageProcessor,
+    TorchModel,
+)
+from mindtrace.models.protocols import Model
 from mindtrace.models.serving import (
     ClassificationResult,
     DetectionResult,
@@ -116,6 +123,11 @@ from mindtrace.models.lifecycle import (
 )
 
 __all__ = [
+    # runnable models
+    "Model",
+    "TorchModel",
+    "HuggingFaceImageProcessor",
+    "ClassificationPostprocessor",
     # serving
     "ModelService",
     "PredictRequest",
