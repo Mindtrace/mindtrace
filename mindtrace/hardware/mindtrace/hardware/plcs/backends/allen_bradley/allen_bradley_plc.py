@@ -184,12 +184,8 @@ class AllenBradleyPLC(BasePLC):
                     self.plc = await asyncio.to_thread(CIPDriver, self.ip_address)
                     self.driver_type = "CIPDriver"
 
-                # Attempt connection — bounded timeout so a hung TCP connect
-                # doesn't block the event loop indefinitely.
-                connection_result = await asyncio.wait_for(
-                    asyncio.to_thread(self.plc.open),
-                    timeout=self.connection_timeout,
-                )
+                # Attempt connection
+                connection_result = await asyncio.to_thread(self.plc.open)
 
                 if connection_result:
                     self.logger.info(f"Successfully connected to Allen Bradley PLC using {self.driver_type}")
