@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
+from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult
 from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
     CameraConfigurationError,
@@ -36,6 +37,7 @@ from mindtrace.hardware.services.cameras.models import (
     CaptureHDRRequest,
     CaptureImageRequest,
     CaptureResponse,
+    ConfigurationApplyResponse,
     HDRCaptureResponse,
     # Responses
     ListResponse,
@@ -331,66 +333,55 @@ class TestServiceConfigurationOperations:
     @pytest.mark.asyncio
     async def test_configure_single_camera(self, camera_service, mock_camera_manager):
         """Test configuring a single camera through service."""
-        # Setup mock camera
         mock_proxy = AsyncMock()
-        mock_proxy.configure.return_value = True
         mock_camera_manager.active_cameras = {"MockBasler:TestCam1": mock_proxy}
         mock_camera_manager.open.return_value = mock_proxy
+        mock_camera_manager.configure_camera = AsyncMock(return_value=ConfigurationApplyResult(applied=3, total=3))
 
+        properties = {
+            "exposure": 2000,
+            "gain": 5.0,
+            "trigger_mode": "continuous",
+        }
         request = CameraConfigureRequest(
             camera="MockBasler:TestCam1",
-            properties={
-                "exposure": 2000,
-                "gain": 5.0,
-                "trigger_mode": "continuous",
-            },
+            properties=properties,
         )
         result = await camera_service.configure_camera(request)
 
-        assert isinstance(result, BoolResponse)
+        assert isinstance(result, ConfigurationApplyResponse)
         assert result.success is True
-        assert result.data is True
+        assert result.data.applied == 3
+        assert result.data.total == 3
+        assert result.data.success is True
 
-        # Verify configuration was called
-        mock_proxy.configure.assert_called_once()
-        call_kwargs = mock_proxy.configure.call_args[1]
-        assert call_kwargs["exposure"] == 2000
-        assert call_kwargs["gain"] == 5.0
-        assert call_kwargs["trigger_mode"] == "continuous"
+        mock_camera_manager.configure_camera.assert_awaited_once_with("MockBasler:TestCam1", properties)
 
     @pytest.mark.asyncio
     async def test_configure_roi(self, camera_service, mock_camera_manager):
         """Test configuring ROI through service."""
-        # Setup mock camera
         mock_proxy = AsyncMock()
-        mock_proxy.configure.return_value = True
         mock_camera_manager.active_cameras = {"MockBasler:TestCam1": mock_proxy}
         mock_camera_manager.open.return_value = mock_proxy
+        mock_camera_manager.configure_camera = AsyncMock(return_value=ConfigurationApplyResult(applied=1, total=1))
 
+        properties = {"roi": [0, 0, 640, 480]}  # x, y, width, height
         request = CameraConfigureRequest(
             camera="MockBasler:TestCam1",
-            properties={
-                "roi": [0, 0, 640, 480],  # x, y, width, height
-            },
+            properties=properties,
         )
         result = await camera_service.configure_camera(request)
 
         assert result.success is True
-
-        # Verify ROI was passed
-        mock_proxy.configure.assert_called_once()
-        call_kwargs = mock_proxy.configure.call_args[1]
-        assert "roi" in call_kwargs
-        assert call_kwargs["roi"] == [0, 0, 640, 480]
+        mock_camera_manager.configure_camera.assert_awaited_once_with("MockBasler:TestCam1", properties)
 
     @pytest.mark.asyncio
     async def test_configure_invalid_parameters(self, camera_service, mock_camera_manager):
         """Test configuration with invalid parameters."""
-        # Setup mock camera that rejects config
         mock_proxy = AsyncMock()
-        mock_proxy.configure.side_effect = CameraConfigurationError("Invalid exposure value")
         mock_camera_manager.active_cameras = {"MockBasler:TestCam1": mock_proxy}
         mock_camera_manager.open.return_value = mock_proxy
+        mock_camera_manager.configure_camera = AsyncMock(side_effect=CameraConfigurationError("Invalid exposure value"))
 
         request = CameraConfigureRequest(
             camera="MockBasler:TestCam1",
@@ -561,10 +552,10 @@ class TestServiceEndToEndWorkflow:
         mock_proxy = AsyncMock()
         mock_proxy.name = camera_name
         mock_proxy.is_connected = True
-        mock_proxy.configure.return_value = True
         mock_proxy.capture.return_value = np.zeros((480, 640, 3), dtype=np.uint8)
         mock_camera_manager.open.return_value = mock_proxy
         mock_camera_manager.active_cameras = {camera_name: mock_proxy}
+        mock_camera_manager.configure_camera = AsyncMock(return_value=ConfigurationApplyResult(applied=2, total=2))
 
         open_req = CameraOpenRequest(camera=camera_name)
         open_result = await camera_service.open_camera(open_req)
@@ -574,6 +565,10 @@ class TestServiceEndToEndWorkflow:
         config_req = CameraConfigureRequest(camera=camera_name, properties={"exposure": 2000, "gain": 3.0})
         config_result = await camera_service.configure_camera(config_req)
         assert config_result.success is True
+        assert isinstance(config_result, ConfigurationApplyResponse)
+        assert config_result.data.applied == 2
+        assert config_result.data.total == 2
+        mock_camera_manager.configure_camera.assert_awaited_once_with(camera_name, {"exposure": 2000, "gain": 3.0})
 
         # 4. Capture image
         capture_req = CaptureImageRequest(camera=camera_name)

@@ -22,7 +22,9 @@ from mindtrace.hardware.services.cameras.schemas.config_schemas import (
     ConfigureCameraSchema,
     ExportCameraConfigSchema,
     GetCameraConfigurationSchema,
+    GetSavedCameraConfigurationSchema,
     ImportCameraConfigSchema,
+    ResetCameraConfigSchema,
 )
 from mindtrace.hardware.services.cameras.schemas.focus_schemas import (
     GetFocusConfigSchema,
@@ -94,8 +96,10 @@ ALL_SCHEMAS = {
     "configure_camera": ConfigureCameraSchema,
     "configure_cameras_batch": ConfigureCamerasBatchSchema,
     "get_camera_configuration": GetCameraConfigurationSchema,
+    "get_saved_camera_configuration": GetSavedCameraConfigurationSchema,
     "import_camera_config": ImportCameraConfigSchema,
     "export_camera_config": ExportCameraConfigSchema,
+    "reset_camera_config": ResetCameraConfigSchema,
     # Capture Groups
     "configure_capture_groups": ConfigureCaptureGroupsSchema,
     "get_capture_groups": GetCaptureGroupsSchema,
@@ -154,8 +158,10 @@ __all__ = [
     "ConfigureCameraSchema",
     "ConfigureCamerasBatchSchema",
     "GetCameraConfigurationSchema",
+    "GetSavedCameraConfigurationSchema",
     "ImportCameraConfigSchema",
     "ExportCameraConfigSchema",
+    "ResetCameraConfigSchema",
     # Capture Groups
     "ConfigureCaptureGroupsSchema",
     "GetCaptureGroupsSchema",

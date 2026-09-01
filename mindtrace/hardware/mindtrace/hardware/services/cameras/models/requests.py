@@ -94,14 +94,34 @@ class ConfigFileImportRequest(BaseModel):
     """Request model for configuration file import."""
 
     camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
-    config_path: str = Field(..., description="Path to configuration file to import")
+    config_path: Optional[str] = Field(
+        None,
+        min_length=1,
+        description=(
+            "Path to configuration file to import. When omitted, uses "
+            "MINDTRACE_HW_CAMERA_CONFIG_DIR with a per-camera filename."
+        ),
+    )
 
 
 class ConfigFileExportRequest(BaseModel):
     """Request model for configuration file export."""
 
     camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
-    config_path: str = Field(..., description="Path where to export configuration file")
+    config_path: Optional[str] = Field(
+        None,
+        min_length=1,
+        description=(
+            "Path where to export configuration file. When omitted, uses "
+            "MINDTRACE_HW_CAMERA_CONFIG_DIR with a per-camera filename."
+        ),
+    )
+
+
+class ConfigFileResetRequest(BaseModel):
+    """Request model for deleting a camera's persisted configuration file."""
+
+    camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
 
 
 # Image Capture Operations

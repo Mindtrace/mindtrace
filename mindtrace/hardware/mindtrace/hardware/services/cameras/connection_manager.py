@@ -27,6 +27,7 @@ from mindtrace.hardware.services.cameras.models import (
     CaptureImageRequest,
     ConfigFileExportRequest,
     ConfigFileImportRequest,
+    ConfigFileResetRequest,
     ConfigureCaptureGroupsRequest,
 )
 from mindtrace.services.core.connection_manager import ConnectionManager
@@ -211,7 +212,7 @@ class CameraManagerConnectionManager(ConnectionManager):
         return response["data"]
 
     # Configuration Operations
-    async def configure_camera(self, camera: str, properties: Dict[str, Any]) -> bool:
+    async def configure_camera(self, camera: str, properties: Dict[str, Any]) -> Dict[str, Any]:
         """Configure camera parameters.
 
         Args:
@@ -219,7 +220,7 @@ class CameraManagerConnectionManager(ConnectionManager):
             properties: Configuration properties
 
         Returns:
-            True if successful
+            Configuration apply result with applied/total counts, failures, and skipped keys.
         """
         request = CameraConfigureRequest(camera=camera, properties=properties)
         response = await self.post("/cameras/configure", request.model_dump())
@@ -232,7 +233,8 @@ class CameraManagerConnectionManager(ConnectionManager):
             configurations: Dictionary mapping camera names to their configurations
 
         Returns:
-            Batch operation results
+            Batch configure result with successful/failed camera lists and per-camera
+            apply details (applied, total, failures, skipped, success).
         """
         request = CameraConfigureBatchRequest(configurations=configurations)
         response = await self.post("/cameras/configure/batch", request.model_dump())
@@ -248,15 +250,29 @@ class CameraManagerConnectionManager(ConnectionManager):
             Current camera configuration
         """
         request = CameraQueryRequest(camera=camera)
-        response = await self.post("/cameras/configuration", request.model_dump())
+        response = await self.post("/cameras/config/get", request.model_dump())
         return response["data"]
 
-    async def import_camera_config(self, camera: str, config_path: str) -> Dict[str, Any]:
+    async def get_saved_camera_configuration(self, camera: str) -> Optional[Dict[str, Any]]:
+        """Get persisted camera configuration from disk.
+
+        Args:
+            camera: Camera name to query
+
+        Returns:
+            Saved camera configuration, or ``None`` when no saved file exists
+        """
+        request = CameraQueryRequest(camera=camera)
+        response = await self.post("/cameras/config/saved/get", request.model_dump())
+        return response["data"]
+
+    async def import_camera_config(self, camera: str, config_path: Optional[str] = None) -> Dict[str, Any]:
         """Import camera configuration from file.
 
         Args:
             camera: Camera name
-            config_path: Path to configuration file
+            config_path: Path to configuration file. When omitted, uses
+                MINDTRACE_HW_CAMERA_CONFIG_DIR with a per-camera filename.
 
         Returns:
             Import operation result
@@ -265,18 +281,32 @@ class CameraManagerConnectionManager(ConnectionManager):
         response = await self.post("/cameras/config/import", request.model_dump())
         return response["data"]
 
-    async def export_camera_config(self, camera: str, config_path: str) -> Dict[str, Any]:
+    async def export_camera_config(self, camera: str, config_path: Optional[str] = None) -> Dict[str, Any]:
         """Export camera configuration to file.
 
         Args:
             camera: Camera name
-            config_path: Path to save configuration file
+            config_path: Path to save configuration file. When omitted, uses
+                MINDTRACE_HW_CAMERA_CONFIG_DIR with a per-camera filename.
 
         Returns:
             Export operation result
         """
         request = ConfigFileExportRequest(camera=camera, config_path=config_path)
         response = await self.post("/cameras/config/export", request.model_dump(), http_timeout=120.0)
+        return response["data"]
+
+    async def reset_camera_config(self, camera: str) -> Dict[str, Any]:
+        """Delete a camera's persisted configuration file.
+
+        Args:
+            camera: Camera name
+
+        Returns:
+            Reset operation result
+        """
+        request = ConfigFileResetRequest(camera=camera)
+        response = await self.post("/cameras/config/reset", request.model_dump())
         return response["data"]
 
     # Image Capture Operations

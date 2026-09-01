@@ -24,6 +24,7 @@ from mindtrace.hardware.services.cameras.models.requests import (
     CaptureImageRequest,
     ConfigFileExportRequest,
     ConfigFileImportRequest,
+    ConfigFileResetRequest,
     # Capture Groups
     ConfigureCaptureGroupsRequest,
     # Specific Parameters
@@ -89,6 +90,10 @@ from mindtrace.hardware.services.cameras.models.responses import (
     # Configuration Files
     ConfigFileOperationResult,
     ConfigFileResponse,
+    ConfigurationApplyResponse,
+    ConfigurationApplyResultData,
+    ConfigureCamerasBatchResponse,
+    ConfigureCamerasBatchResult,
     DictResponse,
     # Error Handling
     ErrorDetail,
@@ -117,6 +122,7 @@ from mindtrace.hardware.services.cameras.models.responses import (
     # Parameter Ranges
     ParameterRange,
     RangeResponse,
+    SavedCameraConfigurationResponse,
     # Streaming
     StreamInfo,
     StreamInfoResponse,
@@ -141,6 +147,7 @@ __all__ = [
     "CameraPerformanceSettingsRequest",
     "ConfigFileImportRequest",
     "ConfigFileExportRequest",
+    "ConfigFileResetRequest",
     "CaptureImageRequest",
     "CaptureBatchRequest",
     "CaptureHDRRequest",
@@ -188,6 +195,11 @@ __all__ = [
     "CameraStatusResponse",
     "CameraCapabilitiesResponse",
     "CameraConfigurationResponse",
+    "ConfigurationApplyResponse",
+    "ConfigurationApplyResultData",
+    "ConfigureCamerasBatchResponse",
+    "ConfigureCamerasBatchResult",
+    "SavedCameraConfigurationResponse",
     "CameraPerformanceSettings",
     "CameraPerformanceSettingsResponse",
     "ActiveCamerasResponse",
