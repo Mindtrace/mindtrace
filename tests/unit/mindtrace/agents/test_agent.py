@@ -376,6 +376,53 @@ class TestMindtraceAgentStream:
         assert len(result_events) == 1
         assert result_events[0].result.output == "streamed answer"
 
+    async def test_stream_thinking_part_is_not_collected_as_output(self):
+        """A reasoning-only turn must not surface its reasoning as the run
+        output or leak it into the assistant message recorded in history —
+        a thinking part carries a TextPart, but it is not assistant text."""
+        from mindtrace.agents.events import AgentRunResultEvent
+
+        history: list = []
+        agent = _make_agent(responses=[text_response("", thinking="private reasoning")])
+        events = []
+        async for event in agent.run_stream_events("question", message_history=history):
+            events.append(event)
+
+        [result_event] = [e for e in events if isinstance(e, AgentRunResultEvent)]
+        assert result_event.result.output == ""
+        assistant_texts = [
+            part.content
+            for message in history
+            if message.role == "assistant"
+            for part in message.parts
+            if isinstance(part, TextPart)
+        ]
+        assert "private reasoning" not in assistant_texts
+
+    async def test_stream_thinking_part_still_reaches_consumers(self):
+        """The thinking PartEndEvent passes through the stream, so a consumer
+        can recover the reasoning of a turn that ended with empty content."""
+        from mindtrace.agents.events import PartEndEvent
+
+        agent = _make_agent(responses=[text_response("", thinking="private reasoning")])
+        events = []
+        async for event in agent.run_stream_events("question"):
+            events.append(event)
+
+        thinking_ends = [e for e in events if isinstance(e, PartEndEvent) and e.part_kind == "thinking"]
+        assert [e.part.content for e in thinking_ends] == ["private reasoning"]
+
+    async def test_stream_thinking_alongside_text_keeps_the_text_as_output(self):
+        from mindtrace.agents.events import AgentRunResultEvent
+
+        agent = _make_agent(responses=[text_response("the answer", thinking="how I got there")])
+        events = []
+        async for event in agent.run_stream_events("question"):
+            events.append(event)
+
+        [result_event] = [e for e in events if isinstance(e, AgentRunResultEvent)]
+        assert result_event.result.output == "the answer"
+
     async def test_stream_tool_call_yields_tool_result_event(self):
         """When a tool is called during streaming, a ToolResultEvent is emitted."""
         from mindtrace.agents.events import ToolResultEvent

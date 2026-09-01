@@ -287,6 +287,12 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
             ):
                 yield event
                 if isinstance(event, PartEndEvent) and event.part is not None:
+                    # A thinking part carries its reasoning as a TextPart, but
+                    # it is not assistant output: collecting it would make a
+                    # reasoning-only turn's reasoning the run output and leak
+                    # it into the assistant message recorded in history.
+                    if event.part_kind == "thinking":
+                        continue
                     if isinstance(event.part, (TextPart, ToolCallPart)):
                         parts_by_index[event.index] = event.part
 

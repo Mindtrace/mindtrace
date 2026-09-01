@@ -21,6 +21,21 @@ class TextPartDelta:
 
 
 @dataclass(frozen=True)
+class ThinkingPartDelta:
+    """A chunk of the model's reasoning channel (thinking models only).
+
+    Streamed inside ``PartDeltaEvent``, framed by ``PartStartEvent`` /
+    ``PartEndEvent`` with ``part_kind="thinking"``; the end event carries the
+    full accumulated reasoning as a ``TextPart``. Providers that expose no
+    reasoning channel never emit these, so consumers that only handle
+    ``TextPartDelta`` are unaffected.
+    """
+
+    content_delta: str
+    message_id: str | None = None
+
+
+@dataclass(frozen=True)
 class ToolCallArgsDelta:
     tool_call_id: str
     args_delta: str
@@ -28,7 +43,7 @@ class ToolCallArgsDelta:
 
 @dataclass(frozen=True)
 class PartDeltaEvent:
-    delta: Union[TextPartDelta, ToolCallArgsDelta]
+    delta: Union[TextPartDelta, ThinkingPartDelta, ToolCallArgsDelta]
     index: int = 0
     message_id: str | None = None
     tool_call_id: str | None = None
@@ -114,6 +129,7 @@ NativeEvent = Union[
     PartEndEvent,
     ResponseCompleteEvent,
     TextPartDelta,
+    ThinkingPartDelta,
     ToolCallStartEvent,
     ToolCallArgsDelta,
     ToolCallEndEvent,
@@ -136,6 +152,7 @@ __all__ = [
     "RunFinishedEvent",
     "RunStartedEvent",
     "TextPartDelta",
+    "ThinkingPartDelta",
     "ToolCallArgsDelta",
     "ToolCallEndEvent",
     "ToolCallStartEvent",
