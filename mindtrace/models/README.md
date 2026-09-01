@@ -28,7 +28,7 @@ The Mindtrace Models module provides a complete ML lifecycle library: assemble m
 The models module consists of eight sub-packages:
 
 - **Architectures**: Backbone + head assembly with factory pattern, 33 registered backbones, 6 head types, LoRA fine-tuning
-- **Inference**: Task-level model contracts and composable local PyTorch prediction
+- **Inference**: Task-level model contracts and composable local PyTorch prediction and embedding
 - **Training**: Supervised training loop with AMP, DDP, gradient accumulation, 7 callbacks, 9 loss functions, optimizer/scheduler factories
 - **Tracking**: Unified experiment tracking with MLflow, WandB, TensorBoard backends and framework bridges
 - **Evaluation**: Framework-agnostic metric computation (pure NumPy) with EvaluationRunner for orchestrated inference
@@ -252,18 +252,70 @@ image = Image.open("tests/resources/hopper.png").convert("RGB")
 predictions = model.predict(image, include_probabilities=True)
 ```
 
-`model.predict(input, **params)` runs the complete task-level pipeline and forwards prediction options to the
-postprocessor. Calling `model(tensor)` invokes standard `nn.Module.forward` behavior and accepts only a preprocessed
-Tensor batch. `HuggingFaceImageProcessor` also accepts floating-point CHW or BCHW tensors, treating them as already
-normalized and adding a batch dimension to CHW input.
+`TorchInferencePipeline` owns a processor, network, and device placement. `TorchModel` and `TorchEmbeddingModel`
+apply independent task-level postprocessors to that runtime pipeline. A single-capability model may still pass its
+network and processor directly to either wrapper; use an explicit pipeline when prediction and embedding should share
+one processor and network instance:
 
-When loading a state dict saved from the bare network, load it through the child module before prediction:
+```python
+from typing import Any
+
+import torch
+import torch.nn.functional as F
+from PIL import Image
+from torch import Tensor, nn
+
+from mindtrace.models import TorchEmbeddingModel, TorchInferencePipeline, TorchModel
+
+
+class ImageSizeProcessor:
+    def __call__(self, image: Image.Image) -> Tensor:
+        return torch.tensor([[image.width, image.height]], dtype=torch.float32)
+
+
+def classify_orientation(outputs: Tensor, **params: Any) -> list[str]:
+    return ["landscape" if width >= height else "portrait" for width, height in outputs]
+
+
+def normalize_embeddings(outputs: Tensor, **params: Any) -> list[list[float]]:
+    return F.normalize(outputs, p=2, dim=1).cpu().tolist()
+
+
+pipeline = TorchInferencePipeline(
+    network=nn.Identity(),
+    processor=ImageSizeProcessor(),
+    device="auto",
+)
+prediction_model = TorchModel(
+    pipeline=pipeline,
+    postprocessor=classify_orientation,
+)
+embedding_model = TorchEmbeddingModel(
+    pipeline=pipeline,
+    postprocessor=normalize_embeddings,
+)
+
+image = Image.open("tests/resources/hopper.png").convert("RGB")
+predictions = prediction_model.predict(image)
+embeddings = embedding_model.embed(image)
+```
+
+`prediction_model` and `embedding_model` above are two capability views over the same runtime pipeline. There is one
+processor, one network, and one device allocation, while each view has its own postprocessor. `predict(input,
+**params)` and `embed(input, **params)` run their complete task-level operation and forward task options to the
+appropriate postprocessor. `TorchModel` exposes only `predict()`, while `TorchEmbeddingModel` exposes only `embed()`.
+
+Calling either wrapper with `wrapper(tensor)` invokes standard `nn.Module.forward` behavior and accepts only a
+preprocessed Tensor batch. `HuggingFaceImageProcessor` also accepts floating-point CHW or BCHW tensors, treating them
+as already normalized and adding a batch dimension to CHW input.
+
+When loading a state dict saved from the bare network, load it through the child module before task-level inference:
 
 ```python
 model.network.load_state_dict(network_state_dict)
 ```
 
-Complete `TorchModel` Registry persistence is intentionally outside this API. See
+Complete `TorchModel` and `TorchEmbeddingModel` Registry persistence is intentionally outside this API. See
 [the composite archiver design issue](https://github.com/Mindtrace/mindtrace/issues/544).
 
 See [`samples/models/09_model_protocol.py`](../../samples/models/09_model_protocol.py) for a complete local example.
@@ -580,7 +632,9 @@ from mindtrace.models import (
     # -- Inference --
     EmbeddingModel,                 # Structural task-level embedding protocol
     Model,                          # Structural task-level prediction protocol
-    TorchModel,                     # Composable processor/network/postprocessor
+    TorchInferencePipeline,         # Shareable processor/network/device runtime
+    TorchEmbeddingModel,            # Embedding view over a PyTorch pipeline
+    TorchModel,                     # Prediction view over a PyTorch pipeline
     HuggingFaceImageProcessor,      # Lazy raw-image and tensor preprocessing
     ClassificationPostprocessor,   # Labelled classification result conversion
 
