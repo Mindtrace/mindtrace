@@ -8,7 +8,7 @@ response formatting across all camera management endpoints.
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 from mindtrace.core import utcnow
 from mindtrace.hardware.core.types import ServiceStatus
@@ -127,7 +127,13 @@ class CameraCapabilities(BaseModel):
 
 
 class CameraConfiguration(BaseModel):
-    """Camera configuration model."""
+    """Camera configuration model matching ``CONFIGURABLE_KEYS``.
+
+    Unset fields stay ``None`` on the in-memory model so callers can inspect
+    what the camera actually reported. Serialization omits those keys
+    (``exclude_none=True``) so GET JSON matches a configure payload and is
+    safe to round-trip.
+    """
 
     exposure_time: Optional[float] = None
     gain: Optional[float] = None
@@ -140,6 +146,21 @@ class CameraConfiguration(BaseModel):
     packet_size: Optional[int] = None
     inter_packet_delay: Optional[float] = None
     optical_power: Optional[float] = None
+    focus_config: Optional[Dict[str, Any]] = None
+    genicam_nodes: Optional[Dict[str, Any]] = None
+    brightness: Optional[float] = None
+    contrast: Optional[float] = None
+    saturation: Optional[float] = None
+    hue: Optional[float] = None
+    auto_exposure: Optional[float] = None
+    white_balance_blue_u: Optional[float] = None
+    white_balance_red_v: Optional[float] = None
+
+    @model_serializer(mode="wrap")
+    def _serialize_exclude_none(self, serializer):
+        """Omit unset configure keys from JSON and ``model_dump()`` output."""
+        serialized = serializer(self)
+        return {key: value for key, value in serialized.items() if value is not None}
 
 
 # Liquid Lens
@@ -180,6 +201,47 @@ class CameraConfigurationResponse(BaseResponse):
     """Response model for camera configuration."""
 
     data: CameraConfiguration
+
+
+class ConfigurationApplyResultData(BaseModel):
+    """Result of applying one or more camera configuration settings."""
+
+    applied: int
+    total: int
+    failures: Dict[str, str] = Field(default_factory=dict)
+    skipped: List[str] = Field(default_factory=list)
+    skipped_metadata: List[str] = Field(default_factory=list)
+    skipped_unexpected: List[str] = Field(default_factory=list)
+    partial: Dict[str, Any] = Field(default_factory=dict)
+    success: bool
+
+
+class ConfigurationApplyResponse(BaseResponse):
+    """Response model for camera configure operations."""
+
+    data: ConfigurationApplyResultData
+
+
+class ConfigureCamerasBatchResult(BaseModel):
+    """Batch configure result with per-camera apply details."""
+
+    successful: List[str]
+    failed: List[str]
+    results: Dict[str, ConfigurationApplyResultData]
+    successful_count: int
+    failed_count: int
+
+
+class ConfigureCamerasBatchResponse(BaseResponse):
+    """Response model for batch camera configure operations."""
+
+    data: ConfigureCamerasBatchResult
+
+
+class SavedCameraConfigurationResponse(BaseResponse):
+    """Response model for persisted (on-disk) camera configuration."""
+
+    data: Optional[CameraConfiguration] = None
 
 
 class ActiveCamerasResponse(BaseResponse):
