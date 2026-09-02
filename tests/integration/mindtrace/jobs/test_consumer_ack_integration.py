@@ -103,7 +103,7 @@ def test_consume_until_empty_aborts_when_consuming_channel_makes_no_progress():
 
 
 @pytest.mark.rabbitmq
-def test_blocking_consume_polls_later_queue_when_first_queue_is_empty():
+def test_push_consume_processes_later_queue_after_poison_and_stops():
     processed = threading.Event()
 
     class StopAfterOneConsumer(SampleConsumer):
@@ -119,6 +119,7 @@ def test_blocking_consume_polls_later_queue_when_first_queue_is_empty():
     ready_queue = unique_queue("consumer-ready-second")
     orchestrator.register(JobSchema(name=empty_queue, input_schema=SampleJobInput, output_schema=SampleJobOutput))
     orchestrator.register(JobSchema(name=ready_queue, input_schema=SampleJobInput, output_schema=SampleJobOutput))
+    client.channel.basic_publish(exchange="default", routing_key=ready_queue, body=b"not-json")
     orchestrator.publish(ready_queue, create_test_job("ready", ready_queue))
 
     consumer = StopAfterOneConsumer(empty_queue)
@@ -131,6 +132,7 @@ def test_blocking_consume_polls_later_queue_when_first_queue_is_empty():
         thread.join(timeout=5)
 
         assert thread.is_alive() is False
+        assert consumer.consumer_backend.closed is False
         assert [job["name"] for job in consumer.processed_jobs] == ["ready"]
         assert client.count_queue_messages(empty_queue) == 0
         assert client.count_queue_messages(ready_queue) == 0
@@ -139,6 +141,90 @@ def test_blocking_consume_polls_later_queue_when_first_queue_is_empty():
         thread.join(timeout=5)
         client.delete_queue(empty_queue)
         client.delete_queue(ready_queue)
+
+
+@pytest.mark.rabbitmq
+def test_push_stop_does_not_process_deliveries_buffered_for_other_queues():
+    class StopAfterFirstConsumer(SampleConsumer):
+        def run(self, job_dict):
+            result = super().run(job_dict)
+            self.stop()
+            return result
+
+    client = rabbitmq_client()
+    orchestrator = Orchestrator(backend=client)
+    queues = [unique_queue(f"consumer-buffered-{index}") for index in range(6)]
+    for index, queue in enumerate(queues):
+        orchestrator.register(JobSchema(name=queue, input_schema=SampleJobInput, output_schema=SampleJobOutput))
+        orchestrator.publish(queue, create_test_job(f"buffered-{index}", queue))
+
+    consumer = StopAfterFirstConsumer(queues[0])
+    consumer.connect_to_orchestrator(orchestrator, queues[0], prefetch_count=1)
+    thread = threading.Thread(target=consumer.consume, kwargs={"queues": queues})
+    thread.start()
+
+    try:
+        thread.join(timeout=5)
+
+        assert thread.is_alive() is False
+        assert len(consumer.processed_jobs) == 1
+        assert sum(client.count_queue_messages(queue) for queue in queues) == len(queues) - 1
+    finally:
+        consumer.stop()
+        thread.join(timeout=5)
+        for queue in queues:
+            client.delete_queue(queue)
+
+
+@pytest.mark.rabbitmq
+def test_broker_cancelled_push_consumer_ends_multi_queue_operation():
+    delivery_processed = threading.Event()
+
+    class SignallingConsumer(SampleConsumer):
+        def run(self, job_dict):
+            result = super().run(job_dict)
+            delivery_processed.set()
+            return result
+
+    client = rabbitmq_client()
+    orchestrator = Orchestrator(backend=client)
+    cancelled_queue = unique_queue("consumer-cancelled")
+    surviving_queue = unique_queue("consumer-surviving")
+    for queue in (cancelled_queue, surviving_queue):
+        orchestrator.register(JobSchema(name=queue, input_schema=SampleJobInput, output_schema=SampleJobOutput))
+    orchestrator.publish(surviving_queue, create_test_job("consumer-ready", surviving_queue))
+
+    consumer = SignallingConsumer(cancelled_queue)
+    consumer.connect_to_orchestrator(orchestrator, cancelled_queue)
+    consume_errors = []
+    cancelled_queue_deleted = False
+
+    def consume_and_capture_error():
+        try:
+            consumer.consume(queues=[cancelled_queue, surviving_queue])
+        except Exception as exc:
+            consume_errors.append(exc)
+
+    thread = threading.Thread(target=consume_and_capture_error)
+    thread.start()
+
+    try:
+        assert delivery_processed.wait(timeout=5)
+        client.delete_queue(cancelled_queue)
+        cancelled_queue_deleted = True
+        thread.join(timeout=5)
+
+        assert thread.is_alive() is False
+        assert len(consume_errors) == 1
+        assert isinstance(consume_errors[0], RuntimeError)
+        assert "RabbitMQ broker cancelled" in str(consume_errors[0])
+        assert cancelled_queue in str(consume_errors[0])
+    finally:
+        consumer.stop()
+        thread.join(timeout=5)
+        if not cancelled_queue_deleted:
+            client.delete_queue(cancelled_queue)
+        client.delete_queue(surviving_queue)
 
 
 @pytest.mark.rabbitmq
