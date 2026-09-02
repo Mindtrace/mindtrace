@@ -1,7 +1,15 @@
 import pickle
+import uuid
+from dataclasses import dataclass
 from queue import Empty
 
 import redis
+
+
+@dataclass(frozen=True)
+class _PriorityEntry:
+    entry_id: str
+    payload: object
 
 
 class RedisPriorityQueue:
@@ -20,12 +28,15 @@ class RedisPriorityQueue:
             item: The item to add to the queue.
             priority: Priority value (higher numbers = higher priority).
         """
-        import random
+        entry = _PriorityEntry(entry_id=str(uuid.uuid4()), payload=item)
+        self.__db.zadd(self.key, {pickle.dumps(entry): priority})
 
-        random.seed(hash(str(item)) % 2147483647)  # Deterministic seed based on item content
-        tie_breaker = random.random() * 1e-10  # Very small tie breaker
-        score = priority + tie_breaker
-        self.__db.zadd(self.key, {pickle.dumps(item): score})
+    @staticmethod
+    def _decode(member):
+        entry = pickle.loads(member)
+        if isinstance(entry, _PriorityEntry):
+            return entry.payload
+        return entry
 
     def pop(self, block=True, timeout=None):
         """Remove and return the highest priority item from the queue.
@@ -42,14 +53,14 @@ class RedisPriorityQueue:
             while True:
                 items = self.__db.zpopmax(self.key, 1)
                 if items:
-                    return pickle.loads(items[0][0])
+                    return self._decode(items[0][0])
                 if timeout is not None and (time.time() - start_time) > timeout:
                     raise Empty
                 time.sleep(0.1)  # Sleep briefly before checking again
         else:
             items = self.__db.zpopmax(self.key, 1)
             if items:
-                return pickle.loads(items[0][0])
+                return self._decode(items[0][0])
             else:
                 raise Empty
 

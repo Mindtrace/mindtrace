@@ -39,6 +39,18 @@ class TestLocalPriorityQueue:
         assert pq.pop() == "first"
         assert pq.pop() == "second"
 
+    def test_same_priority_preserves_fifo_for_non_comparable_items(self):
+        pq = LocalPriorityQueue()
+        first = {"name": "first"}
+        second = {"name": "second"}
+
+        pq.push(first, priority=5)
+        pq.push(second, priority=5)
+
+        assert pq.qsize() == 2
+        assert pq.pop() == first
+        assert pq.pop() == second
+
     def test_empty_priority_queue(self):
         """Test operations on empty priority queue."""
         pq = LocalPriorityQueue()
@@ -205,6 +217,19 @@ class TestLocalPriorityQueue:
         queue = LocalPriorityQueue.from_dict(empty_data)
         assert queue.empty()
         assert queue.qsize() == 0
+
+    def test_from_dict_accepts_legacy_items_without_sequence(self):
+        legacy_data = {
+            "items": [
+                {"item": {"name": "first"}, "priority": 5},
+                {"item": {"name": "second"}, "priority": 5},
+            ]
+        }
+
+        queue = LocalPriorityQueue.from_dict(legacy_data)
+
+        assert queue.pop() == {"name": "first"}
+        assert queue.pop() == {"name": "second"}
 
     def test_complex_objects_with_priority(self):
         """Test priority queue with complex objects."""

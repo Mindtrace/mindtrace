@@ -1,9 +1,11 @@
-from unittest.mock import MagicMock, patch
+import json
+from unittest.mock import MagicMock, call, patch
 
 import pydantic
 import pytest
 
 from mindtrace.jobs.redis.client import RedisClient
+from mindtrace.jobs.redis.fifo_queue import RedisQueue
 
 
 @pytest.fixture
@@ -33,6 +35,8 @@ def test_declare_queue_fifo(client):
 def test_declare_queue_already_exists(client):
     client, mock_conn = client
     mock_conn.queues = {"q": MagicMock()}
+    mock_conn.connection.lock.return_value.acquire.return_value = True
+    mock_conn.connection.hget.return_value = b"fifo"
     result = client.declare_queue("q", queue_type="fifo")
     assert result["status"] == "success"
     assert "already exists" in result["message"]
@@ -40,14 +44,89 @@ def test_declare_queue_already_exists(client):
 
 def test_delete_queue_success(client):
     client, mock_conn = client
-    mock_conn.queues = {"q": MagicMock()}
+    queue = MagicMock()
+    queue.key = "queue:q"
+    mock_conn.queues = {"q": queue}
     mock_conn.connection.lock.return_value.acquire.return_value = True
-    mock_conn.connection.pipeline.return_value.hdel.return_value = None
-    mock_conn.connection.pipeline.return_value.execute.return_value = None
-    mock_conn.connection.publish.return_value = 1
+    pipeline = mock_conn.connection.pipeline.return_value
+    pipeline.hdel.return_value = None
+    pipeline.execute.return_value = None
     result = client.delete_queue("q")
     assert result["status"] == "success"
-    mock_conn.connection.publish.assert_called()
+    event_data = json.dumps({"event": "delete", "queue": "q"})
+    assert pipeline.method_calls == [
+        call.hdel(mock_conn.METADATA_KEY, "q"),
+        call.delete("queue:q"),
+        call.execute(),
+    ]
+    mock_conn.connection.publish.assert_called_once_with(mock_conn.EVENTS_CHANNEL, event_data)
+
+
+def test_declare_queue_rechecks_central_metadata_under_distributed_lock(client):
+    client, mock_conn = client
+    mock_conn.queues = {}
+    lock = mock_conn.connection.lock.return_value
+    lock.acquire.return_value = True
+
+    def central_queue_type(*_args):
+        assert lock.acquire.called, "Central metadata must be checked only after acquiring the distributed lock."
+        return b"fifo"
+
+    mock_conn.connection.hget.side_effect = central_queue_type
+
+    with patch("mindtrace.jobs.redis.client.RedisPriorityQueue") as priority_queue:
+        with pytest.raises(ValueError, match="already declared as fifo"):
+            client.declare_queue("q", queue_type="priority")
+
+        priority_queue.assert_not_called()
+
+    mock_conn.connection.pipeline.return_value.hset.assert_not_called()
+
+
+def test_declare_queue_rejects_conflicting_local_queue_type_before_locking(client):
+    client, mock_conn = client
+    mock_conn.queues = {"q": object.__new__(RedisQueue)}
+
+    with pytest.raises(ValueError, match="already declared as fifo"):
+        client.declare_queue("q", queue_type="priority")
+
+    mock_conn.connection.lock.assert_not_called()
+    mock_conn.connection.hget.assert_not_called()
+
+
+def test_declare_queue_rehydrates_missing_local_cache_from_central_metadata(client):
+    client, mock_conn = client
+    mock_conn.queues = {}
+    mock_conn.connection.lock.return_value.acquire.return_value = True
+    mock_conn.connection.hget.return_value = b"fifo"
+    local_instance = MagicMock()
+
+    with patch("mindtrace.jobs.redis.client.RedisQueue", return_value=local_instance) as queue_class:
+        result = client.declare_queue("q", queue_type="fifo")
+
+    assert result["status"] == "success"
+    assert "already exists" in result["message"]
+    queue_class.assert_called_once_with("q", host="localhost", port=6381, db=0)
+    assert mock_conn.queues["q"] is local_instance
+    mock_conn.connection.pipeline.assert_not_called()
+    mock_conn.connection.publish.assert_not_called()
+
+
+def test_declare_queue_rolls_back_metadata_and_local_cache_when_event_publish_fails(client):
+    client, mock_conn = client
+    mock_conn.queues = {}
+    mock_conn.connection.lock.return_value.acquire.return_value = True
+    mock_conn.connection.hget.return_value = None
+    mock_conn.connection.publish.side_effect = RuntimeError("event channel unavailable")
+    local_instance = MagicMock()
+
+    with patch("mindtrace.jobs.redis.client.RedisQueue", return_value=local_instance):
+        with pytest.raises(RuntimeError, match="event channel unavailable"):
+            client.declare_queue("q", queue_type="fifo")
+
+    mock_conn.connection.hdel.assert_called_once_with(mock_conn.METADATA_KEY, "q")
+    assert "q" not in mock_conn.queues
+    mock_conn.connection.lock.return_value.release.assert_called_once_with()
 
 
 def test_delete_queue_not_declared(client):
@@ -88,9 +167,9 @@ def test_clean_queue_success(client):
     client, mock_conn = client
     fake_queue = MagicMock()
     fake_queue.key = "key"
+    fake_queue.qsize.return_value = 2
     mock_conn.queues = {"q": fake_queue}
     mock_conn.connection.lock.return_value.acquire.return_value = True
-    mock_conn.connection.llen.return_value = 2
     mock_conn.connection.delete.return_value = 1
     result = client.clean_queue("q")
     assert result["status"] == "success"
@@ -166,9 +245,9 @@ def test_clean_queue_lock_release_on_exception(client):
     client, mock_conn = client
     fake_queue = MagicMock()
     fake_queue.key = "key"
+    fake_queue.qsize.side_effect = Exception("fail")
     mock_conn.queues = {"q": fake_queue}
     mock_conn.connection.lock.return_value.acquire.return_value = True
-    mock_conn.connection.llen.side_effect = Exception("fail")
     lock = mock_conn.connection.lock.return_value
     with pytest.raises(Exception):
         client.clean_queue("q")
@@ -219,6 +298,22 @@ def test_publish_adds_job_id_when_missing(client):
     fake_queue.push.return_value = None
     job_id = client.publish("q", msg, priority=1)
     assert isinstance(job_id, str) and len(job_id) > 0
+
+
+def test_publish_replaces_explicit_null_job_id(client):
+    client, mock_conn = client
+    fake_queue = MagicMock()
+    mock_conn.queues = {"q": fake_queue}
+
+    class DummyModel(pydantic.BaseModel):
+        foo: str
+        job_id: str | None = None
+
+    job_id = client.publish("q", DummyModel(foo="bar", job_id=None))
+
+    assert isinstance(job_id, str) and job_id
+    published = json.loads(fake_queue.push.call_args.kwargs["item"])
+    assert published["job_id"] == job_id
 
 
 def test_declare_queue_lock_acquire_failure(client):

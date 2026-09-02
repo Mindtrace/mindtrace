@@ -24,12 +24,12 @@ class Consumer(Mindtrace):
         self.job_schema: Optional[JobSchema] = None
         self.queue_name: Optional[str] = None
 
-    def connect_to_orchestrator(self, orchestrator: "Orchestrator", queue_name: str) -> None:
+    def connect_to_orchestrator(self, orchestrator: "Orchestrator", queue_name: str, **backend_kwargs) -> None:
         """Connect to orchestrator and create the appropriate consumer backend."""
         if self.consumer_backend:
             raise RuntimeError("Consumer already connected.")
 
-        self.consumer_backend = orchestrator.backend.create_consumer_backend(self, queue_name)
+        self.consumer_backend = orchestrator.backend.create_consumer_backend(self, queue_name, **backend_kwargs)
 
     def connect_to_orchestator_via_backend_args(self, backend_args: dict, queue_name: str) -> None:
         """Connect to orchestrator and create the appropriate consumer backend."""
@@ -40,18 +40,22 @@ class Consumer(Mindtrace):
             backend_args["cls"], consumer_frontend=self, **backend_args["kwargs"], queue_name=queue_name
         )
 
-    def consume(self, num_messages: int = 0, queues: str | list[str] | None = None, block: bool = True) -> None:
+    def consume(self, num_messages: int = 0, queues: str | list[str] | None = None, block: bool = True) -> int:
         """Consume messages from the queue.
 
         Args:
             num_messages: Number of messages to process. If 0, runs indefinitely.
             queues: Queue(s) to consume from. If None, uses the consumer's default queue.
-            block: Whether to block when no messages are available.
+            block: If True, wait indefinitely for requested messages until stopped or interrupted.
+                If False, return when no message is immediately available.
+
+        Returns:
+            The number of deliveries attempted.
         """
         if not self.consumer_backend:
             raise RuntimeError("Consumer not connected. Call connect() first.")
 
-        self.consumer_backend.consume(num_messages, queues=queues, block=block)
+        return self.consumer_backend.consume(num_messages, queues=queues, block=block)
 
     def consume_until_empty(self, queues: str | list[str] | None = None, block: bool = True) -> None:
         """Consume messages until all specified queues are empty.
@@ -64,6 +68,23 @@ class Consumer(Mindtrace):
             raise RuntimeError("Consumer not connected. Call connect() first.")
 
         self.consumer_backend.consume_until_empty(queues=queues, block=block)
+
+    def stop(self) -> None:
+        """Request terminal shutdown after any in-flight job completes."""
+        if not self.consumer_backend:
+            raise RuntimeError("Consumer not connected. Call connect() first.")
+        self.consumer_backend.stop()
+
+    def reset(self) -> None:
+        """Allow consumption to resume after :meth:`stop` was called."""
+        if not self.consumer_backend:
+            raise RuntimeError("Consumer not connected. Call connect() first.")
+        self.consumer_backend.reset()
+
+    def close(self) -> None:
+        """Permanently close the consumer backend and release its resources."""
+        if self.consumer_backend:
+            self.consumer_backend.close()
 
     @abstractmethod
     def run(self, job_dict: dict) -> dict:
