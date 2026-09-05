@@ -326,8 +326,9 @@ class AsyncCamera(Mindtrace):
         Connection, timeout, or initialization failures abort the remaining keys.
 
         Args:
-            **settings: Canonical configuration keys (see ``CONFIGURABLE_KEYS``).
-                Legacy aliases (``exposure``, ``triggermode``, etc.) are normalized.
+            **settings: Canonical configuration keys (see ``CONFIGURABLE_KEYS``),
+                including ``gamma``. Legacy aliases (``exposure``, ``triggermode``,
+                etc.) are normalized.
 
         Returns:
             ``ConfigurationApplyResult`` with applied/total counts, ``failures``,
@@ -409,6 +410,8 @@ class AsyncCamera(Mindtrace):
             await self._backend.set_exposure(value)
         elif key == "gain":
             await self._backend.set_gain(value)
+        elif key == "gamma":
+            await self._backend.set_gamma(value)
         elif key == "roi":
             x, y, w, h = value
             await self._backend.set_ROI(x, y, w, h)
@@ -478,6 +481,8 @@ class AsyncCamera(Mindtrace):
             return await self._backend.get_exposure()
         if key == "gain":
             return await self._backend.get_gain()
+        if key == "gamma":
+            return await self._backend.get_gamma()
         if key == "roi":
             roi = await self._backend.get_ROI()
             return (roi.get("x", 0), roi.get("y", 0), roi.get("width", 0), roi.get("height", 0))
@@ -552,6 +557,35 @@ class AsyncCamera(Mindtrace):
             A tuple of (min_gain, max_gain).
         """
         range_list = await self._backend.get_gain_range()
+        return range_list[0], range_list[1]
+
+    async def set_gamma(self, gamma: Union[int, float]):
+        """Set the camera gamma correction value.
+
+        Args:
+            gamma: Gamma value to apply (1.0 is a linear response).
+        """
+        await self._backend.set_gamma(gamma)
+        return True
+
+    async def get_gamma(self) -> Optional[float]:
+        """Get the current camera gamma.
+
+        Returns:
+            The current gamma as a float, or ``None`` when gamma is not supported.
+        """
+        return await self._backend.get_gamma()
+
+    async def get_gamma_range(self) -> Optional[Tuple[float, float]]:
+        """Get the valid gamma range.
+
+        Returns:
+            A tuple of (min_gamma, max_gamma), or ``None`` when gamma is not
+            supported on this camera.
+        """
+        range_list = await self._backend.get_gamma_range()
+        if range_list is None:
+            return None
         return range_list[0], range_list[1]
 
     async def set_capture_timeout(self, timeout_ms: int):
@@ -955,6 +989,7 @@ class AsyncCamera(Mindtrace):
                 - 'height_range': Height range query
                 - 'liquid_lens': Liquid lens presence
                 - 'optical_power': Optical power control
+                - 'gamma': Gamma correction control
 
         Returns:
             True if feature is supported and functional, False otherwise.
@@ -969,6 +1004,7 @@ class AsyncCamera(Mindtrace):
             "trigger_modes": self.get_trigger_modes,
             "liquid_lens": self.get_lens_status,
             "optical_power": self.get_optical_power_range,
+            "gamma": self.get_gamma_range,
         }
 
         check_method = feature_checks.get(feature)

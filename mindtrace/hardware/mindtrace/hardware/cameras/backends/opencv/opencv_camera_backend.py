@@ -164,6 +164,8 @@ class OpenCVCameraBackend(CameraBackend):
 
         # Lock for serializing mutating operations
         self._io_lock: asyncio.Lock = asyncio.Lock()
+        # Cached result of the gamma get/set/readback probe for this open session.
+        self._gamma_control_supported: Optional[bool] = None
 
         self.logger.info(
             f"OpenCV camera '{camera_name}' initialized with configuration: "
@@ -255,6 +257,7 @@ class OpenCVCameraBackend(CameraBackend):
             assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
 
         self.logger.debug(f"Initializing OpenCV camera: {self.camera_name}")
+        self._reset_gamma_control_cache()
 
         try:
             # Create VideoCapture (constructor call is quick in practice)
@@ -300,6 +303,7 @@ class OpenCVCameraBackend(CameraBackend):
                     pass
                 self.cap = None
             self.initialized = False
+            self._reset_gamma_control_cache()
             raise CameraInitializationError(f"Failed to initialize OpenCV camera '{self.camera_name}': {str(e)}")
 
     async def _configure_camera(self):
@@ -692,7 +696,12 @@ class OpenCVCameraBackend(CameraBackend):
                 self.cap = None
 
         self.initialized = False
+        self._reset_gamma_control_cache()
         self.logger.info(f"OpenCV camera '{self.camera_name}' closed successfully")
+
+    def _reset_gamma_control_cache(self) -> None:
+        """Clear cached gamma capability probe state."""
+        self._gamma_control_supported = None
 
     async def is_exposure_control_supported(self) -> bool:
         """
@@ -889,6 +898,153 @@ class OpenCVCameraBackend(CameraBackend):
         except Exception as e:
             self.logger.error(f"Failed to get gain for camera '{self.camera_name}': {str(e)}")
             return 0.0
+
+    async def is_gamma_control_supported(self) -> bool:
+        """Check whether gamma can be read and written for this camera.
+
+        The get/set/readback probe is expensive on real V4L drivers, so the
+        result is cached for the current open session and cleared on close or
+        re-initialize.
+        """
+        if not self.initialized or not self.cap or not await self._run_blocking(self.cap.isOpened):
+            return False
+        else:
+            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
+
+        if self._gamma_control_supported is not None:
+            return self._gamma_control_supported
+
+        try:
+            async with self._io_lock:
+                current_gamma = await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAMMA, timeout=2.0)
+
+                if current_gamma is None or float(current_gamma) < 0:
+                    self._gamma_control_supported = False
+                    return False
+
+                set_success = await self._run_blocking(
+                    self.cap.set, cv2.CAP_PROP_GAMMA, float(current_gamma), timeout=2.0
+                )
+
+                if not set_success:
+                    self.logger.debug(
+                        f"Camera '{self.camera_name}' can read gamma but cannot set it - gamma control not supported"
+                    )
+                    self._gamma_control_supported = False
+                    return False
+
+                actual_gamma = await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAMMA, timeout=2.0)
+                supported = self._gamma_values_match(current_gamma, actual_gamma)
+                self._gamma_control_supported = supported
+                return supported
+        except Exception as e:
+            self.logger.debug(f"Gamma control check failed for camera '{self.camera_name}': {e}")
+            self._gamma_control_supported = False
+            return False
+
+    @staticmethod
+    def _gamma_values_match(requested: float, actual: float) -> bool:
+        """Return True when a gamma readback matches the requested value."""
+        return abs(float(actual) - float(requested)) <= 0.01 * max(1.0, float(requested))
+
+    async def get_gamma_range(self) -> Optional[List[Union[int, float]]]:
+        """Get the supported gamma range.
+
+        OpenCV exposes only ``CAP_PROP_GAMMA`` get/set and does not report device
+        min/max bounds. These limits are therefore taken from configuration, like
+        ``get_exposure_range()``, and used as validation hints; ``set_gamma`` still
+        verifies the value via driver readback.
+
+        Returns:
+            List with [min_gamma, max_gamma], or ``None`` when gamma control is
+            not supported by this camera/driver.
+        """
+        if not await self.is_gamma_control_supported():
+            return None
+
+        return [
+            getattr(self.camera_config.cameras, "opencv_gamma_range_min", 0.25),
+            getattr(self.camera_config.cameras, "opencv_gamma_range_max", 2.0),
+        ]
+
+    async def set_gamma(self, gamma: Union[int, float]):
+        """Set camera gamma.
+
+        Many USB webcams silently ignore ``CAP_PROP_GAMMA``. A readback that does
+        not match the requested value is therefore reported as unsupported rather
+        than as a transport failure.
+
+        Args:
+            gamma: Gamma value (1.0 is a linear response)
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            CameraConfigurationError: If gamma value is out of range, unsupported, or setting fails
+        """
+        if not self.initialized or not self.cap or not await self._run_blocking(self.cap.isOpened):
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not available for gamma setting")
+        else:
+            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
+
+        await self._ensure_open()
+        if not await self.is_gamma_control_supported():
+            raise CameraConfigurationError(f"Gamma not supported by camera '{self.camera_name}'")
+
+        try:
+            gamma_range = await self.get_gamma_range()
+            if gamma_range is None:
+                raise CameraConfigurationError(f"Gamma not supported by camera '{self.camera_name}'")
+            if gamma < gamma_range[0] or gamma > gamma_range[1]:
+                raise CameraConfigurationError(f"Gamma {gamma} out of range {gamma_range}")
+
+            async with self._io_lock:
+                success = await self._run_blocking(self.cap.set, cv2.CAP_PROP_GAMMA, float(gamma))
+                if not success:
+                    raise CameraConfigurationError(
+                        f"Gamma not supported by camera '{self.camera_name}' (driver rejected CAP_PROP_GAMMA)"
+                    )
+
+                actual_gamma = await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAMMA)
+                if not self._gamma_values_match(gamma, actual_gamma):
+                    raise CameraConfigurationError(
+                        f"Gamma not supported by camera '{self.camera_name}': "
+                        f"requested={gamma}, readback={actual_gamma}"
+                    )
+
+            self.logger.debug(f"Gamma set to {gamma} for camera '{self.camera_name}'")
+        except CameraConfigurationError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to set gamma for camera '{self.camera_name}': {str(e)}")
+            raise CameraConfigurationError(f"Failed to set gamma for camera '{self.camera_name}': {str(e)}")
+
+    async def get_gamma(self) -> Optional[float]:
+        """Get current camera gamma.
+
+        Returns:
+            Current gamma value, or ``None`` when gamma control is not supported.
+
+        Raises:
+            CameraConnectionError: If camera is not initialized or not open
+            HardwareOperationError: If gamma retrieval fails on a supported camera
+        """
+        if not self.initialized or self.cap is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+        if not await self._run_blocking(self.cap.isOpened):
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not open")
+
+        assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
+
+        if not await self.is_gamma_control_supported():
+            return None
+
+        try:
+            async with self._io_lock:
+                await self._ensure_open()
+                gamma = await self._run_blocking(self.cap.get, cv2.CAP_PROP_GAMMA)
+            return float(gamma)
+        except Exception as e:
+            raise HardwareOperationError(f"Failed to get gamma for camera '{self.camera_name}': {e}") from e
 
     async def set_ROI(self, x: int, y: int, width: int, height: int):
         """Set Region of Interest (ROI).

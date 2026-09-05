@@ -14,6 +14,7 @@ from mindtrace.hardware.core.exceptions import CameraConfigurationError
 CONFIGURABLE_KEYS: tuple[str, ...] = (
     "exposure_time",
     "gain",
+    "gamma",
     "roi",
     "trigger_mode",
     "pixel_format",
