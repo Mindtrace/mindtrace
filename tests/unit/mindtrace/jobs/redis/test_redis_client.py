@@ -7,6 +7,7 @@ from redis.exceptions import LockNotOwnedError
 
 from mindtrace.jobs.redis.client import RedisClient
 from mindtrace.jobs.redis.fifo_queue import RedisQueue
+from mindtrace.jobs.redis.priority import RedisPriorityQueue
 
 
 @pytest.fixture
@@ -312,9 +313,7 @@ def test_count_queue_messages_delegates(client):
 
 def test_publish_non_priority_queue_path(client):
     client, mock_conn = client
-    fake_queue = MagicMock()
-    # Simulate a non-priority queue by class name
-    fake_queue.__class__.__name__ = "RedisQueue"
+    fake_queue = MagicMock(spec=RedisQueue)
     mock_conn.queues = {"q": fake_queue}
 
     class DummyModel(pydantic.BaseModel):
@@ -330,8 +329,7 @@ def test_publish_non_priority_queue_path(client):
 
 def test_publish_adds_job_id_when_missing(client):
     client, mock_conn = client
-    fake_queue = MagicMock()
-    fake_queue.__class__.__name__ = "RedisPriorityQueue"
+    fake_queue = MagicMock(spec=RedisPriorityQueue)
     mock_conn.queues = {"q": fake_queue}
 
     class DummyModel(pydantic.BaseModel):
@@ -369,8 +367,7 @@ def test_declare_queue_lock_acquire_failure(client):
 
 def test_publish_no_priority_argument_on_priority_queue(client):
     client, mock_conn = client
-    fake_queue = MagicMock()
-    fake_queue.__class__.__name__ = "RedisPriorityQueue"
+    fake_queue = MagicMock(spec=RedisPriorityQueue)
     mock_conn.queues = {"q": fake_queue}
 
     class DummyModel(pydantic.BaseModel):
@@ -435,8 +432,7 @@ def test_delete_queue_lock_acquire_failure(client):
 def test_publish_with_priority(client):
     """Test publishing a message with priority to a priority queue."""
     client, mock_conn = client
-    fake_queue = MagicMock()
-    fake_queue.__class__.__name__ = "RedisPriorityQueue"
+    fake_queue = MagicMock(spec=RedisPriorityQueue)
     mock_conn.queues = {"q": fake_queue}
 
     class DummyModel(pydantic.BaseModel):
@@ -517,3 +513,10 @@ def test_create_consumer_backend():
         with patch("mindtrace.jobs.redis.client.RedisConsumerBackend") as mock_backend_cls:
             client.create_consumer_backend(mock_consumer, "test_queue")
             mock_backend_cls.assert_called_once_with("test_queue", mock_consumer, host="localhost", port=6379, db=0)
+
+
+def test_create_consumer_backend_cannot_redirect_the_connection(client):
+    client, _ = client
+
+    with pytest.raises(ValueError, match="must not redirect the connection: db, host"):
+        client.create_consumer_backend(MagicMock(), "q", host="elsewhere", db=7)

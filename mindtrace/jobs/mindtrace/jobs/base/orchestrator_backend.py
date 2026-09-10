@@ -17,8 +17,24 @@ class OrchestratorBackend(MindtraceABC):
     Defines the interface that all backend implementations must follow for queue management operations.
     """
 
+    connection_kwarg_names: frozenset[str] = frozenset()
+
     def __init__(self):
         super().__init__()
+
+    def _reject_connection_overrides(self, backend_kwargs: dict) -> dict:
+        """Return consumer backend settings, rejecting any that would redirect the connection.
+
+        Raises:
+            ValueError: If a setting names one of :attr:`connection_kwarg_names`.
+        """
+        overrides = self.connection_kwarg_names & backend_kwargs.keys()
+        if overrides:
+            raise ValueError(
+                f"Consumer backend settings must not redirect the connection: {', '.join(sorted(overrides))}. "
+                f"Configure these on {type(self).__name__} instead."
+            )
+        return backend_kwargs
 
     @property
     def consumer_backend_args(self) -> dict:

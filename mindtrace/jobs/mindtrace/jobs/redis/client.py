@@ -15,6 +15,7 @@ from mindtrace.jobs.redis.stack import RedisStack
 
 
 class RedisClient(OrchestratorBackend):
+    connection_kwarg_names = frozenset({"host", "port", "db"})
     QUEUE_LOCK_KEY = "mindtrace:queue_lock"
     QUEUE_LOCK_TIMEOUT = 5
 
@@ -63,7 +64,7 @@ class RedisClient(OrchestratorBackend):
         return {"cls": "mindtrace.jobs.redis.consumer_backend.RedisConsumerBackend", "kwargs": self.redis_params}
 
     def create_consumer_backend(self, consumer_frontend: Consumer, queue_name: str, **kwargs) -> RedisConsumerBackend:
-        backend_kwargs = self.consumer_backend_args["kwargs"] | kwargs
+        backend_kwargs = self.consumer_backend_args["kwargs"] | self._reject_connection_overrides(kwargs)
         return RedisConsumerBackend(queue_name, consumer_frontend, **backend_kwargs)
 
     @staticmethod
@@ -160,18 +161,15 @@ class RedisClient(OrchestratorBackend):
             if queue_name not in self.connection.queues:
                 raise KeyError(f"Queue '{queue_name}' is not declared.")
             instance = self.connection.queues[queue_name]
-        try:
-            message_dict = message.model_dump()
-            if not message_dict.get("job_id"):
-                message_dict["job_id"] = str(uuid.uuid1())
-            body = json.dumps(message_dict)
-            if type(instance).__name__ == "RedisPriorityQueue" and priority is not None:
-                instance.push(item=body, priority=priority)
-            else:
-                instance.push(item=body)
-            return message_dict["job_id"]
-        except Exception:
-            raise
+        message_dict = message.model_dump()
+        if not message_dict.get("job_id"):
+            message_dict["job_id"] = str(uuid.uuid1())
+        body = json.dumps(message_dict)
+        if isinstance(instance, RedisPriorityQueue) and priority is not None:
+            instance.push(item=body, priority=priority)
+        else:
+            instance.push(item=body)
+        return message_dict["job_id"]
 
     def clean_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Clean (purge) a specified Redis queue by deleting its underlying key.
