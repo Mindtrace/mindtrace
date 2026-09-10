@@ -244,7 +244,7 @@ def test_local_backend_rejects_unsupported_failure_policies(tmp_path, failure_po
 
     with pytest.raises(
         NotImplementedError,
-        match=f"Local consumer backend does not support failure policy '{failure_policy.value}'",
+        match=f"LocalConsumerBackend does not support failure policy '{failure_policy.value}'",
     ):
         consumer.connect_to_orchestrator(orchestrator, "unsupported-policy", failure_policy=failure_policy)
 
@@ -257,7 +257,7 @@ def test_redis_backend_rejects_unsupported_failure_policies(failure_policy):
 
     with pytest.raises(
         NotImplementedError,
-        match=f"Redis consumer backend does not support failure policy '{failure_policy.value}'",
+        match=f"RedisConsumerBackend does not support failure policy '{failure_policy.value}'",
     ):
         consumer.connect_to_orchestrator(orchestrator, "unsupported-policy", failure_policy=failure_policy)
 
