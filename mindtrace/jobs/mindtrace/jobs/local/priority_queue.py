@@ -1,5 +1,6 @@
 import json
 import queue
+import threading
 from pathlib import Path
 from typing import Any, Type
 
@@ -9,13 +10,19 @@ from mindtrace.registry import Archiver, Registry
 class LocalPriorityQueue:
     def __init__(self):
         self.priority_queue = queue.PriorityQueue()
+        self._next_sequence = 0
+        self._sequence_lock = threading.Lock()
 
     def push(self, item, priority: int = 0):
-        inverted_priority = -priority
-        self.priority_queue.put((inverted_priority, item))
+        with self._sequence_lock:
+            self._put(item, priority, self._next_sequence)
+
+    def _put(self, item, priority: int, sequence: int) -> None:
+        self.priority_queue.put((-priority, sequence, item))
+        self._next_sequence = max(self._next_sequence, sequence + 1)
 
     def pop(self, block=True, timeout=None):
-        neg_priority, item = self.priority_queue.get(block=block, timeout=timeout)
+        _, _, item = self.priority_queue.get(block=block, timeout=timeout)
         return item
 
     def qsize(self):
@@ -39,11 +46,11 @@ class LocalPriorityQueue:
 
         # Extract all items from the original queue
         while not self.priority_queue.empty():
-            neg_priority, item = self.priority_queue.get()
+            neg_priority, sequence, item = self.priority_queue.get()
             # Convert back to original priority
             priority = -neg_priority
-            items.append({"item": item, "priority": priority})
-            temp_queue.put((neg_priority, item))
+            items.append({"item": item, "priority": priority, "sequence": sequence})
+            temp_queue.put((neg_priority, sequence, item))
 
         # Restore the original queue
         while not temp_queue.empty():
@@ -55,10 +62,11 @@ class LocalPriorityQueue:
     def from_dict(cls, data):
         """Create a LocalPriorityQueue from a dictionary."""
         queue_obj = cls()
-        for item_data in data.get("items", []):
+        for fallback_sequence, item_data in enumerate(data.get("items", [])):
             item = item_data["item"]
             priority = item_data["priority"]
-            queue_obj.push(item, priority)
+            sequence = item_data.get("sequence", fallback_sequence)
+            queue_obj._put(item, priority, sequence)
         return queue_obj
 
 

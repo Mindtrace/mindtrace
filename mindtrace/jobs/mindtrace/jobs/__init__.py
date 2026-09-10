@@ -10,6 +10,7 @@ from mindtrace.jobs.rabbitmq.consumer_backend import RabbitMQConsumerBackend
 from mindtrace.jobs.redis.client import RedisClient
 from mindtrace.jobs.redis.consumer_backend import RedisConsumerBackend
 from mindtrace.jobs.types.batch import BatchPublishResult
+from mindtrace.jobs.types.consumer import ConsumerFailurePolicy
 from mindtrace.jobs.types.job_specs import BackendType, ExecutionStatus, Job, JobSchema
 from mindtrace.jobs.utils.schemas import job_from_schema
 
@@ -17,6 +18,7 @@ __all__ = [
     "BackendType",
     "BatchPublishResult",
     "Consumer",
+    "ConsumerFailurePolicy",
     "ExecutionStatus",
     "Job",
     "LocalClient",
