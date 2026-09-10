@@ -1761,7 +1761,13 @@ wait, so <code>poll_timeout</code> bounds polling frequency rather than shutdown
 <p>RabbitMQ <code>auto_ack=True</code> acknowledges deliveries before <code>run()</code> executes, so
 it is only valid with <code>failure_policy=ConsumerFailurePolicy.DISCARD</code>.
 Combining auto-acknowledgement with <code>REQUEUE</code> or <code>DEAD_LETTER</code> raises
-<code>ValueError</code> during consumer backend configuration.</p>
+<code>ValueError</code> during consumer backend configuration.
+Auto-acknowledged deliveries have at-most-once semantics: process failure,
+connection loss, or shutdown may discard deliveries that RabbitMQ acknowledged
+or Pika buffered but <code>Consumer.run()</code> did not complete. <code>prefetch_count</code> does
+not bound auto-acknowledged deliveries. Use <code>auto_ack=False</code> for production
+workloads that require acknowledgement after processing and redelivery after a
+failure.</p>
 <p>Local and Redis consumers support only <code>DISCARD</code>. Connecting either backend
 with <code>REQUEUE</code> or <code>DEAD_LETTER</code> raises <code>NotImplementedError</code>; those policies
 require backend-specific retry or dead-letter storage that they do not yet
@@ -1781,13 +1787,28 @@ raise <code>RuntimeError</code> before any backend setup until the caller explic
 invokes <code>consumer.reset()</code>.
 RabbitMQ channels and connections close automatically whenever <code>consume()</code>
 returns; a later call reconnects.</p>
-<p><code>consume(..., block=True)</code> waits indefinitely until the requested number of
-messages has been attempted, shutdown is requested, or the caller interrupts
-the operation. <code>num_messages=0</code> means to continue indefinitely. With
-<code>block=False</code>, consumption returns as soon as no message is immediately
-available, even if the requested count has not been reached.
-<code>consume_until_empty()</code> takes no <code>block</code> setting on any backend: it drains the
-work already queued and returns without waiting for new work to arrive.</p>
+<p><code>consume(..., block=True)</code> waits until the requested number of messages has
+been attempted, shutdown is requested, or the caller interrupts the operation.
+<code>num_messages=0</code> means to continue indefinitely. For RabbitMQ, this bare
+blocking form registers every requested queue with <code>basic_consume</code> on one
+channel and lets the broker push deliveries. Stopping the operation stops all
+queues registered by that call together.</p>
+<p>Finite RabbitMQ calls (<code>num_messages &gt; 0</code>), <code>consume_until_empty()</code>, and
+<code>consume(..., block=False)</code> remain pull-based. With <code>block=False</code>, consumption
+returns as soon as no message is immediately available, even if the requested
+count has not been reached. <code>consume_until_empty()</code> takes no <code>block</code> setting on
+any backend: it drains the work already queued and returns without waiting for
+new work to arrive.</p>
+<p>RabbitMQ invokes <code>Consumer.run()</code> synchronously on Pika's I/O thread during
+broker-pushed consumption. <code>Consumer.run()</code> must not return until processing is
+complete because its return or exception determines whether the delivery is
+acknowledged or rejected.
+An unexpected broker cancellation, such as a queue being deleted or becoming
+unavailable, ends the entire push-consume operation and raises
+<code>RabbitMQConsumerCancelledError</code> with the affected queue and consumer tag.
+Channel and connection failures also end the current consume operation. Callers
+remain responsible for retry and backoff. Push and pull calls both return the
+same attempted-delivery count described above.</p>
 <p>Calling <code>consumer.close()</code> is different from normal per-operation cleanup: it
 permanently closes the consumer backend. It is safe to call more than once,
 but later calls to <code>consume()</code>, <code>consume_until_empty()</code>, or <code>reset()</code> raise a

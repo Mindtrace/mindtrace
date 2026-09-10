@@ -1322,6 +1322,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#mindtrace.jobs.RabbitMQConsumerBackend.stop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        stop
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1963,6 +1974,17 @@
     <span class="md-ellipsis">
       
         RabbitMQSettlementError
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.jobs.rabbitmq.consumer_backend.RabbitMQConsumerCancelledError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RabbitMQConsumerCancelledError
       
     </span>
   </a>
@@ -3007,6 +3029,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#mindtrace.jobs.RabbitMQConsumerBackend.stop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        stop
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3648,6 +3681,17 @@
     <span class="md-ellipsis">
       
         RabbitMQSettlementError
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mindtrace.jobs.rabbitmq.consumer_backend.RabbitMQConsumerCancelledError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RabbitMQConsumerCancelledError
       
     </span>
   </a>
@@ -5399,6 +5443,26 @@ Args:
     <div class="doc doc-contents ">
 
         <p>Permanently close the backend and any active RabbitMQ resources.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h5 id="mindtrace.jobs.RabbitMQConsumerBackend.stop" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">stop</span>
+
+
+</h5>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">stop</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Request shutdown and wake an active broker-pushed consumer.</p>
 
 
     </div>
@@ -8884,6 +8948,26 @@ Args:
 <div class="doc doc-object doc-function">
 
 
+<h7 id="mindtrace.jobs.rabbitmq.connection.RabbitMQConnection.add_callback_threadsafe" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">add_callback_threadsafe</span>
+
+
+</h7>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">add_callback_threadsafe</span><span class="p">(</span><span class="n">callback</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="kc">None</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">bool</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Schedule a callback on the Pika I/O thread when connected.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h7 id="mindtrace.jobs.rabbitmq.connection.RabbitMQConnection.count_queue_messages" class="doc doc-heading">
             <span class="doc doc-object-name doc-function-name">count_queue_messages</span>
 
@@ -9026,6 +9110,55 @@ Args:
 
 
 
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h6 id="mindtrace.jobs.rabbitmq.consumer_backend.RabbitMQConsumerCancelledError" class="doc doc-heading">
+            <span class="doc doc-object-name doc-class-name">RabbitMQConsumerCancelledError</span>
+
+
+</h6>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">RabbitMQConsumerCancelledError</span><span class="p">(</span><span class="n">queue_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">consumer_tag</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="RuntimeError">RuntimeError</span></code></p>
+
+
+
+        <p>Raised when RabbitMQ unexpectedly cancels an active consumer.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
 
     </div>
 
@@ -9187,6 +9320,26 @@ Args:
     <div class="doc doc-contents ">
 
         <p>Permanently close the backend and any active RabbitMQ resources.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h7 id="mindtrace.jobs.rabbitmq.consumer_backend.RabbitMQConsumerBackend.stop" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">stop</span>
+
+
+</h7>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">stop</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Request shutdown and wake an active broker-pushed consumer.</p>
 
 
     </div>
