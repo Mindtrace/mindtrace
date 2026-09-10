@@ -88,7 +88,7 @@ def test_consume_until_empty_aborts_when_consuming_channel_makes_no_progress():
     backend.connection.count_queue_messages = MagicMock(side_effect=count_pending)
 
     try:
-        consumer.consume_until_empty(queues=queue, block=False)
+        consumer.consume_until_empty(queues=queue)
 
         backend.connection.count_queue_messages.assert_called_once_with(queue)
         stalled_channel.basic_get.assert_called_once_with(queue=queue, auto_ack=backend.auto_ack)

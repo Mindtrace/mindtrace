@@ -403,19 +403,19 @@ class TestConsumerIntegration:
 
         consumer = StopAfterTwoConsumer()
         consumer.connect_to_orchestrator(orchestrator, queue)
-        consumer.consume_until_empty(block=False)
+        consumer.consume_until_empty()
 
         assert consumer.processed == 2
         assert orchestrator.count_queue_messages(queue) == 48
 
         with pytest.raises(RuntimeError, match="Consumer backend is stopped"):
-            consumer.consume_until_empty(block=False)
+            consumer.consume_until_empty()
 
         assert consumer.processed == 2
         assert orchestrator.count_queue_messages(queue) == 48
 
         consumer.reset()
-        consumer.consume_until_empty(block=False)
+        consumer.consume_until_empty()
 
         assert consumer.processed == 50
         assert orchestrator.count_queue_messages(queue) == 0

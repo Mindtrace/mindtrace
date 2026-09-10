@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, Mock, call, patch
+from unittest.mock import MagicMock, Mock, call
 
 import pydantic
 import pytest
@@ -172,9 +172,7 @@ class TestLocalConsumerBackend:
 
         consumer.consume(num_messages=1, queues=["queue1", "queue2"], block=False)
 
-        consumer.consumer_backend.orchestrator.receive_message.assert_called_once_with(
-            "queue1", block=False, timeout=consumer.consumer_backend.poll_timeout
-        )
+        consumer.consumer_backend.orchestrator.receive_message.assert_called_once_with("queue1", block=False)
 
     def test_blocking_consume_polls_all_queues_before_waiting(self, temp_local_client):
         orchestrator = Orchestrator(backend=temp_local_client)
@@ -191,8 +189,8 @@ class TestLocalConsumerBackend:
 
         backend.orchestrator.receive_message.assert_has_calls(
             [
-                call("queue1", block=False, timeout=backend.poll_timeout),
-                call("queue2", block=False, timeout=backend.poll_timeout),
+                call("queue1", block=False),
+                call("queue2", block=False),
             ]
         )
         backend.process_message.assert_called_once_with({"id": 2})
@@ -216,7 +214,7 @@ class TestLocalConsumerBackend:
         backend._consume = MagicMock(return_value=0)
         backend.logger = MagicMock()
 
-        backend.consume_until_empty(queues="queue1", block=False)
+        backend.consume_until_empty(queues="queue1")
 
         backend._consume.assert_called_once_with(num_messages=1, queues=["queue1"], block=False)
         assert any(
@@ -237,7 +235,7 @@ class TestLocalConsumerBackend:
 
         backend._consume = MagicMock(side_effect=stop_without_settling)
 
-        backend.consume_until_empty(queues="queue1", block=False)
+        backend.consume_until_empty(queues="queue1")
 
         assert not any("Drain stalled" in item.args[0] for item in backend.logger.error.call_args_list)
         backend.logger.info.assert_any_call("Stopped draining queues after shutdown request: ['queue1'].")
@@ -257,7 +255,7 @@ class TestLocalConsumerBackend:
 
         backend._consume = MagicMock(side_effect=consume_one)
 
-        backend.consume_until_empty(queues="queue1", block=True)
+        backend.consume_until_empty(queues="queue1")
 
         backend._consume.assert_called_once()
 
@@ -270,7 +268,7 @@ class TestLocalConsumerBackend:
         backend._consume = MagicMock(return_value=1)
         backend.logger = MagicMock()
 
-        backend.consume_until_empty(queues="queue1", block=False)
+        backend.consume_until_empty(queues="queue1")
 
         assert not any("Drain stalled" in item.args[0] for item in backend.logger.error.call_args_list)
         backend.logger.info.assert_any_call("Finished draining queues: ['queue1']. All queues empty.")
@@ -300,13 +298,14 @@ class TestLocalConsumerBackend:
         consumer = SimpleConsumer()
         consumer.connect_to_orchestrator(orchestrator, queue_name)
 
-        with patch(
-            "mindtrace.jobs.local.consumer_backend.time.sleep",
-            side_effect=AssertionError("A removed malformed delivery must count as an attempted message."),
-        ) as sleep:
-            consumer.consume(num_messages=1, queues=queue_name, block=True)
+        backend = consumer.consumer_backend
+        backend._stop_event.wait = MagicMock(
+            side_effect=AssertionError("A removed malformed delivery must count as an attempted message.")
+        )
 
-        sleep.assert_not_called()
+        consumer.consume(num_messages=1, queues=queue_name, block=True)
+
+        backend._stop_event.wait.assert_not_called()
         assert orchestrator.backend.count_queue_messages(queue_name) == 0
 
     def test_consume_with_empty_queue_list_returns_without_waiting(self, temp_local_client):
@@ -316,13 +315,11 @@ class TestLocalConsumerBackend:
         backend = consumer.consumer_backend
         backend.logger = MagicMock()
 
-        with patch(
-            "mindtrace.jobs.local.consumer_backend.time.sleep",
-            side_effect=AssertionError("An empty queue list must return immediately."),
-        ) as sleep:
-            consumer.consume(num_messages=1, queues=[], block=True)
+        backend._stop_event.wait = MagicMock(side_effect=AssertionError("An empty queue list must return immediately."))
 
-        sleep.assert_not_called()
+        consumer.consume(num_messages=1, queues=[], block=True)
+
+        backend._stop_event.wait.assert_not_called()
         backend.logger.warning.assert_called_once_with("No queues provided; nothing to consume.")
 
     def test_consume_rejects_negative_message_count(self, temp_local_client):
@@ -359,7 +356,7 @@ class TestLocalConsumerBackend:
         consumer.stop()
 
         with pytest.raises(RuntimeError, match="Consumer backend is stopped"):
-            consumer.consume_until_empty(block=False)
+            consumer.consume_until_empty()
 
         backend.orchestrator.count_queue_messages.assert_not_called()
 
@@ -383,19 +380,19 @@ class TestLocalConsumerBackend:
 
         consumer = StopAfterTwoConsumer()
         consumer.connect_to_orchestrator(orchestrator, queue_name)
-        consumer.consume_until_empty(block=False)
+        consumer.consume_until_empty()
 
         assert consumer.processed == 2
         assert orchestrator.count_queue_messages(queue_name) == 48
 
         with pytest.raises(RuntimeError, match="Consumer backend is stopped"):
-            consumer.consume_until_empty(block=False)
+            consumer.consume_until_empty()
 
         assert consumer.processed == 2
         assert orchestrator.count_queue_messages(queue_name) == 48
 
         consumer.reset()
-        consumer.consume_until_empty(block=False)
+        consumer.consume_until_empty()
 
         assert consumer.processed == 50
         assert orchestrator.count_queue_messages(queue_name) == 0
@@ -424,7 +421,7 @@ class TestLocalConsumerBackend:
         with pytest.raises(RuntimeError, match="Consumer backend is closed"):
             consumer.consume(num_messages=1, block=False)
         with pytest.raises(RuntimeError, match="Consumer backend is closed"):
-            consumer.consume_until_empty(block=False)
+            consumer.consume_until_empty()
         with pytest.raises(RuntimeError, match="Consumer backend is closed"):
             consumer.reset()
 
@@ -484,7 +481,7 @@ class TestLocalConsumerBackend:
         consumer = SimpleConsumer()
         consumer.connect_to_orchestrator(orchestrator, queue_name)
 
-        consumer.consume_until_empty(queues=queue_name, block=False)
+        consumer.consume_until_empty(queues=queue_name)
 
         assert orchestrator.count_queue_messages(queue_name) == 0
 
@@ -532,41 +529,29 @@ class TestLocalConsumerBackend:
 
         assert call_count == 1, f"Expected 1 call to receive_message, got {call_count}"
 
-    def test_consumer_blocking_sleep_when_no_messages(self, temp_local_client):
-        """Test that blocking consumer sleeps when no messages found."""
+    def test_idle_blocking_sweep_waits_on_the_stop_event_for_poll_timeout(self, temp_local_client):
         orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
         consumer = SimpleConsumer()
         consumer.connect_to_orchestrator(orchestrator, queue_name)
+        backend = consumer.consumer_backend
+        backend.poll_timeout = 0.01
 
-        # Reduce poll_timeout to speed up receive_message calls (default is 1s)
-        consumer.consumer_backend.poll_timeout = 0.01
+        waits = []
 
-        import time
+        def record_wait(duration):
+            waits.append(duration)
+            if len(waits) >= 2:
+                backend.stop()
+            return False
 
-        original_sleep = time.sleep
-        sleep_calls = []
+        backend._stop_event.wait = MagicMock(side_effect=record_wait)
 
-        def mock_sleep(duration):
-            sleep_calls.append(duration)
-            if len(sleep_calls) >= 2:  # Stop after 2 sleep calls
-                raise KeyboardInterrupt("Break out of loop")
-            # Return immediately without actually sleeping to speed up test
-            return None
+        consumer.consume(num_messages=0, queues=queue_name, block=True)
 
-        time.sleep = mock_sleep
-
-        try:
-            consumer.consume(num_messages=0, queues=queue_name, block=True)
-        except KeyboardInterrupt:
-            pass  # Expected to break out of the loop
-        finally:
-            time.sleep = original_sleep
-
-        assert len(sleep_calls) >= 1
-        assert 0.1 in sleep_calls
+        assert waits == [0.01, 0.01]
 
     def test_consumer_operational_error_does_not_wait_after_failed_sweep(self, temp_local_client):
         """A failed queue operation is not an idle sweep and must propagate immediately."""
@@ -579,11 +564,12 @@ class TestLocalConsumerBackend:
 
         orchestrator.backend.receive_message = MagicMock(side_effect=RuntimeError("Simulated orchestrator error"))
 
-        with patch(
-            "mindtrace.jobs.local.consumer_backend.time.sleep",
-            side_effect=AssertionError("A failed queue sweep must not enter the blocking wait path."),
-        ) as sleep:
-            with pytest.raises(RuntimeError, match="Simulated orchestrator error"):
-                consumer.consume(num_messages=1, queues=queue_name, block=True)
+        backend = consumer.consumer_backend
+        backend._stop_event.wait = MagicMock(
+            side_effect=AssertionError("A failed queue sweep must not enter the blocking wait path.")
+        )
 
-        sleep.assert_not_called()
+        with pytest.raises(RuntimeError, match="Simulated orchestrator error"):
+            consumer.consume(num_messages=1, queues=queue_name, block=True)
+
+        backend._stop_event.wait.assert_not_called()

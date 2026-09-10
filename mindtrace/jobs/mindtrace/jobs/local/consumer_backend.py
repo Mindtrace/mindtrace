@@ -1,5 +1,4 @@
 import json
-import time
 from typing import TYPE_CHECKING
 
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
@@ -52,7 +51,7 @@ class LocalConsumerBackend(ConsumerBackendBase):
                     if self.stopped or (num_messages > 0 and messages_attempted >= num_messages):
                         break
                     try:
-                        message = self.orchestrator.receive_message(queue, block=False, timeout=self.poll_timeout)
+                        message = self.orchestrator.receive_message(queue, block=False)
                     except json.JSONDecodeError as exc:
                         no_messages_found = False
                         messages_attempted += 1
@@ -67,13 +66,13 @@ class LocalConsumerBackend(ConsumerBackendBase):
                     return messages_attempted
 
                 if no_messages_found and block is True:
-                    time.sleep(0.1)
+                    self._stop_event.wait(self.poll_timeout)
 
         except KeyboardInterrupt:
             self.logger.info("Consumption interrupted by user.")
         return messages_attempted
 
-    def consume_until_empty(self, *, queues: str | list[str] | None = None, block: bool = True, **kwargs) -> None:
+    def consume_until_empty(self, *, queues: str | list[str] | None = None) -> None:
         """Consume messages from the queue(s) until empty."""
         self._ensure_running()
         queues = self._normalize_queues(queues)

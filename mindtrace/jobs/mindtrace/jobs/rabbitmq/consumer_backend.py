@@ -225,7 +225,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             self.logger.error(f"Error processing dict job {job_id}: {exc}\n{traceback.format_exc()}")
             return False
 
-    def consume_until_empty(self, *, queues: str | list[str] | None = None, block: bool = True, **kwargs) -> None:
+    def consume_until_empty(self, *, queues: str | list[str] | None = None) -> None:
         """Drain currently available deliveries without waiting for new work."""
         self._ensure_running()
         queues = self._normalize_queues(queues)

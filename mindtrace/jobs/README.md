@@ -264,8 +264,8 @@ messages has been attempted, shutdown is requested, or the caller interrupts
 the operation. `num_messages=0` means to continue indefinitely. With
 `block=False`, consumption returns as soon as no message is immediately
 available, even if the requested count has not been reached.
-`consume_until_empty()` drains only currently available RabbitMQ messages and
-does not wait for new work to arrive.
+`consume_until_empty()` takes no `block` setting on any backend: it drains the
+work already queued and returns without waiting for new work to arrive.
 
 Calling `consumer.close()` is different from normal per-operation cleanup: it
 permanently closes the consumer backend. It is safe to call more than once,

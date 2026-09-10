@@ -111,8 +111,8 @@ class ConsumerBackendBase(MindtraceABC):
         raise NotImplementedError
 
     @abstractmethod
-    def consume_until_empty(self, **kwargs) -> None:
-        """Consume messages until the queue is empty and process them."""
+    def consume_until_empty(self, *, queues: str | list[str] | None = None) -> None:
+        """Consume messages until every queue is empty and process them."""
         raise NotImplementedError
 
     @abstractmethod

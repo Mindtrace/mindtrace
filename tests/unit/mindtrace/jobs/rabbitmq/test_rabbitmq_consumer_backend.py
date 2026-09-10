@@ -103,7 +103,7 @@ def test_stopped_entry_rejects_rabbitmq_drain_setup(backend):
     backend.stop()
 
     with pytest.raises(RuntimeError, match="Consumer backend is stopped"):
-        backend.consume_until_empty(queues="q", block=False)
+        backend.consume_until_empty(queues="q")
 
     backend.connection.connect.assert_not_called()
     backend.connection.get_channel.assert_not_called()
@@ -691,7 +691,7 @@ def test_close_is_terminal_and_idempotent(backend):
     with pytest.raises(RuntimeError, match="Consumer backend is closed"):
         backend.consume(num_messages=1, queues="q", block=False)
     with pytest.raises(RuntimeError, match="Consumer backend is closed"):
-        backend.consume_until_empty(queues="q", block=False)
+        backend.consume_until_empty(queues="q")
     with pytest.raises(RuntimeError, match="Consumer backend is closed"):
         backend.reset()
 
@@ -717,7 +717,7 @@ def test_consume_until_empty_reuses_one_connection_for_full_drain(backend):
     backend.connection.close = MagicMock()
     backend.receive_message = MagicMock(side_effect=[delivery(delivery_tag=1), delivery(delivery_tag=2)])
 
-    backend.consume_until_empty(queues="q", block=False)
+    backend.consume_until_empty(queues="q")
 
     backend.connection.connect.assert_called_once_with()
     backend.connection.get_channel.assert_called_once_with()
@@ -742,7 +742,7 @@ def test_consume_until_empty_aborts_when_drain_makes_no_progress(backend):
 
     backend.connection.count_queue_messages = MagicMock(side_effect=count_pending)
 
-    backend.consume_until_empty(queues="q", block=False)
+    backend.consume_until_empty(queues="q")
 
     backend.connection.count_queue_messages.assert_called_once_with("q")
     backend.receive_message.assert_called_once_with(channel, "q", block=False)
@@ -755,7 +755,7 @@ def test_consume_until_empty_does_not_report_success_after_stall(backend):
     backend.connection.count_queue_messages = MagicMock(return_value=3)
     backend.receive_message = MagicMock(side_effect=RuntimeError("consuming channel closed"))
 
-    backend.consume_until_empty(queues="q", block=False)
+    backend.consume_until_empty(queues="q")
 
     assert any("Drain stalled with 3 messages pending" in call.args[0] for call in backend.logger.error.call_args_list)
     assert not any("All queues empty" in call.args[0] for call in backend.logger.info.call_args_list)
@@ -768,7 +768,7 @@ def test_consume_until_empty_treats_malformed_delivery_as_progress(backend):
     backend.connection.close = MagicMock()
     backend.receive_message = MagicMock(return_value=_SETTLED_NO_MESSAGE)
 
-    backend.consume_until_empty(queues="q", block=False)
+    backend.consume_until_empty(queues="q")
 
     backend.receive_message.assert_called_once_with(channel, "q", block=False)
     assert not any("Drain stalled" in call.args[0] for call in backend.logger.error.call_args_list)
@@ -786,7 +786,7 @@ def test_stop_during_drain_pass_does_not_report_a_stall(backend):
 
     backend._consume_finite_messages = MagicMock(side_effect=stop_without_settling)
 
-    backend.consume_until_empty(queues="q", block=False)
+    backend.consume_until_empty(queues="q")
 
     assert not any("Drain stalled" in call.args[0] for call in backend.logger.error.call_args_list)
     backend.logger.info.assert_any_call("Stopped draining queues after shutdown request: ['q'].")
@@ -804,7 +804,7 @@ def test_consume_until_empty_reports_stop_requested_during_drain(backend):
 
     backend._consume_finite_messages = MagicMock(side_effect=consume_and_stop)
 
-    backend.consume_until_empty(queues="q", block=False)
+    backend.consume_until_empty(queues="q")
 
     backend.connection.count_queue_messages.assert_called_once_with("q")
     backend.logger.info.assert_any_call("Stopped draining queues after shutdown request: ['q'].")

@@ -51,7 +51,7 @@ class RedisConsumerBackend(ConsumerBackendBase):
                     if self.stopped or (num_messages > 0 and messages_attempted >= num_messages):
                         break
                     try:
-                        message = self.receive_message(queue, block=False, timeout=None)
+                        message = self.receive_message(queue)
                     except json.JSONDecodeError as exc:
                         found_message = True
                         messages_attempted += 1
@@ -89,7 +89,7 @@ class RedisConsumerBackend(ConsumerBackendBase):
             self.logger.debug(f"Message content: {message}")
             return False
 
-    def consume_until_empty(self, *, queues: str | list[str] | None = None, block: bool = True, **kwargs) -> None:
+    def consume_until_empty(self, *, queues: str | list[str] | None = None) -> None:
         """Consume messages from the queue(s) until empty."""
         self._ensure_running()
         queues = self._normalize_queues(queues)
@@ -106,11 +106,7 @@ class RedisConsumerBackend(ConsumerBackendBase):
         super().close()
         self.connection.close()
 
-    def set_poll_timeout(self, timeout: int) -> None:
-        """Set the polling timeout for Redis operations."""
-        self.poll_timeout = timeout
-
-    def receive_message(self, queue_name: str, **kwargs) -> Optional[dict]:
+    def receive_message(self, queue_name: str) -> Optional[dict]:
         """Retrieve a message from a specified Redis queue.
 
         Returns the message as a dict.
