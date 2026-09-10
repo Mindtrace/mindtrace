@@ -698,6 +698,56 @@ async def test_async_camera_get_gain_range():
 
 
 @pytest.mark.asyncio
+async def test_async_camera_gamma_round_trip():
+    """Test AsyncCamera gamma proxies and the configure() gamma key."""
+    manager = AsyncCameraManager(include_mocks=True)
+
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name)
+
+        gamma_range = await cam.get_gamma_range()
+        assert isinstance(gamma_range, tuple)
+        assert len(gamma_range) == 2
+        assert gamma_range == (0.25, 2.0)
+
+        assert await cam.set_gamma(1.5) is True
+        assert await cam.get_gamma() == 1.5
+
+        # configure() must route the key to the backend rather than dropping it
+        result = await cam.configure(gamma=0.75)
+        assert result.success is True
+        assert await cam.get_gamma() == 0.75
+
+        assert await cam.supports_feature("gamma") is True
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_async_camera_supports_feature_gamma_false_when_unsupported():
+    """Test supports_feature('gamma') is false when get_gamma_range returns None."""
+    manager = AsyncCameraManager(include_mocks=True)
+
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name)
+        original_get_gamma_range = cam.backend.get_gamma_range
+
+        async def unsupported_gamma_range():
+            return None
+
+        cam.backend.get_gamma_range = unsupported_gamma_range  # type: ignore[method-assign]
+
+        assert await cam.get_gamma_range() is None
+        assert await cam.supports_feature("gamma") is False
+
+        cam.backend.get_gamma_range = original_get_gamma_range  # type: ignore[method-assign]
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
 async def test_async_camera_capture_with_save_path():
     """Test AsyncCamera capture with save_path functionality."""
     manager = AsyncCameraManager(include_mocks=True)
@@ -881,6 +931,30 @@ async def test_get_configuration_omits_roi_when_backend_cannot_query_it():
 
         assert "roi" not in config
         assert "exposure_time" in config
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_get_configuration_omits_gamma_when_unsupported():
+    """Unsupported optional keys must not be written into exported JSON."""
+    manager = AsyncCameraManager(include_mocks=True)
+    try:
+        name = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][0]
+        cam = await manager.open(name, test_connection=False)
+        original_get_gamma_range = cam.backend.get_gamma_range
+
+        async def unsupported_gamma_range():
+            return None
+
+        cam.backend.get_gamma_range = unsupported_gamma_range  # type: ignore[method-assign]
+
+        config = await cam.get_configuration()
+
+        assert "gamma" not in config
+        assert "exposure_time" in config
+
+        cam.backend.get_gamma_range = original_get_gamma_range  # type: ignore[method-assign]
     finally:
         await manager.close(None)
 
@@ -1205,6 +1279,7 @@ def _sample_configurable_values():
     return {
         "exposure_time": 12000.0,
         "gain": 2.0,
+        "gamma": 1.5,
         "roi": (1, 2, 640, 480),
         "trigger_mode": "continuous",
         "pixel_format": "Mono8",
@@ -1238,6 +1313,7 @@ async def test_every_configurable_key_is_handled_by_apply_chain():
 
         cam.backend.set_exposure = AsyncMock()  # type: ignore[method-assign]
         cam.backend.set_gain = AsyncMock()  # type: ignore[method-assign]
+        cam.backend.set_gamma = AsyncMock()  # type: ignore[method-assign]
         cam.backend.set_ROI = AsyncMock()  # type: ignore[method-assign]
         cam.backend.set_triggermode = AsyncMock()  # type: ignore[method-assign]
         cam.backend.set_pixel_format = AsyncMock()  # type: ignore[method-assign]
@@ -1270,6 +1346,7 @@ async def test_every_configurable_key_is_handled_by_read_chain():
 
         cam.backend.get_exposure = AsyncMock(return_value=expected["exposure_time"])  # type: ignore[method-assign]
         cam.backend.get_gain = AsyncMock(return_value=expected["gain"])  # type: ignore[method-assign]
+        cam.backend.get_gamma = AsyncMock(return_value=expected["gamma"])  # type: ignore[method-assign]
         cam.backend.get_ROI = AsyncMock(  # type: ignore[method-assign]
             return_value={"x": roi[0], "y": roi[1], "width": roi[2], "height": roi[3]}
         )

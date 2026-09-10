@@ -88,10 +88,41 @@ class GenICamCameraBackend(CameraBackend):
     REQUIRES_THREAD_AFFINITY = True
     nested_merge_config_keys = frozenset({"genicam_nodes", "focus_config"})
 
+    # Harvesters/GenTL node access modes (see GenICam SFNC AccessMode enum).
+    _GENICAM_ACCESS_RO = 3
+    _GENICAM_ACCESS_RW = 4
+
     # Class-level singleton Harvester instance shared across all backend instances
     _shared_harvester: Optional[Harvester] = None
     _harvester_cti_path: Optional[str] = None
     _harvester_lock = None
+
+    @classmethod
+    def _is_node_read_write(cls, access_mode: int) -> bool:
+        """Return True when a GenICam node access mode allows read/write."""
+        return access_mode == cls._GENICAM_ACCESS_RW
+
+    def _gamma_node_names(self) -> tuple[str, ...]:
+        """Return deduplicated gamma node names in vendor-preferred order."""
+        primary = self.vendor_quirks.get("gamma_node_name", "Gamma")
+        names: list[str] = []
+        for name in (primary, "Gamma", "GammaRaw"):
+            if name not in names:
+                names.append(name)
+        return tuple(names)
+
+    def _find_writable_gamma_node(self, node_map) -> tuple[Optional[str], Any]:
+        """Return the first read/write gamma node on ``node_map``, if any."""
+        for name in self._gamma_node_names():
+            node = getattr(node_map, name, None)
+            if node is None:
+                continue
+            try:
+                if self._is_node_read_write(node.get_access_mode()):
+                    return name, node
+            except Exception:
+                continue
+        return None, None
 
     def __init__(
         self,
@@ -166,6 +197,7 @@ class GenICamCameraBackend(CameraBackend):
             "use_integer_exposure": False,
             "exposure_node_name": "ExposureTime",
             "gain_node_name": "Gain",
+            "gamma_node_name": "Gamma",
         }
         self.triggermode = self.camera_config.cameras.trigger_mode
 
@@ -569,7 +601,7 @@ class GenICamCameraBackend(CameraBackend):
                 # Check access mode (3 = Read Only, 4 = Read/Write)
                 try:
                     access_mode = trigger_mode_node.get_access_mode()
-                    is_writable = access_mode == 4  # 4 = RW (Read/Write)
+                    is_writable = self._is_node_read_write(access_mode)
                 except Exception:
                     # Fallback: assume writable if we can't check
                     is_writable = True
@@ -1384,6 +1416,131 @@ class GenICamCameraBackend(CameraBackend):
             await self._set_node_value(node_name, gain, ["Gain", "GainRaw", "AnalogGain"])
         except Exception as e:
             raise HardwareOperationError(f"Failed to set gain for camera '{self.camera_name}': {str(e)}")
+
+    async def get_gamma_range(self) -> Optional[List[Union[int, float]]]:
+        """Get camera gamma range.
+
+        Returns:
+            List containing [min_gamma, max_gamma], or ``None`` when gamma is not
+            implemented or writable on this camera.
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+        """
+        if not self.initialized or self.image_acquirer is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+
+        try:
+            await self._ensure_connected()
+
+            def _get_gamma_range():
+                node_map = self.image_acquirer.remote_device.node_map
+                _name, node = self._find_writable_gamma_node(node_map)
+                if node is None:
+                    return None
+                return [node.min, node.max]
+
+            return await self._run_blocking(_get_gamma_range, timeout=self._op_timeout_s)
+        except CameraConnectionError:
+            raise
+        except Exception:
+            return None
+
+    async def get_gamma(self) -> Optional[float]:
+        """Get current camera gamma.
+
+        Returns:
+            Current gamma value, or ``None`` when gamma is not implemented or
+            writable on this camera.
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If gamma retrieval fails on a supported camera
+        """
+        if not self.initialized or self.image_acquirer is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+
+        try:
+            await self._ensure_connected()
+
+            if await self.get_gamma_range() is None:
+                return None
+
+            def _get_gamma():
+                node_map = self.image_acquirer.remote_device.node_map
+                _name, node = self._find_writable_gamma_node(node_map)
+                if node is None:
+                    raise HardwareOperationError(
+                        f"Could not access writable gamma node for camera '{self.camera_name}'"
+                    )
+                return float(node.value)
+
+            return await self._run_blocking(_get_gamma, timeout=self._op_timeout_s)
+        except CameraConnectionError:
+            raise
+        except Exception as e:
+            raise HardwareOperationError(f"Failed to get gamma for camera '{self.camera_name}': {e}") from e
+
+    async def set_gamma(self, gamma: Union[int, float]):
+        """Set camera gamma.
+
+        Cameras that gate the ``Gamma`` node behind ``GammaSelector``/``GammaEnable``
+        are switched to user gamma first; those nodes are absent on cameras that
+        expose ``Gamma`` directly, which is not an error.
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            CameraConfigurationError: If gamma is unsupported or out of range.
+            HardwareOperationError: If applying gamma to the device fails or verification fails.
+        """
+        if not self.initialized or self.image_acquirer is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+
+        try:
+            await self._ensure_connected()
+
+            gamma_range = await self.get_gamma_range()
+            if gamma_range is None:
+                raise CameraConfigurationError(f"Gamma feature is not implemented on camera '{self.camera_name}'")
+
+            min_gamma, max_gamma = gamma_range
+            if gamma < min_gamma or gamma > max_gamma:
+                raise CameraConfigurationError(
+                    f"Gamma {gamma} outside valid range [{min_gamma}, {max_gamma}] for camera '{self.camera_name}'"
+                )
+
+            for enable_node, enable_value in (("GammaSelector", "User"), ("GammaEnable", True)):
+                try:
+                    await self._set_node_value(enable_node, enable_value)
+                except Exception as e:
+                    self.logger.debug(f"Could not set '{enable_node}' for camera '{self.camera_name}': {e}")
+
+            def _set_gamma():
+                node_map = self.image_acquirer.remote_device.node_map
+                _name, node = self._find_writable_gamma_node(node_map)
+                if node is None:
+                    raise HardwareOperationError(
+                        f"Could not access writable gamma node for camera '{self.camera_name}'"
+                    )
+                node.value = float(gamma)
+
+            await self._run_blocking(_set_gamma, timeout=self._op_timeout_s)
+
+            actual_gamma = await self.get_gamma()
+            if actual_gamma is None:
+                raise HardwareOperationError(
+                    f"Gamma verification failed for camera '{self.camera_name}': "
+                    f"requested={gamma}, could not read back gamma value"
+                )
+            if not (abs(actual_gamma - gamma) < 0.01 * max(1.0, float(gamma))):
+                raise HardwareOperationError(
+                    f"Gamma verification failed for camera '{self.camera_name}': "
+                    f"requested={gamma}, actual={actual_gamma}"
+                )
+        except (CameraConnectionError, CameraConfigurationError):
+            raise
+        except Exception as e:
+            raise HardwareOperationError(f"Failed to set gamma for camera '{self.camera_name}': {str(e)}") from e
 
     async def get_wb(self) -> str:
         """Get current white balance mode using GenICam nodes.

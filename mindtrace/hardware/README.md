@@ -152,7 +152,7 @@ from mindtrace.hardware.cameras.core.camera import Camera
 # Simple synchronous usage
 camera = Camera(name="OpenCV:opencv_camera_0")
 image = camera.capture()
-result = camera.configure(exposure=15000, gain=2.0)
+result = camera.configure(exposure=15000, gain=2.0, gamma=0.8)
 if not result.success:
     raise RuntimeError(result.failures or result.skipped)
 camera.close()

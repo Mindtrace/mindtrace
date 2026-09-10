@@ -563,6 +563,7 @@ class TestCameraManagerServiceBusinessLogic:
         mock_camera.get_exposure_range.return_value = [100.0, 5000.0]
         mock_camera.is_exposure_control_supported.return_value = False
         mock_camera.get_gain_range.side_effect = RuntimeError("no gain")
+        mock_camera.get_gamma_range.side_effect = RuntimeError("no gamma")
         mock_camera.get_available_pixel_formats.return_value = ["Mono8", "BGR8"]
         mock_camera.get_available_white_balance_modes.side_effect = RuntimeError("no wb")
         mock_camera.get_trigger_modes.return_value = ["continuous", "trigger"]
@@ -580,6 +581,7 @@ class TestCameraManagerServiceBusinessLogic:
         assert response.success is True
         assert response.data.exposure_range is None
         assert response.data.gain_range is None
+        assert response.data.gamma_range is None
         assert response.data.pixel_formats == ["Mono8", "BGR8"]
         assert response.data.white_balance_modes is None
         assert response.data.trigger_modes == ["continuous", "trigger"]
@@ -598,6 +600,7 @@ class TestCameraManagerServiceBusinessLogic:
         mock_camera = AsyncMock()
         mock_camera.get_configuration.return_value = {
             "exposure_time": 1500,
+            "gamma": 0.8,
             "roi": (1, 2, 640, 480),
             "trigger_mode": "continuous",
             "white_balance": "auto",
@@ -615,6 +618,7 @@ class TestCameraManagerServiceBusinessLogic:
         assert response.data.roi == (1, 2, 640, 480)
         assert response.data.exposure_time == 1500
         assert response.data.gain is None
+        assert response.data.gamma == 0.8
         assert response.data.trigger_mode == "continuous"
         assert response.data.pixel_format is None
         assert response.data.white_balance == "auto"
@@ -630,6 +634,7 @@ class TestCameraManagerServiceBusinessLogic:
         serialized = response.model_dump(mode="json")["data"]
         assert serialized == {
             "exposure_time": 1500,
+            "gamma": 0.8,
             "roi": [1, 2, 640, 480],
             "trigger_mode": "continuous",
             "white_balance": "auto",
@@ -640,6 +645,49 @@ class TestCameraManagerServiceBusinessLogic:
             "brightness": 0.5,
         }
         assert None not in serialized.values()
+
+    @pytest.mark.asyncio
+    async def test_get_camera_capabilities_reports_gamma_range(self, service_with_mock_manager):
+        service, mock_manager = service_with_mock_manager
+        mock_manager.active_cameras = ["MockBasler:Camera1"]
+        mock_camera = AsyncMock()
+        mock_camera.get_exposure_range.return_value = [100.0, 5000.0]
+        mock_camera.is_exposure_control_supported.return_value = True
+        mock_camera.get_gain_range.return_value = [1.0, 16.0]
+        mock_camera.get_gamma_range.return_value = [0.25, 2.0]
+        mock_camera.get_available_pixel_formats.return_value = ["Mono8", "BGR8"]
+        mock_camera.get_available_white_balance_modes.return_value = ["off", "auto"]
+        mock_camera.get_trigger_modes.return_value = ["continuous", "trigger"]
+        mock_camera.get_width_range.return_value = [320, 1920]
+        mock_camera.get_height_range.return_value = [240, 1080]
+        mock_camera.get_bandwidth_limit_range.return_value = [1.0, 1000.0]
+        mock_camera.get_packet_size_range.return_value = [576, 9000]
+        mock_camera.get_inter_packet_delay_range.return_value = [0, 65535]
+        mock_camera.get_optical_power_range.return_value = [-1.0, 10.0]
+        mock_camera.get_lens_status.return_value = {"connected": True}
+        mock_manager.open = AsyncMock(return_value=mock_camera)
+
+        response = await service.get_camera_capabilities(CameraQueryRequest(camera="MockBasler:Camera1"))
+
+        assert response.success is True
+        assert response.data.gain_range == (1.0, 16.0)
+        assert response.data.gamma_range == (0.25, 2.0)
+
+    @pytest.mark.asyncio
+    async def test_configure_camera_forwards_gamma(self, service_with_mock_manager):
+        from mindtrace.hardware.cameras.core.configuration import ConfigurationApplyResult
+
+        service, mock_manager = service_with_mock_manager
+        mock_manager.active_cameras = ["MockBasler:Camera1"]
+        mock_manager.configure_camera = AsyncMock(return_value=ConfigurationApplyResult(applied=1, total=1))
+        mock_manager.open = AsyncMock()
+
+        response = await service.configure_camera(
+            CameraConfigureRequest(camera="MockBasler:Camera1", properties={"gamma": 0.6})
+        )
+
+        assert response.success is True
+        mock_manager.configure_camera.assert_awaited_once_with("MockBasler:Camera1", {"gamma": 0.6})
 
     @pytest.mark.asyncio
     async def test_get_camera_configuration_serializes_false_and_zero_values(self, service_with_mock_manager):
