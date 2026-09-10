@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 import redis
@@ -70,9 +70,47 @@ def test_connect_with_password(monkeypatch):
         mock_redis_cls.return_value = instance
         conn = RedisConnection(host="localhost", port=6381, db=0, password="pw")
         assert conn.is_connected()
-        mock_redis_cls.assert_called_with(
-            host="localhost", port=6381, db=0, socket_timeout=5.0, socket_connect_timeout=2.0, password="pw"
+        assert (
+            call(
+                host="localhost",
+                port=6381,
+                db=0,
+                socket_timeout=5.0,
+                socket_connect_timeout=2.0,
+                password="pw",
+            )
+            in mock_redis_cls.call_args_list
         )
+
+
+def test_event_listener_uses_dedicated_connection_without_read_timeout():
+    with (
+        patch("mindtrace.jobs.redis.connection.redis.Redis") as mock_redis_cls,
+        patch("mindtrace.jobs.redis.connection.threading.Thread"),
+    ):
+        main_connection = MagicMock()
+        main_connection.ping.return_value = True
+        main_connection.hgetall.return_value = {}
+        listener_connection = MagicMock()
+        pubsub = MagicMock()
+        pubsub.listen.return_value = iter([])
+        listener_connection.pubsub.return_value = pubsub
+        mock_redis_cls.side_effect = [main_connection, listener_connection]
+
+        conn = RedisConnection(host="localhost", port=6381, db=0, password="pw")
+        conn._subscribe_to_events()
+
+        assert mock_redis_cls.call_args_list[-1] == call(
+            host="localhost",
+            port=6381,
+            db=0,
+            socket_timeout=None,
+            socket_connect_timeout=2.0,
+            password="pw",
+        )
+        pubsub.subscribe.assert_called_once_with(conn.EVENTS_CHANNEL)
+        pubsub.close.assert_called_once()
+        listener_connection.close.assert_called_once()
 
 
 def test_connect_retries_exhausted(monkeypatch):
@@ -329,6 +367,28 @@ def test_subscribe_to_events_exception_handling(monkeypatch):
         # This should not raise an exception, just log it
         conn._subscribe_to_events()
 
+        assert isinstance(conn.event_listener_error, Exception)
+        assert str(conn.event_listener_error) == "connection lost"
+
+
+def test_subscribe_to_events_ignores_shutdown_induced_exception(monkeypatch):
+    with patch("mindtrace.jobs.redis.connection.redis.Redis"), patch("threading.Thread"):
+        conn = RedisConnection(host="localhost", port=6381, db=0)
+        conn.logger = MagicMock()
+        pubsub = MagicMock()
+
+        def stop_then_raise():
+            conn._shutdown_event.set()
+            raise redis.ConnectionError("closed for shutdown")
+
+        pubsub.listen.side_effect = stop_then_raise
+        conn.connection.pubsub.return_value = pubsub
+
+        conn._subscribe_to_events()
+
+        assert conn.event_listener_error is None
+        conn.logger.error.assert_not_called()
+
 
 def test_subscribe_to_events_non_message_type(monkeypatch):
     """Test that _subscribe_to_events handles non-message type events."""
@@ -354,7 +414,7 @@ def test_subscribe_to_events_non_message_type(monkeypatch):
 
         def mock_is_set():
             call_count[0] += 1
-            if call_count[0] > 2:  # Allow a few calls then shutdown
+            if call_count[0] > 4:  # Allow listener startup and message processing, then shutdown
                 return True
             return original_is_set()
 
@@ -380,7 +440,7 @@ def test_subscribe_to_events_unknown_queue_type(monkeypatch):
 
         def mock_is_set():
             call_count[0] += 1
-            if call_count[0] > 2:  # Allow a few calls then shutdown
+            if call_count[0] > 4:  # Allow listener startup and message processing, then shutdown
                 return True
             return original_is_set()
 
@@ -408,7 +468,7 @@ def test_subscribe_to_events_delete_nonexistent_queue(monkeypatch):
 
         def mock_is_set():
             call_count[0] += 1
-            if call_count[0] > 2:  # Allow a few calls then shutdown
+            if call_count[0] > 4:  # Allow listener startup and message processing, then shutdown
                 return True
             return original_is_set()
 
@@ -468,7 +528,7 @@ def test_subscribe_to_events_declare_stack_queue(monkeypatch):
 
         def mock_is_set():
             call_count[0] += 1
-            if call_count[0] > 2:  # Allow a few calls then shutdown
+            if call_count[0] > 4:  # Allow listener startup and message processing, then shutdown
                 return True
             return original_is_set()
 
@@ -496,7 +556,7 @@ def test_subscribe_to_events_declare_priority_queue(monkeypatch):
 
         def mock_is_set():
             call_count[0] += 1
-            if call_count[0] > 2:  # Allow a few calls then shutdown
+            if call_count[0] > 4:  # Allow listener startup and message processing, then shutdown
                 return True
             return original_is_set()
 
