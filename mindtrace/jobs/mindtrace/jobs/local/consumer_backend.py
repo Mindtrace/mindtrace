@@ -11,6 +11,8 @@ if TYPE_CHECKING:  # pragma: no cover
 class LocalConsumerBackend(ConsumerBackendBase):
     """Local in-memory consumer backend."""
 
+    supported_failure_policies = frozenset({ConsumerFailurePolicy.DISCARD})
+
     def __init__(
         self,
         queue_name: str,
@@ -19,12 +21,7 @@ class LocalConsumerBackend(ConsumerBackendBase):
         poll_timeout: float = 1,
         failure_policy: ConsumerFailurePolicy | str = ConsumerFailurePolicy.DISCARD,
     ):
-        super().__init__(queue_name, consumer_frontend)
-        self.failure_policy = ConsumerFailurePolicy(failure_policy)
-        if self.failure_policy is not ConsumerFailurePolicy.DISCARD:
-            raise NotImplementedError(
-                f"Local consumer backend does not support failure policy '{self.failure_policy.value}'. Use 'discard'."
-            )
+        super().__init__(queue_name, consumer_frontend, failure_policy)
         self.poll_timeout = poll_timeout
         self.orchestrator = orchestrator
 

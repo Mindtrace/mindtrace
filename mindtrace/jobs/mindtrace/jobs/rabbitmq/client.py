@@ -12,7 +12,7 @@ from mindtrace.core import ifnone
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
 from mindtrace.jobs.consumers.consumer import Consumer
 from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
-from mindtrace.jobs.rabbitmq.consumer_backend import RabbitMQConsumerBackend, _validate_auto_ack_failure_policy
+from mindtrace.jobs.rabbitmq.consumer_backend import RabbitMQConsumerBackend, validate_auto_ack_failure_policy
 from mindtrace.jobs.types.batch import BatchPublishResult
 from mindtrace.jobs.types.consumer import ConsumerFailurePolicy
 
@@ -39,7 +39,7 @@ class RabbitMQClient(OrchestratorBackend):
         self._username = username
         self._password = password
         self._consumer_backend_kwargs = consumer_backend_kwargs or {}
-        _validate_auto_ack_failure_policy(
+        validate_auto_ack_failure_policy(
             self._consumer_backend_kwargs.get("auto_ack", False),
             self._consumer_backend_kwargs.get("failure_policy", ConsumerFailurePolicy.DEAD_LETTER),
         )

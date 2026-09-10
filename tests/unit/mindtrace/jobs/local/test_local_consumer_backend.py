@@ -51,7 +51,7 @@ class TestLocalConsumerBackend:
 
         with pytest.raises(
             NotImplementedError,
-            match=f"Local consumer backend does not support failure policy '{failure_policy.value}'",
+            match=f"LocalConsumerBackend does not support failure policy '{failure_policy.value}'",
         ):
             consumer.connect_to_orchestrator(orchestrator, "test-queue", failure_policy=failure_policy)
 

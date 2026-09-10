@@ -31,20 +31,19 @@ class RabbitMQSettlementError(RuntimeError):
     """Raised when RabbitMQ cannot confirm delivery settlement."""
 
 
-def _validate_auto_ack_failure_policy(
-    auto_ack: bool, failure_policy: ConsumerFailurePolicy | str
-) -> ConsumerFailurePolicy:
-    policy = ConsumerFailurePolicy(failure_policy)
-    if auto_ack and policy is not ConsumerFailurePolicy.DISCARD:
+def validate_auto_ack_failure_policy(auto_ack: bool, failure_policy: ConsumerFailurePolicy | str) -> None:
+    """Reject a failure policy that auto-acknowledgement makes impossible to apply."""
+    if auto_ack and ConsumerFailurePolicy(failure_policy) is not ConsumerFailurePolicy.DISCARD:
         raise ValueError(
             "RabbitMQ auto_ack=True acknowledges deliveries before processing; "
             "use failure_policy='discard' or disable auto_ack."
         )
-    return policy
 
 
 class RabbitMQConsumerBackend(ConsumerBackendBase):
     """RabbitMQ consumer with explicit acknowledgement and shutdown semantics."""
+
+    supported_failure_policies = frozenset(ConsumerFailurePolicy)
 
     def __init__(
         self,
@@ -59,10 +58,10 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         username: str | None = None,
         password: str | None = None,
     ):
-        super().__init__(queue_name, consumer_frontend)
+        super().__init__(queue_name, consumer_frontend, failure_policy)
+        validate_auto_ack_failure_policy(auto_ack, self.failure_policy)
         self.prefetch_count = prefetch_count
         self.auto_ack = auto_ack
-        self.failure_policy = _validate_auto_ack_failure_policy(auto_ack, failure_policy)
         self.durable = durable
         self.connection = RabbitMQConnection(host=host, port=port, username=username, password=password)
         self._active_channel = None

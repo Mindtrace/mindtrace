@@ -10,6 +10,8 @@ from mindtrace.jobs.types.consumer import ConsumerFailurePolicy
 class RedisConsumerBackend(ConsumerBackendBase):
     """Redis consumer backend with blocking operations."""
 
+    supported_failure_policies = frozenset({ConsumerFailurePolicy.DISCARD})
+
     def __init__(
         self,
         queue_name: str,
@@ -20,12 +22,7 @@ class RedisConsumerBackend(ConsumerBackendBase):
         poll_timeout: int = 5,
         failure_policy: ConsumerFailurePolicy | str = ConsumerFailurePolicy.DISCARD,
     ):
-        super().__init__(queue_name, consumer_frontend)
-        self.failure_policy = ConsumerFailurePolicy(failure_policy)
-        if self.failure_policy is not ConsumerFailurePolicy.DISCARD:
-            raise NotImplementedError(
-                f"Redis consumer backend does not support failure policy '{self.failure_policy.value}'. Use 'discard'."
-            )
+        super().__init__(queue_name, consumer_frontend, failure_policy)
         self.poll_timeout = poll_timeout
         self.connection = RedisConnection(host=host, port=port, db=db)
 

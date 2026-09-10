@@ -6,25 +6,44 @@ from threading import Event
 from typing import TYPE_CHECKING
 
 from mindtrace.core import MindtraceABC, ifnone
+from mindtrace.jobs.types.consumer import ConsumerFailurePolicy
 
 if TYPE_CHECKING:  # pragma: no cover
     from mindtrace.jobs.consumers.consumer import Consumer
 
 
 class ConsumerBackendBase(MindtraceABC):
-    """Base class for consumer backends that handle message consumption."""
+    """Base class for consumer backends that handle message consumption.
+
+    Subclasses widen :attr:`supported_failure_policies` to the policies they implement.
+    """
+
+    supported_failure_policies: frozenset[ConsumerFailurePolicy] = frozenset({ConsumerFailurePolicy.DISCARD})
 
     def __init__(
         self,
         queue_name: str,
         consumer_frontend: "Consumer",
+        failure_policy: ConsumerFailurePolicy | str = ConsumerFailurePolicy.DISCARD,
     ):
         super().__init__()
         self.queue_name = queue_name
         self.consumer_frontend = consumer_frontend
+        self.failure_policy = self._validate_failure_policy(failure_policy)
         self.queues = [queue_name] if queue_name else []
         self._stop_event = Event()
         self._closed_event = Event()
+
+    @classmethod
+    def _validate_failure_policy(cls, failure_policy: ConsumerFailurePolicy | str) -> ConsumerFailurePolicy:
+        """Accept only a failure policy this backend implements."""
+        policy = ConsumerFailurePolicy(failure_policy)
+        if policy not in cls.supported_failure_policies:
+            supported = ", ".join(sorted(supported.value for supported in cls.supported_failure_policies))
+            raise NotImplementedError(
+                f"{cls.__name__} does not support failure policy '{policy.value}'. Supported: {supported}."
+            )
+        return policy
 
     @property
     def stopped(self) -> bool:

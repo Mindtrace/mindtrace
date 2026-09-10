@@ -24,7 +24,7 @@ def backend():
 def test_rejects_unsupported_failure_policies(failure_policy):
     with pytest.raises(
         NotImplementedError,
-        match=f"Redis consumer backend does not support failure policy '{failure_policy.value}'",
+        match=f"RedisConsumerBackend does not support failure policy '{failure_policy.value}'",
     ):
         RedisConsumerBackend(
             "q",
