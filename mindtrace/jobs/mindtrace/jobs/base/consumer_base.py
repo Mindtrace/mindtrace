@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from abc import abstractmethod
+from collections.abc import Callable
 from threading import Event
 from typing import TYPE_CHECKING
 
-from mindtrace.core import MindtraceABC
+from mindtrace.core import MindtraceABC, ifnone
 
 if TYPE_CHECKING:  # pragma: no cover
     from mindtrace.jobs.consumers.consumer import Consumer
@@ -21,6 +22,7 @@ class ConsumerBackendBase(MindtraceABC):
         super().__init__()
         self.queue_name = queue_name
         self.consumer_frontend = consumer_frontend
+        self.queues = [queue_name] if queue_name else []
         self._stop_event = Event()
         self._closed_event = Event()
 
@@ -43,6 +45,42 @@ class ConsumerBackendBase(MindtraceABC):
         """Reject invalid finite-consumption limits."""
         if num_messages < 0:
             raise ValueError("num_messages must be non-negative")
+
+    def _normalize_queues(self, queues: str | list[str] | None) -> list[str]:
+        """Resolve the queue argument to a de-duplicated, order-stable list."""
+        if isinstance(queues, str):
+            queues = [queues]
+        return list(dict.fromkeys(ifnone(queues, default=self.queues)))
+
+    def _drain(
+        self,
+        queues: list[str],
+        *,
+        pending: Callable[[], int],
+        consume_pass: Callable[[int], int],
+    ) -> None:
+        """Consume until every queue is empty, aborting on a pass that settles nothing.
+
+        Args:
+            queues: Queues being drained, used for reporting.
+            pending: Returns the number of messages currently queued across ``queues``.
+            consume_pass: Consumes up to the given number of messages and returns how many
+                deliveries it settled.
+        """
+        if not queues:
+            self.logger.warning("No queues provided; nothing to consume.")
+            return
+        while not self.stopped:
+            outstanding = pending()
+            if outstanding == 0:
+                self.logger.info(f"Finished draining queues: {queues}. All queues empty.")
+                return
+            if consume_pass(outstanding) == 0:
+                if self.stopped:
+                    break
+                self.logger.error(f"Drain stalled with {outstanding} messages pending; aborting.")
+                return
+        self.logger.info(f"Stopped draining queues after shutdown request: {queues}.")
 
     def _skip_if_stopped(self) -> bool:
         """Return whether consumption should be skipped after a stop request."""

@@ -208,7 +208,7 @@ class TestLocalConsumerBackend:
         def count_pending(queue):
             nonlocal count_calls
             count_calls += 1
-            if count_calls > 2:
+            if count_calls > 1:
                 raise AssertionError("A stalled local drain must exit instead of starting another consume pass.")
             return 1
 
@@ -220,8 +220,27 @@ class TestLocalConsumerBackend:
 
         backend.consume.assert_called_once_with(num_messages=1, queues=["queue1"], block=False)
         assert any(
-            "Drain stalled with 1 message pending" in item.args[0] for item in backend.logger.error.call_args_list
+            "Drain stalled with 1 messages pending" in item.args[0] for item in backend.logger.error.call_args_list
         )
+
+    def test_stop_during_drain_pass_does_not_report_a_stall(self, temp_local_client):
+        orchestrator = Orchestrator(backend=temp_local_client)
+        consumer = SimpleConsumer()
+        consumer.connect_to_orchestrator(orchestrator, "queue1")
+        backend = consumer.consumer_backend
+        backend.orchestrator.count_queue_messages = MagicMock(return_value=3)
+        backend.logger = MagicMock()
+
+        def stop_without_settling(**_kwargs):
+            backend.stop()
+            return 0
+
+        backend.consume = MagicMock(side_effect=stop_without_settling)
+
+        backend.consume_until_empty(queues="queue1", block=False)
+
+        assert not any("Drain stalled" in item.args[0] for item in backend.logger.error.call_args_list)
+        backend.logger.info.assert_any_call("Stopped draining queues after shutdown request: ['queue1'].")
 
     def test_consume_until_empty_uses_bounded_nonblocking_pass(self, temp_local_client):
         orchestrator = Orchestrator(backend=temp_local_client)
@@ -253,8 +272,8 @@ class TestLocalConsumerBackend:
 
         backend.consume_until_empty(queues="queue1", block=False)
 
-        assert backend.consume.call_count == 1
         assert not any("Drain stalled" in item.args[0] for item in backend.logger.error.call_args_list)
+        backend.logger.info.assert_any_call("Finished draining queues: ['queue1']. All queues empty.")
 
     def test_consume_propagates_local_receive_failure(self, temp_local_client):
         orchestrator = Orchestrator(backend=temp_local_client)

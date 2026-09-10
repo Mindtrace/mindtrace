@@ -777,6 +777,24 @@ def test_consume_until_empty_treats_malformed_delivery_as_progress(backend):
     assert not any("Drain stalled" in call.args[0] for call in backend.logger.error.call_args_list)
 
 
+def test_stop_during_drain_pass_does_not_report_a_stall(backend):
+    channel = MagicMock(is_open=True)
+    backend.connection.get_channel.return_value = channel
+    backend.connection.count_queue_messages = MagicMock(return_value=3)
+    backend.connection.close = MagicMock()
+
+    def stop_without_settling(*_args, **_kwargs):
+        backend.stop()
+        return 0
+
+    backend._consume_finite_messages = MagicMock(side_effect=stop_without_settling)
+
+    backend.consume_until_empty(queues="q", block=False)
+
+    assert not any("Drain stalled" in call.args[0] for call in backend.logger.error.call_args_list)
+    backend.logger.info.assert_any_call("Stopped draining queues after shutdown request: ['q'].")
+
+
 def test_consume_until_empty_reports_stop_requested_during_drain(backend):
     channel = MagicMock(is_open=True)
     backend.connection.get_channel.return_value = channel

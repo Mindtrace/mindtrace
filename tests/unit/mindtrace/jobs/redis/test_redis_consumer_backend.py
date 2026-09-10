@@ -144,8 +144,8 @@ def test_consume_until_empty_does_not_treat_concurrent_publish_as_no_progress(ba
 
     backend.consume_until_empty(block=False)
 
-    assert backend.consume.call_count == 1
     assert not any("Drain stalled" in item.args[0] for item in backend.logger.error.call_args_list)
+    backend.logger.info.assert_any_call("Finished draining queues: ['q']. All queues empty.")
 
 
 def test_consume_until_empty_aborts_when_redis_drain_makes_no_progress(backend):
@@ -158,7 +158,7 @@ def test_consume_until_empty_aborts_when_redis_drain_makes_no_progress(backend):
     backend.consume_until_empty(block=False)
 
     backend.consume.assert_called_once_with(num_messages=1, queues=["q"], block=False)
-    assert mock_conn.count_queue_messages.call_count == 2
+    assert mock_conn.count_queue_messages.call_count == 1
     backend.logger.error.assert_called_once_with("Drain stalled with 1 messages pending; aborting.")
 
 
@@ -415,7 +415,7 @@ def test_consume_until_empty_info_log_message(backend):
     backend.consume = MagicMock()
     backend.logger = MagicMock()
     backend.consume_until_empty(block=False)
-    backend.logger.info.assert_called_with("Stopped consuming messages from queues: ['q'] (queues empty).")
+    backend.logger.info.assert_called_with("Finished draining queues: ['q']. All queues empty.")
 
 
 def test_consume_normalizes_string_queues_and_handles_keyboardinterrupt(backend):

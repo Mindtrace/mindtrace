@@ -2,7 +2,6 @@ import json
 import time
 from typing import TYPE_CHECKING
 
-from mindtrace.core import ifnone
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.types.consumer import ConsumerFailurePolicy
 
@@ -29,7 +28,6 @@ class LocalConsumerBackend(ConsumerBackendBase):
             )
         self.poll_timeout = poll_timeout
         self.orchestrator = orchestrator
-        self.queues = [queue_name] if queue_name else []
 
     def consume(
         self, num_messages: int = 0, *, queues: str | list[str] | None = None, block: bool = True, **kwargs
@@ -39,9 +37,7 @@ class LocalConsumerBackend(ConsumerBackendBase):
         self._validate_num_messages(num_messages)
         if self._skip_if_stopped():
             return 0
-        if isinstance(queues, str):
-            queues = [queues]
-        queues = ifnone(queues, default=self.queues)
+        queues = self._normalize_queues(queues)
         if not queues:
             self.logger.warning("No queues provided; nothing to consume.")
             return 0
@@ -80,20 +76,12 @@ class LocalConsumerBackend(ConsumerBackendBase):
         self._ensure_open()
         if self._skip_if_stopped():
             return
-        if isinstance(queues, str):
-            queues = [queues]
-        queues = ifnone(queues, default=self.queues)
-        while not self.stopped:
-            pending = sum(self.orchestrator.count_queue_messages(queue) for queue in queues)
-            if pending == 0:
-                return
-            messages_attempted = self.consume(num_messages=1, queues=queues, block=False)
-            remaining = sum(self.orchestrator.count_queue_messages(queue) for queue in queues)
-            if remaining == 0:
-                return
-            if messages_attempted == 0:
-                self.logger.error(f"Drain stalled with {remaining} message pending; aborting.")
-                return
+        queues = self._normalize_queues(queues)
+        self._drain(
+            queues,
+            pending=lambda: sum(self.orchestrator.count_queue_messages(queue) for queue in queues),
+            consume_pass=lambda outstanding: self.consume(num_messages=outstanding, queues=queues, block=False),
+        )
 
     def process_message(self, message) -> bool:
         """Process a single message."""

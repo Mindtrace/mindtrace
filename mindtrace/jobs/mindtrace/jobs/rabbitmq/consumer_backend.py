@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from pika.exceptions import AMQPConnectionError, ChannelClosed, ChannelWrongStateError
 
-from mindtrace.core import ifnone
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
 from mindtrace.jobs.types.consumer import ConsumerFailurePolicy
@@ -65,7 +64,6 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         self.auto_ack = auto_ack
         self.failure_policy = _validate_auto_ack_failure_policy(auto_ack, failure_policy)
         self.durable = durable
-        self.queues = [queue_name] if queue_name else []
         self.connection = RabbitMQConnection(host=host, port=port, username=username, password=password)
         self._active_channel = None
 
@@ -77,9 +75,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         self._validate_num_messages(num_messages)
         if self._skip_if_stopped():
             return 0
-        if isinstance(queues, str):
-            queues = [queues]
-        queues = list(dict.fromkeys(ifnone(queues, default=self.queues)))
+        queues = self._normalize_queues(queues)
         if not queues:
             self.logger.warning("No queues provided; nothing to consume.")
             return 0
@@ -236,35 +232,26 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         self._ensure_open()
         if self._skip_if_stopped():
             return
-        if isinstance(queues, str):
-            queues = [queues]
-        queues = list(dict.fromkeys(ifnone(queues, default=self.queues)))
+        queues = self._normalize_queues(queues)
         if not queues:
             self.logger.warning("No queues provided; nothing to consume.")
             return
-        drained = False
         try:
             self.connection.connect()
             channel = self.connection.get_channel()
             self._active_channel = channel
             channel.basic_qos(prefetch_count=self.prefetch_count)
-            while not self.stopped:
-                pending = sum(self.connection.count_queue_messages(queue) for queue in queues)
-                if pending == 0:
-                    drained = True
-                    break
-                settled = self._consume_finite_messages(channel, pending, queues, block=False)
-                if settled == 0:
-                    self.logger.error(f"Drain stalled with {pending} messages pending; aborting.")
-                    break
+            self._drain(
+                queues,
+                pending=lambda: sum(self.connection.count_queue_messages(queue) for queue in queues),
+                consume_pass=lambda outstanding: self._consume_finite_messages(
+                    channel, outstanding, queues, block=False
+                ),
+            )
         except KeyboardInterrupt:
             self.logger.info("Consumption interrupted by user.")
         finally:
             self._close_active_resources()
-        if drained:
-            self.logger.info(f"Finished draining queues: {queues}. All queues empty.")
-        elif self.stopped:
-            self.logger.info(f"Stopped draining queues after shutdown request: {queues}.")
 
     def receive_message(
         self, channel, queue_name: str, *, block: bool = False
