@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, call, patch
 
 import pytest
-from pika.exceptions import ConnectionClosedByBroker
+from pika.exceptions import ChannelWrongStateError, ConnectionClosedByBroker
 
 from mindtrace.jobs import ConsumerFailurePolicy
 from mindtrace.jobs.rabbitmq.consumer_backend import (
@@ -75,10 +75,9 @@ def test_auto_ack_accepts_discard_failure_policy(consumer_frontend):
 def test_consume_finite_messages(backend):
     backend.receive_message = MagicMock(side_effect=[delivery(), None])
     backend.process_message = MagicMock(return_value=True)
-    backend.logger = MagicMock()
-    backend.consume(num_messages=2, queues="q")
-    backend.receive_message.assert_called()
-    backend.process_message.assert_called_with({"id": 1})
+
+    assert backend.consume(num_messages=2, queues="q", block=False) == 1
+    backend.process_message.assert_called_once_with({"id": 1})
 
 
 def test_consume_with_no_queues_returns_without_opening_channel(backend):
@@ -154,34 +153,37 @@ def test_stopped_entry_rejects_rabbitmq_consume_setup(backend):
     assert backend.stopped is True
 
 
-def test_consume_finite_messages_exception(backend):
-    backend.receive_message = MagicMock(side_effect=Exception("fail"))
+def test_consume_finite_messages_propagates_a_receive_failure(backend):
+    channel = MagicMock(is_open=True)
+    backend.connection.get_channel.return_value = channel
+    backend.connection.close = MagicMock()
+    backend.receive_message = MagicMock(side_effect=RuntimeError("broker unavailable"))
     backend.process_message = MagicMock(return_value=True)
-    backend.logger = MagicMock()
-    backend.consume(num_messages=2, queues="q")
-    backend.receive_message.assert_called()
-    backend.logger.error.assert_called()
+
+    with pytest.raises(RuntimeError, match="broker unavailable"):
+        backend.consume(num_messages=2, queues="q")
+
+    backend.process_message.assert_not_called()
+    channel.close.assert_called_once_with()
+    backend.connection.close.assert_called_once_with()
 
 
-def test_finite_consume_continues_other_queues_after_error(backend):
+def test_finite_consume_ends_the_operation_when_a_queue_read_fails(backend):
     channel = MagicMock()
-    next_tag = iter([1, 2])
 
     def receive_message(channel, queue, *, block):
         if queue == "q1":
             raise RuntimeError("q1 unavailable")
-        return delivery(delivery_tag=next(next_tag))
+        return delivery()
 
     backend.receive_message = MagicMock(side_effect=receive_message)
     backend.process_message = MagicMock(return_value=True)
 
-    settled = backend._consume_finite_messages(channel, 2, ["q1", "q2"], block=False)
+    with pytest.raises(RuntimeError, match="q1 unavailable"):
+        backend._consume_finite_messages(channel, 2, ["q1", "q2"], block=False)
 
-    assert settled == 2
-    attempted_queues = [call.args[1] for call in backend.receive_message.call_args_list]
-    assert attempted_queues == ["q1", "q2", "q2"]
-    assert backend.process_message.call_count == 2
-    assert channel.basic_ack.call_count == 2
+    assert [call.args[1] for call in backend.receive_message.call_args_list] == ["q1"]
+    backend.process_message.assert_not_called()
 
 
 def test_finite_consume_counts_rejected_delivery_as_settled(backend):
@@ -207,40 +209,6 @@ def test_finite_consume_counts_malformed_delivery_as_settled_without_failing_que
     backend.process_message.assert_called_once_with({"id": 1})
     channel.basic_ack.assert_called_once_with(delivery_tag=42)
     assert not any("Error during finite consumption" in call.args[0] for call in backend.logger.error.call_args_list)
-
-
-def test_finite_consume_exits_after_all_queues_fail(backend):
-    channel = MagicMock()
-    backend.receive_message = MagicMock(side_effect=RuntimeError("unavailable"))
-
-    settled = backend._consume_finite_messages(channel, 2, ["q1", "q2"], block=True)
-
-    assert settled == 0
-    attempted_queues = [call.args[1] for call in backend.receive_message.call_args_list]
-    assert attempted_queues == ["q1", "q2"]
-    backend.logger.error.assert_called()
-
-
-def test_finite_consume_duplicate_failed_queue_exits_after_single_sweep(backend):
-    class DuplicateQueues(list):
-        def __init__(self):
-            super().__init__(["q", "q"])
-            self.sweeps = 0
-
-        def __iter__(self):
-            self.sweeps += 1
-            if self.sweeps > 1:
-                raise AssertionError("Duplicate failed queues must not trigger another sweep.")
-            return super().__iter__()
-
-    queues = DuplicateQueues()
-    channel = MagicMock()
-    backend.receive_message = MagicMock(side_effect=RuntimeError("queue unavailable"))
-
-    settled = backend._consume_finite_messages(channel, 1, queues, block=True)
-
-    assert settled == 0
-    backend.receive_message.assert_called_once_with(channel, "q", block=False)
 
 
 def test_consume_infinite_messages_keyboard_interrupt(backend):
@@ -367,16 +335,15 @@ def test_receive_message_success_2(backend):
         backend.logger.info.assert_called()
 
 
-def test_receive_message_exception(backend):
+def test_receive_message_propagates_the_broker_failure(backend):
     mock_channel = MagicMock()
-    mock_channel.basic_get.side_effect = Exception("fail")
-    with (
-        patch.object(backend.connection, "is_connected", return_value=True),
-        patch.object(backend.connection, "get_channel", return_value=mock_channel),
-    ):
-        backend.logger = MagicMock()
-        with pytest.raises(RuntimeError):
-            backend.receive_message(mock_channel, "q", block=False)
+    mock_channel.basic_get.side_effect = ChannelWrongStateError("channel closed")
+    backend.logger = MagicMock()
+
+    with pytest.raises(ChannelWrongStateError, match="channel closed"):
+        backend.receive_message(mock_channel, "q", block=False)
+
+    backend.logger.error.assert_called_once()
 
 
 def test_receive_message_dead_letters_invalid_json(backend):
@@ -397,12 +364,10 @@ def test_malformed_delivery_settlement_failure_is_observable(backend):
     channel.basic_get.return_value = (method, MagicMock(), b"not-json")
     channel.basic_nack.side_effect = RuntimeError("settlement unavailable")
 
-    with pytest.raises(RuntimeError, match="Error receiving message") as exc_info:
+    with pytest.raises(RabbitMQSettlementError, match="Failed to settle RabbitMQ delivery 42") as exc_info:
         backend.receive_message(channel, "q")
 
-    settlement_error = exc_info.value.__cause__
-    assert isinstance(settlement_error, RabbitMQSettlementError)
-    assert isinstance(settlement_error.__cause__, RuntimeError)
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
     channel.basic_nack.assert_called_once_with(delivery_tag=42, requeue=False)
 
 
@@ -435,23 +400,13 @@ def test_invalid_json_rejection_honors_ack_policy(backend, auto_ack, policy, exp
         channel.basic_nack.assert_not_called()
 
 
-def test_consume_infinite_messages_exception_handling_with_continue(backend):
-    """Test exception handling in _consume_infinite_messages with continue."""
-    # First call raises a regular exception (caught), second call raises KeyboardInterrupt to break the loop
-    backend.receive_message = MagicMock(side_effect=[Exception("Test exception"), KeyboardInterrupt])
-    backend.logger = MagicMock()
+def test_infinite_consume_propagates_a_receive_failure(backend):
+    backend.receive_message = MagicMock(side_effect=RuntimeError("broker unavailable"))
 
-    mock_channel = MagicMock()
+    with pytest.raises(RuntimeError, match="broker unavailable"):
+        backend._consume_infinite_messages(MagicMock(), ["q"])
 
-    # Call the infinite consumer directly and break out via KeyboardInterrupt
-    with pytest.raises(KeyboardInterrupt):
-        backend._consume_infinite_messages(mock_channel, ["q"])
-
-    # Verify that the exception was logged by the except block
-    backend.logger.error.assert_called()
-    error_call = backend.logger.error.call_args[0][0]
-    assert "Error during infinite consumption" in error_call
-    assert "Test exception" in error_call
+    backend.receive_message.assert_called_once()
 
 
 def test_infinite_consume_skips_settled_malformed_delivery_without_processing(backend):
@@ -492,24 +447,13 @@ def test_infinite_consume_propagates_fatal_receive_failure(backend):
     backend.receive_message.assert_called_once_with(channel, "q", block=False)
 
 
-def test_infinite_consume_propagates_broker_close_when_channel_state_is_stale(backend):
+def test_infinite_consume_propagates_a_broker_close(backend):
     channel = MagicMock(is_open=True)
-    attempts = 0
+    channel.basic_get.side_effect = ConnectionClosedByBroker(320, "connection forced")
 
-    def close_connection_then_stop_repeated_polling(**_kwargs):
-        nonlocal attempts
-        attempts += 1
-        if attempts == 1:
-            raise ConnectionClosedByBroker(320, "connection forced")
-        backend.stop()
-        return None, None, None
-
-    channel.basic_get.side_effect = close_connection_then_stop_repeated_polling
-
-    with pytest.raises(RuntimeError, match="connection forced") as exc_info:
+    with pytest.raises(ConnectionClosedByBroker, match="connection forced"):
         backend._consume_infinite_messages(channel, ["q"], block=True)
 
-    assert isinstance(exc_info.value.__cause__, ConnectionClosedByBroker)
     channel.basic_get.assert_called_once_with(queue="q", auto_ack=False)
 
 
@@ -730,17 +674,8 @@ def test_consume_until_empty_aborts_when_drain_makes_no_progress(backend):
     channel = MagicMock(is_open=True)
     backend.connection.get_channel.return_value = channel
     backend.connection.close = MagicMock()
-    backend.receive_message = MagicMock(side_effect=RuntimeError("consuming channel closed"))
-    count_calls = 0
-
-    def count_pending(queue):
-        nonlocal count_calls
-        count_calls += 1
-        if count_calls > 1:
-            backend.stop()
-        return 3
-
-    backend.connection.count_queue_messages = MagicMock(side_effect=count_pending)
+    backend.receive_message = MagicMock(return_value=None)
+    backend.connection.count_queue_messages = MagicMock(return_value=3)
 
     backend.consume_until_empty(queues="q")
 
@@ -753,7 +688,7 @@ def test_consume_until_empty_does_not_report_success_after_stall(backend):
     channel = MagicMock(is_open=True)
     backend.connection.get_channel.return_value = channel
     backend.connection.count_queue_messages = MagicMock(return_value=3)
-    backend.receive_message = MagicMock(side_effect=RuntimeError("consuming channel closed"))
+    backend.receive_message = MagicMock(return_value=None)
 
     backend.consume_until_empty(queues="q")
 

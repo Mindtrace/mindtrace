@@ -250,6 +250,14 @@ with `REQUEUE` or `DEAD_LETTER` raises `NotImplementedError`; those policies
 require backend-specific retry or dead-letter storage that they do not yet
 provide.
 
+A RabbitMQ consume call reads every queue over one channel, so a broker error
+raised while reading a queue ends the whole call rather than skipping that
+queue: the channel that error arrives on carries the other queues too. The
+error reaches the caller as the exception Pika raised, or as
+`RabbitMQSettlementError` when the broker refuses an acknowledgement or
+rejection, and the channel and connection are released either way. Callers
+own retry and backoff around a later `consume()` call.
+
 Calling `consumer.stop()` requests graceful shutdown. An in-flight job finishes
 and is acknowledged or rejected before the blocking consume loop exits, and a
 drain in progress ends through the same shutdown path rather than reporting a
