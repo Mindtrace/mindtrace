@@ -140,6 +140,23 @@ def test_blocking_finite_consume_sweeps_later_queue_before_waiting(backend):
     channel.basic_ack.assert_called_once_with(delivery_tag=42)
 
 
+def test_blocking_finite_consume_waits_on_the_stop_event_after_an_idle_sweep(backend):
+    channel = MagicMock()
+
+    def receive_message(channel, queue, *, block):
+        backend.stop()
+        return None
+
+    backend.receive_message = MagicMock(side_effect=receive_message)
+    backend._stop_event.wait = MagicMock()
+
+    settled = backend._consume_finite_messages(channel, 1, ["q"], block=True)
+
+    assert settled == 0
+    backend.receive_message.assert_called_once_with(channel, "q", block=False)
+    backend._stop_event.wait.assert_called_once_with(0.1)
+
+
 def test_stopped_entry_rejects_rabbitmq_consume_setup(backend):
     channel = backend.connection.get_channel.return_value
     backend.stop()
