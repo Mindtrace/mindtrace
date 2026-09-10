@@ -1,5 +1,4 @@
 import time
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -409,14 +408,11 @@ class TestConsumerIntegration:
         assert consumer.processed == 2
         assert orchestrator.count_queue_messages(queue) == 48
 
-        consumer.consumer_backend.logger = MagicMock()
-        consumer.consume_until_empty(block=False)
+        with pytest.raises(RuntimeError, match="Consumer backend is stopped"):
+            consumer.consume_until_empty(block=False)
 
         assert consumer.processed == 2
         assert orchestrator.count_queue_messages(queue) == 48
-        consumer.consumer_backend.logger.info.assert_called_once_with(
-            "Consumption skipped because stop was requested; call reset() before consuming again."
-        )
 
         consumer.reset()
         consumer.consume_until_empty(block=False)

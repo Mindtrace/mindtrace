@@ -71,10 +71,8 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         self, num_messages: int = 0, *, queues: str | list[str] | None = None, block: bool = True, **kwargs
     ) -> int:
         """Consume deliveries, waiting indefinitely when ``block`` is true."""
-        self._ensure_open()
+        self._ensure_running()
         self._validate_num_messages(num_messages)
-        if self._skip_if_stopped():
-            return 0
         queues = self._normalize_queues(queues)
         if not queues:
             self.logger.warning("No queues provided; nothing to consume.")
@@ -229,9 +227,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
 
     def consume_until_empty(self, *, queues: str | list[str] | None = None, block: bool = True, **kwargs) -> None:
         """Drain currently available deliveries without waiting for new work."""
-        self._ensure_open()
-        if self._skip_if_stopped():
-            return
+        self._ensure_running()
         queues = self._normalize_queues(queues)
         if not queues:
             self.logger.warning("No queues provided; nothing to consume.")

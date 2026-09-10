@@ -98,18 +98,16 @@ def test_consume_rejects_negative_message_count_before_broker_setup(backend):
     backend.connection.get_channel.assert_not_called()
 
 
-def test_stopped_entry_skips_rabbitmq_drain_setup(backend):
+def test_stopped_entry_rejects_rabbitmq_drain_setup(backend):
     backend.connection.count_queue_messages = MagicMock()
     backend.stop()
 
-    backend.consume_until_empty(queues="q", block=False)
+    with pytest.raises(RuntimeError, match="Consumer backend is stopped"):
+        backend.consume_until_empty(queues="q", block=False)
 
     backend.connection.connect.assert_not_called()
     backend.connection.get_channel.assert_not_called()
     backend.connection.count_queue_messages.assert_not_called()
-    backend.logger.info.assert_called_once_with(
-        "Consumption skipped because stop was requested; call reset() before consuming again."
-    )
 
 
 def test_finite_consume_stops_before_polling_next_queue(backend):
@@ -143,18 +141,17 @@ def test_blocking_finite_consume_sweeps_later_queue_before_waiting(backend):
     channel.basic_ack.assert_called_once_with(delivery_tag=42)
 
 
-def test_stopped_entry_skips_rabbitmq_consume_setup(backend):
+def test_stopped_entry_rejects_rabbitmq_consume_setup(backend):
     channel = backend.connection.get_channel.return_value
     backend.stop()
-    backend.consume(num_messages=1, queues="q", block=False)
+
+    with pytest.raises(RuntimeError, match="Consumer backend is stopped"):
+        backend.consume(num_messages=1, queues="q", block=False)
 
     backend.connection.connect.assert_not_called()
     backend.connection.get_channel.assert_not_called()
     channel.basic_qos.assert_not_called()
     assert backend.stopped is True
-    backend.logger.info.assert_called_once_with(
-        "Consumption skipped because stop was requested; call reset() before consuming again."
-    )
 
 
 def test_consume_finite_messages_exception(backend):

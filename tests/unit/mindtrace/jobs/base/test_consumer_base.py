@@ -35,16 +35,16 @@ class TestConsumerBackendBase:
 
         assert consumer.stopped is False
 
-    def test_stopped_entry_guard_logs_reset_requirement(self, mock_consumer):
+    def test_stopped_entry_guard_rejects_consumption_until_reset(self, mock_consumer):
         consumer = mock_consumer("test-queue", Mock())
-        consumer.logger = Mock()
         consumer.stop()
 
-        assert consumer._skip_if_stopped() is True
+        with pytest.raises(RuntimeError, match="Consumer backend is stopped"):
+            consumer._ensure_running()
 
-        consumer.logger.info.assert_called_once_with(
-            "Consumption skipped because stop was requested; call reset() before consuming again."
-        )
+        consumer.reset()
+
+        consumer._ensure_running()
 
     def test_close_is_terminal_and_idempotent(self, mock_consumer):
         consumer = mock_consumer("test-queue", Mock())
@@ -56,6 +56,8 @@ class TestConsumerBackendBase:
         assert consumer.stopped is True
         with pytest.raises(RuntimeError, match="Consumer backend is closed"):
             consumer.reset()
+        with pytest.raises(RuntimeError, match="Consumer backend is closed"):
+            consumer._ensure_running()
 
     def test_process_message_with_exception(self, mock_consumer, mock_bad_consumer_frontend):
         """Test processing message that raises exception."""

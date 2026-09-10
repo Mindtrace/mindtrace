@@ -251,10 +251,11 @@ require backend-specific retry or dead-letter storage that they do not yet
 provide.
 
 Calling `consumer.stop()` requests graceful shutdown. An in-flight job finishes
-and is acknowledged or rejected before the blocking consume loop exits. The
-stop request is latched: later consume calls remain stopped until the caller
-explicitly invokes `consumer.reset()`. Calls made while stopped return before
-backend setup and log that an explicit reset is required.
+and is acknowledged or rejected before the blocking consume loop exits, and a
+drain in progress ends through the same shutdown path rather than reporting a
+stall. The stop request is latched: `consume()` and `consume_until_empty()`
+raise `RuntimeError` before any backend setup until the caller explicitly
+invokes `consumer.reset()`.
 RabbitMQ channels and connections close automatically whenever `consume()`
 returns; a later call reconnects.
 

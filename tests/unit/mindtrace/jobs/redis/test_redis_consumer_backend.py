@@ -92,29 +92,27 @@ def test_blocking_consume_waits_after_idle_queue_sweep(backend):
     backend._stop_event.wait.assert_called_once()
 
 
-def test_stopped_entry_skips_redis_consume(backend):
+def test_stopped_entry_rejects_redis_consume(backend):
     backend, _ = backend
     backend.receive_message = MagicMock(return_value={"id": 1})
-    backend.logger = MagicMock()
 
     backend.stop()
-    backend.consume(num_messages=1, block=False)
+
+    with pytest.raises(RuntimeError, match="Consumer backend is stopped"):
+        backend.consume(num_messages=1, block=False)
 
     backend.receive_message.assert_not_called()
     assert backend.stopped is True
-    backend.logger.info.assert_called_once_with(
-        "Consumption skipped because stop was requested; call reset() before consuming again."
-    )
 
 
 def test_consume_until_empty(backend):
     backend, mock_conn = backend
     backend.queues = ["q"]
     mock_conn.count_queue_messages.side_effect = [1, 0]
-    backend.consume = MagicMock()
+    backend._consume = MagicMock()
     backend.logger = MagicMock()
     backend.consume_until_empty(block=False)
-    backend.consume.assert_called_with(num_messages=1, queues=["q"], block=False)
+    backend._consume.assert_called_with(num_messages=1, queues=["q"], block=False)
 
 
 def test_consume_until_empty_uses_bounded_nonblocking_pass(backend):
@@ -128,18 +126,18 @@ def test_consume_until_empty_uses_bounded_nonblocking_pass(backend):
         assert block is False, "A drain pass must not wait for work that disappeared after the pending count."
         return 1
 
-    backend.consume = MagicMock(side_effect=consume_one)
+    backend._consume = MagicMock(side_effect=consume_one)
 
     backend.consume_until_empty(block=True)
 
-    backend.consume.assert_called_once()
+    backend._consume.assert_called_once()
 
 
 def test_consume_until_empty_does_not_treat_concurrent_publish_as_no_progress(backend):
     backend, mock_conn = backend
     backend.queues = ["q"]
     mock_conn.count_queue_messages.side_effect = [1, 1, 0]
-    backend.consume = MagicMock(return_value=1)
+    backend._consume = MagicMock(return_value=1)
     backend.logger = MagicMock()
 
     backend.consume_until_empty(block=False)
@@ -152,12 +150,12 @@ def test_consume_until_empty_aborts_when_redis_drain_makes_no_progress(backend):
     backend, mock_conn = backend
     backend.queues = ["q"]
     mock_conn.count_queue_messages.side_effect = [1, 1]
-    backend.consume = MagicMock(return_value=0)
+    backend._consume = MagicMock(return_value=0)
     backend.logger = MagicMock()
 
     backend.consume_until_empty(block=False)
 
-    backend.consume.assert_called_once_with(num_messages=1, queues=["q"], block=False)
+    backend._consume.assert_called_once_with(num_messages=1, queues=["q"], block=False)
     assert mock_conn.count_queue_messages.call_count == 1
     backend.logger.error.assert_called_once_with("Drain stalled with 1 messages pending; aborting.")
 
@@ -172,27 +170,24 @@ def test_consume_until_empty_reports_stop_requested_during_redis_drain(backend):
         backend.stop()
         return 1
 
-    backend.consume = MagicMock(side_effect=consume_and_stop)
+    backend._consume = MagicMock(side_effect=consume_and_stop)
 
     backend.consume_until_empty(block=False)
 
-    backend.consume.assert_called_once_with(num_messages=1, queues=["q"], block=False)
+    backend._consume.assert_called_once_with(num_messages=1, queues=["q"], block=False)
     mock_conn.count_queue_messages.assert_called_once_with("q")
     backend.logger.info.assert_called_once_with("Stopped draining queues after shutdown request: ['q'].")
 
 
-def test_stopped_entry_skips_redis_drain(backend):
+def test_stopped_entry_rejects_redis_drain(backend):
     backend, mock_conn = backend
     backend.queues = ["q"]
-    backend.logger = MagicMock()
     backend.stop()
 
-    backend.consume_until_empty(block=False)
+    with pytest.raises(RuntimeError, match="Consumer backend is stopped"):
+        backend.consume_until_empty(block=False)
 
     mock_conn.count_queue_messages.assert_not_called()
-    backend.logger.info.assert_called_once_with(
-        "Consumption skipped because stop was requested; call reset() before consuming again."
-    )
 
 
 def test_close_is_terminal_and_idempotent(backend):
@@ -353,7 +348,7 @@ def test_consume_until_empty_logs_info(backend):
     backend, mock_conn = backend
     backend.queues = ["q"]
     mock_conn.count_queue_messages.side_effect = [1, 0]
-    backend.consume = MagicMock()
+    backend._consume = MagicMock()
     backend.logger = MagicMock()
     backend.consume_until_empty(block=False)
     backend.logger.info.assert_called()
@@ -412,7 +407,7 @@ def test_consume_until_empty_info_log_message(backend):
     backend, mock_conn = backend
     backend.queues = ["q"]
     mock_conn.count_queue_messages.side_effect = [1, 0]
-    backend.consume = MagicMock()
+    backend._consume = MagicMock()
     backend.logger = MagicMock()
     backend.consume_until_empty(block=False)
     backend.logger.info.assert_called_with("Finished draining queues: ['q']. All queues empty.")
@@ -444,11 +439,11 @@ def test_consume_exception_block_true_propagates_without_waiting(backend):
 def test_consume_until_empty_normalizes_string_queue(backend):
     backend, mock_conn = backend
     backend.logger = MagicMock()
-    backend.consume = MagicMock()
+    backend._consume = MagicMock()
     # Make sure string queues normalize
     mock_conn.count_queue_messages.side_effect = [1, 0]
     backend.consume_until_empty(queues="q", block=False)
-    backend.consume.assert_called_with(num_messages=1, queues=["q"], block=False)
+    backend._consume.assert_called_with(num_messages=1, queues=["q"], block=False)
 
 
 def test_receive_message_get_raises_empty_returns_none(backend):

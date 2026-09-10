@@ -213,12 +213,12 @@ class TestLocalConsumerBackend:
             return 1
 
         backend.orchestrator.count_queue_messages = MagicMock(side_effect=count_pending)
-        backend.consume = MagicMock(return_value=0)
+        backend._consume = MagicMock(return_value=0)
         backend.logger = MagicMock()
 
         backend.consume_until_empty(queues="queue1", block=False)
 
-        backend.consume.assert_called_once_with(num_messages=1, queues=["queue1"], block=False)
+        backend._consume.assert_called_once_with(num_messages=1, queues=["queue1"], block=False)
         assert any(
             "Drain stalled with 1 messages pending" in item.args[0] for item in backend.logger.error.call_args_list
         )
@@ -235,7 +235,7 @@ class TestLocalConsumerBackend:
             backend.stop()
             return 0
 
-        backend.consume = MagicMock(side_effect=stop_without_settling)
+        backend._consume = MagicMock(side_effect=stop_without_settling)
 
         backend.consume_until_empty(queues="queue1", block=False)
 
@@ -255,11 +255,11 @@ class TestLocalConsumerBackend:
             assert block is False, "A drain pass must not wait for work that disappeared after the pending count."
             return 1
 
-        backend.consume = MagicMock(side_effect=consume_one)
+        backend._consume = MagicMock(side_effect=consume_one)
 
         backend.consume_until_empty(queues="queue1", block=True)
 
-        backend.consume.assert_called_once()
+        backend._consume.assert_called_once()
 
     def test_consume_until_empty_does_not_treat_concurrent_publish_as_no_progress(self, temp_local_client):
         orchestrator = Orchestrator(backend=temp_local_client)
@@ -267,7 +267,7 @@ class TestLocalConsumerBackend:
         consumer.connect_to_orchestrator(orchestrator, "queue1")
         backend = consumer.consumer_backend
         backend.orchestrator.count_queue_messages = MagicMock(side_effect=[1, 1, 0])
-        backend.consume = MagicMock(return_value=1)
+        backend._consume = MagicMock(return_value=1)
         backend.logger = MagicMock()
 
         backend.consume_until_empty(queues="queue1", block=False)
@@ -337,37 +337,31 @@ class TestLocalConsumerBackend:
 
         backend.orchestrator.receive_message.assert_not_called()
 
-    def test_stopped_entry_skips_local_consume(self, temp_local_client):
+    def test_stopped_entry_rejects_local_consume(self, temp_local_client):
         orchestrator = Orchestrator(backend=temp_local_client)
         consumer = SimpleConsumer()
         consumer.connect_to_orchestrator(orchestrator, "queue1")
         backend = consumer.consumer_backend
-        backend.logger = Mock()
         backend.orchestrator.receive_message = Mock()
         consumer.stop()
 
-        consumer.consume(num_messages=1, block=False)
+        with pytest.raises(RuntimeError, match="Consumer backend is stopped"):
+            consumer.consume(num_messages=1, block=False)
 
         backend.orchestrator.receive_message.assert_not_called()
-        backend.logger.info.assert_called_once_with(
-            "Consumption skipped because stop was requested; call reset() before consuming again."
-        )
 
-    def test_stopped_entry_skips_local_drain(self, temp_local_client):
+    def test_stopped_entry_rejects_local_drain(self, temp_local_client):
         orchestrator = Orchestrator(backend=temp_local_client)
         consumer = SimpleConsumer()
         consumer.connect_to_orchestrator(orchestrator, "queue1")
         backend = consumer.consumer_backend
-        backend.logger = Mock()
         backend.orchestrator.count_queue_messages = Mock()
         consumer.stop()
 
-        consumer.consume_until_empty(block=False)
+        with pytest.raises(RuntimeError, match="Consumer backend is stopped"):
+            consumer.consume_until_empty(block=False)
 
         backend.orchestrator.count_queue_messages.assert_not_called()
-        backend.logger.info.assert_called_once_with(
-            "Consumption skipped because stop was requested; call reset() before consuming again."
-        )
 
     def test_stop_during_drain_remains_terminal_until_reset(self, temp_local_client):
         class StopAfterTwoConsumer(Consumer):
@@ -394,7 +388,8 @@ class TestLocalConsumerBackend:
         assert consumer.processed == 2
         assert orchestrator.count_queue_messages(queue_name) == 48
 
-        consumer.consume_until_empty(block=False)
+        with pytest.raises(RuntimeError, match="Consumer backend is stopped"):
+            consumer.consume_until_empty(block=False)
 
         assert consumer.processed == 2
         assert orchestrator.count_queue_messages(queue_name) == 48
