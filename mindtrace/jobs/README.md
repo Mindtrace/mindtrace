@@ -175,6 +175,12 @@ queue_name = orchestrator.register(schema)
 print(queue_name)
 ```
 
+`clean_queue()` discards the jobs a queue holds and keeps the declaration.
+`delete_queue()` discards them and removes the declaration as well, so a queue
+declared again under the same name starts empty rather than serving jobs
+published before the deletion. Both discard jobs permanently; drain a queue with
+`consume_until_empty()` first if the work still matters.
+
 ### Publishing typed input directly
 
 If a schema has been registered for a queue, you can publish either:
@@ -213,10 +219,11 @@ print(attempted)
 ```
 
 `consume()` returns the number of deliveries attempted, not the number that
-completed successfully. Consumer backends use the success or failure of
-`run()` to apply their failure policy, but they do not persist or return the
-dictionary returned by `run()`. Store results explicitly if your application
-needs them.
+completed successfully. A delivery whose body does not decode is settled by the
+failure policy and counts as attempted even though `run()` never sees it.
+Consumer backends use the success or failure of `run()` to apply their failure
+policy, but they do not persist or return the dictionary returned by `run()`.
+Store results explicitly if your application needs them.
 
 With RabbitMQ, messages are acknowledged only after `run()` succeeds. Failed
 messages are dead-lettered by default (`basic_nack(requeue=False)`); when the
@@ -239,6 +246,16 @@ consumer.connect_to_orchestrator(
     failure_policy=ConsumerFailurePolicy.REQUEUE,
 )
 ```
+
+`connect_to_orchestrator()` passes its keyword arguments to the consumer
+backend, and a `RabbitMQClient` applies the same settings to every consumer it
+creates through `consumer_backend_kwargs`. Connection parameters are not among
+them: naming one raises `ValueError`, so a consumer reads from the broker its
+orchestrator publishes to.
+
+Local and Redis consumers poll their queues, and `poll_timeout` sets how long a
+blocking call waits after a sweep that found nothing. Shutdown interrupts that
+wait, so `poll_timeout` bounds polling frequency rather than shutdown latency.
 
 RabbitMQ `auto_ack=True` acknowledges deliveries before `run()` executes, so
 it is only valid with `failure_policy=ConsumerFailurePolicy.DISCARD`.
@@ -288,6 +305,11 @@ consumer.consume_until_empty()
 ```
 
 That is useful for local scripts, test runs, or backlog-draining workflows.
+
+A drain ends when the queues report no remaining messages. If a pass settles
+nothing while messages are still reported, the drain logs an error and returns
+rather than polling again, so a queue that reports work it will not hand over
+cannot hold the call open.
 
 ## Backends
 
