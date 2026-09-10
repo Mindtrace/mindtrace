@@ -1,42 +1,39 @@
-import pickle
 import uuid
-from dataclasses import dataclass
 from queue import Empty
 
 import redis
-
-
-@dataclass(frozen=True)
-class _PriorityEntry:
-    entry_id: str
-    payload: object
 
 
 class RedisPriorityQueue:
     """A priority message queue backed by Redis.
     This class uses a Redis sorted set to store messages with priorities.
     Higher numerical priority values are retrieved first (higher priority).
+
+    Each member is a unique hexadecimal entry prefix, a colon, and the payload, so identical
+    payloads occupy distinct members of the sorted set.
     """
 
     def __init__(self, name, namespace="priority_queue", **redis_kwargs):
         self.__db = redis.Redis(**redis_kwargs)
         self.key = f"{namespace}:{name}"
 
-    def push(self, item, priority=0):
-        """Serialize and add an item to the priority queue.
+    def push(self, item: str, priority=0):
+        """Add an item to the priority queue under its own entry prefix.
         Args:
-            item: The item to add to the queue.
+            item: The payload to add to the queue.
             priority: Priority value (higher numbers = higher priority).
         """
-        entry = _PriorityEntry(entry_id=str(uuid.uuid4()), payload=item)
-        self.__db.zadd(self.key, {pickle.dumps(entry): priority})
+        self.__db.zadd(self.key, {f"{uuid.uuid4().hex}:{item}": priority})
 
     @staticmethod
-    def _decode(member):
-        entry = pickle.loads(member)
-        if isinstance(entry, _PriorityEntry):
-            return entry.payload
-        return entry
+    def _decode(member) -> str:
+        """Return the payload carried by a stored member."""
+        if isinstance(member, bytes):
+            member = member.decode("utf-8")
+        _, separator, payload = member.partition(":")
+        if not separator:
+            raise ValueError(f"Priority queue member is missing its entry prefix: {member!r}")
+        return payload
 
     def pop(self, block=True, timeout=None):
         """Remove and return the highest priority item from the queue.

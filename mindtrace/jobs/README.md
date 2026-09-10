@@ -388,8 +388,8 @@ orchestrator.publish("priority_tasks", background_job, priority=10)
 ```
 
 Local priority queues preserve publish order when priorities are equal. Redis
-currently preserves duplicate payloads but does not guarantee FIFO ordering for
-equal-priority jobs; that follow-up is tracked in
+keeps duplicate payloads as distinct jobs but does not order equal-priority jobs
+by publish time; that gap is tracked in
 [#536](https://github.com/Mindtrace/mindtrace/issues/536).
 
 ### RabbitMQ priority queues
