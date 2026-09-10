@@ -455,15 +455,9 @@ def test_receive_message_get_raises_empty_returns_none(backend):
     assert backend.receive_message("q") is None
 
 
-def test_del_handles_exceptions_gracefully(backend):
-    """Test that __del__ method handles exceptions gracefully."""
-    backend, mock_conn = backend
-    # Make close() raise an exception
-    backend.close = MagicMock(side_effect=Exception("close failed"))
-    # __del__ should catch the exception and not raise
-    try:
-        backend.__del__()
-    except Exception:
-        pytest.fail("__del__ should catch all exceptions from close()")
-    # Verify close was called
-    backend.close.assert_called_once()
+def test_receive_message_after_close_reports_closure(backend):
+    backend, _ = backend
+    backend.close()
+
+    with pytest.raises(RuntimeError, match="Consumer backend is closed"):
+        backend.receive_message("q")
