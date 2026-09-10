@@ -190,6 +190,16 @@ def test_stopped_entry_rejects_redis_drain(backend):
     mock_conn.count_queue_messages.assert_not_called()
 
 
+def test_drain_with_empty_queue_list_returns_without_counting(backend):
+    backend, mock_conn = backend
+    backend.logger = MagicMock()
+
+    backend.consume_until_empty(queues=[])
+
+    mock_conn.count_queue_messages.assert_not_called()
+    backend.logger.warning.assert_called_once_with("No queues provided; nothing to consume.")
+
+
 def test_close_is_terminal_and_idempotent(backend):
     backend, mock_conn = backend
 

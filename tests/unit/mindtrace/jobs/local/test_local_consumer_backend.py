@@ -322,6 +322,19 @@ class TestLocalConsumerBackend:
         backend._stop_event.wait.assert_not_called()
         backend.logger.warning.assert_called_once_with("No queues provided; nothing to consume.")
 
+    def test_drain_with_empty_queue_list_returns_without_counting(self, temp_local_client):
+        orchestrator = Orchestrator(backend=temp_local_client)
+        consumer = SimpleConsumer()
+        consumer.connect_to_orchestrator(orchestrator, "queue1")
+        backend = consumer.consumer_backend
+        backend.logger = MagicMock()
+        backend.orchestrator.count_queue_messages = MagicMock()
+
+        consumer.consume_until_empty(queues=[])
+
+        backend.orchestrator.count_queue_messages.assert_not_called()
+        backend.logger.warning.assert_called_once_with("No queues provided; nothing to consume.")
+
     def test_consume_rejects_negative_message_count(self, temp_local_client):
         orchestrator = Orchestrator(backend=temp_local_client)
         consumer = SimpleConsumer()
