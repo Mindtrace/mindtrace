@@ -1,8 +1,8 @@
-import json
 from typing import TYPE_CHECKING
 
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.types.consumer import ConsumerFailurePolicy
+from mindtrace.jobs.utils.messages import InvalidMessageError
 
 if TYPE_CHECKING:  # pragma: no cover
     from mindtrace.jobs.local.client import LocalClient
@@ -49,7 +49,7 @@ class LocalConsumerBackend(ConsumerBackendBase):
                         break
                     try:
                         message = self.orchestrator.receive_message(queue, block=False)
-                    except json.JSONDecodeError as exc:
+                    except InvalidMessageError as exc:
                         no_messages_found = False
                         messages_attempted += 1
                         self.logger.error(f"Discarded malformed message from queue {queue}: {exc}")
@@ -70,14 +70,8 @@ class LocalConsumerBackend(ConsumerBackendBase):
         return messages_attempted
 
     def consume_until_empty(self, *, queues: str | list[str] | None = None) -> None:
-        """Consume messages from the queue(s) until empty."""
-        self._ensure_running()
-        queues = self._normalize_queues(queues)
-        self._drain(
-            queues,
-            pending=lambda: sum(self.orchestrator.count_queue_messages(queue) for queue in queues),
-            consume_pass=lambda outstanding: self._consume(num_messages=outstanding, queues=queues, block=False),
-        )
+        """Consume available deliveries until a complete queue sweep is idle."""
+        self.consume(queues=queues, block=False)
 
     def process_message(self, message) -> bool:
         """Process a single message."""

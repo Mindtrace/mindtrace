@@ -1,4 +1,3 @@
-import json
 import time
 from unittest.mock import MagicMock
 
@@ -6,6 +5,7 @@ import pydantic
 import pytest
 
 from mindtrace.jobs.local.client import LocalClient
+from mindtrace.jobs.utils.messages import InvalidMessageError
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 
 
@@ -242,7 +242,7 @@ class TestLocalClient:
         queue_instance.push("invalid json content")
         client.queues.save("test-queue", queue_instance, on_conflict="overwrite")
 
-        with pytest.raises(json.JSONDecodeError):
+        with pytest.raises(InvalidMessageError):
             client.receive_message("test-queue", block=True, timeout=0.01)
 
     def test_clean_nonexistent_queue(self, temp_local_client):

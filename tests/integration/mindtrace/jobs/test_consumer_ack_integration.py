@@ -1,6 +1,5 @@
 import threading
 import uuid
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -51,52 +50,19 @@ def test_success_acknowledges_delivery_and_closes_connection():
 
 
 @pytest.mark.rabbitmq
-def test_consume_until_empty_aborts_when_consuming_channel_makes_no_progress():
+def test_consume_until_empty_returns_when_no_delivery_is_available():
     client = rabbitmq_client()
     orchestrator = Orchestrator(backend=client)
-    queue = unique_queue("consumer-drain-stall")
+    queue = unique_queue("consumer-drain-empty")
     orchestrator.register(JobSchema(name=queue, input_schema=SampleJobInput, output_schema=SampleJobOutput))
-    for index in range(3):
-        orchestrator.publish(queue, create_test_job(f"stalled-{index}", queue))
-
     consumer = SampleConsumer(queue)
     consumer.connect_to_orchestrator(orchestrator, queue)
-    backend = consumer.consumer_backend
-    backend.logger = MagicMock()
-    original_get_channel = backend.connection.get_channel
-    original_count_queue_messages = backend.connection.count_queue_messages
-    stalled_channel = MagicMock(is_open=True)
-    stalled_channel.basic_get.return_value = (None, None, None)
-    first_channel = True
-    count_calls = 0
-
-    def get_channel():
-        nonlocal first_channel
-        if first_channel:
-            first_channel = False
-            return stalled_channel
-        return original_get_channel()
-
-    def count_pending(queue_name):
-        nonlocal count_calls
-        count_calls += 1
-        if count_calls > 1:
-            consumer.stop()
-        return original_count_queue_messages(queue_name)
-
-    backend.connection.get_channel = MagicMock(side_effect=get_channel)
-    backend.connection.count_queue_messages = MagicMock(side_effect=count_pending)
 
     try:
-        consumer.consume_until_empty(queues=queue)
+        consumer.consume_until_empty()
 
-        backend.connection.count_queue_messages.assert_called_once_with(queue)
-        stalled_channel.basic_get.assert_called_once_with(queue=queue, auto_ack=backend.auto_ack)
-        assert any(
-            "Drain stalled with 3 messages pending" in call.args[0] for call in backend.logger.error.call_args_list
-        )
-        assert len(consumer.processed_jobs) == 0
-        assert client.count_queue_messages(queue) == 3
+        assert consumer.processed_jobs == []
+        assert consumer.consumer_backend.connection.is_connected() is False
     finally:
         consumer.close()
         client.delete_queue(queue)

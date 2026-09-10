@@ -219,8 +219,12 @@ print(attempted)
 ```
 
 `consume()` returns the number of deliveries attempted, not the number that
-completed successfully. A delivery whose body does not decode is settled by the
-failure policy and counts as attempted even though `run()` never sees it.
+completed successfully. Malformed JSON, invalid UTF-8, and non-object bodies
+(including JSON `null`) follow the failure policy and count as attempted even
+though `run()` never sees them. `None` from a receive call means the queue is empty.
+If a RabbitMQ job is interrupted during `run()`, it still counts as attempted;
+with manual acknowledgement, connection cleanup leaves it available for broker
+redelivery. An interrupt preserves the count of deliveries already attempted.
 Consumer backends use the success or failure of `run()` to apply their failure
 policy, but they do not persist or return the dictionary returned by `run()`.
 Store results explicitly if your application needs them.
@@ -277,8 +281,8 @@ own retry and backoff around a later `consume()` call.
 
 Calling `consumer.stop()` requests graceful shutdown. An in-flight job finishes
 and is acknowledged or rejected before the blocking consume loop exits, and a
-drain in progress ends through the same shutdown path rather than reporting a
-stall. The stop request is latched: `consume()` and `consume_until_empty()`
+drain in progress ends through the same shutdown path. The stop request is
+latched: `consume()` and `consume_until_empty()`
 raise `RuntimeError` before any backend setup until the caller explicitly
 invokes `consumer.reset()`.
 RabbitMQ channels and connections close automatically whenever `consume()`
@@ -306,10 +310,11 @@ consumer.consume_until_empty()
 
 That is useful for local scripts, test runs, or backlog-draining workflows.
 
-A drain ends when the queues report no remaining messages. If a pass settles
-nothing while messages are still reported, the drain logs an error and returns
-rather than polling again, so a queue that reports work it will not hand over
-cannot hold the call open.
+A drain ends after a complete nonblocking sweep finds no deliveries across the
+requested queues. It does not take queue-depth snapshots or wait for new work.
+Jobs published while draining may also be consumed; continuous arrivals can keep
+a drain running until shutdown is requested. Queue and connection failures
+propagate to the caller.
 
 ## Backends
 
