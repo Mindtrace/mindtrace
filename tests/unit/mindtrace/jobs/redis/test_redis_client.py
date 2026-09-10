@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pydantic
 import pytest
+from redis.exceptions import LockNotOwnedError
 
 from mindtrace.jobs.redis.client import RedisClient
 from mindtrace.jobs.redis.fifo_queue import RedisQueue
@@ -112,7 +113,7 @@ def test_declare_queue_rehydrates_missing_local_cache_from_central_metadata(clie
     mock_conn.connection.publish.assert_not_called()
 
 
-def test_declare_queue_rolls_back_metadata_and_local_cache_when_event_publish_fails(client):
+def test_declare_queue_survives_a_failing_event_publish(client):
     client, mock_conn = client
     mock_conn.queues = {}
     mock_conn.connection.lock.return_value.acquire.return_value = True
@@ -121,12 +122,54 @@ def test_declare_queue_rolls_back_metadata_and_local_cache_when_event_publish_fa
     local_instance = MagicMock()
 
     with patch("mindtrace.jobs.redis.client.RedisQueue", return_value=local_instance):
-        with pytest.raises(RuntimeError, match="event channel unavailable"):
+        result = client.declare_queue("q", queue_type="fifo")
+
+    assert result["status"] == "success"
+    mock_conn.connection.hset.assert_called_once_with(mock_conn.METADATA_KEY, "q", "fifo")
+    mock_conn.connection.hdel.assert_not_called()
+    assert mock_conn.queues["q"] is local_instance
+    mock_conn.connection.lock.return_value.release.assert_called_once_with()
+
+
+def test_declare_queue_does_not_register_a_queue_whose_metadata_write_fails(client):
+    client, mock_conn = client
+    mock_conn.queues = {}
+    mock_conn.connection.lock.return_value.acquire.return_value = True
+    mock_conn.connection.hget.return_value = None
+    mock_conn.connection.hset.side_effect = RuntimeError("redis unavailable")
+
+    with patch("mindtrace.jobs.redis.client.RedisQueue", return_value=MagicMock()):
+        with pytest.raises(RuntimeError, match="redis unavailable"):
             client.declare_queue("q", queue_type="fifo")
 
-    mock_conn.connection.hdel.assert_called_once_with(mock_conn.METADATA_KEY, "q")
     assert "q" not in mock_conn.queues
+    mock_conn.connection.publish.assert_not_called()
     mock_conn.connection.lock.return_value.release.assert_called_once_with()
+
+
+def test_queue_lock_reports_a_lock_held_elsewhere(client):
+    client, mock_conn = client
+    mock_conn.queues = {}
+    mock_conn.connection.lock.return_value.acquire.return_value = False
+
+    with pytest.raises(BlockingIOError, match="Could not acquire distributed lock"):
+        client.declare_queue("q", queue_type="fifo")
+
+    mock_conn.connection.hget.assert_not_called()
+    mock_conn.connection.lock.return_value.release.assert_not_called()
+
+
+def test_queue_lock_tolerates_expiry_before_release(client):
+    client, mock_conn = client
+    mock_conn.queues = {}
+    mock_conn.connection.lock.return_value.acquire.return_value = True
+    mock_conn.connection.lock.return_value.release.side_effect = LockNotOwnedError("lock expired")
+    mock_conn.connection.hget.return_value = b"fifo"
+
+    with patch("mindtrace.jobs.redis.client.RedisQueue", return_value=MagicMock()):
+        result = client.declare_queue("q", queue_type="fifo")
+
+    assert result["status"] == "success"
 
 
 def test_delete_queue_not_declared(client):
