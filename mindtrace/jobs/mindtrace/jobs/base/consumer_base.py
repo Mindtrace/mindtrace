@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from collections.abc import Callable
 from threading import Event
 from typing import TYPE_CHECKING
 
@@ -70,36 +69,6 @@ class ConsumerBackendBase(MindtraceABC):
         if isinstance(queues, str):
             queues = [queues]
         return list(dict.fromkeys(ifnone(queues, default=self.queues)))
-
-    def _drain(
-        self,
-        queues: list[str],
-        *,
-        pending: Callable[[], int],
-        consume_pass: Callable[[int], int],
-    ) -> None:
-        """Consume until every queue is empty, aborting on a pass that settles nothing.
-
-        Args:
-            queues: Queues being drained, used for reporting.
-            pending: Returns the number of messages currently queued across ``queues``.
-            consume_pass: Consumes up to the given number of messages and returns how many
-                deliveries it settled.
-        """
-        if not queues:
-            self.logger.warning("No queues provided; nothing to consume.")
-            return
-        while not self.stopped:
-            outstanding = pending()
-            if outstanding == 0:
-                self.logger.info(f"Finished draining queues: {queues}. All queues empty.")
-                return
-            if consume_pass(outstanding) == 0:
-                if self.stopped:
-                    break
-                self.logger.error(f"Drain stalled with {outstanding} messages pending; aborting.")
-                return
-        self.logger.info(f"Stopped draining queues after shutdown request: {queues}.")
 
     def _ensure_running(self) -> None:
         """Reject consumption after :meth:`close` or an outstanding stop request."""

@@ -196,83 +196,6 @@ class TestLocalConsumerBackend:
         backend.process_message.assert_called_once_with({"id": 2})
         backend._stop_event.wait.assert_not_called()
 
-    def test_consume_until_empty_aborts_when_local_drain_makes_no_progress(self, temp_local_client):
-        orchestrator = Orchestrator(backend=temp_local_client)
-        consumer = SimpleConsumer()
-        consumer.connect_to_orchestrator(orchestrator, "queue1")
-        backend = consumer.consumer_backend
-        count_calls = 0
-
-        def count_pending(queue):
-            nonlocal count_calls
-            count_calls += 1
-            if count_calls > 1:
-                raise AssertionError("A stalled local drain must exit instead of starting another consume pass.")
-            return 1
-
-        backend.orchestrator.count_queue_messages = MagicMock(side_effect=count_pending)
-        backend._consume = MagicMock(return_value=0)
-        backend.logger = MagicMock()
-
-        backend.consume_until_empty(queues="queue1")
-
-        backend._consume.assert_called_once_with(num_messages=1, queues=["queue1"], block=False)
-        assert any(
-            "Drain stalled with 1 messages pending" in item.args[0] for item in backend.logger.error.call_args_list
-        )
-
-    def test_stop_during_drain_pass_does_not_report_a_stall(self, temp_local_client):
-        orchestrator = Orchestrator(backend=temp_local_client)
-        consumer = SimpleConsumer()
-        consumer.connect_to_orchestrator(orchestrator, "queue1")
-        backend = consumer.consumer_backend
-        backend.orchestrator.count_queue_messages = MagicMock(return_value=3)
-        backend.logger = MagicMock()
-
-        def stop_without_settling(**_kwargs):
-            backend.stop()
-            return 0
-
-        backend._consume = MagicMock(side_effect=stop_without_settling)
-
-        backend.consume_until_empty(queues="queue1")
-
-        assert not any("Drain stalled" in item.args[0] for item in backend.logger.error.call_args_list)
-        backend.logger.info.assert_any_call("Stopped draining queues after shutdown request: ['queue1'].")
-
-    def test_consume_until_empty_uses_bounded_nonblocking_pass(self, temp_local_client):
-        orchestrator = Orchestrator(backend=temp_local_client)
-        consumer = SimpleConsumer()
-        consumer.connect_to_orchestrator(orchestrator, "queue1")
-        backend = consumer.consumer_backend
-        backend.orchestrator.count_queue_messages = MagicMock(side_effect=[1, 0])
-
-        def consume_one(*, num_messages, queues, block):
-            assert num_messages == 1
-            assert queues == ["queue1"]
-            assert block is False, "A drain pass must not wait for work that disappeared after the pending count."
-            return 1
-
-        backend._consume = MagicMock(side_effect=consume_one)
-
-        backend.consume_until_empty(queues="queue1")
-
-        backend._consume.assert_called_once()
-
-    def test_consume_until_empty_does_not_treat_concurrent_publish_as_no_progress(self, temp_local_client):
-        orchestrator = Orchestrator(backend=temp_local_client)
-        consumer = SimpleConsumer()
-        consumer.connect_to_orchestrator(orchestrator, "queue1")
-        backend = consumer.consumer_backend
-        backend.orchestrator.count_queue_messages = MagicMock(side_effect=[1, 1, 0])
-        backend._consume = MagicMock(return_value=1)
-        backend.logger = MagicMock()
-
-        backend.consume_until_empty(queues="queue1")
-
-        assert not any("Drain stalled" in item.args[0] for item in backend.logger.error.call_args_list)
-        backend.logger.info.assert_any_call("Finished draining queues: ['queue1']. All queues empty.")
-
     def test_consume_propagates_local_receive_failure(self, temp_local_client):
         orchestrator = Orchestrator(backend=temp_local_client)
         consumer = SimpleConsumer()
@@ -586,3 +509,68 @@ class TestLocalConsumerBackend:
             consumer.consume(num_messages=1, queues=queue_name, block=True)
 
         backend._stop_event.wait.assert_not_called()
+
+    @pytest.mark.parametrize("body", ["null", "[]", "false", "42", '"text"', "not-json"])
+    @pytest.mark.parametrize("drain", [False, True])
+    def test_invalid_delivery_counts_and_does_not_hide_valid_job(self, temp_local_client, body, drain):
+        """An invalid body is removed without being mistaken for an empty queue."""
+        client = temp_local_client
+        client.declare_queue("q")
+        queue = client.queues["q"]
+        queue.push(body)
+        queue.push('{"id": 1}')
+        client.queues.save("q", queue, on_conflict="overwrite")
+        consumer = SimpleConsumer()
+        consumer.run = MagicMock(return_value={})
+        consumer.connect_to_orchestrator(Orchestrator(client), "q")
+        consumer.consumer_backend._stop_event.wait = MagicMock(side_effect=AssertionError("Must not wait"))
+
+        if not drain:
+            assert consumer.consume(num_messages=1) == 1
+            consumer.run.assert_not_called()
+            assert client.count_queue_messages("q") == 1
+        consumer.consume_until_empty()
+
+        consumer.run.assert_called_once_with({"id": 1})
+        assert client.count_queue_messages("q") == 0
+
+    def test_drain_polls_later_ready_queue_without_counting_or_waiting(self, temp_local_client):
+        """A full idle sweep determines when draining finishes."""
+        client = temp_local_client
+        client.declare_queue("empty")
+        client.declare_queue("ready")
+        client.publish("ready", SampleMessage(data="ready"))
+        consumer = SimpleConsumer()
+        consumer.run = MagicMock(return_value={})
+        consumer.connect_to_orchestrator(Orchestrator(client), "empty")
+        client.count_queue_messages = MagicMock(side_effect=AssertionError("Must not count queued jobs"))
+        consumer.consumer_backend._stop_event.wait = MagicMock(side_effect=AssertionError("Must not wait"))
+
+        consumer.consume_until_empty(queues=["empty", "ready"])
+
+        assert consumer.run.call_count == 1
+        assert client.queues["ready"].empty()
+
+    def test_drain_does_not_resume_after_interrupted_job(self, temp_local_client):
+        """Interrupting a drain leaves subsequent work queued."""
+        client = temp_local_client
+        client.declare_queue("q")
+        for index in range(3):
+            client.publish("q", SampleMessage(data=str(index)))
+        consumer = SimpleConsumer()
+        consumer.run = MagicMock(side_effect=[{}, KeyboardInterrupt])
+        consumer.connect_to_orchestrator(Orchestrator(client), "q")
+
+        consumer.consume_until_empty()
+
+        assert consumer.run.call_count == 2
+        assert client.count_queue_messages("q") == 1
+
+    def test_drain_propagates_storage_failure(self, temp_local_client):
+        """Storage failures must not look like completion of the drain."""
+        consumer = SimpleConsumer()
+        consumer.connect_to_orchestrator(Orchestrator(temp_local_client), "q")
+        temp_local_client.receive_message = MagicMock(side_effect=RuntimeError("storage unavailable"))
+
+        with pytest.raises(RuntimeError, match="storage unavailable"):
+            consumer.consume_until_empty()

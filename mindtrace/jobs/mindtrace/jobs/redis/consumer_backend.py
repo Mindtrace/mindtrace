@@ -1,10 +1,10 @@
-import json
 from queue import Empty
 from typing import Optional
 
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.redis.connection import RedisConnection
 from mindtrace.jobs.types.consumer import ConsumerFailurePolicy
+from mindtrace.jobs.utils.messages import InvalidMessageError, decode_message
 
 
 class RedisConsumerBackend(ConsumerBackendBase):
@@ -49,7 +49,7 @@ class RedisConsumerBackend(ConsumerBackendBase):
                         break
                     try:
                         message = self.receive_message(queue)
-                    except json.JSONDecodeError as exc:
+                    except InvalidMessageError as exc:
                         found_message = True
                         messages_attempted += 1
                         self.logger.error(f"Discarded malformed message from queue {queue}: {exc}")
@@ -87,14 +87,8 @@ class RedisConsumerBackend(ConsumerBackendBase):
             return False
 
     def consume_until_empty(self, *, queues: str | list[str] | None = None) -> None:
-        """Consume messages from the queue(s) until empty."""
-        self._ensure_running()
-        queues = self._normalize_queues(queues)
-        self._drain(
-            queues,
-            pending=lambda: sum(self.connection.count_queue_messages(queue) for queue in queues),
-            consume_pass=lambda outstanding: self._consume(num_messages=outstanding, queues=queues, block=False),
-        )
+        """Consume available deliveries until a complete queue sweep is idle."""
+        self.consume(queues=queues, block=False)
 
     def close(self):
         """Permanently close the backend and its Redis connection."""
@@ -106,7 +100,11 @@ class RedisConsumerBackend(ConsumerBackendBase):
     def receive_message(self, queue_name: str) -> Optional[dict]:
         """Retrieve a message from a specified Redis queue.
 
-        Returns the message as a dict.
+        Returns:
+            The message as a dict, or None if the queue is empty.
+
+        Raises:
+            InvalidMessageError: If the removed delivery is not a JSON object.
         """
         self._ensure_open()
         with self.connection._local_lock:
@@ -120,6 +118,6 @@ class RedisConsumerBackend(ConsumerBackendBase):
                 raw_message = instance.pop(block=False, timeout=None)
             else:
                 raise RuntimeError("Queue type does not support receiving messages.")
-            return json.loads(raw_message)
+            return decode_message(raw_message)
         except Empty:
             return None

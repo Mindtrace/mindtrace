@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import traceback
 from dataclasses import dataclass
 from threading import Lock
@@ -8,6 +7,7 @@ from threading import Lock
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
 from mindtrace.jobs.types.consumer import ConsumerFailurePolicy
+from mindtrace.jobs.utils.messages import InvalidMessageError, decode_message
 
 
 @dataclass(frozen=True)
@@ -98,12 +98,10 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                 self._active_channel = channel
                 self._active_push_channel = channel if push_mode else None
             channel.basic_qos(prefetch_count=self.prefetch_count)
-            if num_messages > 0:
-                messages_attempted = self._consume_finite_messages(channel, num_messages, queues, block=block)
-            elif push_mode:
+            if push_mode:
                 messages_attempted = self._consume_push_messages(channel, queues)
             else:
-                messages_attempted = self._consume_infinite_messages(channel, queues, block=block)
+                messages_attempted = self._consume(channel, num_messages=num_messages, queues=queues, block=block)
         except KeyboardInterrupt:
             self.logger.info("Consumption interrupted by user.")
         finally:
@@ -111,37 +109,41 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             self.logger.info(f"Stopped consuming messages from queues: {queues}.")
         return messages_attempted
 
-    def _consume_finite_messages(self, channel, num_messages: int, queues: list[str], block: bool = True) -> int:
-        """Consume at most ``num_messages`` deliveries across all queues.
+    def _consume(self, channel, *, num_messages: int, queues: list[str], block: bool) -> int:
+        """Consume deliveries until the limit, an idle nonblocking sweep, or shutdown.
 
         Returns:
-            The number of deliveries settled by the processing/acknowledgement path.
+            The number of deliveries attempted, including invalid bodies and interrupted jobs.
         """
-        self.logger.info(f"Consuming up to {num_messages} messages from queues: {queues}.")
-        settled = 0
-        while settled < num_messages and not self.stopped:
-            found_message = False
-            for queue in queues:
-                if settled >= num_messages or self.stopped:
-                    break
-                delivery = self.receive_message(channel, queue, block=False)
-                if delivery is None:
-                    continue
-                found_message = True
-                if delivery is _SETTLED_NO_MESSAGE:
-                    settled += 1
-                    continue
-                self.logger.debug(f"Received message from queue '{queue}': processing {settled + 1}/{num_messages}")
-                self._process_delivery(channel, delivery)
-                settled += 1
-            if not found_message:
-                if not block:
-                    return settled
-                self._stop_event.wait(0.1)
-        return settled
+        attempted = 0
+        try:
+            while not self.stopped and (num_messages == 0 or attempted < num_messages):
+                found_delivery = False
+                for queue in queues:
+                    if self.stopped or (num_messages > 0 and attempted >= num_messages):
+                        break
+                    delivery = self.receive_message(channel, queue, block=False)
+                    if delivery is None:
+                        continue
+                    found_delivery = True
+                    attempted += 1
+                    if delivery is not _SETTLED_NO_MESSAGE:
+                        self.logger.debug(f"Received message from queue '{queue}': processing message {attempted}")
+                        self._process_delivery(channel, delivery)
+                if not found_delivery and not self.stopped:
+                    if not block:
+                        break
+                    self._stop_event.wait(0.1)
+        except KeyboardInterrupt:
+            self.logger.info("Consumption interrupted by user.")
+        return attempted
 
     def _consume_push_messages(self, channel, queues: list[str]) -> int:
-        """Register broker-pushed consumers and block until shutdown."""
+        """Register broker-pushed consumers and block until shutdown.
+
+        Returns:
+            The number of deliveries attempted, including invalid bodies and interrupted jobs.
+        """
         self.logger.info(f"Started broker-pushed consumption from queues: {queues}.")
         attempted = 0
         queues_by_consumer_tag: dict[str, str] = {}
@@ -162,7 +164,8 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                     self._requeue_stopped_push_delivery(callback_channel, method)
                     self._stop_consuming(callback_channel)
                     return
-                attempted += self._process_push_delivery(callback_channel, method, body, queue_name)
+                attempted += 1
+                self._process_push_delivery(callback_channel, method, body, queue_name)
                 if self.stopped:
                     self._stop_consuming(callback_channel)
 
@@ -185,46 +188,24 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                 channel.start_consuming()
             if cancellation_error is not None:
                 raise cancellation_error
-            return attempted
+        except KeyboardInterrupt:
+            self.logger.info("Consumption interrupted by user.")
         finally:
             with self._active_lock:
                 if self._active_push_channel is channel:
                     self._active_push_channel = None
+        return attempted
 
-    def _process_push_delivery(self, channel, method, body, queue_name: str) -> int:
+    def _process_push_delivery(self, channel, method, body, queue_name: str) -> None:
         """Decode, process, and settle one broker-pushed delivery."""
         delivery = self._decode_delivery(channel, method, body, queue_name)
         if delivery is not _SETTLED_NO_MESSAGE:
             self._process_delivery(channel, delivery)
-        return 1
 
     def _requeue_stopped_push_delivery(self, channel, method) -> None:
         """Return an unprocessed delivery that was dispatched after shutdown."""
         if not self.auto_ack:
             channel.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
-
-    def _consume_infinite_messages(self, channel, queues: list[str], *, block: bool = True) -> int:
-        """Consume available messages, waiting for new work only when requested."""
-        self.logger.info(f"Started consuming messages indefinitely from queues: {queues}.")
-        processed = 0
-        while not self.stopped:
-            idle = True
-            for queue in queues:
-                if self.stopped:
-                    break
-                delivery = self.receive_message(channel, queue, block=False)
-                if delivery is not None:
-                    idle = False
-                    if delivery is _SETTLED_NO_MESSAGE:
-                        continue
-                    processed += 1
-                    self.logger.debug(f"Received message from queue '{queue}': processing message {processed}")
-                    self._process_delivery(channel, delivery)
-            if idle and not self.stopped:
-                if not block:
-                    return processed
-                self._stop_event.wait(0.1)
-        return processed
 
     def _process_delivery(self, channel, delivery: RabbitMQDelivery) -> bool:
         """Process a delivery and settle it according to the outcome."""
@@ -283,28 +264,8 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             return False
 
     def consume_until_empty(self, *, queues: str | list[str] | None = None) -> None:
-        """Drain currently available deliveries without waiting for new work."""
-        self._ensure_running()
-        queues = self._normalize_queues(queues)
-        if not queues:
-            self.logger.warning("No queues provided; nothing to consume.")
-            return
-        try:
-            self.connection.connect()
-            channel = self.connection.get_channel()
-            self._active_channel = channel
-            channel.basic_qos(prefetch_count=self.prefetch_count)
-            self._drain(
-                queues,
-                pending=lambda: sum(self.connection.count_queue_messages(queue) for queue in queues),
-                consume_pass=lambda outstanding: self._consume_finite_messages(
-                    channel, outstanding, queues, block=False
-                ),
-            )
-        except KeyboardInterrupt:
-            self.logger.info("Consumption interrupted by user.")
-        finally:
-            self._close_active_resources()
+        """Consume available deliveries until a complete queue sweep is idle."""
+        self.consume(queues=queues, block=False)
 
     def receive_message(
         self, channel, queue_name: str, *, block: bool = False
@@ -328,8 +289,8 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
     def _decode_delivery(self, channel, method, body, queue_name: str) -> RabbitMQDelivery | _SettledNoMessage:
         """Decode a delivery, settling malformed payloads as local failures."""
         try:
-            message = json.loads(body.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            message = decode_message(body)
+        except InvalidMessageError as exc:
             self._reject_delivery(channel, method.delivery_tag, redelivered=method.redelivered)
             self.logger.error(f"Rejected malformed RabbitMQ delivery from queue '{queue_name}': {exc}")
             return _SETTLED_NO_MESSAGE

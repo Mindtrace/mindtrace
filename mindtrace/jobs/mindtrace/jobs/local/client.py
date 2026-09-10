@@ -13,6 +13,7 @@ from mindtrace.jobs.local.consumer_backend import LocalConsumerBackend
 from mindtrace.jobs.local.fifo_queue import LocalQueue
 from mindtrace.jobs.local.priority_queue import LocalPriorityQueue
 from mindtrace.jobs.local.stack import LocalStack
+from mindtrace.jobs.utils.messages import decode_message
 from mindtrace.registry import Registry
 from mindtrace.registry.core.types import OnConflict
 
@@ -128,6 +129,9 @@ class LocalClient(OrchestratorBackend):
 
         Returns:
             The message as a dict or None if queue is empty.
+
+        Raises:
+            InvalidMessageError: If the removed delivery is not a JSON object.
         """
         block = kwargs.get("block", True)
         timeout = kwargs.get("timeout", None)
@@ -140,7 +144,7 @@ class LocalClient(OrchestratorBackend):
             self.logger.debug(f"Queue '{queue_name}' is empty.")
             return None
         self.queues.save(queue_name, queue_instance, on_conflict=OnConflict.OVERWRITE)
-        return json.loads(raw_message)
+        return decode_message(raw_message)
 
     def clean_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Remove all messages from the specified queue."""
