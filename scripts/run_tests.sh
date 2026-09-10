@@ -110,11 +110,7 @@ if [ ${#SPECIFIC_PATHS[@]} -gt 0 ]; then
     # Start docker containers if any integration tests are included
     if [ "$NEEDS_DOCKER" = true ]; then
         echo "Starting docker containers for integration tests..."
-        if ! . scripts/docker_up.sh; then
-            echo "Docker integration-test setup failed; aborting before pytest." >&2
-            docker_down
-            exit 1
-        fi
+        . scripts/docker_up.sh
     fi
 
     # Clear any existing coverage data
@@ -150,11 +146,7 @@ fi
 # Start Docker containers if running integration, utils tests, or specific docker-requiring paths
 if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
     echo "Starting docker containers..."
-    if ! . scripts/docker_up.sh; then
-        echo "Docker integration-test setup failed; aborting before pytest." >&2
-        docker_down
-        exit 1
-    fi
+    . scripts/docker_up.sh
 fi
 
 # Clear any existing coverage data when running with coverage
