@@ -12,12 +12,14 @@ from mindtrace.core import ifnone
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
 from mindtrace.jobs.consumers.consumer import Consumer
 from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
-from mindtrace.jobs.rabbitmq.consumer_backend import RabbitMQConsumerBackend, _validate_auto_ack_failure_policy
+from mindtrace.jobs.rabbitmq.consumer_backend import RabbitMQConsumerBackend, validate_auto_ack_failure_policy
 from mindtrace.jobs.types.batch import BatchPublishResult
 from mindtrace.jobs.types.consumer import ConsumerFailurePolicy
 
 
 class RabbitMQClient(OrchestratorBackend):
+    connection_kwarg_names = frozenset({"host", "port", "username", "password"})
+
     def __init__(
         self,
         host: str | None = None,
@@ -38,8 +40,8 @@ class RabbitMQClient(OrchestratorBackend):
         self._port = port
         self._username = username
         self._password = password
-        self._consumer_backend_kwargs = consumer_backend_kwargs or {}
-        _validate_auto_ack_failure_policy(
+        self._consumer_backend_kwargs = self._reject_connection_overrides(consumer_backend_kwargs or {})
+        validate_auto_ack_failure_policy(
             self._consumer_backend_kwargs.get("auto_ack", False),
             self._consumer_backend_kwargs.get("failure_policy", ConsumerFailurePolicy.DEAD_LETTER),
         )
@@ -85,18 +87,18 @@ class RabbitMQClient(OrchestratorBackend):
         return {
             "cls": "mindtrace.jobs.rabbitmq.consumer_backend.RabbitMQConsumerBackend",
             "kwargs": {
+                **self._consumer_backend_kwargs,
                 "host": self._host,
                 "port": self._port,
                 "username": self._username,
                 "password": self._password,
-                **self._consumer_backend_kwargs,
             },
         }
 
     def create_consumer_backend(
         self, consumer_frontend: Consumer, queue_name: str, **kwargs
     ) -> RabbitMQConsumerBackend:
-        backend_kwargs = self.consumer_backend_args["kwargs"] | kwargs
+        backend_kwargs = self.consumer_backend_args["kwargs"] | self._reject_connection_overrides(kwargs)
         return RabbitMQConsumerBackend(queue_name, consumer_frontend, **backend_kwargs)
 
     def declare_exchange(

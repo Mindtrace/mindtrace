@@ -57,17 +57,18 @@ class Consumer(Mindtrace):
 
         return self.consumer_backend.consume(num_messages, queues=queues, block=block)
 
-    def consume_until_empty(self, queues: str | list[str] | None = None, block: bool = True) -> None:
+    def consume_until_empty(self, queues: str | list[str] | None = None) -> None:
         """Consume messages until all specified queues are empty.
+
+        Drains the work already queued; it does not wait for new work to arrive.
 
         Args:
             queues: Queue(s) to consume from. If None, uses the consumer's default queue.
-            block: Whether to block when no messages are available.
         """
         if not self.consumer_backend:
             raise RuntimeError("Consumer not connected. Call connect() first.")
 
-        self.consumer_backend.consume_until_empty(queues=queues, block=block)
+        self.consumer_backend.consume_until_empty(queues=queues)
 
     def stop(self) -> None:
         """Request terminal shutdown after any in-flight job completes."""

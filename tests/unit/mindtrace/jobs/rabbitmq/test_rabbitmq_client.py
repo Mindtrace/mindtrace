@@ -484,3 +484,24 @@ def test_declare_queue_with_queue_type_warning():
     )
     # Queue should still be declared successfully
     assert result["status"] == "success"
+
+
+def test_consumer_backend_kwargs_cannot_redirect_the_connection():
+    with pytest.raises(ValueError, match="must not redirect the connection: host, port"):
+        RabbitMQClient(host="localhost", consumer_backend_kwargs={"host": "elsewhere", "port": 1234})
+
+
+def test_create_consumer_backend_cannot_redirect_the_connection():
+    with patch.object(RabbitMQClient, "create_connection", MagicMock(return_value=DummyChannel())):
+        client = RabbitMQClient(host="localhost")
+
+        with pytest.raises(ValueError, match="must not redirect the connection: password"):
+            client.create_consumer_backend(MagicMock(), "q", password="hunter2")
+
+
+def test_consumer_backend_args_keep_the_client_connection_settings():
+    with patch.object(RabbitMQClient, "create_connection", MagicMock(return_value=DummyChannel())):
+        client = RabbitMQClient(host="broker", port=5673, consumer_backend_kwargs={"prefetch_count": 4})
+
+    kwargs = client.consumer_backend_args["kwargs"]
+    assert (kwargs["host"], kwargs["port"], kwargs["prefetch_count"]) == ("broker", 5673, 4)

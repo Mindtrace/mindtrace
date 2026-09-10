@@ -1,8 +1,6 @@
 import json
-import time
 from typing import TYPE_CHECKING
 
-from mindtrace.core import ifnone
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.types.consumer import ConsumerFailurePolicy
 
@@ -13,6 +11,8 @@ if TYPE_CHECKING:  # pragma: no cover
 class LocalConsumerBackend(ConsumerBackendBase):
     """Local in-memory consumer backend."""
 
+    supported_failure_policies = frozenset({ConsumerFailurePolicy.DISCARD})
+
     def __init__(
         self,
         queue_name: str,
@@ -21,30 +21,24 @@ class LocalConsumerBackend(ConsumerBackendBase):
         poll_timeout: float = 1,
         failure_policy: ConsumerFailurePolicy | str = ConsumerFailurePolicy.DISCARD,
     ):
-        super().__init__(queue_name, consumer_frontend)
-        self.failure_policy = ConsumerFailurePolicy(failure_policy)
-        if self.failure_policy is not ConsumerFailurePolicy.DISCARD:
-            raise NotImplementedError(
-                f"Local consumer backend does not support failure policy '{self.failure_policy.value}'. Use 'discard'."
-            )
+        super().__init__(queue_name, consumer_frontend, failure_policy)
         self.poll_timeout = poll_timeout
         self.orchestrator = orchestrator
-        self.queues = [queue_name] if queue_name else []
 
     def consume(
         self, num_messages: int = 0, *, queues: str | list[str] | None = None, block: bool = True, **kwargs
     ) -> int:
         """Consume messages from the local queue(s)."""
-        self._ensure_open()
+        self._ensure_running()
         self._validate_num_messages(num_messages)
-        if self._skip_if_stopped():
-            return 0
-        if isinstance(queues, str):
-            queues = [queues]
-        queues = ifnone(queues, default=self.queues)
+        queues = self._normalize_queues(queues)
         if not queues:
             self.logger.warning("No queues provided; nothing to consume.")
             return 0
+        return self._consume(num_messages=num_messages, queues=queues, block=block)
+
+    def _consume(self, *, num_messages: int, queues: list[str], block: bool) -> int:
+        """Consume from resolved queues until the limit is reached, a nonblocking sweep is idle, or shutdown."""
         messages_attempted = 0
 
         try:
@@ -54,7 +48,7 @@ class LocalConsumerBackend(ConsumerBackendBase):
                     if self.stopped or (num_messages > 0 and messages_attempted >= num_messages):
                         break
                     try:
-                        message = self.orchestrator.receive_message(queue, block=False, timeout=self.poll_timeout)
+                        message = self.orchestrator.receive_message(queue, block=False)
                     except json.JSONDecodeError as exc:
                         no_messages_found = False
                         messages_attempted += 1
@@ -69,31 +63,21 @@ class LocalConsumerBackend(ConsumerBackendBase):
                     return messages_attempted
 
                 if no_messages_found and block is True:
-                    time.sleep(0.1)
+                    self._stop_event.wait(self.poll_timeout)
 
         except KeyboardInterrupt:
             self.logger.info("Consumption interrupted by user.")
         return messages_attempted
 
-    def consume_until_empty(self, *, queues: str | list[str] | None = None, block: bool = True, **kwargs) -> None:
+    def consume_until_empty(self, *, queues: str | list[str] | None = None) -> None:
         """Consume messages from the queue(s) until empty."""
-        self._ensure_open()
-        if self._skip_if_stopped():
-            return
-        if isinstance(queues, str):
-            queues = [queues]
-        queues = ifnone(queues, default=self.queues)
-        while not self.stopped:
-            pending = sum(self.orchestrator.count_queue_messages(queue) for queue in queues)
-            if pending == 0:
-                return
-            messages_attempted = self.consume(num_messages=1, queues=queues, block=False)
-            remaining = sum(self.orchestrator.count_queue_messages(queue) for queue in queues)
-            if remaining == 0:
-                return
-            if messages_attempted == 0:
-                self.logger.error(f"Drain stalled with {remaining} message pending; aborting.")
-                return
+        self._ensure_running()
+        queues = self._normalize_queues(queues)
+        self._drain(
+            queues,
+            pending=lambda: sum(self.orchestrator.count_queue_messages(queue) for queue in queues),
+            consume_pass=lambda outstanding: self._consume(num_messages=outstanding, queues=queues, block=False),
+        )
 
     def process_message(self, message) -> bool:
         """Process a single message."""

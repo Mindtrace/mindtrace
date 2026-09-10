@@ -1,28 +1,49 @@
 from __future__ import annotations
 
 from abc import abstractmethod
+from collections.abc import Callable
 from threading import Event
 from typing import TYPE_CHECKING
 
-from mindtrace.core import MindtraceABC
+from mindtrace.core import MindtraceABC, ifnone
+from mindtrace.jobs.types.consumer import ConsumerFailurePolicy
 
 if TYPE_CHECKING:  # pragma: no cover
     from mindtrace.jobs.consumers.consumer import Consumer
 
 
 class ConsumerBackendBase(MindtraceABC):
-    """Base class for consumer backends that handle message consumption."""
+    """Base class for consumer backends that handle message consumption.
+
+    Subclasses widen :attr:`supported_failure_policies` to the policies they implement.
+    """
+
+    supported_failure_policies: frozenset[ConsumerFailurePolicy] = frozenset({ConsumerFailurePolicy.DISCARD})
 
     def __init__(
         self,
         queue_name: str,
         consumer_frontend: "Consumer",
+        failure_policy: ConsumerFailurePolicy | str = ConsumerFailurePolicy.DISCARD,
     ):
         super().__init__()
         self.queue_name = queue_name
         self.consumer_frontend = consumer_frontend
+        self.failure_policy = self._validate_failure_policy(failure_policy)
+        self.queues = [queue_name] if queue_name else []
         self._stop_event = Event()
         self._closed_event = Event()
+
+    @classmethod
+    def _validate_failure_policy(cls, failure_policy: ConsumerFailurePolicy | str) -> ConsumerFailurePolicy:
+        """Accept only a failure policy this backend implements."""
+        policy = ConsumerFailurePolicy(failure_policy)
+        if policy not in cls.supported_failure_policies:
+            supported = ", ".join(sorted(supported.value for supported in cls.supported_failure_policies))
+            raise NotImplementedError(
+                f"{cls.__name__} does not support failure policy '{policy.value}'. Supported: {supported}."
+            )
+        return policy
 
     @property
     def stopped(self) -> bool:
@@ -44,12 +65,47 @@ class ConsumerBackendBase(MindtraceABC):
         if num_messages < 0:
             raise ValueError("num_messages must be non-negative")
 
-    def _skip_if_stopped(self) -> bool:
-        """Return whether consumption should be skipped after a stop request."""
-        if not self.stopped:
-            return False
-        self.logger.info("Consumption skipped because stop was requested; call reset() before consuming again.")
-        return True
+    def _normalize_queues(self, queues: str | list[str] | None) -> list[str]:
+        """Resolve the queue argument to a de-duplicated, order-stable list."""
+        if isinstance(queues, str):
+            queues = [queues]
+        return list(dict.fromkeys(ifnone(queues, default=self.queues)))
+
+    def _drain(
+        self,
+        queues: list[str],
+        *,
+        pending: Callable[[], int],
+        consume_pass: Callable[[int], int],
+    ) -> None:
+        """Consume until every queue is empty, aborting on a pass that settles nothing.
+
+        Args:
+            queues: Queues being drained, used for reporting.
+            pending: Returns the number of messages currently queued across ``queues``.
+            consume_pass: Consumes up to the given number of messages and returns how many
+                deliveries it settled.
+        """
+        if not queues:
+            self.logger.warning("No queues provided; nothing to consume.")
+            return
+        while not self.stopped:
+            outstanding = pending()
+            if outstanding == 0:
+                self.logger.info(f"Finished draining queues: {queues}. All queues empty.")
+                return
+            if consume_pass(outstanding) == 0:
+                if self.stopped:
+                    break
+                self.logger.error(f"Drain stalled with {outstanding} messages pending; aborting.")
+                return
+        self.logger.info(f"Stopped draining queues after shutdown request: {queues}.")
+
+    def _ensure_running(self) -> None:
+        """Reject consumption after :meth:`close` or an outstanding stop request."""
+        self._ensure_open()
+        if self.stopped:
+            raise RuntimeError("Consumer backend is stopped; call reset() before consuming again.")
 
     def stop(self) -> None:
         """Request terminal shutdown after the current delivery completes.
@@ -74,8 +130,8 @@ class ConsumerBackendBase(MindtraceABC):
         raise NotImplementedError
 
     @abstractmethod
-    def consume_until_empty(self, **kwargs) -> None:
-        """Consume messages until the queue is empty and process them."""
+    def consume_until_empty(self, *, queues: str | list[str] | None = None) -> None:
+        """Consume messages until every queue is empty and process them."""
         raise NotImplementedError
 
     @abstractmethod

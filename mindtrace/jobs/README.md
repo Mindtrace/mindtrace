@@ -175,6 +175,12 @@ queue_name = orchestrator.register(schema)
 print(queue_name)
 ```
 
+`clean_queue()` discards the jobs a queue holds and keeps the declaration.
+`delete_queue()` discards them and removes the declaration as well, so a queue
+declared again under the same name starts empty rather than serving jobs
+published before the deletion. Both discard jobs permanently; drain a queue with
+`consume_until_empty()` first if the work still matters.
+
 ### Publishing typed input directly
 
 If a schema has been registered for a queue, you can publish either:
@@ -213,10 +219,11 @@ print(attempted)
 ```
 
 `consume()` returns the number of deliveries attempted, not the number that
-completed successfully. Consumer backends use the success or failure of
-`run()` to apply their failure policy, but they do not persist or return the
-dictionary returned by `run()`. Store results explicitly if your application
-needs them.
+completed successfully. A delivery whose body does not decode is settled by the
+failure policy and counts as attempted even though `run()` never sees it.
+Consumer backends use the success or failure of `run()` to apply their failure
+policy, but they do not persist or return the dictionary returned by `run()`.
+Store results explicitly if your application needs them.
 
 With RabbitMQ, messages are acknowledged only after `run()` succeeds. Failed
 messages are dead-lettered by default (`basic_nack(requeue=False)`); when the
@@ -240,6 +247,16 @@ consumer.connect_to_orchestrator(
 )
 ```
 
+`connect_to_orchestrator()` passes its keyword arguments to the consumer
+backend, and a `RabbitMQClient` applies the same settings to every consumer it
+creates through `consumer_backend_kwargs`. Connection parameters are not among
+them: naming one raises `ValueError`, so a consumer reads from the broker its
+orchestrator publishes to.
+
+Local and Redis consumers poll their queues, and `poll_timeout` sets how long a
+blocking call waits after a sweep that found nothing. Shutdown interrupts that
+wait, so `poll_timeout` bounds polling frequency rather than shutdown latency.
+
 RabbitMQ `auto_ack=True` acknowledges deliveries before `run()` executes, so
 it is only valid with `failure_policy=ConsumerFailurePolicy.DISCARD`.
 Combining auto-acknowledgement with `REQUEUE` or `DEAD_LETTER` raises
@@ -256,11 +273,20 @@ with `REQUEUE` or `DEAD_LETTER` raises `NotImplementedError`; those policies
 require backend-specific retry or dead-letter storage that they do not yet
 provide.
 
+A RabbitMQ consume call reads every queue over one channel, so a broker error
+raised while reading a queue ends the whole call rather than skipping that
+queue: the channel that error arrives on carries the other queues too. The
+error reaches the caller as the exception Pika raised, or as
+`RabbitMQSettlementError` when the broker refuses an acknowledgement or
+rejection, and the channel and connection are released either way. Callers
+own retry and backoff around a later `consume()` call.
+
 Calling `consumer.stop()` requests graceful shutdown. An in-flight job finishes
-and is acknowledged or rejected before the blocking consume loop exits. The
-stop request is latched: later consume calls remain stopped until the caller
-explicitly invokes `consumer.reset()`. Calls made while stopped return before
-backend setup and log that an explicit reset is required.
+and is acknowledged or rejected before the blocking consume loop exits, and a
+drain in progress ends through the same shutdown path rather than reporting a
+stall. The stop request is latched: `consume()` and `consume_until_empty()`
+raise `RuntimeError` before any backend setup until the caller explicitly
+invokes `consumer.reset()`.
 RabbitMQ channels and connections close automatically whenever `consume()`
 returns; a later call reconnects.
 
@@ -274,8 +300,9 @@ queues registered by that call together.
 Finite RabbitMQ calls (`num_messages > 0`), `consume_until_empty()`, and
 `consume(..., block=False)` remain pull-based. With `block=False`, consumption
 returns as soon as no message is immediately available, even if the requested
-count has not been reached. `consume_until_empty()` drains only currently
-available RabbitMQ messages and does not wait for new work to arrive.
+count has not been reached. `consume_until_empty()` takes no `block` setting on
+any backend: it drains the work already queued and returns without waiting for
+new work to arrive.
 
 RabbitMQ invokes `Consumer.run()` synchronously on Pika's I/O thread during
 broker-pushed consumption. `Consumer.run()` must not return until processing is
@@ -301,6 +328,11 @@ consumer.consume_until_empty()
 ```
 
 That is useful for local scripts, test runs, or backlog-draining workflows.
+
+A drain ends when the queues report no remaining messages. If a pass settles
+nothing while messages are still reported, the drain logs an error and returns
+rather than polling again, so a queue that reports work it will not hand over
+cannot hold the call open.
 
 ## Backends
 
@@ -409,8 +441,8 @@ orchestrator.publish("priority_tasks", background_job, priority=10)
 ```
 
 Local priority queues preserve publish order when priorities are equal. Redis
-currently preserves duplicate payloads but does not guarantee FIFO ordering for
-equal-priority jobs; that follow-up is tracked in
+keeps duplicate payloads as distinct jobs but does not order equal-priority jobs
+by publish time; that gap is tracked in
 [#536](https://github.com/Mindtrace/mindtrace/issues/536).
 
 ### RabbitMQ priority queues

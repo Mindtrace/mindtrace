@@ -316,3 +316,30 @@ class TestConsumer:
             # Second connect should raise RuntimeError
             with pytest.raises(RuntimeError, match="Consumer already connected"):
                 dummy.connect_to_orchestator_via_backend_args(backend_args, "test_queue")
+
+
+class TestConsumerDrainSignature:
+    def test_consume_until_empty_rejects_a_block_argument(self):
+        class DummyWorker(Consumer):
+            def run(self, job_dict):
+                return {}
+
+        dummy = DummyWorker()
+        dummy.consumer_backend = MagicMock()
+
+        with pytest.raises(TypeError):
+            dummy.consume_until_empty(block=False)
+
+        dummy.consumer_backend.consume_until_empty.assert_not_called()
+
+    def test_consume_until_empty_forwards_only_the_queues(self):
+        class DummyWorker(Consumer):
+            def run(self, job_dict):
+                return {}
+
+        dummy = DummyWorker()
+        dummy.consumer_backend = MagicMock()
+
+        dummy.consume_until_empty(queues="q")
+
+        dummy.consumer_backend.consume_until_empty.assert_called_once_with(queues="q")
