@@ -176,9 +176,10 @@ See [Architectures Documentation](mindtrace/models/architectures/README.md) for 
 
 ## Inference
 
-The generic `Model[InputT, OutputT]` protocol defines task-level prediction without coupling models to HTTP requests,
-queue payloads, or another transport. Implementations own preprocessing, inference, and postprocessing; serving and
-backend integrations remain responsible for transport, scheduling, and backend-specific behavior.
+The generic `Model[InputT, OutputT]` and `EmbeddingModel[InputT, EmbeddingT]` protocols define task-level prediction
+and embedding without coupling models to HTTP requests, queue payloads, or another transport. Implementations own
+preprocessing, inference, and postprocessing; serving and backend integrations remain responsible for transport,
+scheduling, and backend-specific behavior.
 
 Implementations satisfy `Model` structurally; no Mindtrace base class is required:
 
@@ -197,6 +198,27 @@ class ImageSizeModel:
 
 model: Model[Image.Image, dict[str, Any]] = ImageSizeModel()
 result = model.predict(Image.open("tests/resources/hopper.png"), source="local")
+```
+
+Embedding implementations use the independent `EmbeddingModel` capability and expose `embed()` instead. A concrete
+class may satisfy either protocol or both:
+
+```python
+from typing import Any
+
+from PIL import Image
+
+from mindtrace.models import EmbeddingModel
+
+
+class ImageSizeEmbedder:
+    def embed(self, inputs: Image.Image, **params: Any) -> list[float]:
+        scale = float(params.get("scale", 1.0))
+        return [inputs.width * scale, inputs.height * scale]
+
+
+embedder: EmbeddingModel[Image.Image, list[float]] = ImageSizeEmbedder()
+embedding = embedder.embed(Image.open("tests/resources/hopper.png"), scale=0.5)
 ```
 
 `TorchModel` composes a processor, an `nn.Module`, and a postprocessor:
@@ -556,6 +578,7 @@ Everything below is importable directly from `mindtrace.models`:
 ```python
 from mindtrace.models import (
     # -- Inference --
+    EmbeddingModel,                 # Structural task-level embedding protocol
     Model,                          # Structural task-level prediction protocol
     TorchModel,                     # Composable processor/network/postprocessor
     HuggingFaceImageProcessor,      # Lazy raw-image and tensor preprocessing
