@@ -61,13 +61,6 @@ setup-tools = [
     "requests>=2.28.0",
     "tqdm>=4.64.0",
 ]
-dev = [
-    "pytest>=7.0",
-    "pytest-asyncio>=1.0.0",
-    "pytest-cov>=4.0",
-    "black>=23.0",
-    "ruff>=0.1.0",
-]
 
 [project.urls]
 Homepage = "https://mindtrace.ai"
