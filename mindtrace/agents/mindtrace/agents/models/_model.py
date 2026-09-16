@@ -25,6 +25,10 @@ class ModelRequestParameters:
 @dataclass(kw_only=True)
 class ModelResponse:
     text: str
+    # Reasoning channel of a thinking model, when the provider exposes one
+    # (e.g. `reasoning` / `reasoning_content` on OpenAI-compatible servers).
+    # None for non-thinking models.
+    thinking: str | None = None
     tool_calls: list[ToolCall] = field(default_factory=list)
     model_name: str | None = None
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
