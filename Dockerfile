@@ -34,9 +34,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 FROM ubuntu:24.04
 LABEL org.opencontainers.image.source="https://github.com/Mindtrace/mindtrace"
 
-# git: mindtrace-cluster clones repos. The rest: opencv-python's GUI build.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates git libgl1 libglib2.0-0 libsm6 libice6 libxext6 \
+# git: mindtrace-cluster clones repositories.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /python /python
