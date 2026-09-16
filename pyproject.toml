@@ -89,6 +89,10 @@ docs = [
 Homepage = "https://mindtrace.ai"
 Repository = "https://github.com/mindtrace/mindtrace"
 
+[tool.uv]
+# ultralytics requires the GUI build of opencv; the headless build provides the same cv2.
+override-dependencies = ["opencv-python ; sys_platform == 'never'"]
+
 [tool.uv.sources]
 mindtrace-core = { workspace = true }
 mindtrace-agents = { workspace = true }
