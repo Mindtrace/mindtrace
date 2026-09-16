@@ -274,9 +274,8 @@ docstring-code-line-length = "dynamic"
 # Ruff 0.16 formats Markdown code blocks; our docs hand-align trailing comments.
 exclude = ["*.md"]
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["mindtrace*"]
+[tool.setuptools]
+packages = []
 
 [tool.setuptools.package-data]
 "*" = ["*.ini", "*.json", "*.yml", "*.yaml"]
