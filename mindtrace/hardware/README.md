@@ -242,7 +242,7 @@ CameraManagerService.launch(port=8002, block=True)
 |---------|-----|----------|
 | Basler | pypylon | GigE industrial cameras |
 | GenICam | harvesters | GenICam-compliant cameras |
-| OpenCV | opencv-python | USB cameras, webcams |
+| OpenCV | opencv-python-headless | USB cameras, webcams |
 | Mock | Built-in | Testing, CI/CD |
 
 ### Liquid Lens & Autofocus
