@@ -64,7 +64,8 @@ class S3RegistryBackend(RegistryBackend):
                 -e MINIO_ROOT_USER=minioadmin \\
                 -e MINIO_ROOT_PASSWORD=minioadmin \\
                 -v ~/.cache/mindtrace/minio_data:/data \\
-                minio/minio server /data --console-address ":9001"
+                quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z \\
+                server /data --console-address ":9001"
 
     Usage Example::
 

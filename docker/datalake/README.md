@@ -107,6 +107,6 @@ The service image configures a single default S3-compatible mount named `minio` 
 ## Notes
 
 - This setup is intended as a local/dev deployment path, not a production HA topology.
-- The compose stack provisions the MinIO bucket on startup using a short-lived `minio/mc` helper container.
+- The compose stack provisions the MinIO bucket on startup using a short-lived `quay.io/minio/mc` helper container.
 - No Redis or RabbitMQ services are included here because the goal is a minimal datalake-focused deployment.
 
