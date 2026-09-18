@@ -1428,6 +1428,153 @@ class BaslerCameraBackend(CameraBackend):
             # Return reasonable defaults if gain feature is not available
             return [1.0, 16.0]  # Common gain range
 
+    def _has_gamma_node(self) -> bool:
+        """Return True when the camera exposes a Gamma GenICam node."""
+        try:
+            return getattr(self.camera, "Gamma", None) is not None
+        except Exception:
+            return False
+
+    def _is_gamma_writable(self) -> bool:
+        """Check whether the Gamma node exists and is writable.
+
+        Returns:
+            True if the camera exposes a writable Gamma node. Models without the
+            node raise on attribute access rather than returning None, so any
+            failure here is treated as "not available".
+        """
+        try:
+            node = getattr(self.camera, "Gamma", None)
+            if node is None:
+                return False
+            if genicam is None:  # pragma: no cover - pypylon always provides genicam when present
+                return True
+            return node.GetAccessMode() in [genicam.RW, genicam.WO]
+        except Exception:
+            return False
+
+    async def _prepare_gamma_node(self):
+        """Enable user gamma on models that gate the Gamma node.
+
+        Older Basler models (SFNC 1.x) expose ``GammaSelector`` and ``GammaEnable``;
+        the ``Gamma`` float node is only effective once the selector is set to
+        ``User`` and gamma is enabled. Newer models expose ``Gamma`` directly, in
+        which case both nodes are absent and this is a no-op.
+        """
+        for node_name, value in (("GammaSelector", "User"), ("GammaEnable", True)):
+            try:
+                node = getattr(self.camera, node_name, None)
+                if node is None:
+                    continue
+                await self._run_blocking(node.SetValue, value, timeout=self._op_timeout_s)
+            except Exception as e:
+                self.logger.debug(f"Could not set '{node_name}' for camera '{self.camera_name}': {e}")
+
+    async def set_gamma(self, gamma: Union[int, float]):
+        """Set the camera's gamma correction value.
+
+        Args:
+            gamma: Gamma value (1.0 is a linear response)
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            CameraConfigurationError: If gamma is unsupported or out of range
+            HardwareOperationError: If gamma verification fails or setting fails
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+
+        try:
+            await self._ensure_open()
+
+            gamma_range = await self.get_gamma_range()
+            if gamma_range is None:
+                raise CameraConfigurationError(f"Gamma not supported on camera '{self.camera_name}'")
+
+            min_gamma, max_gamma = gamma_range
+            if gamma < min_gamma or gamma > max_gamma:
+                raise CameraConfigurationError(
+                    f"Gamma {gamma} outside valid range [{min_gamma}, {max_gamma}] for camera '{self.camera_name}'"
+                )
+
+            await self._prepare_gamma_node()
+
+            await self._run_blocking(self.camera.Gamma.SetValue, float(gamma), timeout=self._op_timeout_s)
+            actual_gamma = await self._run_blocking(self.camera.Gamma.GetValue, timeout=self._op_timeout_s)
+
+            if not (abs(actual_gamma - gamma) < 0.01 * max(1.0, float(gamma))):
+                raise HardwareOperationError(
+                    f"Gamma verification failed for camera '{self.camera_name}': "
+                    f"requested={gamma}, actual={actual_gamma}"
+                )
+
+            self.logger.debug(f"Gamma set to {gamma} for camera '{self.camera_name}'")
+
+        except (CameraConnectionError, CameraConfigurationError):
+            raise  # Re-raise these specific errors
+        except Exception as e:
+            raise HardwareOperationError(f"Failed to set gamma for camera '{self.camera_name}': {str(e)}") from e
+
+    async def get_gamma(self) -> Optional[float]:
+        """Get current camera gamma.
+
+        Returns:
+            Current gamma value, or ``None`` when gamma is not implemented or
+            writable on this camera.
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If gamma retrieval fails on a supported camera
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+
+        try:
+            await self._ensure_open()
+
+            if await self.get_gamma_range() is None:
+                return None
+
+            return await self._run_blocking(self.camera.Gamma.GetValue, timeout=self._op_timeout_s)
+
+        except Exception as e:
+            raise HardwareOperationError(f"Failed to get gamma for camera '{self.camera_name}': {e}") from e
+
+    async def get_gamma_range(self) -> Optional[List[Union[int, float]]]:
+        """Get camera gamma range.
+
+        Returns:
+            List containing [min_gamma, max_gamma], or ``None`` when gamma is not
+            implemented or writable on this camera.
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+
+        try:
+            await self._ensure_open()
+
+            if not self._has_gamma_node():
+                return None
+
+            # SFNC 1.x Basler models gate Gamma behind GammaSelector/GammaEnable.
+            # Prepare first so capability queries match set_gamma() behaviour.
+            await self._prepare_gamma_node()
+
+            if not self._is_gamma_writable():
+                return None
+
+            min_gamma = await self._run_blocking(self.camera.Gamma.GetMin, timeout=self._op_timeout_s)
+            max_gamma = await self._run_blocking(self.camera.Gamma.GetMax, timeout=self._op_timeout_s)
+
+            return [min_gamma, max_gamma]
+
+        except Exception as e:
+            self.logger.warning(f"Gamma range not available for camera '{self.camera_name}': {str(e)}")
+            return None
+
     # Network-related functionality for GigE cameras
     async def set_bandwidth_limit(self, limit_mbps: Optional[float]):
         """Set GigE camera bandwidth limit in Mbps."""
