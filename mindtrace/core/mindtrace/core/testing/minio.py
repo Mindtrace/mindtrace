@@ -31,11 +31,44 @@ def _as_bool(value: object) -> bool:
     return bool(value)
 
 
+def _host_port_endpoint(minio_cfg: Mapping[str, Any]) -> str | None:
+    host = _non_empty(minio_cfg.get("MINIO_HOST"))
+    port = _non_empty(minio_cfg.get("MINIO_PORT"))
+    if host is None or port is None:
+        return None
+    return f"{host}:{port}"
+
+
+def _resolve_minio_endpoint(minio_cfg: Mapping[str, Any]) -> str | None:
+    """Return the MinIO endpoint, or raise if host/port and endpoint disagree.
+
+    When ``MINIO_ENDPOINT``, ``MINIO_HOST``, and ``MINIO_PORT`` are all set,
+    ``MINIO_ENDPOINT`` must equal ``{MINIO_HOST}:{MINIO_PORT}``. Prefer
+    ``MINIO_ENDPOINT`` when host/port are incomplete; compose host/port when
+    endpoint is unset (host defaults to ``localhost``).
+    """
+
+    endpoint = _non_empty(minio_cfg.get("MINIO_ENDPOINT"))
+    composed = _host_port_endpoint(minio_cfg)
+    if endpoint is not None and composed is not None and endpoint != composed:
+        raise ValueError(
+            f"MINDTRACE_MINIO.MINIO_ENDPOINT does not match MINIO_HOST:MINIO_PORT ({endpoint!r} != {composed!r})"
+        )
+    if endpoint is not None:
+        return endpoint
+    host = _non_empty(minio_cfg.get("MINIO_HOST")) or "localhost"
+    port = _non_empty(minio_cfg.get("MINIO_PORT"))
+    if port is None:
+        return None
+    return f"{host}:{port}"
+
+
 def minio_from_core_config() -> dict[str, str | None]:
     """Return MinIO endpoint/keys from CoreConfig, or empty values if unavailable.
 
     Endpoint prefers ``MINDTRACE_MINIO.MINIO_ENDPOINT``. If that is unset, it is
-    composed from ``MINIO_HOST`` and ``MINIO_PORT``.
+    composed from ``MINIO_HOST`` and ``MINIO_PORT``. If all three are set and
+    ``MINIO_ENDPOINT`` is not ``{MINIO_HOST}:{MINIO_PORT}``, raises ``ValueError``.
     """
 
     try:
@@ -43,12 +76,7 @@ def minio_from_core_config() -> dict[str, str | None]:
 
         core_config = CoreConfig()
         minio_cfg = core_config.get("MINDTRACE_MINIO", {}) or {}
-        endpoint = _non_empty(minio_cfg.get("MINIO_ENDPOINT"))
-        if endpoint is None:
-            host = _non_empty(minio_cfg.get("MINIO_HOST")) or "localhost"
-            port = minio_cfg.get("MINIO_PORT")
-            if port is not None and str(port).strip() != "":
-                endpoint = f"{host}:{port}"
+        endpoint = _resolve_minio_endpoint(minio_cfg)
         access_key = _non_empty(minio_cfg.get("MINIO_ACCESS_KEY"))
         secret_key = _non_empty(core_config.get_secret("MINDTRACE_MINIO", "MINIO_SECRET_KEY"))
         bucket = _non_empty(minio_cfg.get("MINIO_BUCKET"))
@@ -58,6 +86,8 @@ def minio_from_core_config() -> dict[str, str | None]:
             "secret_key": secret_key,
             "bucket": bucket,
         }
+    except ValueError:
+        raise
     except Exception:
         return {"endpoint": None, "access_key": None, "secret_key": None, "bucket": None}
 
@@ -111,7 +141,8 @@ class MinioBenchResources(BaseModel):
         description=(
             "S3-compatible endpoint for minio backend. When omitted, uses CoreConfig "
             "``MINDTRACE_MINIO.MINIO_ENDPOINT`` (environment, then config.ini), or "
-            "``MINIO_HOST``:``MINIO_PORT`` if endpoint is unset."
+            "``MINIO_HOST``:``MINIO_PORT`` if endpoint is unset. Raises if those "
+            "values are all set and disagree."
         ),
     )
     minio_access_key: str | None = Field(
