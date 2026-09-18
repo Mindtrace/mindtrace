@@ -7,6 +7,9 @@ else
     DOCKER_COMPOSE_CMD="docker-compose"
 fi
 
+# shellcheck source=test_stack_compose.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/test_stack_compose.sh"
+
 # Initialize variables
 SPECIFIC_PATHS=()
 PYTEST_ARGS=()
@@ -46,7 +49,7 @@ run_pytest_with_coverage() {
 
 # Tear down containers, removing volumes so no stale data leaks into future runs.
 docker_down() {
-    $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down --volumes --remove-orphans
+    mindtrace_test_compose down --volumes --remove-orphans
 }
 
 # Parse all arguments in a single pass

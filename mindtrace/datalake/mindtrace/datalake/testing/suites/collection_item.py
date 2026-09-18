@@ -18,6 +18,7 @@ from mindtrace.core import (
     TaskSchema,
     utcnow_iso,
 )
+from mindtrace.core.testing.minio import MinioBenchResources
 from mindtrace.core.testing.workloads import deterministic_payload, parse_size_bytes, run_threaded_until_deadline
 from mindtrace.datalake import Datalake
 from mindtrace.datalake.testing.mongo_resolve import resolve_mongo_triple
@@ -32,7 +33,7 @@ class DatalakeCollectionItemInput(BaseModel):
     seed_assets: int = Field(100, ge=1, description="Assets created before timed collection-item inserts.")
 
 
-class DatalakeCollectionItemResources(BaseModel):
+class DatalakeCollectionItemResources(MinioBenchResources):
     mongo_uri: str = Field("mongodb://127.0.0.1:27017", description="MongoDB URI for local backend.")
     mongo_db_name: str | None = Field(None, description="Optional Mongo database name for this run.")
     REMOTE_MONGO_DB_URI: str | None = Field(
@@ -43,16 +44,6 @@ class DatalakeCollectionItemResources(BaseModel):
         None, description="Alias for REMOTE_MONGO_DB_URI.", json_schema_extra={"secret": True}
     )
     mongo_atlas_db_name: str | None = Field(None, description="Alias for REMOTE_MONGO_DB_NAME.")
-    minio_endpoint: str = Field("localhost:9100", description="S3-compatible endpoint for minio backend.")
-    minio_access_key: str = Field(
-        "minioadmin", description="Access key for minio backend.", json_schema_extra={"secret": True}
-    )
-    minio_secret_key: str = Field(
-        "minioadmin", description="Secret key for minio backend.", json_schema_extra={"secret": True}
-    )
-    minio_bucket: str = Field("stress-registry", description="Bucket for minio backend writes.")
-    minio_prefix: str | None = Field(None, description="Optional object prefix for minio backend writes.")
-    minio_secure: bool = Field(False, description="Whether the minio endpoint uses TLS.")
     gcs_project_id: str | None = Field(None, description="GCP project ID for gcs backend.")
     gcs_bucket_name: str | None = Field(None, description="GCS bucket name for gcs backend.")
     gcs_prefix: str | None = Field(None, description="Optional object prefix for gcs backend.")

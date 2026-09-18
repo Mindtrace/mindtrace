@@ -5,16 +5,18 @@ services:
   minio:
     image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     ports:
-      - "9100:9100"  # API
-      - "9101:9101"  # Console
+      # Host API port is MINDTRACE_MINIO__MINIO_PORT (CoreConfig). Default 19000
+      # avoids colliding with a local MinIO on 9000. In-container listen stays 9000/9001.
+      - "${MINDTRACE_MINIO__MINIO_PORT:-19000}:9000"
+      - "19001:9001"
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     volumes:
       - minio_data:/data
-    command: server /data --address ":9100" --console-address ":9101"
+    command: server /data --address ":9000" --console-address ":9001"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9100/minio/health/live"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
       timeout: 20s
       retries: 3

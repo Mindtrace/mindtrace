@@ -8,6 +8,7 @@ from shutil import rmtree
 from tempfile import mkdtemp
 
 from mindtrace.core import BenchSuiteConfig
+from mindtrace.core.testing.minio import resolve_minio_bench_connection
 from mindtrace.registry import (
     AmbientAuth,
     GCSMountConfig,
@@ -48,27 +49,27 @@ def build_payload_mount(
         )
 
     if backend == "minio":
-        bucket = str(config.resources.get("minio_bucket", "stress-registry"))
+        minio = resolve_minio_bench_connection(config.resources)
         backend_prefix = str(config.resources.get("minio_prefix") or prefix)
         return (
             Mount(
                 name="stress",
                 backend=MountBackendKind.S3,
                 config=S3MountConfig(
-                    bucket=bucket,
+                    bucket=minio.bucket,
                     prefix=backend_prefix,
-                    endpoint=str(config.resources.get("minio_endpoint", "localhost:9100")),
-                    secure=_as_bool(config.resources.get("minio_secure", False)),
+                    endpoint=minio.endpoint,
+                    secure=minio.secure,
                 ),
                 auth=S3AccessKeyAuth(
-                    access_key=str(config.resources.get("minio_access_key", "minioadmin")),
-                    secret_key=str(config.resources.get("minio_secret_key", "minioadmin")),
+                    access_key=minio.access_key,
+                    secret_key=minio.secret_key,
                 ),
                 is_default=True,
                 registry_options=registry_options,
             ),
             lambda: None,
-            {"backend": "minio", "bucket": bucket, "prefix": backend_prefix},
+            {"backend": "minio", "bucket": minio.bucket, "prefix": backend_prefix},
         )
 
     if backend in {"gcs", "gcp"}:
@@ -102,11 +103,3 @@ def _required_resource(config: BenchSuiteConfig, key: str) -> str:
     if value is None or value == "":
         raise ValueError(f"Suite {config.suite_id} requires resource config key {key!r}")
     return str(value)
-
-
-def _as_bool(value: object) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)

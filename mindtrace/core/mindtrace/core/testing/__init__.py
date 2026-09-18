@@ -13,6 +13,12 @@ from mindtrace.core.testing.bench_framework import (
 )
 from mindtrace.core.testing.bench_suite import BenchTestSuite, build_bench_suite_config, coerce_bench_config
 from mindtrace.core.testing.matrix import expand_param_matrix
+from mindtrace.core.testing.minio import (
+    MinioBenchResources,
+    ResolvedMinioBenchConnection,
+    minio_from_core_config,
+    resolve_minio_bench_connection,
+)
 from mindtrace.core.testing.runner import TestRunner
 from mindtrace.core.testing.test_suite import TestSuite
 from mindtrace.core.testing.types import (
@@ -49,6 +55,10 @@ __all__ = [
     "coerce_bench_config",
     "deterministic_payload",
     "expand_param_matrix",
+    "MinioBenchResources",
+    "minio_from_core_config",
+    "ResolvedMinioBenchConnection",
+    "resolve_minio_bench_connection",
     "latency_summary",
     "parse_size_bytes",
     "run_threaded_until_deadline",

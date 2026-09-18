@@ -7,27 +7,14 @@ from pathlib import Path
 from shutil import rmtree
 from tempfile import mkdtemp
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from mindtrace.core import BenchSuiteConfig
+from mindtrace.core.testing.minio import MinioBenchResources, resolve_minio_bench_connection
 from mindtrace.registry import GCPRegistryBackend, MinioRegistryBackend, Registry
 
 
-class RegistryBackendResources(BaseModel):
-    minio_endpoint: str = Field("localhost:9100", description="S3-compatible endpoint for minio backend.")
-    minio_access_key: str = Field(
-        "minioadmin",
-        description="Access key for minio backend.",
-        json_schema_extra={"secret": True},
-    )
-    minio_secret_key: str = Field(
-        "minioadmin",
-        description="Secret key for minio backend.",
-        json_schema_extra={"secret": True},
-    )
-    minio_bucket: str = Field("stress-registry", description="Bucket for minio backend writes.")
-    minio_prefix: str | None = Field(None, description="Optional object prefix for minio backend writes.")
-    minio_secure: bool = Field(False, description="Whether the minio endpoint uses TLS.")
+class RegistryBackendResources(MinioBenchResources):
     gcs_project_id: str | None = Field(None, description="GCP project ID for gcs backend.")
     gcs_bucket_name: str | None = Field(None, description="GCS bucket name for gcs backend.")
     gcs_prefix: str | None = Field(None, description="Optional object prefix for gcs backend writes.")
@@ -55,20 +42,20 @@ def build_registry(
         return registry, cleanup, {"backend": "local", "local_path": str(registry_path)}
 
     if backend == "minio":
-        bucket = str(config.resources.get("minio_bucket", "stress-registry"))
+        minio = resolve_minio_bench_connection(config.resources)
         backend_prefix = str(config.resources.get("minio_prefix") or prefix)
         backend_obj = MinioRegistryBackend(
-            endpoint=str(config.resources.get("minio_endpoint", "localhost:9100")),
-            access_key=str(config.resources.get("minio_access_key", "minioadmin")),
-            secret_key=str(config.resources.get("minio_secret_key", "minioadmin")),
-            bucket=bucket,
-            secure=as_bool(config.resources.get("minio_secure", False)),
+            endpoint=minio.endpoint,
+            access_key=minio.access_key,
+            secret_key=minio.secret_key,
+            bucket=minio.bucket,
+            secure=minio.secure,
             prefix=backend_prefix,
         )
         return (
             Registry(backend=backend_obj, version_objects=True, mutable=True, use_cache=False),
             lambda: None,
-            {"backend": "minio", "bucket": bucket, "prefix": backend_prefix},
+            {"backend": "minio", "bucket": minio.bucket, "prefix": backend_prefix},
         )
 
     if backend in {"gcs", "gcp"}:
@@ -95,11 +82,3 @@ def required_resource(config: BenchSuiteConfig, key: str) -> str:
     if value is None or value == "":
         raise ValueError(f"Suite {config.suite_id} requires resource config key {key!r}")
     return str(value)
-
-
-def as_bool(value: object) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)

@@ -14,7 +14,13 @@ This directory contains integration tests for the mindtrace registry system, inc
 No additional setup required.
 
 ### For MinIO Backend Tests
-1. Start a MinIO server:
+1. Preferred: start the repo test stack (`scripts/docker_up.sh` exports `MINDTRACE_MINIO__MINIO_PORT=19000` and `MINDTRACE_MINIO__MINIO_ENDPOINT`):
+   ```bash
+   . scripts/docker_up.sh
+   ```
+   That exports `MINDTRACE_MINIO__MINIO_ENDPOINT` to the host API port.
+
+2. Or run a standalone MinIO on the default ports and point config at it:
    ```bash
    docker run --rm --name minio \
      -p 9000:9000 \
@@ -23,10 +29,6 @@ No additional setup required.
      -e MINIO_ROOT_PASSWORD=minioadmin \
      quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z \
      server /data --console-address ":9001"
-   ```
-
-2. Set environment variables:
-   ```bash
    export MINDTRACE_MINIO__MINIO_ENDPOINT=localhost:9000
    export MINDTRACE_MINIO__MINIO_ACCESS_KEY=minioadmin
    export MINDTRACE_MINIO__MINIO_SECRET_KEY=minioadmin
@@ -174,11 +176,14 @@ gcloud auth application-default login
 
 ### MinIO Connection Issues
 ```bash
-# Check MinIO is running
+# Test-stack host API (scripts/docker_up.sh / tests/docker-compose.yml)
+curl "http://${MINDTRACE_MINIO__MINIO_ENDPOINT:-localhost:19000}/minio/health/live"
+
+# Standalone MinIO on product ports
 curl http://localhost:9000/minio/health/live
 
-# Check MinIO logs
-docker logs minio
+# Check MinIO logs (test stack)
+docker compose -f tests/docker-compose.yml logs minio
 ```
 
 ### Test Cleanup Issues

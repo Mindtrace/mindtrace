@@ -135,7 +135,7 @@ Relevant files include:
 
 These integration environments include services such as:
 
-- MinIO
+- MinIO (host API port `MINDTRACE_MINIO__MINIO_PORT`, default 19000 in [`tests/docker-compose.yml`](./tests/docker-compose.yml) onto in-container 9000. `scripts/docker_up.sh` exports that plus `MINDTRACE_MINIO__MINIO_ENDPOINT` before `compose up` so CoreConfig matches the published port.)
 - Redis
 - RabbitMQ
 - MongoDB
