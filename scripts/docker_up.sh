@@ -8,27 +8,19 @@ else
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=test_stack_compose.sh
+. "$SCRIPT_DIR/test_stack_compose.sh"
 
-# MinIO ports (canonical: mindtrace.core.testing.local_services)
-COMPOSE_FILE="$REPO_ROOT/tests/docker-compose.yml"
-COMPOSE_ENV="$REPO_ROOT/tests/.env.minio"
-if ! (cd "$REPO_ROOT" && uv run python -c "
-from pathlib import Path
-import sys
-from mindtrace.core.testing.local_services import write_local_minio_compose_env
-write_local_minio_compose_env(Path(sys.argv[1]))
-" "$COMPOSE_ENV"); then
-    echo "error: failed to write MinIO compose env from mindtrace.core.testing.local_services" >&2
-    return 1 2>/dev/null || exit 1
-fi
 set -a
 # shellcheck disable=SC1090
-source "$COMPOSE_ENV"
+source "$MINDTRACE_MINIO_ENV"
 set +a
 
+LOCAL_MINIO_ENDPOINT="${MINIO_HOST}:${MINIO_API_PORT}"
+LOCAL_MINIO_HEALTH_URL="http://${LOCAL_MINIO_ENDPOINT}/minio/health/live"
+
 # Start docker containers
-$DOCKER_COMPOSE_CMD --env-file "$COMPOSE_ENV" -f "$COMPOSE_FILE" up -d
+mindtrace_test_compose up -d
 
 # Wait for MinIO to be healthy
 echo "Waiting for docker containers to be ready..."
@@ -52,7 +44,7 @@ until nc -z localhost 6380; do
 done
 
 echo "Flushing Redis test database..."
-$DOCKER_COMPOSE_CMD --env-file "$COMPOSE_ENV" -f "$COMPOSE_FILE" exec -T redis redis-cli -p 6380 FLUSHALL > /dev/null
+mindtrace_test_compose exec -T redis redis-cli -p 6380 FLUSHALL > /dev/null
 
 export MINDTRACE_MINIO__MINIO_ENDPOINT="$LOCAL_MINIO_ENDPOINT"
 export MINDTRACE_MINIO__MINIO_ACCESS_KEY=minioadmin

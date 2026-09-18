@@ -35,4 +35,4 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.package-data]
-"*" = ["*.ini", "*.json", "*.yml", "*.yaml"]
+"*" = ["*.ini", "*.json", "*.yml", "*.yaml", "*.env"]

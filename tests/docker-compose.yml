@@ -5,8 +5,8 @@ services:
   minio:
     image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     ports:
-      # Host ports come from mindtrace.core.testing.local_services via tests/.env.minio
-      # (scripts/docker_up.sh). Container listen ports stay MinIO defaults (9000/9001).
+      # Host/container ports come from mindtrace/core/mindtrace/core/testing/minio.env
+      # (scripts/docker_up.sh --env-file). Do not hardcode those numbers here.
       - "${MINIO_API_PORT}:${MINIO_CONTAINER_API_PORT}"
       - "${MINIO_CONSOLE_PORT}:${MINIO_CONTAINER_CONSOLE_PORT}"
     environment:
