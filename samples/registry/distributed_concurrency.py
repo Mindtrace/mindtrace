@@ -3,6 +3,7 @@ import multiprocessing as mp
 import random
 import time
 
+from mindtrace.core.testing.local_services import LOCAL_MINIO_ENDPOINT
 from mindtrace.registry import MinioRegistryBackend, Registry
 
 # Configure logging
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 def create_registry():
     """Create a new Registry instance with MinIO backend."""
     backend = MinioRegistryBackend(
-        endpoint="localhost:9100",
+        endpoint=LOCAL_MINIO_ENDPOINT,
         access_key="minioadmin",
         secret_key="minioadmin",
         bucket="mindtrace-registry",

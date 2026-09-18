@@ -1,10 +1,11 @@
 import os
 
 from mindtrace.cluster import ClusterManager, Node
+from mindtrace.core.testing.local_services import LOCAL_MINIO_API_PORT, LOCAL_MINIO_HOST
 
 if __name__ == "__main__":
-    os.environ["MINDTRACE_CLUSTER__MINIO_HOST"] = "localhost"
-    os.environ["MINDTRACE_CLUSTER__MINIO_PORT"] = "9100"
+    os.environ["MINDTRACE_CLUSTER__MINIO_HOST"] = LOCAL_MINIO_HOST
+    os.environ["MINDTRACE_CLUSTER__MINIO_PORT"] = str(LOCAL_MINIO_API_PORT)
     os.environ["MINDTRACE_CLUSTER__MINIO_ACCESS_KEY"] = "minioadmin"
     os.environ["MINDTRACE_CLUSTER__MINIO_SECRET_KEY"] = "minioadmin"
 

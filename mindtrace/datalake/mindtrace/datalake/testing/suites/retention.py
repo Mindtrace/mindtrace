@@ -18,6 +18,7 @@ from mindtrace.core import (
     TaskSchema,
     utcnow_iso,
 )
+from mindtrace.core.testing.local_services import LOCAL_MINIO_ENDPOINT
 from mindtrace.core.testing.workloads import deterministic_payload, parse_size_bytes, run_threaded_until_deadline
 from mindtrace.datalake import Datalake
 from mindtrace.datalake.testing.mongo_resolve import resolve_mongo_triple
@@ -43,7 +44,7 @@ class DatalakeRetentionResources(BaseModel):
         None, description="Alias for REMOTE_MONGO_DB_URI.", json_schema_extra={"secret": True}
     )
     mongo_atlas_db_name: str | None = Field(None, description="Alias for REMOTE_MONGO_DB_NAME.")
-    minio_endpoint: str = Field("localhost:9100", description="S3-compatible endpoint for minio backend.")
+    minio_endpoint: str = Field(LOCAL_MINIO_ENDPOINT, description="S3-compatible endpoint for minio backend.")
     minio_access_key: str = Field(
         "minioadmin", description="Access key for minio backend.", json_schema_extra={"secret": True}
     )

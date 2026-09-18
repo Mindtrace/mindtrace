@@ -9,6 +9,7 @@ import pytest
 from minio import Minio
 from minio.error import S3Error
 
+from mindtrace.core.testing.local_services import LOCAL_MINIO_ENDPOINT
 from mindtrace.storage.base import Status
 from mindtrace.storage.s3 import S3StorageHandler
 
@@ -30,13 +31,13 @@ def get_s3_config():
         try:
             config = CoreConfig()
             minio_config = config.get("MINDTRACE_MINIO", {})
-            endpoint = endpoint or minio_config.get("MINIO_ENDPOINT", "localhost:9100")
+            endpoint = endpoint or minio_config.get("MINIO_ENDPOINT", LOCAL_MINIO_ENDPOINT)
             access_key = access_key or minio_config.get("MINIO_ACCESS_KEY", "minioadmin")
             # Use get_secret() for secret key to get unmasked value
             secret_key = secret_key or config.get_secret("MINDTRACE_MINIO", "MINIO_SECRET_KEY") or "minioadmin"
         except Exception:
             # Fall back to defaults if CoreConfig fails
-            endpoint = endpoint or "localhost:9100"
+            endpoint = endpoint or LOCAL_MINIO_ENDPOINT
             access_key = access_key or "minioadmin"
             secret_key = secret_key or "minioadmin"
 

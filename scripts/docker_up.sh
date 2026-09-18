@@ -7,12 +7,31 @@ else
     DOCKER_COMPOSE_CMD="docker-compose"
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# MinIO host ports (canonical: mindtrace.core.testing.local_services)
+eval "$(cd "$REPO_ROOT" && uv run python -c "
+from mindtrace.core.testing.local_services import (
+    LOCAL_MINIO_API_PORT,
+    LOCAL_MINIO_CONSOLE_PORT,
+    LOCAL_MINIO_ENDPOINT,
+    LOCAL_MINIO_HEALTH_URL,
+    LOCAL_MINIO_HOST,
+)
+print(f'export MINIO_API_PORT={LOCAL_MINIO_API_PORT}')
+print(f'export MINIO_CONSOLE_PORT={LOCAL_MINIO_CONSOLE_PORT}')
+print(f'export MINIO_HOST={LOCAL_MINIO_HOST}')
+print(f'export LOCAL_MINIO_ENDPOINT={LOCAL_MINIO_ENDPOINT}')
+print(f'export LOCAL_MINIO_HEALTH_URL={LOCAL_MINIO_HEALTH_URL}')
+")"
+
 # Start docker containers
 $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml up -d
 
 # Wait for MinIO to be healthy
 echo "Waiting for docker containers to be ready..."
-until curl -s http://localhost:9100/minio/health/live > /dev/null; do
+until curl -s "$LOCAL_MINIO_HEALTH_URL" > /dev/null; do
     sleep 1
 done
 
@@ -34,11 +53,11 @@ done
 echo "Flushing Redis test database..."
 $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml exec -T redis redis-cli -p 6380 FLUSHALL > /dev/null
 
-export MINDTRACE_MINIO__MINIO_ENDPOINT=localhost:9100
+export MINDTRACE_MINIO__MINIO_ENDPOINT="$LOCAL_MINIO_ENDPOINT"
 export MINDTRACE_MINIO__MINIO_ACCESS_KEY=minioadmin
 export MINDTRACE_MINIO__MINIO_SECRET_KEY=minioadmin
-export MINDTRACE_CLUSTER__MINIO_HOST=localhost
-export MINDTRACE_CLUSTER__MINIO_PORT=9100
+export MINDTRACE_CLUSTER__MINIO_HOST="$MINIO_HOST"
+export MINDTRACE_CLUSTER__MINIO_PORT="$MINIO_API_PORT"
 export MINDTRACE_CLUSTER__MINIO_ACCESS_KEY=minioadmin
 export MINDTRACE_CLUSTER__MINIO_SECRET_KEY=minioadmin
 

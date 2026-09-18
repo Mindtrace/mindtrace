@@ -10,11 +10,12 @@ from tempfile import mkdtemp
 from pydantic import BaseModel, Field
 
 from mindtrace.core import BenchSuiteConfig
+from mindtrace.core.testing.local_services import LOCAL_MINIO_ENDPOINT
 from mindtrace.registry import GCPRegistryBackend, MinioRegistryBackend, Registry
 
 
 class RegistryBackendResources(BaseModel):
-    minio_endpoint: str = Field("localhost:9100", description="S3-compatible endpoint for minio backend.")
+    minio_endpoint: str = Field(LOCAL_MINIO_ENDPOINT, description="S3-compatible endpoint for minio backend.")
     minio_access_key: str = Field(
         "minioadmin",
         description="Access key for minio backend.",
@@ -58,7 +59,7 @@ def build_registry(
         bucket = str(config.resources.get("minio_bucket", "stress-registry"))
         backend_prefix = str(config.resources.get("minio_prefix") or prefix)
         backend_obj = MinioRegistryBackend(
-            endpoint=str(config.resources.get("minio_endpoint", "localhost:9100")),
+            endpoint=str(config.resources.get("minio_endpoint", LOCAL_MINIO_ENDPOINT)),
             access_key=str(config.resources.get("minio_access_key", "minioadmin")),
             secret_key=str(config.resources.get("minio_secret_key", "minioadmin")),
             bucket=bucket,

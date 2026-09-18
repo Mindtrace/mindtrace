@@ -135,7 +135,7 @@ Relevant files include:
 
 These integration environments include services such as:
 
-- MinIO
+- MinIO (ports defined in `mindtrace.core.testing.local_services` — API **19000**, console **19001**; avoids Prometheus node_exporter’s default **9100**)
 - Redis
 - RabbitMQ
 - MongoDB

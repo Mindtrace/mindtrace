@@ -8,6 +8,7 @@ from shutil import rmtree
 from tempfile import mkdtemp
 
 from mindtrace.core import BenchSuiteConfig
+from mindtrace.core.testing.local_services import LOCAL_MINIO_ENDPOINT
 from mindtrace.registry import (
     AmbientAuth,
     GCSMountConfig,
@@ -57,7 +58,9 @@ def build_payload_mount(
                 config=S3MountConfig(
                     bucket=bucket,
                     prefix=backend_prefix,
-                    endpoint=str(config.resources.get("minio_endpoint", "localhost:9100")),
+                    endpoint=str(
+                        config.resources.get("minio_endpoint", LOCAL_MINIO_ENDPOINT),
+                    ),
                     secure=_as_bool(config.resources.get("minio_secure", False)),
                 ),
                 auth=S3AccessKeyAuth(

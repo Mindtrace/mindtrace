@@ -12,6 +12,7 @@ import pytest
 from pydantic import BaseModel
 
 from mindtrace.core import Config, compute_dir_hash
+from mindtrace.core.testing.local_services import LOCAL_MINIO_ENDPOINT
 from mindtrace.registry import CloudpickleMaterializer, LocalRegistryBackend, Registry, S3RegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
@@ -4618,13 +4619,13 @@ class TestRegistryFacadeCoverage:
                 bucket="datasets",
                 endpoint="internal:9000",
                 secure=False,
-                presign_endpoint="localhost:19000",
+                presign_endpoint=LOCAL_MINIO_ENDPOINT,
                 presign_secure=False,
             ),
             auth=S3AccessKeyAuth(access_key="abc", secret_key="xyz"),
         )
         s3p_backend = Registry._backend_from_mount(s3_presign_mount)
-        assert s3p_backend.kwargs["presign_endpoint"] == "localhost:19000"
+        assert s3p_backend.kwargs["presign_endpoint"] == LOCAL_MINIO_ENDPOINT
         assert s3p_backend.kwargs["presign_secure"] is False
 
         bad_s3_mount = Mount(name="bad-s3", backend="s3", config=S3MountConfig(bucket="datasets"), auth=AmbientAuth())
