@@ -562,3 +562,93 @@ def test_store_direct_upload_unqualified_key_uses_default_mount():
         Path(staged["path"]).write_bytes(b"1")
         assert store.inspect_direct_upload_target("solo-obj", staged_target=staged)["exists"] is True
         assert store.cleanup_direct_upload_target("solo-obj", staged_target=staged) is True
+
+
+class TestStoreBugHunt:
+    """Intended-contract tests for bugs found in the Store review.
+
+    Several of these currently fail; they should pass once the issues are fixed.
+    """
+
+    def test_slash_key_parse_is_stable_when_a_matching_mount_is_added(self, basic_store):
+        """S1: `nested/path` must not change meaning just because mount `nested` appears."""
+        basic_store.save("nested/path", {"v": 1})
+        parsed_before = basic_store.parse_key("nested/path")
+        assert basic_store.load("nested/path") == {"v": 1}
+
+        with TemporaryDirectory() as extra:
+            basic_store.add_mount(Registry(backend=Path(extra)), name="nested")
+            assert basic_store.parse_key("nested/path") == parsed_before
+            assert basic_store.load("nested/path") == {"v": 1}
+
+    def test_unqualified_delete_removes_the_object_load_would_return(self, basic_store):
+        """S2: unqualified delete must target the uniquely discovered mount, not only default_mount."""
+        basic_store.save("b/item", {"ok": True})
+        assert basic_store.has_object("item") is True
+        basic_store.delete("item")
+        assert basic_store.has_object("item") is False
+        with pytest.raises(RegistryObjectNotFound):
+            basic_store.load("item")
+
+    def test_unqualified_save_does_not_make_an_existing_name_unreadable(self, basic_store):
+        """S2: saving unqualified `item` must not leave load('item') ambiguous or wrong."""
+        basic_store.save("b/item", {"from": "b"})
+        basic_store.save("item", {"from": "default"})
+        loaded = basic_store.load("item")
+        assert loaded in ({"from": "b"}, {"from": "default"})
+
+    def test_pop_without_version_deletes_all_versions(self, versioned_store):
+        """pop('name') must delete every version and return the latest value."""
+        versioned_store.save("a/x", 1, version="1.0.0")
+        versioned_store.save("a/x", 2, version="2.0.0")
+        assert versioned_store.pop("a/x") == 2
+        assert versioned_store.get_mount("a").registry.list_versions("x") == []
+
+    def test_unqualified_move_to_same_name_relocates_onto_default_mount(self, basic_store):
+        """S4: move('x', target='x') from a non-default mount must finish, not copy-then-raise."""
+        basic_store.save("b/x", {"v": 1})
+        version = basic_store.move("x", target="x")
+        assert version is not None
+        assert basic_store.load("a/x") == {"v": 1}
+        assert basic_store.has_object("b/x") is False
+
+    def test_contains_true_implies_getitem_succeeds(self, basic_store):
+        """S5: mapping invariant — if `name in store`, `store[name]` must not raise."""
+        basic_store.save("a/shared", {"from": "a"})
+        basic_store.save("b/shared", {"from": "b"})
+        assert "shared" in basic_store
+        retrieved = basic_store["shared"]
+        assert retrieved in ({"from": "a"}, {"from": "b"})
+
+    def test_missing_getitem_raises_keyerror(self, basic_store):
+        """S6: Store must follow dict protocol for missing keys (KeyError, not RegistryObjectNotFound)."""
+        with pytest.raises(KeyError):
+            _ = basic_store["missing"]
+        sentinel = object()
+        assert basic_store.get("missing", sentinel) is sentinel
+
+    def test_update_from_store_does_not_drop_same_named_objects_from_different_mounts(self):
+        """S7: Store.update(other) must not silently keep only one of two same-named source objects."""
+        with (
+            TemporaryDirectory() as d1,
+            TemporaryDirectory() as d2,
+            TemporaryDirectory() as e1,
+            TemporaryDirectory() as e2,
+        ):
+            source = Store.from_mounts(
+                [
+                    Mount(name="src_a", backend="local", config=LocalMountConfig(uri=d1), is_default=True),
+                    Mount(name="src_b", backend="local", config=LocalMountConfig(uri=d2)),
+                ]
+            )
+            source.save("src_a/item", {"from": "a"})
+            source.save("src_b/item", {"from": "b"})
+
+            dest = Store.from_mounts(
+                [
+                    Mount(name="a", backend="local", config=LocalMountConfig(uri=e1), is_default=True),
+                    Mount(name="b", backend="local", config=LocalMountConfig(uri=e2)),
+                ]
+            )
+            with pytest.raises(ValueError):
+                dest.update(source)

@@ -1685,3 +1685,12 @@ def test_create_direct_download_urls_batch_one_metadata_fetch(backend, single_fi
     assert urls[0] is not None and urls[1] is not None
     assert urls[2] is None  # missing object omitted, alignment preserved
     assert "rct=image/png" in urls[0] and "rct=image/jpeg" in urls[1]
+
+
+class TestS3RegistryBackendBugHunt:
+    def test_list_objects_preserves_slash_in_object_names(self, backend, sample_metadata):
+        """B2: listing must return `models/resnet`, not a Path.stem-truncated `resnet`."""
+        backend.save_metadata("models/resnet", "1.0.0", sample_metadata)
+        listed = backend.list_objects()
+        assert "models/resnet" in listed
+        assert "resnet" not in listed

@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import threading
@@ -9,10 +10,17 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+import yaml
 from pydantic import BaseModel
 
 from mindtrace.core import Config, compute_dir_hash
-from mindtrace.registry import CloudpickleMaterializer, LocalRegistryBackend, Registry, S3RegistryBackend
+from mindtrace.registry import (
+    BuiltInMaterializer,
+    CloudpickleMaterializer,
+    LocalRegistryBackend,
+    Registry,
+    S3RegistryBackend,
+)
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
 from mindtrace.registry.core.exceptions import (
@@ -5299,3 +5307,167 @@ def test_registry_cached_remote_direct_upload_delegates(monkeypatch, tmp_path):
         metadata=REGISTRY_BYTES_META,
     )
     assert ver == "1.0.0"
+
+
+class TestRegistryBugHunt:
+    """Intended-contract tests for bugs found in the registry review.
+
+    Several of these currently fail; they should pass once the issues are fixed.
+    """
+
+    @pytest.fixture
+    def unversioned_registry(self, temp_registry_dir):
+        return Registry(backend=temp_registry_dir, version_objects=False)
+
+    def test_save_accepts_materializer_class(self, registry):
+        """R1: save(..., materializer=SomeClass) must use that class, not builtins.type."""
+        registry.save("n", 1, materializer=BuiltInMaterializer)
+        assert registry.load("n") == 1
+        info = registry.info("n", "1.0.0")
+        assert info["materializer"].endswith("BuiltInMaterializer")
+        assert "builtins.type" not in info["materializer"]
+
+    def test_unversioned_has_object_does_not_ignore_requested_version(self, unversioned_registry):
+        """R2: an unversioned registry still has a concrete version; other versions do not exist."""
+        unversioned_registry.save("x", 1)
+        assert unversioned_registry.has_object("x", "1.0.0") is True
+        assert unversioned_registry.has_object("x", "9.9.9") is False
+
+    def test_unversioned_load_does_not_ignore_requested_version(self, unversioned_registry):
+        """R2: load of a version that was never stored must not return version 1.0.0."""
+        unversioned_registry.save("x", 1)
+        with pytest.raises(RegistryObjectNotFound):
+            unversioned_registry.load("x", "9.9.9")
+
+    def test_unversioned_save_does_not_silently_rewrite_explicit_version(self, unversioned_registry):
+        """R2: an explicit version on save must be stored or rejected, not coerced to 1.0.0."""
+        unversioned_registry.save("y", 7, version="2.0.0")
+        assert "2.0.0" in unversioned_registry.list_versions("y")
+        assert unversioned_registry.load("y", "2.0.0") == 7
+
+    def test_unversioned_delete_of_missing_name_raises(self, unversioned_registry):
+        """R3: deleting a name that does not exist must raise, including when version_objects=False."""
+        with pytest.raises(RegistryObjectNotFound):
+            unversioned_registry.delete("nope")
+
+    def test_batch_save_broadcasts_shared_metadata_dict(self, registry):
+        """R4: a single metadata dict passed to batch save applies to every item, not dropped."""
+        result = registry.save(["a", "b"], [1, 2], metadata={"desc": "shared"})
+        assert result.success_count == 2
+        assert registry.info("a", "1.0.0")["metadata"]["desc"] == "shared"
+        assert registry.info("b", "1.0.0")["metadata"]["desc"] == "shared"
+
+    def test_batch_save_broadcasts_shared_init_params_dict(self, registry):
+        """R4: a single init_params dict must not be replaced with None in batch save."""
+        result = registry.save(["a", "b"], [1, 2], init_params={"unused": True})
+        assert result.success_count == 2
+        assert registry.info("a", "1.0.0")["init_params"] == {"unused": True}
+        assert registry.info("b", "1.0.0")["init_params"] == {"unused": True}
+
+    def test_batch_save_same_name_autoincrement_assigns_distinct_versions(self, registry):
+        """R5: two version=None saves of the same name in one batch must not collide."""
+        result = registry.save(["m", "m"], [1, 2])
+        assert result.failure_count == 0
+        assert result.skipped_count == 0
+        assert result.success_count == 2
+        versions = set(registry.list_versions("m"))
+        assert len(versions) == 2
+        assert {registry.load("m", v) for v in versions} == {1, 2}
+
+    def test_reopening_registry_does_not_clobber_custom_materializers(self, temp_registry_dir):
+        """R6: defaults must not overwrite a custom materializer already stored for a type."""
+        first = Registry(backend=temp_registry_dir)
+        first.register_materializer("builtins.int", "custom.IntMaterializer")
+        assert first.registered_materializer("builtins.int") == "custom.IntMaterializer"
+
+        second = Registry(backend=temp_registry_dir)
+        assert second.registered_materializer("builtins.int") == "custom.IntMaterializer"
+
+    def test_delitem_normalizes_short_version_strings(self, registry):
+        """R7: del registry['x@1'] must delete the object stored as 1.0.0."""
+        registry.save("x", 1, version="1")
+        assert "x@1" in registry
+        del registry["x@1"]
+        assert registry.has_object("x", "1.0.0") is False
+
+    def test_delitem_resolves_latest_sentinel(self, registry):
+        """R8: del registry['x@latest'] must delete the latest version, not raise ValueError."""
+        registry.save("x", 1, version="1.0.0")
+        registry.save("x", 2, version="2.0.0")
+        del registry["x@latest"]
+        assert registry.has_object("x", "2.0.0") is False
+        assert registry.has_object("x", "1.0.0") is True
+
+    def test_pop_without_version_deletes_all_versions(self, registry):
+        """pop('name') must delete every version and return the latest value."""
+        registry.save("x", 1, version="1.0.0")
+        registry.save("x", 2, version="2.0.0")
+        assert registry.pop("x") == 2
+        assert registry.list_versions("x") == []
+        assert "x" not in registry
+
+    def test_init_params_round_trip_does_not_break_load(self, registry):
+        """R10: stored init_params must not be splatted into materializer.load() as unexpected kwargs."""
+        registry.save("n", 1, init_params={"custom_flag": True})
+        assert registry.load("n") == 1
+
+    def test_versions_cache_does_not_hide_writes_from_another_instance(self, temp_registry_dir):
+        """C5: in-memory list_versions cache must not serve a stale latest across Registry instances."""
+        writer = Registry(backend=temp_registry_dir, version_objects=True, versions_cache_ttl=3600.0)
+        reader = Registry(backend=temp_registry_dir, version_objects=True, versions_cache_ttl=3600.0)
+        writer.save("x", 1, version="1.0.0")
+        assert reader.load("x", "latest") == 1
+        writer.save("x", 2, version="2.0.0")
+        assert reader.load("x", "latest") == 2
+
+    def test_list_objects_includes_names_containing_slashes(self, registry):
+        """B1: object names with '/' must round-trip through list_objects."""
+        registry.save("models/resnet", 1)
+        assert registry.load("models/resnet") == 1
+        assert "models/resnet" in registry.list_objects()
+
+    def test_list_versions_treats_glob_metacharacters_in_names_as_literal(self, registry):
+        """B3: a name containing '*' must not glob other objects' metadata files."""
+        registry.save("foo", 1, version="1.0.0")
+        registry.save("foo*", 2, version="1.0.0")
+        assert registry.load("foo") == 1
+        assert registry.load("foo*") == 2
+        assert registry.list_versions("foo") == ["1.0.0"]
+        assert registry.list_versions("foo*") == ["1.0.0"]
+
+    def test_delete_missing_explicit_version_raises(self, registry):
+        """B4: deleting a version that does not exist must not report success."""
+        with pytest.raises(RegistryObjectNotFound):
+            registry.delete("missing", "1.0.0")
+
+    def test_corrupt_registry_metadata_does_not_silently_reinitialize(self, temp_registry_dir):
+        """B5: unreadable registry_metadata.json must not be treated as an empty new registry."""
+        registry = Registry(backend=temp_registry_dir, version_objects=True)
+        registry.save("x", 1)
+        metadata_path = Path(temp_registry_dir) / "registry_metadata.json"
+        metadata_path.write_text("this is not json {", encoding="utf-8")
+
+        with pytest.raises((json.JSONDecodeError, ValueError, OSError)):
+            Registry(backend=temp_registry_dir, version_objects=True)
+
+    def test_nested_tuples_round_trip(self, registry):
+        """M1: nested tuples must not be flattened to lists by JSON default conversion."""
+        original = (1, (2, 3))
+        registry.save("t", original)
+        loaded = registry.load("t")
+        assert loaded == original
+        assert isinstance(loaded, tuple)
+        assert isinstance(loaded[1], tuple)
+
+    def test_load_with_unimportable_class_still_returns_json_container(self, registry):
+        """M2: falling back to typing.Any must not TypeError inside the container materializer."""
+        registry.save("d", {"a": 1})
+        metadata_result = registry.backend.fetch_metadata("d", "1.0.0")
+        metadata = metadata_result[("d", "1.0.0")].metadata
+        metadata["class"] = "missing.module.DoesNotExist"
+        meta_path = registry.backend._object_metadata_path("d", "1.0.0")
+        with open(meta_path, "w") as handle:
+            yaml.safe_dump(metadata, handle)
+
+        loaded = registry.load("d")
+        assert loaded == {"a": 1}
