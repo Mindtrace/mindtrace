@@ -161,9 +161,20 @@ class TestConfigDictAccess:
         assert isinstance(settings.MINDTRACE_DIR_PATHS.ROOT, str)
         assert isinstance(settings.MINDTRACE_CLUSTER.RABBITMQ_PORT, int)
         assert isinstance(settings.MINDTRACE_MINIO.MINIO_PORT, int)
-        assert settings.MINDTRACE_MINIO.MINIO_HOST == "localhost"
-        assert settings.MINDTRACE_MINIO.MINIO_ENDPOINT == "localhost:9000"
+        assert isinstance(settings.MINDTRACE_MINIO.MINIO_HOST, str)
+        assert isinstance(settings.MINDTRACE_MINIO.MINIO_ENDPOINT, str)
         assert isinstance(settings.MINDTRACE_LOGGER.USE_STRUCTLOG, bool)
+
+    def test_minio_host_port_defaults_from_ini(self):
+        """Product defaults apply when docker_up / test-stack env is not set."""
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MINDTRACE_MINIO__MINIO_PORT", None)
+            os.environ.pop("MINDTRACE_MINIO__MINIO_HOST", None)
+            os.environ.pop("MINDTRACE_MINIO__MINIO_ENDPOINT", None)
+            settings = Config()
+            assert settings.MINDTRACE_MINIO.MINIO_PORT == 9000
+            assert settings.MINDTRACE_MINIO.MINIO_HOST == "localhost"
+            assert settings.MINDTRACE_MINIO.MINIO_ENDPOINT == "localhost:9000"
 
     def test_per_module_files_defaults_off(self):
         """PER_MODULE_FILES defaults to False from config.ini."""
