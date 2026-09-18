@@ -135,7 +135,7 @@ Relevant files include:
 
 These integration environments include services such as:
 
-- MinIO (ports defined in `mindtrace.core.testing.local_services` — API **19000**, console **19001**; avoids Prometheus node_exporter’s default **9100**)
+- MinIO (host ports in `mindtrace.core.testing.local_services` — API **19000**, console **19001**, mapped onto in-container **9000**/**9001**; avoids Prometheus node_exporter’s default **9100**. Start via `scripts/docker_up.sh` so Compose gets `tests/.env.minio`.)
 - Redis
 - RabbitMQ
 - MongoDB

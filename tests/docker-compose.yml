@@ -5,16 +5,18 @@ services:
   minio:
     image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     ports:
-      - "${MINIO_API_PORT:-19000}:${MINIO_API_PORT:-19000}"  # API; see local_services.py
-      - "${MINIO_CONSOLE_PORT:-19001}:${MINIO_CONSOLE_PORT:-19001}"  # Console
+      # Host ports come from mindtrace.core.testing.local_services via tests/.env.minio
+      # (scripts/docker_up.sh). Container listen ports stay MinIO defaults (9000/9001).
+      - "${MINIO_API_PORT}:${MINIO_CONTAINER_API_PORT}"
+      - "${MINIO_CONSOLE_PORT}:${MINIO_CONTAINER_CONSOLE_PORT}"
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     volumes:
       - minio_data:/data
-    command: server /data --address ":${MINIO_API_PORT:-19000}" --console-address ":${MINIO_CONSOLE_PORT:-19001}"
+    command: server /data --address ":${MINIO_CONTAINER_API_PORT}" --console-address ":${MINIO_CONTAINER_CONSOLE_PORT}"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${MINIO_API_PORT:-19000}/minio/health/live"]
+      test: ["CMD", "curl", "-f", "http://localhost:${MINIO_CONTAINER_API_PORT}/minio/health/live"]
       interval: 30s
       timeout: 20s
       retries: 3
