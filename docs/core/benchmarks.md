@@ -113,7 +113,7 @@ bench_results, exec_rows = runner.run_registered_benches(
     ["registry.stress.write_ceiling"],
     profile="stress",
     run_id="dev-run-1",
-    resources={},  # optional: e.g. mongo_uri, minio_endpoint from your environment
+    resources={},  # optional overlays; minio_* falls back to CoreConfig / env
 )
 for row in bench_results:
     print(row.suite_id, row.status, row.operations, row.failures)

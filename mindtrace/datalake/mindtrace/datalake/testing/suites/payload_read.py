@@ -19,6 +19,7 @@ from mindtrace.core import (
     TaskSchema,
     utcnow_iso,
 )
+from mindtrace.core.testing.minio import MinioBenchResources
 from mindtrace.core.testing.workloads import deterministic_payload, parse_size_bytes, run_threaded_until_deadline
 from mindtrace.datalake import Datalake
 from mindtrace.datalake.testing.mounts import build_payload_mount
@@ -32,19 +33,9 @@ class DatalakePayloadReadInput(BaseModel):
     read_pattern: Literal["sequential", "random"] = Field("random", description="Object selection pattern.")
 
 
-class DatalakePayloadReadResources(BaseModel):
+class DatalakePayloadReadResources(MinioBenchResources):
     mongo_uri: str = Field("mongodb://127.0.0.1:27017", description="MongoDB URI used by the datalake ODM.")
     mongo_db_name: str | None = Field(None, description="Optional Mongo database name for this run.")
-    minio_endpoint: str = Field("localhost:9000", description="S3-compatible endpoint for minio backend.")
-    minio_access_key: str = Field(
-        "minioadmin", description="Access key for minio backend.", json_schema_extra={"secret": True}
-    )
-    minio_secret_key: str = Field(
-        "minioadmin", description="Secret key for minio backend.", json_schema_extra={"secret": True}
-    )
-    minio_bucket: str = Field("stress-registry", description="Bucket for minio backend writes.")
-    minio_prefix: str | None = Field(None, description="Optional object prefix for minio backend writes.")
-    minio_secure: bool = Field(False, description="Whether the minio endpoint uses TLS.")
     gcs_project_id: str | None = Field(None, description="GCP project ID for gcs backend.")
     gcs_bucket_name: str | None = Field(None, description="GCS bucket name for gcs backend.")
     gcs_prefix: str | None = Field(None, description="Optional object prefix for gcs backend writes.")

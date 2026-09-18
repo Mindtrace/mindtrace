@@ -37,7 +37,7 @@ class RegistryWriteCeilingSuite(BenchTestSuite):
     title = "Registry stress — sustained save throughput"
     description = (
         "Measures ``Registry.save`` throughput for ``local``, ``minio``, or ``gcs`` backends "
-        "(credentials / endpoints supplied via bench ``resources``)."
+        "(minio connection falls back to CoreConfig; other credentials via bench ``resources``)."
     )
     tags = frozenset({"stress", "registry"})
     requires = ("local_disk",)
