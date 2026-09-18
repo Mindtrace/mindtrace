@@ -279,7 +279,7 @@ where = ["."]
 include = ["mindtrace*"]
 
 [tool.setuptools.package-data]
-"*" = ["*.ini", "*.json", "*.yml", "*.yaml", "*.env"]
+"*" = ["*.ini", "*.json", "*.yml", "*.yaml"]
 
 [build-system]
 requires = ["setuptools"]

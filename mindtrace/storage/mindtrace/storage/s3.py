@@ -44,8 +44,7 @@ class S3StorageHandler(StorageHandler):
             region: Optional region for bucket creation.
             presign_endpoint: Optional separate endpoint used ONLY when minting presigned
                 URLs. Needed for split-horizon deployments (e.g. MinIO reachable at an
-                internal host ``minio:9000`` for server I/O but at ``LOCAL_MINIO_ENDPOINT``
-                (see ``mindtrace.core.testing.local_services``) for
+                internal host ``minio:9000`` for server I/O but at ``localhost:19000`` for
                 browsers). Presigning is a local signing operation (no network call), so a
                 second client bound to this endpoint produces URLs whose ``Host`` the client
                 can actually reach while leaving normal I/O on ``endpoint``. When unset,

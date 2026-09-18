@@ -14,7 +14,7 @@ This directory contains integration tests for the mindtrace registry system, inc
 No additional setup required.
 
 ### For MinIO Backend Tests
-1. Preferred: start the repo test stack (ports from `mindtrace/core/mindtrace/core/testing/minio.env`):
+1. Preferred: start the repo test stack (`scripts/docker_up.sh` exports `MINDTRACE_MINIO__MINIO_PORT=19000` and `MINDTRACE_MINIO__MINIO_ENDPOINT`):
    ```bash
    . scripts/docker_up.sh
    ```

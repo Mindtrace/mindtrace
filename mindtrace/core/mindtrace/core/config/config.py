@@ -77,6 +77,8 @@ class MINDTRACE_DATALAKE(ConfigModel):
 class MINDTRACE_MINIO(ConfigModel):
     MINIO_REGISTRY_URI: str
     MINIO_ENDPOINT: str
+    MINIO_HOST: str
+    MINIO_PORT: int
     MINIO_ACCESS_KEY: str
     MINIO_SECRET_KEY: SecretStr
 

@@ -10,7 +10,6 @@ import uuid
 import pytest
 
 from mindtrace.core import Config, CoreConfig
-from mindtrace.core.testing.local_services import LOCAL_MINIO_ENDPOINT
 from mindtrace.registry import GCPRegistryBackend, LocalRegistryBackend, Registry, S3RegistryBackend
 
 
@@ -24,11 +23,11 @@ def _get_minio_config():
         try:
             config = CoreConfig()
             minio_config = config.get("MINDTRACE_MINIO", {})
-            endpoint = endpoint or minio_config.get("MINIO_ENDPOINT", LOCAL_MINIO_ENDPOINT)
+            endpoint = endpoint or minio_config.get("MINIO_ENDPOINT", "localhost:9000")
             access_key = access_key or minio_config.get("MINIO_ACCESS_KEY", "minioadmin")
             secret_key = secret_key or config.get_secret("MINDTRACE_MINIO", "MINIO_SECRET_KEY") or "minioadmin"
         except Exception:
-            endpoint = endpoint or LOCAL_MINIO_ENDPOINT
+            endpoint = endpoint or "localhost:9000"
             access_key = access_key or "minioadmin"
             secret_key = secret_key or "minioadmin"
 

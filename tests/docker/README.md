@@ -49,19 +49,18 @@ ds test --integration
 Start the pypylon service manually:
 
 ```bash
-# Start all integration services (including pypylon). MinIO host ports come from
-# mindtrace/core/mindtrace/core/testing/minio.env — do not `docker compose up`
-# the test compose file without that --env-file.
+# Start all integration services (including pypylon). MinIO host API port is
+# MINDTRACE_MINIO__MINIO_PORT (default 19000 in tests/docker-compose.yml).
 . scripts/docker_up.sh
 
 # Verify services are running
-docker compose --env-file mindtrace/core/mindtrace/core/testing/minio.env -f tests/docker-compose.yml ps
+docker compose -f tests/docker-compose.yml ps
 
 # Run tests (they will automatically use the service)
 ds test: tests/integration/mindtrace/hardware/cameras/backends/basler/
 
 # Stop services when done
-docker compose --env-file mindtrace/core/mindtrace/core/testing/minio.env -f tests/docker-compose.yml down
+docker compose -f tests/docker-compose.yml down
 ```
 
 ### Option 3: Direct Testing
@@ -236,7 +235,7 @@ jobs:
     
     - name: Stop services
       run: |
-        docker compose --env-file mindtrace/core/mindtrace/core/testing/minio.env -f tests/docker-compose.yml down
+        docker compose -f tests/docker-compose.yml down
 ```
 
 This ensures pypylon integration tests always run in CI/CD regardless of runner environment.

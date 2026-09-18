@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 from botocore.exceptions import ClientError
 
-from mindtrace.core.testing.local_services import LOCAL_MINIO_ENDPOINT, LOCAL_MINIO_HTTP_ORIGIN
 from mindtrace.storage import BatchResult, FileResult, S3StorageHandler, Status, StringResult
 
 
@@ -1216,7 +1215,7 @@ def test_presign_endpoint_uses_separate_signing_client(mock_boto3):
     """Split-horizon: a distinct presign endpoint builds a 2nd client used only to sign."""
     io_client = MagicMock(name="io")
     presign_client = MagicMock(name="presign")
-    presign_client.generate_presigned_url.return_value = f"{LOCAL_MINIO_HTTP_ORIGIN}/signed"
+    presign_client.generate_presigned_url.return_value = "http://localhost:19000/signed"
     mock_boto3.client.side_effect = [io_client, presign_client]
 
     handler = S3StorageHandler(
@@ -1225,16 +1224,16 @@ def test_presign_endpoint_uses_separate_signing_client(mock_boto3):
         access_key="a",
         secret_key="s",
         secure=False,
-        presign_endpoint=LOCAL_MINIO_ENDPOINT,
+        presign_endpoint="localhost:19000",
     )
 
     # Two clients constructed; the second is bound to the presign endpoint.
     assert mock_boto3.client.call_count == 2
-    assert mock_boto3.client.call_args_list[1].kwargs["endpoint_url"] == LOCAL_MINIO_HTTP_ORIGIN
+    assert mock_boto3.client.call_args_list[1].kwargs["endpoint_url"] == "http://localhost:19000"
     assert handler._presign_client is presign_client
 
     url = handler.get_presigned_url("k/data.txt", response_content_type="image/png")
-    assert url == f"{LOCAL_MINIO_HTTP_ORIGIN}/signed"
+    assert url == "http://localhost:19000/signed"
     # Signing goes through the presign client, never the I/O client.
     presign_client.generate_presigned_url.assert_called_once()
     io_client.generate_presigned_url.assert_not_called()

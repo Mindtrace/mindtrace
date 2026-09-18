@@ -18,7 +18,6 @@ from mindtrace.core import (
     TaskSchema,
     utcnow_iso,
 )
-from mindtrace.core.testing.local_services import LOCAL_MINIO_ENDPOINT
 from mindtrace.core.testing.workloads import deterministic_payload, parse_size_bytes, run_threaded_until_deadline
 from mindtrace.datalake import Datalake
 from mindtrace.datalake.testing.mounts import build_payload_mount
@@ -33,7 +32,7 @@ class DatalakePayloadWriteInput(BaseModel):
 class DatalakePayloadWriteResources(BaseModel):
     mongo_uri: str = Field("mongodb://127.0.0.1:27017", description="MongoDB URI used by the datalake ODM.")
     mongo_db_name: str | None = Field(None, description="Optional Mongo database name for this run.")
-    minio_endpoint: str = Field(LOCAL_MINIO_ENDPOINT, description="S3-compatible endpoint for minio backend.")
+    minio_endpoint: str = Field("localhost:9000", description="S3-compatible endpoint for minio backend.")
     minio_access_key: str = Field(
         "minioadmin",
         description="Access key for minio backend.",

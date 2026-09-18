@@ -12,14 +12,6 @@ from mindtrace.core.testing.bench_framework import (
     utcnow_iso,
 )
 from mindtrace.core.testing.bench_suite import BenchTestSuite, build_bench_suite_config, coerce_bench_config
-from mindtrace.core.testing.local_services import (
-    LOCAL_MINIO_API_PORT,
-    LOCAL_MINIO_CONSOLE_PORT,
-    LOCAL_MINIO_ENDPOINT,
-    LOCAL_MINIO_HEALTH_URL,
-    LOCAL_MINIO_HOST,
-    LOCAL_MINIO_HTTP_ORIGIN,
-)
 from mindtrace.core.testing.matrix import expand_param_matrix
 from mindtrace.core.testing.runner import TestRunner
 from mindtrace.core.testing.test_suite import TestSuite
@@ -57,12 +49,6 @@ __all__ = [
     "coerce_bench_config",
     "deterministic_payload",
     "expand_param_matrix",
-    "LOCAL_MINIO_API_PORT",
-    "LOCAL_MINIO_CONSOLE_PORT",
-    "LOCAL_MINIO_ENDPOINT",
-    "LOCAL_MINIO_HEALTH_URL",
-    "LOCAL_MINIO_HOST",
-    "LOCAL_MINIO_HTTP_ORIGIN",
     "latency_summary",
     "parse_size_bytes",
     "run_threaded_until_deadline",

@@ -11,20 +11,24 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=test_stack_compose.sh
 . "$SCRIPT_DIR/test_stack_compose.sh"
 
-set -a
-# shellcheck disable=SC1090
-source "$MINDTRACE_MINIO_ENV"
-set +a
-
-LOCAL_MINIO_ENDPOINT="${MINIO_HOST}:${MINIO_API_PORT}"
-LOCAL_MINIO_HEALTH_URL="http://${LOCAL_MINIO_ENDPOINT}/minio/health/live"
+# Test-stack host ports (product config.ini stays 9000). Export before compose up
+# so interpolation of MINDTRACE_MINIO__MINIO_PORT matches CoreConfig.
+export MINDTRACE_MINIO__MINIO_HOST=localhost
+export MINDTRACE_MINIO__MINIO_PORT=19000
+export MINDTRACE_MINIO__MINIO_ENDPOINT="${MINDTRACE_MINIO__MINIO_HOST}:${MINDTRACE_MINIO__MINIO_PORT}"
+export MINDTRACE_MINIO__MINIO_ACCESS_KEY=minioadmin
+export MINDTRACE_MINIO__MINIO_SECRET_KEY=minioadmin
+export MINDTRACE_CLUSTER__MINIO_HOST="$MINDTRACE_MINIO__MINIO_HOST"
+export MINDTRACE_CLUSTER__MINIO_PORT="$MINDTRACE_MINIO__MINIO_PORT"
+export MINDTRACE_CLUSTER__MINIO_ACCESS_KEY=minioadmin
+export MINDTRACE_CLUSTER__MINIO_SECRET_KEY=minioadmin
 
 # Start docker containers
 mindtrace_test_compose up -d
 
 # Wait for MinIO to be healthy
 echo "Waiting for docker containers to be ready..."
-until curl -s "$LOCAL_MINIO_HEALTH_URL" > /dev/null; do
+until curl -s "http://${MINDTRACE_MINIO__MINIO_ENDPOINT}/minio/health/live" > /dev/null; do
     sleep 1
 done
 
@@ -46,19 +50,11 @@ done
 echo "Flushing Redis test database..."
 mindtrace_test_compose exec -T redis redis-cli -p 6380 FLUSHALL > /dev/null
 
-export MINDTRACE_MINIO__MINIO_ENDPOINT="$LOCAL_MINIO_ENDPOINT"
-export MINDTRACE_MINIO__MINIO_ACCESS_KEY=minioadmin
-export MINDTRACE_MINIO__MINIO_SECRET_KEY=minioadmin
-export MINDTRACE_CLUSTER__MINIO_HOST="$MINIO_HOST"
-export MINDTRACE_CLUSTER__MINIO_PORT="$MINIO_API_PORT"
-export MINDTRACE_CLUSTER__MINIO_ACCESS_KEY=minioadmin
-export MINDTRACE_CLUSTER__MINIO_SECRET_KEY=minioadmin
+export MINDTRACE_CLUSTER__RABBITMQ_PORT=5673
+export MINDTRACE_CLUSTER__WORKER_PORTS_RANGE=8200-8202
 
 export MINDTRACE_WORKER__DEFAULT_REDIS_URL=redis://localhost:6380
 export MINDTRACE_CLUSTER__DEFAULT_REDIS_URL=redis://localhost:6380
-
-export MINDTRACE_CLUSTER__RABBITMQ_PORT=5673
-export MINDTRACE_CLUSTER__WORKER_PORTS_RANGE=8200-8202
 
 export REDIS_OM_URL=redis://localhost:6380
 

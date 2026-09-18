@@ -19,7 +19,6 @@ from mindtrace.registry import (
     S3MountConfig,
     Store,
 )
-from mindtrace.core.testing.local_services import LOCAL_MINIO_ENDPOINT
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core.types import OnConflict, OpResult
@@ -297,7 +296,7 @@ def test_mount_from_registry_s3_best_effort(monkeypatch):
             "endpoint": "minio.local:9000",
             "secure": False,
             # Split-horizon presign config: distinct browser-facing endpoint.
-            "presign_endpoint": LOCAL_MINIO_ENDPOINT,
+            "presign_endpoint": "localhost:19000",
             "presign_secure": False,
         },
     )()
@@ -316,7 +315,7 @@ def test_mount_from_registry_s3_best_effort(monkeypatch):
     assert isinstance(mount.config, S3MountConfig)
     assert mount.auth.mode == "ambient"
     # Split-horizon presign config survives Registry -> Mount (regression: it used to drop).
-    assert mount.config.presign_endpoint == LOCAL_MINIO_ENDPOINT
+    assert mount.config.presign_endpoint == "localhost:19000"
     assert mount.config.presign_secure is False
 
 
