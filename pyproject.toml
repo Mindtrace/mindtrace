@@ -277,9 +277,6 @@ exclude = ["*.md"]
 [tool.setuptools]
 packages = []
 
-[tool.setuptools.package-data]
-"*" = ["*.ini", "*.json", "*.yml", "*.yaml"]
-
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
