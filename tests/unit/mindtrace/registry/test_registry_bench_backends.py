@@ -1,9 +1,11 @@
-"""Registry bench backend builders resolve MinIO via CoreConfig."""
+"""Registry bench backend builders require explicit MinIO resources."""
 
 from __future__ import annotations
 
+import pytest
+
 from mindtrace.core.testing.bench_framework import BenchSuiteConfig
-from mindtrace.core.testing.minio import ResolvedMinioBenchConnection
+from mindtrace.core.testing.minio import TEST_STACK_MINIO_RESOURCES
 from mindtrace.registry.testing.suites import _backends as registry_backends
 
 
@@ -17,7 +19,7 @@ def _bench_config(resources: dict | None = None) -> BenchSuiteConfig:
     )
 
 
-def test_build_registry_minio_uses_core_config_fallback(monkeypatch) -> None:
+def test_build_registry_minio_uses_profile_resources(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
     class _FakeBackend:
@@ -26,19 +28,17 @@ def test_build_registry_minio_uses_core_config_fallback(monkeypatch) -> None:
 
     monkeypatch.setattr(registry_backends, "MinioRegistryBackend", _FakeBackend)
     monkeypatch.setattr(registry_backends, "Registry", lambda **_kwargs: object())
-    monkeypatch.setattr(
-        registry_backends,
-        "resolve_minio_bench_connection",
-        lambda resources: ResolvedMinioBenchConnection(
-            endpoint="localhost:19000",
-            access_key="ak",
-            secret_key="sk",
-            bucket="from-cfg",
-            secure=False,
-        ),
+    _registry, _cleanup, meta = registry_backends.build_registry(
+        _bench_config(dict(TEST_STACK_MINIO_RESOURCES)),
+        "minio",
+        "run-prefix",
     )
-    _registry, _cleanup, meta = registry_backends.build_registry(_bench_config(), "minio", "run-prefix")
-    assert captured["endpoint"] == "localhost:19000"
-    assert captured["bucket"] == "from-cfg"
+    assert captured["endpoint"] == TEST_STACK_MINIO_RESOURCES["minio_endpoint"]
+    assert captured["bucket"] == "stress-registry"
     assert captured["prefix"] == "run-prefix"
-    assert meta == {"backend": "minio", "bucket": "from-cfg", "prefix": "run-prefix"}
+    assert meta == {"backend": "minio", "bucket": "stress-registry", "prefix": "run-prefix"}
+
+
+def test_build_registry_minio_rejects_empty_resources() -> None:
+    with pytest.raises(ValueError, match="minio_endpoint"):
+        registry_backends.build_registry(_bench_config(), "minio", "run-prefix")

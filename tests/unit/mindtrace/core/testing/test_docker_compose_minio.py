@@ -28,3 +28,14 @@ def test_docker_up_exports_minio_endpoint_before_compose_up() -> None:
     assert "minio.env" not in docker_up
     helper = (_repo_root() / "scripts" / "test_stack_compose.sh").read_text(encoding="utf-8")
     assert "--env-file" not in helper
+
+
+def test_run_tests_sources_docker_up_for_stress() -> None:
+    """ds test --stress must export test-stack MinIO before pytest, not product :9000."""
+    run_tests = (_repo_root() / "scripts" / "run_tests.sh").read_text(encoding="utf-8")
+    stress_at = run_tests.index("--stress)")
+    needs_docker_at = run_tests.index("NEEDS_DOCKER=true", stress_at)
+    next_case_at = run_tests.index("--utils)", stress_at)
+    assert needs_docker_at < next_case_at
+    assert "tests/stress/*" in run_tests
+    assert '[ "$RUN_STRESS" = true ]' in run_tests

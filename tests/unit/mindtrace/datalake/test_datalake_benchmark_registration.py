@@ -47,3 +47,8 @@ def test_datalake_testing_registers_expected_ids_and_schemas() -> None:
     assert "concurrency" in input_properties
     assert input_properties["concurrency"]["default"] == 1
     assert mongo_insert.profiles["stress"]["concurrency"] == 1
+
+    from mindtrace.core.testing.minio import TEST_STACK_MINIO_ENDPOINT
+
+    payload_write = TestRunner.get_suite_schema("datalake.stress.payload_write_ceiling")
+    assert payload_write.profiles["stress"]["resources"]["minio_endpoint"] == TEST_STACK_MINIO_ENDPOINT

@@ -18,6 +18,7 @@ from mindtrace.core import (
     TaskSchema,
     utcnow_iso,
 )
+from mindtrace.core.testing.minio import TEST_STACK_MINIO_RESOURCES
 from mindtrace.core.testing.workloads import deterministic_payload, parse_size_bytes, run_threaded_until_deadline
 from mindtrace.registry.testing.suites._backends import RegistryBackendResources, build_registry
 
@@ -37,7 +38,7 @@ class RegistryWriteCeilingSuite(BenchTestSuite):
     title = "Registry stress — sustained save throughput"
     description = (
         "Measures ``Registry.save`` throughput for ``local``, ``minio``, or ``gcs`` backends "
-        "(minio connection falls back to CoreConfig; other credentials via bench ``resources``)."
+        "(minio connection from bench ``resources`` / suite profiles; other backends via ``resources``)."
     )
     tags = frozenset({"stress", "registry"})
     requires = ("local_disk",)
@@ -55,6 +56,7 @@ class RegistryWriteCeilingSuite(BenchTestSuite):
                 "backend": "local",
                 "payload_size": "64KiB",
                 "concurrency": 1,
+                "resources": dict(TEST_STACK_MINIO_RESOURCES),
             },
         },
     )

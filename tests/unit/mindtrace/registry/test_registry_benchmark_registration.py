@@ -38,3 +38,8 @@ def test_registry_testing_registers_expected_ids_and_schemas() -> None:
 
     for suite_id in expected:
         _assert_suite_schema_contract(TestRunner.get_suite_schema(suite_id), suite_id=suite_id)
+
+    from mindtrace.core.testing.minio import TEST_STACK_MINIO_ENDPOINT
+
+    write = TestRunner.get_suite_schema("registry.stress.write_ceiling")
+    assert write.profiles["stress"]["resources"]["minio_endpoint"] == TEST_STACK_MINIO_ENDPOINT

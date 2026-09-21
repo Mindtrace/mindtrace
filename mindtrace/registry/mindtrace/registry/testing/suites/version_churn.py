@@ -18,6 +18,7 @@ from mindtrace.core import (
     TaskSchema,
     utcnow_iso,
 )
+from mindtrace.core.testing.minio import TEST_STACK_MINIO_RESOURCES
 from mindtrace.core.testing.workloads import deterministic_payload, parse_size_bytes, run_threaded_until_deadline
 from mindtrace.registry.testing.suites._backends import RegistryBackendResources, build_registry
 
@@ -52,6 +53,7 @@ class RegistryVersionChurnSuite(BenchTestSuite):
                 "concurrency": 1,
                 "names": 10,
                 "load_latest": True,
+                "resources": dict(TEST_STACK_MINIO_RESOURCES),
             },
         },
     )

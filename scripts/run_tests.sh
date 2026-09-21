@@ -68,6 +68,7 @@ while [[ $# -gt 0 ]]; do
         --stress)
             RUN_STRESS=true
             RUN_ALL=false
+            NEEDS_DOCKER=true
             shift
             ;;
         --utils)
@@ -85,7 +86,7 @@ while [[ $# -gt 0 ]]; do
             SPECIFIC_PATHS+=("$1")
             echo "Detected specific test path: $1"
             # Check if any path requires docker containers
-            if [[ "$1" == tests/integration/* ]] || [[ "$1" == tests/integration ]] || [[ "$1" == tests/utils/* ]] || [[ "$1" == tests/utils ]]; then
+            if [[ "$1" == tests/integration/* ]] || [[ "$1" == tests/integration ]] || [[ "$1" == tests/utils/* ]] || [[ "$1" == tests/utils ]] || [[ "$1" == tests/stress/* ]] || [[ "$1" == tests/stress ]]; then
                 NEEDS_DOCKER=true
                 echo "Docker containers required for path: $1"
             fi
@@ -110,9 +111,9 @@ fi
 if [ ${#SPECIFIC_PATHS[@]} -gt 0 ]; then
     echo "Running tests for specific paths: ${SPECIFIC_PATHS[*]}"
 
-    # Start docker containers if any integration tests are included
+    # Start docker containers if integration, utils, or stress paths are included
     if [ "$NEEDS_DOCKER" = true ]; then
-        echo "Starting docker containers for integration tests..."
+        echo "Starting docker containers for tests..."
         . scripts/docker_up.sh
     fi
 
@@ -146,8 +147,9 @@ if [ "$RUN_ALL" = true ]; then
     # RUN_STRESS and RUN_UTILS remain false - only run when explicitly requested
 fi
 
-# Start Docker containers if running integration, utils tests, or specific docker-requiring paths
-if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
+# Start Docker containers if running integration, utils, stress, or specific docker-requiring paths.
+# Stress must source docker_up.sh so CoreConfig MinIO is localhost:19000 (test stack), not ini :9000.
+if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$RUN_STRESS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
     echo "Starting docker containers..."
     . scripts/docker_up.sh
 fi

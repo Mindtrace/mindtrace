@@ -18,7 +18,7 @@ from mindtrace.core import (
     TaskSchema,
     utcnow_iso,
 )
-from mindtrace.core.testing.minio import MinioBenchResources
+from mindtrace.core.testing.minio import TEST_STACK_MINIO_RESOURCES, MinioBenchResources
 from mindtrace.core.testing.workloads import deterministic_payload, parse_size_bytes, run_threaded_until_deadline
 from mindtrace.datalake import Datalake
 from mindtrace.datalake.testing.mongo_resolve import resolve_mongo_triple
@@ -78,7 +78,7 @@ class DatalakeCreateAssetFromObjectSuite(BenchTestSuite):
                 "mongo_backend": "local",
                 "payload_size": "64KiB",
                 "concurrency": 1,
-                "resources": {"mongo_uri": "mongodb://127.0.0.1:27017"},
+                "resources": {"mongo_uri": "mongodb://127.0.0.1:27017", **TEST_STACK_MINIO_RESOURCES},
             },
         },
     )

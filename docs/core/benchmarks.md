@@ -113,7 +113,7 @@ bench_results, exec_rows = runner.run_registered_benches(
     ["registry.stress.write_ceiling"],
     profile="stress",
     run_id="dev-run-1",
-    resources={},  # optional overlays; minio_* falls back to CoreConfig / env
+    resources={},  # optional overlays; minio_* must be set on the suite profile or here
 )
 for row in bench_results:
     print(row.suite_id, row.status, row.operations, row.failures)

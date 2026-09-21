@@ -1,57 +1,33 @@
-"""Tests for bench-suite MinIO CoreConfig resolution."""
+"""Tests for bench-suite MinIO resource resolution."""
 
 from __future__ import annotations
 
-import mindtrace.core.testing.minio as minio_mod
+import pytest
+
 from mindtrace.core.testing.minio import (
+    TEST_STACK_MINIO_ENDPOINT,
+    TEST_STACK_MINIO_RESOURCES,
     MinioBenchResources,
     ResolvedMinioBenchConnection,
-    minio_from_core_config,
     resolve_minio_bench_connection,
 )
 
 
-def test_minio_from_core_config_reads_endpoint_env(monkeypatch) -> None:
-    monkeypatch.setenv("MINDTRACE_MINIO__MINIO_ENDPOINT", "localhost:19000")
-    monkeypatch.setenv("MINDTRACE_MINIO__MINIO_ACCESS_KEY", "from-env")
-    monkeypatch.setenv("MINDTRACE_MINIO__MINIO_SECRET_KEY", "env-secret")
-    cfg = minio_from_core_config()
-    assert cfg["endpoint"] == "localhost:19000"
-    assert cfg["access_key"] == "from-env"
-    assert cfg["secret_key"] == "env-secret"
+def test_resolve_requires_explicit_endpoint() -> None:
+    with pytest.raises(ValueError, match="minio_endpoint"):
+        resolve_minio_bench_connection({})
 
 
-def test_minio_from_core_config_reads_endpoint_from_config(monkeypatch) -> None:
-    class _Cfg:
-        def get(self, key, default=None):
-            if key == "MINDTRACE_MINIO":
-                return {
-                    "MINIO_ENDPOINT": "127.0.0.1:19000",
-                    "MINIO_ACCESS_KEY": "ak",
-                }
-            return default
-
-        def get_secret(self, *_path):
-            return "sk"
-
-    monkeypatch.setattr("mindtrace.core.config.CoreConfig", lambda: _Cfg())
-    cfg = minio_from_core_config()
-    assert cfg["endpoint"] == "127.0.0.1:19000"
-    assert cfg["access_key"] == "ak"
-    assert cfg["secret_key"] == "sk"
+def test_resolve_requires_keys_when_endpoint_set() -> None:
+    with pytest.raises(ValueError, match="minio_access_key"):
+        resolve_minio_bench_connection({"minio_endpoint": "localhost:19000"})
+    with pytest.raises(ValueError, match="minio_secret_key"):
+        resolve_minio_bench_connection(
+            {"minio_endpoint": "localhost:19000", "minio_access_key": "ak"},
+        )
 
 
-def test_resolve_prefers_explicit_resources(monkeypatch) -> None:
-    monkeypatch.setattr(
-        minio_mod,
-        "minio_from_core_config",
-        lambda: {
-            "endpoint": "localhost:19000",
-            "access_key": "cfg-key",
-            "secret_key": "cfg-secret",
-            "bucket": "cfg-bucket",
-        },
-    )
+def test_resolve_uses_explicit_resources() -> None:
     resolved = resolve_minio_bench_connection(
         {
             "minio_endpoint": "explicit:1",
@@ -70,21 +46,11 @@ def test_resolve_prefers_explicit_resources(monkeypatch) -> None:
     )
 
 
-def test_resolve_falls_back_to_core_config(monkeypatch) -> None:
-    monkeypatch.setattr(
-        minio_mod,
-        "minio_from_core_config",
-        lambda: {
-            "endpoint": "localhost:19000",
-            "access_key": "cfg-key",
-            "secret_key": "cfg-secret",
-            "bucket": None,
-        },
-    )
-    resolved = resolve_minio_bench_connection({})
-    assert resolved.endpoint == "localhost:19000"
-    assert resolved.access_key == "cfg-key"
-    assert resolved.secret_key == "cfg-secret"
+def test_resolve_test_stack_profile_resources() -> None:
+    resolved = resolve_minio_bench_connection(TEST_STACK_MINIO_RESOURCES)
+    assert resolved.endpoint == TEST_STACK_MINIO_ENDPOINT
+    assert resolved.access_key == "minioadmin"
+    assert resolved.secret_key == "minioadmin"
     assert resolved.bucket == "stress-registry"
     assert resolved.secure is False
 

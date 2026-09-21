@@ -50,6 +50,8 @@ ds test --integration
 ds test --stress
 ```
 
+This starts the same Docker test stack as integration tests (via `scripts/docker_up.sh`). MinIO is published on host **19000**. First-party bench suites that can use MinIO pin that endpoint on their stress **profiles** (`resources.minio_endpoint`); they do not read CoreConfig for the port.
+
 ### Explicit unit + integration
 
 ```bash
@@ -135,7 +137,7 @@ Relevant files include:
 
 These integration environments include services such as:
 
-- MinIO (host API **19000** → container 9000 in [`tests/docker-compose.yml`](./tests/docker-compose.yml). `scripts/docker_up.sh` exports `MINDTRACE_MINIO__MINIO_ENDPOINT=localhost:19000` before `compose up`.)
+- MinIO (host API **19000** → container 9000 in [`tests/docker-compose.yml`](./tests/docker-compose.yml). `scripts/docker_up.sh` exports `MINDTRACE_MINIO__MINIO_ENDPOINT=localhost:19000` before `compose up`. Integration, utils, and `ds test --stress` all source that script.)
 - Redis
 - RabbitMQ
 - MongoDB
