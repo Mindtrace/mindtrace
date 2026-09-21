@@ -96,8 +96,6 @@ REMOTE_MONGO_DB_NAME = mindtrace_stress_atlas
 [MINDTRACE_MINIO]
 MINIO_REGISTRY_URI = http://localhost:9000
 MINIO_ENDPOINT = localhost:9000
-MINIO_HOST = localhost
-MINIO_PORT = 9000
 MINIO_ACCESS_KEY = minioadmin
 MINIO_SECRET_KEY = minioadmin
 

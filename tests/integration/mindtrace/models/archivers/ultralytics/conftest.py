@@ -6,7 +6,7 @@ ultralytics model weights. They are skipped when MinIO is not available.
 MinIO connection settings follow the same resolution as the rest of the integration
 suite (``CoreConfig``: env vars such as ``MINDTRACE_MINIO__MINIO_ENDPOINT`` →
 ``config.ini``). ``scripts/docker_up.sh`` exports the test-stack host port
-(``MINDTRACE_MINIO__MINIO_PORT=19000``) when running ``ds test`` / ``run_tests.sh``.
+(``MINDTRACE_MINIO__MINIO_ENDPOINT=localhost:19000``) when running ``ds test`` / ``run_tests.sh``.
 """
 
 import os

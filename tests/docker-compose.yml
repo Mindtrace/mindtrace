@@ -5,9 +5,8 @@ services:
   minio:
     image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     ports:
-      # Host API port is MINDTRACE_MINIO__MINIO_PORT (CoreConfig). Default 19000
-      # avoids colliding with a local MinIO on 9000. In-container listen stays 9000/9001.
-      - "${MINDTRACE_MINIO__MINIO_PORT:-19000}:9000"
+      # Host 19000 avoids colliding with a local MinIO on 9000. In-container listen stays 9000/9001.
+      - "19000:9000"
       - "19001:9001"
     environment:
       MINIO_ROOT_USER: minioadmin

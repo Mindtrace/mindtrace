@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 import mindtrace.core.testing.minio as minio_mod
 from mindtrace.core.testing.minio import (
     MinioBenchResources,
@@ -15,8 +13,6 @@ from mindtrace.core.testing.minio import (
 
 def test_minio_from_core_config_reads_endpoint_env(monkeypatch) -> None:
     monkeypatch.setenv("MINDTRACE_MINIO__MINIO_ENDPOINT", "localhost:19000")
-    monkeypatch.setenv("MINDTRACE_MINIO__MINIO_HOST", "localhost")
-    monkeypatch.setenv("MINDTRACE_MINIO__MINIO_PORT", "19000")
     monkeypatch.setenv("MINDTRACE_MINIO__MINIO_ACCESS_KEY", "from-env")
     monkeypatch.setenv("MINDTRACE_MINIO__MINIO_SECRET_KEY", "env-secret")
     cfg = minio_from_core_config()
@@ -25,56 +21,12 @@ def test_minio_from_core_config_reads_endpoint_env(monkeypatch) -> None:
     assert cfg["secret_key"] == "env-secret"
 
 
-def test_minio_from_core_config_rejects_host_port_endpoint_mismatch(monkeypatch) -> None:
+def test_minio_from_core_config_reads_endpoint_from_config(monkeypatch) -> None:
     class _Cfg:
         def get(self, key, default=None):
             if key == "MINDTRACE_MINIO":
                 return {
-                    "MINIO_ENDPOINT": "localhost:9000",
-                    "MINIO_HOST": "localhost",
-                    "MINIO_PORT": 19000,
-                    "MINIO_ACCESS_KEY": "ak",
-                }
-            return default
-
-        def get_secret(self, *_path):
-            return "sk"
-
-    monkeypatch.setattr("mindtrace.core.config.CoreConfig", lambda: _Cfg())
-    with pytest.raises(ValueError, match="does not match MINIO_HOST:MINIO_PORT"):
-        minio_from_core_config()
-    with pytest.raises(ValueError, match="does not match MINIO_HOST:MINIO_PORT"):
-        resolve_minio_bench_connection({})
-
-
-def test_minio_from_core_config_accepts_matching_host_port_endpoint(monkeypatch) -> None:
-    class _Cfg:
-        def get(self, key, default=None):
-            if key == "MINDTRACE_MINIO":
-                return {
-                    "MINIO_ENDPOINT": "localhost:19000",
-                    "MINIO_HOST": "localhost",
-                    "MINIO_PORT": 19000,
-                    "MINIO_ACCESS_KEY": "ak",
-                }
-            return default
-
-        def get_secret(self, *_path):
-            return "sk"
-
-    monkeypatch.setattr("mindtrace.core.config.CoreConfig", lambda: _Cfg())
-    cfg = minio_from_core_config()
-    assert cfg["endpoint"] == "localhost:19000"
-
-
-def test_minio_from_core_config_composes_host_port_when_endpoint_empty(monkeypatch) -> None:
-    class _Cfg:
-        def get(self, key, default=None):
-            if key == "MINDTRACE_MINIO":
-                return {
-                    "MINIO_ENDPOINT": "",
-                    "MINIO_HOST": "127.0.0.1",
-                    "MINIO_PORT": 19000,
+                    "MINIO_ENDPOINT": "127.0.0.1:19000",
                     "MINIO_ACCESS_KEY": "ak",
                 }
             return default

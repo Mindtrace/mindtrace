@@ -11,15 +11,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=test_stack_compose.sh
 . "$SCRIPT_DIR/test_stack_compose.sh"
 
-# Test-stack host ports (product config.ini stays 9000). Export before compose up
-# so interpolation of MINDTRACE_MINIO__MINIO_PORT matches CoreConfig.
-export MINDTRACE_MINIO__MINIO_HOST=localhost
-export MINDTRACE_MINIO__MINIO_PORT=19000
-export MINDTRACE_MINIO__MINIO_ENDPOINT="${MINDTRACE_MINIO__MINIO_HOST}:${MINDTRACE_MINIO__MINIO_PORT}"
+# Test stack publishes MinIO on host 19000 (see tests/docker-compose.yml). Product
+# config.ini stays MINIO_ENDPOINT=localhost:9000; export endpoint before compose up.
+export MINDTRACE_MINIO__MINIO_ENDPOINT=localhost:19000
 export MINDTRACE_MINIO__MINIO_ACCESS_KEY=minioadmin
 export MINDTRACE_MINIO__MINIO_SECRET_KEY=minioadmin
-export MINDTRACE_CLUSTER__MINIO_HOST="$MINDTRACE_MINIO__MINIO_HOST"
-export MINDTRACE_CLUSTER__MINIO_PORT="$MINDTRACE_MINIO__MINIO_PORT"
+export MINDTRACE_CLUSTER__MINIO_HOST=localhost
+export MINDTRACE_CLUSTER__MINIO_PORT=19000
 export MINDTRACE_CLUSTER__MINIO_ACCESS_KEY=minioadmin
 export MINDTRACE_CLUSTER__MINIO_SECRET_KEY=minioadmin
 

@@ -49,8 +49,8 @@ ds test --integration
 Start the pypylon service manually:
 
 ```bash
-# Start all integration services (including pypylon). MinIO host API port is
-# MINDTRACE_MINIO__MINIO_PORT (default 19000 in tests/docker-compose.yml).
+# Start all integration services (including pypylon). MinIO is host 19000 in tests/docker-compose.yml;
+# docker_up.sh exports MINDTRACE_MINIO__MINIO_ENDPOINT=localhost:19000.
 . scripts/docker_up.sh
 
 # Verify services are running

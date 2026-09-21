@@ -160,20 +160,14 @@ class TestConfigDictAccess:
         settings = Config()
         assert isinstance(settings.MINDTRACE_DIR_PATHS.ROOT, str)
         assert isinstance(settings.MINDTRACE_CLUSTER.RABBITMQ_PORT, int)
-        assert isinstance(settings.MINDTRACE_MINIO.MINIO_PORT, int)
-        assert isinstance(settings.MINDTRACE_MINIO.MINIO_HOST, str)
         assert isinstance(settings.MINDTRACE_MINIO.MINIO_ENDPOINT, str)
         assert isinstance(settings.MINDTRACE_LOGGER.USE_STRUCTLOG, bool)
 
-    def test_minio_host_port_defaults_from_ini(self):
+    def test_minio_endpoint_defaults_from_ini(self):
         """Product defaults apply when docker_up / test-stack env is not set."""
         with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("MINDTRACE_MINIO__MINIO_PORT", None)
-            os.environ.pop("MINDTRACE_MINIO__MINIO_HOST", None)
             os.environ.pop("MINDTRACE_MINIO__MINIO_ENDPOINT", None)
             settings = Config()
-            assert settings.MINDTRACE_MINIO.MINIO_PORT == 9000
-            assert settings.MINDTRACE_MINIO.MINIO_HOST == "localhost"
             assert settings.MINDTRACE_MINIO.MINIO_ENDPOINT == "localhost:9000"
 
     def test_per_module_files_defaults_off(self):
@@ -189,19 +183,10 @@ class TestConfigDictAccess:
             settings = Config()
             assert settings.MINDTRACE_LOGGER.PER_MODULE_FILES is True
 
-    def test_minio_port_env_override(self):
-        """MINDTRACE_MINIO__MINIO_PORT overrides config.ini."""
-        with patch.dict(
-            os.environ,
-            {
-                "MINDTRACE_MINIO__MINIO_PORT": "19000",
-                "MINDTRACE_MINIO__MINIO_HOST": "localhost",
-                "MINDTRACE_MINIO__MINIO_ENDPOINT": "localhost:19000",
-            },
-        ):
+    def test_minio_endpoint_env_override(self):
+        """MINDTRACE_MINIO__MINIO_ENDPOINT overrides config.ini."""
+        with patch.dict(os.environ, {"MINDTRACE_MINIO__MINIO_ENDPOINT": "localhost:19000"}):
             settings = Config()
-            assert settings.MINDTRACE_MINIO.MINIO_PORT == 19000
-            assert settings.MINDTRACE_MINIO.MINIO_HOST == "localhost"
             assert settings.MINDTRACE_MINIO.MINIO_ENDPOINT == "localhost:19000"
 
     def test_init_with_positional_settings_dict(self):
@@ -305,8 +290,6 @@ MAX_PAGE_LIMIT = 500
 [MINDTRACE_MINIO]
 MINIO_REGISTRY_URI = http://localhost:9000
 MINIO_ENDPOINT = localhost:9000
-MINIO_HOST = localhost
-MINIO_PORT = 9000
 MINIO_ACCESS_KEY = minioadmin
 MINIO_SECRET_KEY = minioadmin
 
