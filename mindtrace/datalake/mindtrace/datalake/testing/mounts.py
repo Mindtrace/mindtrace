@@ -57,7 +57,7 @@ def build_payload_mount(
                 config=S3MountConfig(
                     bucket=bucket,
                     prefix=backend_prefix,
-                    endpoint=str(config.resources.get("minio_endpoint", "localhost:9100")),
+                    endpoint=str(config.resources.get("minio_endpoint", "localhost:19000")),
                     secure=_as_bool(config.resources.get("minio_secure", False)),
                 ),
                 auth=S3AccessKeyAuth(

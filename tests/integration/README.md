@@ -174,11 +174,14 @@ gcloud auth application-default login
 
 ### MinIO Connection Issues
 ```bash
-# Check MinIO is running
+# Test-stack host API (scripts/docker_up.sh / tests/docker-compose.yml)
+curl http://localhost:19000/minio/health/live
+
+# Standalone MinIO on product ports
 curl http://localhost:9000/minio/health/live
 
-# Check MinIO logs
-docker logs minio
+# Check MinIO logs (test stack)
+docker compose -f tests/docker-compose.yml logs minio
 ```
 
 ### Test Cleanup Issues

@@ -30,13 +30,13 @@ def get_s3_config():
         try:
             config = CoreConfig()
             minio_config = config.get("MINDTRACE_MINIO", {})
-            endpoint = endpoint or minio_config.get("MINIO_ENDPOINT", "localhost:9100")
+            endpoint = endpoint or minio_config.get("MINIO_ENDPOINT", "localhost:19000")
             access_key = access_key or minio_config.get("MINIO_ACCESS_KEY", "minioadmin")
             # Use get_secret() for secret key to get unmasked value
             secret_key = secret_key or config.get_secret("MINDTRACE_MINIO", "MINIO_SECRET_KEY") or "minioadmin"
         except Exception:
             # Fall back to defaults if CoreConfig fails
-            endpoint = endpoint or "localhost:9100"
+            endpoint = endpoint or "localhost:19000"
             access_key = access_key or "minioadmin"
             secret_key = secret_key or "minioadmin"
 
