@@ -135,10 +135,10 @@ Relevant files include:
 
 These integration environments include services such as:
 
-- MinIO
+- MinIO (host API **19000** → container 9000 in [`tests/docker-compose.yml`](./tests/docker-compose.yml). `scripts/docker_up.sh` exports `MINDTRACE_MINIO__MINIO_ENDPOINT=localhost:19000`. Integration and utils source that script.)
 - Redis
 - RabbitMQ
-- MongoDB
+- MongoDB (host **27018** → container 27017 in [`tests/docker-compose.yml`](./tests/docker-compose.yml). Bench suite defaults use `mongodb://127.0.0.1:27018`.)
 
 If integration tests fail unexpectedly, make sure Docker is available and healthy.
 

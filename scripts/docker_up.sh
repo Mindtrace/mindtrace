@@ -12,7 +12,7 @@ $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml up -d
 
 # Wait for MinIO to be healthy
 echo "Waiting for docker containers to be ready..."
-until curl -s http://localhost:9100/minio/health/live > /dev/null; do
+until curl -s http://localhost:19000/minio/health/live > /dev/null; do
     sleep 1
 done
 
@@ -34,11 +34,11 @@ done
 echo "Flushing Redis test database..."
 $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml exec -T redis redis-cli -p 6380 FLUSHALL > /dev/null
 
-export MINDTRACE_MINIO__MINIO_ENDPOINT=localhost:9100
+export MINDTRACE_MINIO__MINIO_ENDPOINT=localhost:19000
 export MINDTRACE_MINIO__MINIO_ACCESS_KEY=minioadmin
 export MINDTRACE_MINIO__MINIO_SECRET_KEY=minioadmin
 export MINDTRACE_CLUSTER__MINIO_HOST=localhost
-export MINDTRACE_CLUSTER__MINIO_PORT=9100
+export MINDTRACE_CLUSTER__MINIO_PORT=19000
 export MINDTRACE_CLUSTER__MINIO_ACCESS_KEY=minioadmin
 export MINDTRACE_CLUSTER__MINIO_SECRET_KEY=minioadmin
 
