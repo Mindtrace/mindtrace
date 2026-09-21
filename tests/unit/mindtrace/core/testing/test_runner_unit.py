@@ -46,7 +46,13 @@ class SampleBenchSuite(BenchTestSuite):
     suite_id = "unit.testing.sample.bench"
     title = "Sample Bench"
     tags = frozenset({"smoke", "unit"})
-    profiles = {"smoke": {"duration_seconds": 0.1, "resources": {"from_profile": True}}}
+    profiles = {
+        "smoke": {
+            "duration_seconds": 0.1,
+            "mode": "profile",
+            "resources": {"from_profile": True},
+        }
+    }
 
     def execute_bench(self, config: BenchSuiteConfig, reporter: BenchReporter) -> BenchResult:
         now = utcnow_iso()
@@ -58,7 +64,11 @@ class SampleBenchSuite(BenchTestSuite):
             duration_seconds=0.1,
             operations=1,
             successes=1,
-            metrics={"from_profile": config.resources["from_profile"], "from_call": config.resources["from_call"]},
+            metrics={
+                "from_profile": config.resources["from_profile"],
+                "from_call": config.resources["from_call"],
+                "mode": config.parameters["mode"],
+            },
         )
 
 
@@ -89,13 +99,14 @@ def test_runner_runs_registered_benches() -> None:
         [SampleBenchSuite.suite_id],
         profile="smoke",
         run_id="unit-run",
+        parameters={"mode": "call"},
         resources={"from_call": True},
     )
 
     assert [row.status for row in exec_rows] == ["passed"]
     assert len(bench_results) == 1
     assert bench_results[0].suite_id == SampleBenchSuite.suite_id
-    assert bench_results[0].metrics == {"from_profile": True, "from_call": True}
+    assert bench_results[0].metrics == {"from_profile": True, "from_call": True, "mode": "call"}
 
 
 def test_runner_discovers_entrypoint_benchmark_suites(monkeypatch: pytest.MonkeyPatch) -> None:
