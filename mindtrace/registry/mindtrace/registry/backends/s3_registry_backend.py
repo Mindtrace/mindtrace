@@ -58,7 +58,7 @@ class S3RegistryBackend(RegistryBackend):
 
         .. code-block:: bash
 
-            $ $ docker run --rm --name minio \\
+            $ docker run --rm --name minio \\
                     -p 9000:9000 \\
                     -p 9001:9001 \\
                     -e RUSTFS_VOLUMES=/data \\
