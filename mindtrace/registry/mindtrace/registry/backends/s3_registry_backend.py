@@ -59,12 +59,16 @@ class S3RegistryBackend(RegistryBackend):
         .. code-block:: bash
 
             $ docker run --rm --name minio \\
-                -p 9000:9000 \\
-                -p 9001:9001 \\
-                -e MINIO_ROOT_USER=minioadmin \\
-                -e MINIO_ROOT_PASSWORD=minioadmin \\
-                -v ~/.cache/mindtrace/minio_data:/data \\
-                minio/minio server /data --console-address ":9001"
+                    -p 9000:9000 \\
+                    -p 9001:9001 \\
+                    -e RUSTFS_VOLUMES=/data \\
+                    -e RUSTFS_ADDRESS=0.0.0.0:9000 \\
+                    -e RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001 \\
+                    -e RUSTFS_CONSOLE_ENABLE=true \\
+                    -e RUSTFS_ACCESS_KEY=minioadmin \\
+                    -e RUSTFS_SECRET_KEY=minioadmin \\
+                    -v ~/.cache/mindtrace/minio_data:/data \\
+                    rustfs/rustfs:1.0.0
 
     Usage Example::
 

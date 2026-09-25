@@ -23,6 +23,6 @@ def resolve_mongo_resources(config: BenchSuiteConfig) -> tuple[str, str, str]:
             raise ValueError(f"Suite {config.suite_id} requires REMOTE_MONGO_DB_NAME or mongo_atlas_db_name")
         return "atlas", uri, db_name
 
-    uri = str(config.resources.get("mongo_uri", "mongodb://127.0.0.1:27017"))
+    uri = str(config.resources.get("mongo_uri", "mongodb://127.0.0.1:27018"))
     db_name = str(config.resources.get("mongo_db_name") or f"mindtrace_bench_{config.run_id.replace('-', '_')}")
     return "local", uri, db_name

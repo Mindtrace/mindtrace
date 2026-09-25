@@ -17,11 +17,15 @@ No additional setup required.
 1. Start a MinIO server:
    ```bash
    docker run --rm --name minio \
-     -p 9000:9000 \
-     -p 9001:9001 \
-     -e MINIO_ROOT_USER=minioadmin \
-     -e MINIO_ROOT_PASSWORD=minioadmin \
-     minio/minio server /data --console-address ":9001"
+      -p 9000:9000 \
+      -p 9001:9001 \
+      -e RUSTFS_VOLUMES=/data \
+      -e RUSTFS_ADDRESS=0.0.0.0:9000 \
+      -e RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001 \
+      -e RUSTFS_CONSOLE_ENABLE=true \
+      -e RUSTFS_ACCESS_KEY=minioadmin \
+      -e RUSTFS_SECRET_KEY=minioadmin \
+      rustfs/rustfs:1.0.0
    ```
 
 2. Set environment variables:
@@ -173,11 +177,14 @@ gcloud auth application-default login
 
 ### MinIO Connection Issues
 ```bash
-# Check MinIO is running
+# Test-stack host API (scripts/docker_up.sh / tests/docker-compose.yml)
+curl http://localhost:19000/minio/health/live
+
+# Standalone MinIO on product ports
 curl http://localhost:9000/minio/health/live
 
-# Check MinIO logs
-docker logs minio
+# Check MinIO logs (test stack)
+docker compose -f tests/docker-compose.yml logs minio
 ```
 
 ### Test Cleanup Issues

@@ -27,8 +27,8 @@ class MockConnection(BrokerConnectionBase):
 class MockConsumer(ConsumerBackendBase):
     """Mock implementation of ConsumerBackendBase for testing."""
 
-    def __init__(self, queue_name: str, consumer_frontend):
-        super().__init__(queue_name, consumer_frontend)
+    def __init__(self, queue_name: str, consumer_frontend, **kwargs):
+        super().__init__(queue_name, consumer_frontend, **kwargs)
         self.consumed_messages = []
 
     def consume(self, num_messages: int = 0, **kwargs):

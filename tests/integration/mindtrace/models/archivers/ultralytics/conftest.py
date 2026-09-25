@@ -5,7 +5,7 @@ ultralytics model weights. They are skipped when MinIO is not available.
 
 MinIO connection settings follow the same resolution as the rest of the integration
 suite (``CoreConfig``: env vars such as ``MINDTRACE_MINIO__MINIO_ENDPOINT`` →
-``config.ini``). The test Docker stack maps MinIO API to ``localhost:9100``; that is
+``config.ini``). The test Docker stack maps MinIO API to ``localhost:19000``; that is
 set by ``scripts/docker_up.sh`` when running ``ds test`` / ``run_tests.sh``.
 """
 

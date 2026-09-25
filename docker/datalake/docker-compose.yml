@@ -8,12 +8,15 @@ services:
       - datalake_mongodb_data:/data/db
 
   minio:
-    image: minio/minio
+    image: rustfs/rustfs:1.0.0
     restart: unless-stopped
-    command: server /data --address ":9000" --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: "0.0.0.0:9000"
+      RUSTFS_CONSOLE_ADDRESS: "0.0.0.0:9001"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      RUSTFS_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -21,7 +24,7 @@ services:
       - datalake_minio_data:/data
 
   minio-setup:
-    image: minio/mc
+    image: rustfs/rc:v0.1.36
     depends_on:
       - minio
     # One-shot jobs that exit(0) break `docker compose up --wait` (compose treats exit as failure).
@@ -32,15 +35,15 @@ services:
       - -c
       - |
         set -euo pipefail
-        until mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do
+        until /usr/bin/rc alias set local http://minio:9000 "$${RUSTFS_ACCESS_KEY}" "$${RUSTFS_SECRET_KEY}"; do
           sleep 1
         done
-        mc mb --ignore-existing local/"$${MINDTRACE_DATALAKE__S3_BUCKET}"
+        /usr/bin/rc mb --ignore-existing local/"$${MINDTRACE_DATALAKE__S3_BUCKET}"
         touch /tmp/minio-setup-done
         exec tail -f /dev/null
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      RUSTFS_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      RUSTFS_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINDTRACE_DATALAKE__S3_BUCKET: ${MINDTRACE_DATALAKE__S3_BUCKET:-datalake}
     healthcheck:
       test: ["CMD-SHELL", "test -f /tmp/minio-setup-done"]
