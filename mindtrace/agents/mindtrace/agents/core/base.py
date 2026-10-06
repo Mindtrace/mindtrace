@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from .._run_context import AgentDepsT as _AgentDepsT
+from .._serialization import stringify_tool_result
 from .._tool_manager import ToolManager
 from ..callbacks import AgentCallbacks, _invoke
 from ..events import (
@@ -204,14 +205,14 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
                             tool_name=tool_name,
                             tool_args_json=tool_args,
                         )
-                        content = str(tool_result)
+                        content = stringify_tool_result(tool_result)
 
                         if self.callbacks and self.callbacks.after_tool_call:
                             result = await _invoke(
                                 self.callbacks.after_tool_call, tool_name, tool_args, tool_result, ctx
                             )
                             if result is not None:
-                                content = str(result)
+                                content = stringify_tool_result(result)
                     except Exception as exc:
                         content = f"Error: {exc}"
 
@@ -286,6 +287,12 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
             ):
                 yield event
                 if isinstance(event, PartEndEvent) and event.part is not None:
+                    # A thinking part carries its reasoning as a TextPart, but
+                    # it is not assistant output: collecting it would make a
+                    # reasoning-only turn's reasoning the run output and leak
+                    # it into the assistant message recorded in history.
+                    if event.part_kind == "thinking":
+                        continue
                     if isinstance(event.part, (TextPart, ToolCallPart)):
                         parts_by_index[event.index] = event.part
 
@@ -321,16 +328,20 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
                         tool_name=tool_name,
                         tool_args_json=tool_args,
                     )
-                    content = str(tool_result)
+                    content = stringify_tool_result(tool_result)
 
                     if self.callbacks and self.callbacks.after_tool_call:
                         result = await _invoke(self.callbacks.after_tool_call, tool_name, tool_args, tool_result, ctx)
                         if result is not None:
-                            content = str(result)
+                            content = stringify_tool_result(result)
                 except Exception as exc:
                     content = f"Error: {exc}"
 
-                yield ToolResultEvent(tool_call_id=tool_call.tool_call_id, content=content)
+                yield ToolResultEvent(
+                    tool_call_id=tool_call.tool_call_id,
+                    content=content,
+                    tool_call_name=tool_call.tool_name,
+                )
                 messages.append(
                     ModelMessage(
                         role="tool",
@@ -433,14 +444,14 @@ class MindtraceAgent(AbstractMindtraceAgent[AgentDepsT, OutputDataT]):
                                 tool_name=tool_name,
                                 tool_args_json=tool_args,
                             )
-                            content = str(tool_result)
+                            content = stringify_tool_result(tool_result)
 
                             if self.callbacks and self.callbacks.after_tool_call:
                                 result = await _invoke(
                                     self.callbacks.after_tool_call, tool_name, tool_args, tool_result, ctx
                                 )
                                 if result is not None:
-                                    content = str(result)
+                                    content = stringify_tool_result(result)
                         except Exception as exc:
                             content = f"Error: {exc}"
 
