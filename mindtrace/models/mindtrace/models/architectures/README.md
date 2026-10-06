@@ -196,7 +196,7 @@ logits, deltas = head(features)  # features (B, in_channels)
 
 ## LoRA Fine-Tuning
 
-Pass a `LoRAConfig` to `build_backbone` or `build_model` to apply LoRA adapters to any HuggingFace DINO backbone. Target module names differ between DINOv2 and DINOv3 and are resolved automatically.
+Pass a `LoRAConfig` to `build_backbone` or `build_model` to apply LoRA adapters to any HuggingFace DINO backbone. By default every linear layer is adapted.
 
 ### LoRAConfig Parameters
 
@@ -205,18 +205,8 @@ Pass a `LoRAConfig` to `build_backbone` or `build_model` to apply LoRA adapters 
 | `r` | 8 | LoRA rank |
 | `lora_alpha` | 8 | LoRA scaling factor |
 | `lora_dropout` | 0.1 | Dropout on LoRA layers |
-| `target_modules` | `"qv"` | Preset name or explicit list of module name substrings |
+| `target_modules` | `"all-linear"` | `"all-linear"`, or a list of module names that `peft` matches exactly or as a suffix |
 | `bias` | `"none"` | Which bias params to train: `"none"`, `"all"`, `"lora_only"` |
-
-### Target Module Presets
-
-| Preset | DINOv2 modules | DINOv3 modules |
-|--------|----------------|----------------|
-| `"qv"` | query, value | q_proj, v_proj |
-| `"qkv"` | query, key, value | q_proj, k_proj, v_proj |
-| `"qkv_proj"` | q, k, v + output dense | q, k, v + o_proj |
-| `"mlp"` | fc1, fc2 | up_proj, down_proj |
-| `"all"` | all attention + MLP | all attention + MLP |
 
 ### Usage
 
@@ -227,13 +217,13 @@ from mindtrace.models.architectures import build_backbone, build_model
 # Via build_backbone
 info = build_backbone(
     "dino_v3_large",
-    lora_config=LoRAConfig(r=16, target_modules="qkv"),
+    lora_config=LoRAConfig(r=16),
 )
 
 # Via build_model (lora_config forwarded as backbone kwarg)
 model = build_model(
     "dino_v3_large", "linear", num_classes=10,
-    lora_config=LoRAConfig(r=8, lora_alpha=8, target_modules="qv"),
+    lora_config=LoRAConfig(r=8, lora_alpha=8),
 )
 
 # Merge adapters for clean export
