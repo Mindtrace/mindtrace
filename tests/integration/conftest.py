@@ -1,6 +1,6 @@
 """Shared fixtures for integration tests.
 
-S3/MinIO and GCP/GCS fixtures live here so any test under ``tests/integration/``
+S3 and GCP/GCS fixtures live here so any test under ``tests/integration/``
 can pick them up via pytest's normal conftest auto-discovery.
 
 Config resolution order: env vars (only if set in the shell/CI) → config.ini → skip.
@@ -49,13 +49,13 @@ def core_config():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# S3 / MinIO Fixtures
+# S3 Fixtures
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 @pytest.fixture(scope="session")
 def s3_config(core_config):
-    """Resolve S3/MinIO config: env vars → config.ini → skip."""
+    """Resolve S3 config: env vars → config.ini → skip."""
     minio_cfg = core_config.get("MINDTRACE_MINIO", {})
 
     endpoint = minio_cfg.get("MINIO_ENDPOINT")
@@ -63,7 +63,7 @@ def s3_config(core_config):
     secret_key = core_config.get_secret("MINDTRACE_MINIO", "MINIO_SECRET_KEY")
 
     if not all([endpoint, access_key, secret_key]):
-        pytest.skip("S3 (MinIO) not configured (set MINDTRACE_MINIO__* env vars or config.ini)")
+        pytest.skip("S3 not configured (set MINDTRACE_MINIO__* env vars or config.ini)")
 
     return {
         "endpoint": endpoint,
@@ -82,7 +82,7 @@ def s3_client(s3_config) -> Generator[BaseClient, None, None]:
         client.list_buckets()
         yield client
     except Exception as e:
-        pytest.skip(f"S3 (MinIO) not available: {e}")
+        pytest.skip(f"S3 not available: {e}")
 
 
 @pytest.fixture
@@ -137,12 +137,6 @@ def s3_backend(s3_temp_dir, s3_test_bucket, s3_config) -> Generator[S3RegistryBa
 def s3_registry(s3_backend):
     """Create a Registry with S3 backend."""
     return Registry(backend=s3_backend)
-
-
-@pytest.fixture
-def minio_registry(s3_registry):
-    """Alias for s3_registry (backwards compatibility)."""
-    return s3_registry
 
 
 @pytest.fixture

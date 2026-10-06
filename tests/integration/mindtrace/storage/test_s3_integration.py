@@ -19,7 +19,7 @@ from tests.integration.s3_utils import bucket_exists, delete_bucket, delete_keys
 
 
 def get_s3_config():
-    """Get S3/MinIO configuration from environment or config."""
+    """Get S3 configuration from environment or config."""
     from mindtrace.core import CoreConfig
 
     # Try environment variables first, then fall back to CoreConfig
@@ -63,7 +63,7 @@ def s3_client() -> Generator[BaseClient, None, None]:
         client.list_buckets()
         yield client
     except Exception as e:
-        pytest.skip(f"MinIO not available: {e}")
+        pytest.skip(f"S3 not available: {e}")
 
 
 @pytest.fixture
@@ -73,7 +73,7 @@ def s3_test_bucket(s3_client):
     try:
         s3_client.create_bucket(Bucket=bucket_name)
     except ClientError as e:
-        pytest.skip(f"Failed to create MinIO bucket: {e}")
+        pytest.skip(f"Failed to create S3 bucket: {e}")
     yield bucket_name
     # Cleanup
     try:
@@ -276,7 +276,7 @@ def test_get_presigned_url_get_fetches_with_content_type_override(s3_handler, sa
         method="GET",
         response_content_type="image/png",
     )
-    with urllib.request.urlopen(url) as resp:  # noqa: S310 — signed URL to our test MinIO
+    with urllib.request.urlopen(url) as resp:  # noqa: S310 — signed URL to our test S3 store
         body = resp.read()
         content_type = resp.headers.get("Content-Type")
 

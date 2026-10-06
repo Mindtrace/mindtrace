@@ -1,6 +1,6 @@
 """Integration tests for S3RegistryBackend.
 
-Uses MinIO as the S3-compatible backend for testing.
+Runs against the S3-compatible store from the integration test stack.
 """
 
 import uuid

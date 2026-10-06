@@ -1,11 +1,11 @@
 """Fixtures for ultralytics archiver integration tests.
 
-These tests require a running MinIO instance and network access to download
-ultralytics model weights. They are skipped when MinIO is not available.
+These tests require a running S3-compatible store and network access to download
+ultralytics model weights. They are skipped when the store is not available.
 
-MinIO connection settings follow the same resolution as the rest of the integration
+S3 connection settings follow the same resolution as the rest of the integration
 suite (``CoreConfig``: env vars such as ``MINDTRACE_MINIO__MINIO_ENDPOINT`` →
-``config.ini``). The test Docker stack maps MinIO API to ``localhost:19000``; that is
+``config.ini``). The test Docker stack maps the S3 API to ``localhost:19000``; that is
 set by ``scripts/docker_up.sh`` when running ``ds test`` / ``run_tests.sh``.
 """
 
@@ -14,10 +14,10 @@ import socket
 
 import pytest
 
-from mindtrace.registry import MinioRegistryBackend, Registry
+from mindtrace.registry import Registry, S3RegistryBackend
 
 
-def _minio_endpoint_reachable(endpoint: str, timeout: float = 2.0) -> bool:
+def _s3_endpoint_reachable(endpoint: str, timeout: float = 2.0) -> bool:
     """TCP check against the configured host:port (same idea as legacy fixture, but not hard-coded)."""
     if ":" not in endpoint:
         return False
@@ -35,23 +35,23 @@ def _minio_endpoint_reachable(endpoint: str, timeout: float = 2.0) -> bool:
 
 
 @pytest.fixture()
-def minio_registry(core_config):
-    """Registry on MinIO/S3, using integration-harness MinIO settings."""
+def s3_registry(core_config):
+    """Registry on S3, using integration-harness S3 settings."""
     minio_cfg = core_config.get("MINDTRACE_MINIO", {})
     endpoint = minio_cfg.get("MINIO_ENDPOINT")
     access_key = minio_cfg.get("MINIO_ACCESS_KEY")
     secret_key = core_config.get_secret("MINDTRACE_MINIO", "MINIO_SECRET_KEY")
 
     if not all([endpoint, access_key, secret_key]):
-        pytest.skip("MinIO not configured (set MINDTRACE_MINIO__* env vars or config.ini)")
+        pytest.skip("S3 not configured (set MINDTRACE_MINIO__* env vars or config.ini)")
 
-    if not _minio_endpoint_reachable(endpoint):
-        pytest.skip("MinIO not available")
+    if not _s3_endpoint_reachable(endpoint):
+        pytest.skip("S3 not available")
 
     bucket = os.environ.get("MINIO_BUCKET") or minio_cfg.get("MINIO_BUCKET", "minio-registry")
     secure = os.environ.get("MINIO_SECURE", "0") == "1"
 
-    backend = MinioRegistryBackend(
+    backend = S3RegistryBackend(
         endpoint=endpoint,
         access_key=access_key,
         secret_key=secret_key,

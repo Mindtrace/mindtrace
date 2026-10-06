@@ -13,8 +13,8 @@ from mindtrace.core import Config, CoreConfig
 from mindtrace.registry import GCPRegistryBackend, LocalRegistryBackend, Registry, S3RegistryBackend
 
 
-def _get_minio_config():
-    """Get MinIO instance configuration from environment or config."""
+def _get_s3_config():
+    """Get S3 configuration from environment or config."""
     endpoint = os.environ.get("MINDTRACE_MINIO__MINIO_ENDPOINT")
     access_key = os.environ.get("MINDTRACE_MINIO__MINIO_ACCESS_KEY")
     secret_key = os.environ.get("MINDTRACE_MINIO__MINIO_SECRET_KEY")
@@ -47,9 +47,9 @@ BACKENDS = {
             "uri": None  # Will be set in fixture
         },
     },
-    "minio": {
+    "s3": {
         "class": S3RegistryBackend,
-        "params_fn": _get_minio_config,  # Use function to get config with unmasked secret
+        "params_fn": _get_s3_config,  # Use function to get config with unmasked secret
         "extra_params": {
             "bucket": None,  # Will be set in fixture
         },
@@ -72,9 +72,9 @@ def backend_type(request):
 
 
 @pytest.fixture
-def minio_test_bucket(backend_type):
-    """Create a test bucket name for MinIO backend."""
-    if backend_type != "minio":
+def s3_bucket_name(backend_type):
+    """Create a test bucket name for the S3 backend."""
+    if backend_type != "s3":
         return None
     return f"mt-test-{uuid.uuid4().hex[:8]}"
 
@@ -105,7 +105,7 @@ def gcp_backend_instance(gcp_test_bucket, gcp_test_prefix, gcp_project_id, gcp_c
 
 
 @pytest.fixture
-def backend(request, backend_type, temp_dir, minio_test_bucket):
+def backend(request, backend_type, temp_dir, s3_bucket_name):
     """Create a backend instance for testing."""
     backend_config = BACKENDS[backend_type]
     backend_class = backend_config["class"]
@@ -114,11 +114,11 @@ def backend(request, backend_type, temp_dir, minio_test_bucket):
         params = backend_config["params"].copy()
         params["uri"] = str(temp_dir)
         return backend_class(**params)
-    elif backend_type == "minio":
+    elif backend_type == "s3":
         # Use params_fn to get config with unmasked secrets
         params = backend_config["params_fn"]()
         params.update(backend_config.get("extra_params", {}))
-        params["bucket"] = minio_test_bucket
+        params["bucket"] = s3_bucket_name
         params["uri"] = str(temp_dir)
         return backend_class(**params)
     elif backend_type == "gcp":
@@ -751,8 +751,8 @@ def test_backend_specific_functionality(backend_type, registry):
         objects = backend.list_objects()
         assert isinstance(objects, list)
 
-    elif backend_type == "minio":
-        # Test S3/MinIO-specific functionality
+    elif backend_type == "s3":
+        # Test S3-specific functionality
         backend = registry.backend
 
         # Verify storage handler is available
