@@ -15,14 +15,14 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import Generator
-from urllib.error import URLError
 
 import pytest
-from minio import Minio
-from minio.error import S3Error
+from botocore.client import BaseClient
+from botocore.exceptions import ClientError
 
 from mindtrace.core import CoreConfig
 from mindtrace.registry import Registry, S3RegistryBackend
+from tests.integration.s3_utils import delete_bucket, make_s3_client
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Common Fixtures
@@ -74,19 +74,14 @@ def s3_config(core_config):
 
 
 @pytest.fixture(scope="session")
-def s3_client(s3_config):
-    """Create a MinIO client for S3 testing."""
+def s3_client(s3_config) -> Generator[BaseClient, None, None]:
+    """Create a raw boto3 S3 client for test setup and verification."""
     try:
-        client = Minio(
-            endpoint=s3_config["endpoint"],
-            access_key=s3_config["access_key"],
-            secret_key=s3_config["secret_key"],
-            secure=s3_config["secure"],
-        )
+        client = make_s3_client(**s3_config)
         # Test connection by listing buckets
         client.list_buckets()
         yield client
-    except (URLError, S3Error, Exception) as e:
+    except Exception as e:
         pytest.skip(f"S3 (MinIO) not available: {e}")
 
 
@@ -95,16 +90,14 @@ def s3_test_bucket(s3_client) -> Generator[str, None, None]:
     """Create a temporary S3 bucket for testing."""
     bucket_name = f"test-bucket-{uuid.uuid4().hex[:8]}"
     try:
-        s3_client.make_bucket(bucket_name)
-    except S3Error as e:
+        s3_client.create_bucket(Bucket=bucket_name)
+    except ClientError as e:
         pytest.skip(f"Failed to create S3 bucket: {e}")
     yield bucket_name
     # Cleanup
     try:
-        for obj in s3_client.list_objects(bucket_name, recursive=True):
-            s3_client.remove_object(bucket_name, obj.object_name)
-        s3_client.remove_bucket(bucket_name)
-    except S3Error:
+        delete_bucket(s3_client, bucket_name)
+    except ClientError:
         pass
 
 

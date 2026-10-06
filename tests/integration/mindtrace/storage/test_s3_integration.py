@@ -3,14 +3,15 @@
 import os
 import uuid
 from pathlib import Path
-from urllib.error import URLError
+from typing import Generator
 
 import pytest
-from minio import Minio
-from minio.error import S3Error
+from botocore.client import BaseClient
+from botocore.exceptions import ClientError
 
 from mindtrace.storage.base import Status
 from mindtrace.storage.s3 import S3StorageHandler
+from tests.integration.s3_utils import bucket_exists, delete_bucket, delete_keys, make_s3_client
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Configuration
@@ -54,38 +55,30 @@ def get_s3_config():
 
 
 @pytest.fixture(scope="session")
-def s3_minio_client():
-    """Create a MinIO client for S3 storage testing."""
-    config = get_s3_config()
+def s3_client() -> Generator[BaseClient, None, None]:
+    """Create a raw boto3 S3 client for test setup and verification."""
     try:
-        client = Minio(
-            endpoint=config["endpoint"],
-            access_key=config["access_key"],
-            secret_key=config["secret_key"],
-            secure=config["secure"],
-        )
+        client = make_s3_client(**get_s3_config())
         # Test connection by listing buckets
         client.list_buckets()
         yield client
-    except (URLError, S3Error, Exception) as e:
+    except Exception as e:
         pytest.skip(f"MinIO not available: {e}")
 
 
 @pytest.fixture
-def s3_test_bucket(s3_minio_client):
+def s3_test_bucket(s3_client):
     """Create a temporary bucket for S3 storage testing."""
     bucket_name = f"s3-storage-test-{uuid.uuid4().hex[:8]}"
     try:
-        s3_minio_client.make_bucket(bucket_name)
-    except S3Error as e:
+        s3_client.create_bucket(Bucket=bucket_name)
+    except ClientError as e:
         pytest.skip(f"Failed to create MinIO bucket: {e}")
     yield bucket_name
     # Cleanup
     try:
-        for obj in s3_minio_client.list_objects(bucket_name, recursive=True):
-            s3_minio_client.remove_object(bucket_name, obj.object_name)
-        s3_minio_client.remove_bucket(bucket_name)
-    except S3Error:
+        delete_bucket(s3_client, bucket_name)
+    except ClientError:
         pass
 
 
@@ -96,7 +89,7 @@ def s3_test_prefix():
 
 
 @pytest.fixture
-def s3_handler(temp_dir, s3_test_bucket, s3_minio_client, s3_test_prefix):
+def s3_handler(temp_dir, s3_test_bucket, s3_client, s3_test_prefix):
     """Create an S3StorageHandler instance with a test bucket."""
     config = get_s3_config()
     try:
@@ -117,8 +110,7 @@ def s3_handler(temp_dir, s3_test_bucket, s3_minio_client, s3_test_prefix):
 
     # Cleanup: delete all objects with our test prefix
     try:
-        for obj in s3_minio_client.list_objects(s3_test_bucket, prefix=s3_test_prefix, recursive=True):
-            s3_minio_client.remove_object(s3_test_bucket, obj.object_name)
+        delete_keys(s3_client, s3_test_bucket, prefix=s3_test_prefix)
     except Exception:
         pass  # Best effort cleanup
 
@@ -312,7 +304,7 @@ def test_get_object_metadata(s3_handler, sample_files, s3_test_bucket):
     assert obj_metadata["metadata"]["test_key"] == "test_value"
 
 
-def test_init_creates_bucket(s3_minio_client):
+def test_init_creates_bucket(s3_client):
     """Test that handler creates bucket if it doesn't exist."""
     config = get_s3_config()
     bucket_name = f"s3-test-create-{uuid.uuid4().hex[:8]}"
@@ -330,15 +322,15 @@ def test_init_creates_bucket(s3_minio_client):
         )
 
         # Verify bucket was created
-        assert s3_minio_client.bucket_exists(bucket_name)
+        assert bucket_exists(s3_client, bucket_name)
 
         # Cleanup
-        s3_minio_client.remove_bucket(bucket_name)
+        s3_client.delete_bucket(Bucket=bucket_name)
     except Exception as e:
         pytest.skip(f"S3 bucket creation test failed: {e}")
 
 
-def test_init_raises_error_if_bucket_not_exists(s3_minio_client):
+def test_init_raises_error_if_bucket_not_exists(s3_client):
     """Test that handler raises error if bucket doesn't exist and create_if_missing=False."""
     config = get_s3_config()
     bucket_name = f"s3-test-nonexistent-{uuid.uuid4().hex[:8]}"
