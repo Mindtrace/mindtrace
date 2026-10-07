@@ -60,7 +60,7 @@ def list_keys(client: BaseClient, bucket: str, prefix: str = "") -> list[str]:
         prefix: Key prefix to list under.
 
     Returns:
-        Object keys, without directory-like common prefixes.
+        Every object key under ``prefix``, including ``/``-suffixed directory markers.
     """
     paginator = client.get_paginator("list_objects_v2")
     return [obj["Key"] for page in paginator.paginate(Bucket=bucket, Prefix=prefix) for obj in page.get("Contents", [])]
