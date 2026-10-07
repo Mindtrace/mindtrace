@@ -1,104 +1,29 @@
 """Integration tests for S3 storage handler."""
 
-import os
 import uuid
 from pathlib import Path
-from typing import Generator
 
 import pytest
-from botocore.client import BaseClient
-from botocore.exceptions import ClientError
 
 from mindtrace.storage.base import Status
 from mindtrace.storage.s3 import S3StorageHandler
-from tests.integration.s3_utils import bucket_exists, delete_bucket, delete_keys, make_s3_client
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Configuration
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def get_s3_config():
-    """Get S3 configuration from environment or config."""
-    from mindtrace.core import CoreConfig
-
-    # Try environment variables first, then fall back to CoreConfig
-    endpoint = os.environ.get("MINDTRACE_MINIO__MINIO_ENDPOINT")
-    access_key = os.environ.get("MINDTRACE_MINIO__MINIO_ACCESS_KEY")
-    secret_key = os.environ.get("MINDTRACE_MINIO__MINIO_SECRET_KEY")
-
-    if not endpoint or not access_key or not secret_key:
-        try:
-            config = CoreConfig()
-            minio_config = config.get("MINDTRACE_MINIO", {})
-            endpoint = endpoint or minio_config.get("MINIO_ENDPOINT", "localhost:19000")
-            access_key = access_key or minio_config.get("MINIO_ACCESS_KEY", "minioadmin")
-            # Use get_secret() for secret key to get unmasked value
-            secret_key = secret_key or config.get_secret("MINDTRACE_MINIO", "MINIO_SECRET_KEY") or "minioadmin"
-        except Exception:
-            # Fall back to defaults if CoreConfig fails
-            endpoint = endpoint or "localhost:19000"
-            access_key = access_key or "minioadmin"
-            secret_key = secret_key or "minioadmin"
-
-    return {
-        "endpoint": endpoint,
-        "access_key": access_key,
-        "secret_key": secret_key,
-        "secure": os.environ.get("MINIO_SECURE", "0") == "1",
-    }
-
+from tests.integration.s3_utils import bucket_exists, delete_keys
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixtures
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.fixture(scope="session")
-def s3_client() -> Generator[BaseClient, None, None]:
-    """Create a raw boto3 S3 client for test setup and verification."""
-    try:
-        client = make_s3_client(**get_s3_config())
-        # Test connection by listing buckets
-        client.list_buckets()
-        yield client
-    except Exception as e:
-        pytest.skip(f"S3 not available: {e}")
-
-
 @pytest.fixture
-def s3_test_bucket(s3_client):
-    """Create a temporary bucket for S3 storage testing."""
-    bucket_name = f"s3-storage-test-{uuid.uuid4().hex[:8]}"
-    try:
-        s3_client.create_bucket(Bucket=bucket_name)
-    except ClientError as e:
-        pytest.skip(f"Failed to create S3 bucket: {e}")
-    yield bucket_name
-    # Cleanup
-    try:
-        delete_bucket(s3_client, bucket_name)
-    except ClientError:
-        pass
-
-
-@pytest.fixture
-def s3_test_prefix():
-    """Generate unique prefix for test isolation within a shared bucket."""
-    return f"test-{uuid.uuid4().hex[:8]}"
-
-
-@pytest.fixture
-def s3_handler(temp_dir, s3_test_bucket, s3_client, s3_test_prefix):
+def s3_handler(temp_dir, s3_config, s3_test_bucket, s3_client, s3_test_prefix):
     """Create an S3StorageHandler instance with a test bucket."""
-    config = get_s3_config()
     try:
         handler = S3StorageHandler(
             bucket_name=s3_test_bucket,
-            endpoint=config["endpoint"],
-            access_key=config["access_key"],
-            secret_key=config["secret_key"],
-            secure=config["secure"],
+            endpoint=s3_config["endpoint"],
+            access_key=s3_config["access_key"],
+            secret_key=s3_config["secret_key"],
+            secure=s3_config["secure"],
             ensure_bucket=True,
             create_if_missing=False,  # Already created by fixture
         )
@@ -304,19 +229,18 @@ def test_get_object_metadata(s3_handler, sample_files, s3_test_bucket):
     assert obj_metadata["metadata"]["test_key"] == "test_value"
 
 
-def test_init_creates_bucket(s3_client):
+def test_init_creates_bucket(s3_config, s3_client):
     """Test that handler creates bucket if it doesn't exist."""
-    config = get_s3_config()
     bucket_name = f"s3-test-create-{uuid.uuid4().hex[:8]}"
 
     try:
         # Create handler with create_if_missing=True
         _ = S3StorageHandler(
             bucket_name=bucket_name,
-            endpoint=config["endpoint"],
-            access_key=config["access_key"],
-            secret_key=config["secret_key"],
-            secure=config["secure"],
+            endpoint=s3_config["endpoint"],
+            access_key=s3_config["access_key"],
+            secret_key=s3_config["secret_key"],
+            secure=s3_config["secure"],
             ensure_bucket=True,
             create_if_missing=True,
         )
@@ -330,18 +254,17 @@ def test_init_creates_bucket(s3_client):
         pytest.skip(f"S3 bucket creation test failed: {e}")
 
 
-def test_init_raises_error_if_bucket_not_exists(s3_client):
+def test_init_raises_error_if_bucket_not_exists(s3_config, s3_client):
     """Test that handler raises error if bucket doesn't exist and create_if_missing=False."""
-    config = get_s3_config()
     bucket_name = f"s3-test-nonexistent-{uuid.uuid4().hex[:8]}"
 
     with pytest.raises(FileNotFoundError):
         S3StorageHandler(
             bucket_name=bucket_name,
-            endpoint=config["endpoint"],
-            access_key=config["access_key"],
-            secret_key=config["secret_key"],
-            secure=config["secure"],
+            endpoint=s3_config["endpoint"],
+            access_key=s3_config["access_key"],
+            secret_key=s3_config["secret_key"],
+            secure=s3_config["secure"],
             ensure_bucket=True,
             create_if_missing=False,
         )
