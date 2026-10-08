@@ -36,7 +36,7 @@ transformers = ["transformers>=4.35"]
 
 # Model format extras
 onnx = ["onnxruntime>=1.16", "onnx>=1.14"]
-peft = ["peft>=0.6"]
+peft = ["peft>=0.8"]
 
 # Install everything
 all = [
@@ -48,7 +48,7 @@ all = [
     "transformers>=4.35",
     "onnxruntime>=1.16",
     "onnx>=1.14",
-    "peft>=0.6",
+    "peft>=0.8",
 ]
 
 [project.urls]
