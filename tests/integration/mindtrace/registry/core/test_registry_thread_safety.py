@@ -1,4 +1,4 @@
-"""Integration tests for thread safety with Minio backend."""
+"""Integration tests for thread safety with S3 backend."""
 
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -11,12 +11,12 @@ from mindtrace.registry import Registry
 
 @pytest.fixture
 def registry(s3_backend):
-    """Create a Registry instance with S3/Minio backend."""
+    """Create a Registry instance with S3 backend."""
     return Registry(backend=s3_backend, version_objects=True)
 
 
 def test_concurrent_save_and_load(registry):
-    """Test concurrent save and load operations with Minio backend."""
+    """Test concurrent save and load operations with S3 backend."""
 
     def save_operation(i: int) -> None:
         model_data = {"weights": [0.1 * i, 0.2 * i], "metadata": {"accuracy": 0.8 + 0.01 * i}}
@@ -46,7 +46,7 @@ def test_concurrent_save_and_load(registry):
 
 
 def test_concurrent_versioning(registry):
-    """Test concurrent versioning operations with Minio backend."""
+    """Test concurrent versioning operations with S3 backend."""
 
     def version_operation(i: int) -> None:
         # Save multiple versions of the same model
@@ -72,7 +72,7 @@ def test_concurrent_versioning(registry):
 
 
 def test_concurrent_metadata_updates(registry):
-    """Test concurrent metadata updates with Minio backend."""
+    """Test concurrent metadata updates with S3 backend."""
     # First save some models
     for i in range(3):
         registry.save(f"model:{i}", {"weights": [i], "metadata": {"accuracy": 0.8}})
@@ -96,7 +96,7 @@ def test_concurrent_metadata_updates(registry):
 
 
 def test_concurrent_mixed_operations(registry):
-    """Test mixed concurrent operations with Minio backend."""
+    """Test mixed concurrent operations with S3 backend."""
 
     def mixed_operation(i: int) -> None:
         try:
@@ -159,7 +159,7 @@ def test_concurrent_mixed_operations(registry):
 
 
 def test_concurrent_dict_interface(registry):
-    """Test concurrent dictionary interface operations with Minio backend."""
+    """Test concurrent dictionary interface operations with S3 backend."""
 
     def dict_operation(i: int) -> None:
         # Save using dictionary syntax
@@ -183,7 +183,7 @@ def test_concurrent_dict_interface(registry):
 
 
 def test_concurrent_materializer_registration(registry):
-    """Test concurrent materializer registration with Minio backend."""
+    """Test concurrent materializer registration with S3 backend."""
 
     def register_materializer(i: int) -> None:
         registry.register_materializer(f"test:class:{i}", f"test:materializer:{i}")
@@ -201,7 +201,7 @@ def test_concurrent_materializer_registration(registry):
 
 
 def test_concurrent_info_operations(registry):
-    """Test concurrent info operations with Minio backend."""
+    """Test concurrent info operations with S3 backend."""
     # First save some models
     for i in range(3):
         registry.save(f"model:{i}", {"weights": [i], "metadata": {"accuracy": 0.8}})

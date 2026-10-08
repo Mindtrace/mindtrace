@@ -10,7 +10,7 @@ FROM python:3.12-slim
 
 LABEL org.opencontainers.image.source="https://github.com/Mindtrace/mindtrace" \
       org.opencontainers.image.title="mindtrace-datalake" \
-      org.opencontainers.image.description="Mindtrace DatalakeService with MongoDB + MinIO-compatible backing services"
+      org.opencontainers.image.description="Mindtrace DatalakeService with MongoDB + S3-compatible backing services"
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1

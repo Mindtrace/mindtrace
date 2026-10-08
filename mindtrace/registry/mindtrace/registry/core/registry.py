@@ -53,18 +53,18 @@ class Registry(Mindtrace):
         registry["test:int"] = 42
         obj = registry["test:int"]
 
-    Example: Using Minio as the registry store::
+    Example: Using an S3-compatible store as the registry store::
 
-        from mindtrace.registry import Registry, MinioRegistryBackend
+        from mindtrace.registry import Registry, S3RegistryBackend
 
-        minio_backend = MinioRegistryBackend(
+        s3_backend = S3RegistryBackend(
             endpoint="localhost:9000",
             access_key="minioadmin",
             secret_key="minioadmin",
-            bucket="minio-registry",
+            bucket="my-registry",
             secure=False,
         )
-        registry = Registry(backend=minio_backend)
+        registry = Registry(backend=s3_backend)
 
     Example: Using GCP as the registry store::
 

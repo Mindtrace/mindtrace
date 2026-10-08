@@ -135,7 +135,7 @@ Relevant files include:
 
 These integration environments include services such as:
 
-- MinIO (host API **19000** → container 9000 in [`tests/docker-compose.yml`](./tests/docker-compose.yml). `scripts/docker_up.sh` exports `MINDTRACE_MINIO__MINIO_ENDPOINT=localhost:19000`. Integration and utils source that script.)
+- RustFS, the S3-compatible store (host API **19000** → container 9000 in [`tests/docker-compose.yml`](./tests/docker-compose.yml). `scripts/docker_up.sh` exports `MINDTRACE_MINIO__MINIO_ENDPOINT=localhost:19000`. Integration and utils source that script.)
 - Redis
 - RabbitMQ
 - MongoDB (host **27018** → container 27017 in [`tests/docker-compose.yml`](./tests/docker-compose.yml). Bench suite defaults use `mongodb://127.0.0.1:27018`.)
