@@ -87,28 +87,9 @@ class TestDependencyGuards:
 
 
 class TestLoRAConfig:
-    def test_returns_explicit_target_modules_list(self):
-        config = dino_hf_mod.LoRAConfig(target_modules=["custom.q", "custom.v"])
-
-        assert config.get_target_modules("facebook/dinov3-vitb16-pretrain-lvd1689m") == ["custom.q", "custom.v"]
-
-    def test_uses_dinov2_presets_for_dinov2_model_names(self):
-        config = dino_hf_mod.LoRAConfig(target_modules="qkv_proj")
-
-        assert config.get_target_modules("facebook/dinov2-with-registers-base") == [
-            "attention.attention.query",
-            "attention.attention.key",
-            "attention.attention.value",
-            "attention.output.dense",
-        ]
-
-    def test_unknown_preset_falls_back_to_qv_modules(self):
-        config = dino_hf_mod.LoRAConfig(target_modules="unknown")  # type: ignore[arg-type]
-
-        assert config.get_target_modules("facebook/dinov3-vitb16-pretrain-lvd1689m") == [
-            "attention.q_proj",
-            "attention.v_proj",
-        ]
+    def test_rejects_strings_other_than_all_linear(self):
+        with pytest.raises(ValueError, match="all-linear"):
+            dino_hf_mod.LoRAConfig(target_modules="qv")  # type: ignore[arg-type]
 
 
 class TestHuggingFaceDINOBackboneInit:
@@ -147,10 +128,11 @@ class TestHuggingFaceDINOBackboneInit:
                 with patch.object(dino_hf_mod.HuggingFaceDINOBackbone, "print_trainable_parameters") as mock_print:
                     backbone = dino_hf_mod.HuggingFaceDINOBackbone(
                         "facebook/dinov2-with-registers-base",
-                        lora_config=dino_hf_mod.LoRAConfig(target_modules="qkv"),
+                        lora_config=dino_hf_mod.LoRAConfig(),
                     )
 
         peft_mod.LoraConfig.assert_called_once()
+        assert peft_mod.LoraConfig.call_args.kwargs["target_modules"] == "all-linear"
         peft_mod.get_peft_model.assert_called_once()
         mock_print.assert_called_once_with()
         assert backbone.model is wrapped_model
