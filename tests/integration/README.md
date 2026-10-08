@@ -17,12 +17,15 @@ No additional setup required.
 1. Start a MinIO server:
    ```bash
    docker run --rm --name minio \
-     -p 9000:9000 \
-     -p 9001:9001 \
-     -e MINIO_ROOT_USER=minioadmin \
-     -e MINIO_ROOT_PASSWORD=minioadmin \
-     quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z \
-     server /data --console-address ":9001"
+      -p 9000:9000 \
+      -p 9001:9001 \
+      -e RUSTFS_VOLUMES=/data \
+      -e RUSTFS_ADDRESS=0.0.0.0:9000 \
+      -e RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001 \
+      -e RUSTFS_CONSOLE_ENABLE=true \
+      -e RUSTFS_ACCESS_KEY=minioadmin \
+      -e RUSTFS_SECRET_KEY=minioadmin \
+      rustfs/rustfs:1.0.0
    ```
 
 2. Set environment variables:
