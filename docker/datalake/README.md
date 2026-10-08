@@ -3,7 +3,7 @@
 This directory provides a minimal multi-container deployment for the datalake stack using:
 
 - **MongoDB** for canonical records
-- **MinIO** for the object store backend
+- **RustFS** (S3-compatible) for the object store backend
 - **DatalakeService** for the API/service layer
 
 The goal is a single-command local deployment via `docker compose up`, while keeping MongoDB and the service in separate containers.
@@ -11,8 +11,8 @@ The goal is a single-command local deployment via `docker compose up`, while kee
 ## Files
 
 - `Dockerfile` — builds the `DatalakeService` image
-- `run_datalake_service.py` — reads env vars, constructs a MinIO-backed mount, and serves `DatalakeService`
-- `docker-compose.yml` — starts MongoDB, MinIO, bucket initialization, and the service
+- `run_datalake_service.py` — reads env vars, constructs an S3-backed mount, and serves `DatalakeService`
+- `docker-compose.yml` — starts MongoDB, RustFS, bucket initialization, and the service
 - `.env.example` — example runtime configuration
 
 ## Quick start
@@ -27,8 +27,8 @@ docker compose -f docker/datalake/docker-compose.yml --env-file docker/datalake/
 Service endpoints:
 
 - Datalake API: [http://localhost:8080](http://localhost:8080)
-- MinIO API: [http://localhost:9000](http://localhost:9000)
-- MinIO Console: [http://localhost:9001](http://localhost:9001)
+- RustFS S3 API: [http://localhost:9000](http://localhost:9000)
+- RustFS Console: [http://localhost:9001](http://localhost:9001)
 
 ## Using DataVault against the compose stack
 
@@ -107,6 +107,6 @@ The service image configures a single default S3-compatible mount named `minio` 
 ## Notes
 
 - This setup is intended as a local/dev deployment path, not a production HA topology.
-- The compose stack provisions the MinIO bucket on startup using a short-lived `rustfs/rc` helper container.
+- The compose stack provisions the S3 bucket on startup using a short-lived `rustfs/rc` helper container.
 - No Redis or RabbitMQ services are included here because the goal is a minimal datalake-focused deployment.
 

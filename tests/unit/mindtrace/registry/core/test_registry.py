@@ -31,7 +31,7 @@ from mindtrace.registry.core.mount import (
     S3MountConfig,
 )
 from mindtrace.registry.core.types import BatchResult, CleanupState, OnConflict, OpResult, OpResults, VerifyLevel
-from tests.unit.mindtrace.registry.backends.test_s3_registry_backend import MockMinioHandler
+from tests.unit.mindtrace.registry.backends.test_s3_registry_backend import MockS3Handler
 
 
 class SampleModel(BaseModel):
@@ -2466,8 +2466,8 @@ def test_clear_registry_metadata_gcp_backend(registry, monkeypatch):
     registry.clear(clear_registry_metadata=True)
 
 
-def test_clear_registry_metadata_minio_backend(registry, monkeypatch):
-    """Test clear_registry_metadata with MinIO backend."""
+def test_clear_registry_metadata_s3_backend(registry, monkeypatch):
+    """Test clear_registry_metadata with S3 backend."""
     # Mock save_registry_metadata to track calls
     saved_metadata = {}
 
@@ -4595,14 +4595,14 @@ class TestRegistryFacadeCoverage:
         s3_mount = Mount(
             name="s3",
             backend="s3",
-            config=S3MountConfig(bucket="datasets", prefix="prefix", endpoint="minio.local", secure=False),
+            config=S3MountConfig(bucket="datasets", prefix="prefix", endpoint="s3.local", secure=False),
             auth=S3AccessKeyAuth(access_key="abc", secret_key="xyz"),
         )
         s3_backend = Registry._backend_from_mount(s3_mount)
         assert s3_backend.kwargs == {
             "bucket": "datasets",
             "prefix": "prefix",
-            "endpoint": "minio.local",
+            "endpoint": "s3.local",
             "secure": False,
             "presign_endpoint": None,
             "presign_secure": None,
@@ -5278,7 +5278,7 @@ def test_registry_commit_direct_upload_skipped_raises_runtime(temp_registry_dir)
 
 
 def test_registry_cached_remote_direct_upload_delegates(monkeypatch, tmp_path):
-    monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.S3StorageHandler", MockMinioHandler)
+    monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.S3StorageHandler", MockS3Handler)
     s3 = S3RegistryBackend(
         uri=str(tmp_path / "s3_cache"),
         endpoint="localhost:9000",
