@@ -952,10 +952,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#minio-worker-registry" class="md-nav__link">
+  <a href="#s3-worker-registry" class="md-nav__link">
     <span class="md-ellipsis">
       
-        MinIO / worker registry
+        S3 / worker registry
       
     </span>
   </a>
@@ -1771,10 +1771,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#minio-worker-registry" class="md-nav__link">
+  <a href="#s3-worker-registry" class="md-nav__link">
     <span class="md-ellipsis">
       
-        MinIO / worker registry
+        S3 / worker registry
       
     </span>
   </a>
@@ -1851,7 +1851,7 @@
 <li><strong>Direct endpoint or queued execution</strong> depending on job schema targeting</li>
 <li><strong>RabbitMQ-backed job queues</strong> through <code>mindtrace-jobs</code></li>
 <li><strong>Redis-backed job and worker status tracking</strong></li>
-<li><strong>Worker registry and remote launch support</strong> via Registry / MinIO</li>
+<li><strong>Worker registry and remote launch support</strong> via an S3-backed Registry</li>
 <li><strong>Built-in workers</strong> such as <code>EchoWorker</code> and <code>RunScriptWorker</code></li>
 <li><strong>Dead-letter queue (DLQ) tooling</strong> for failed jobs</li>
 </ul>
@@ -1902,7 +1902,7 @@
 <li><code>ClusterManager</code> routes jobs and is the usual <strong>single entry point</strong> for clients: submit work, inspect job and worker status, launch workers on nodes, plus registrations and DLQ handling</li>
 <li><code>Node</code> launches worker services on machines</li>
 <li><code>Worker</code> instances consume jobs and report results back</li>
-<li>RabbitMQ carries queued work, Redis tracks status, and Registry/MinIO stores worker launcher definitions</li>
+<li>RabbitMQ carries queued work, Redis tracks status, and an S3-backed Registry stores worker launcher definitions</li>
 </ul>
 <h2 id="clustermanager">ClusterManager</h2>
 <p><code>ClusterManager</code> is the control plane for the cluster. It is both:</p>
@@ -1991,7 +1991,7 @@
 <p>When a node is connected to a cluster manager, it:</p>
 <ul>
 <li>registers itself with the cluster</li>
-<li>receives MinIO and RabbitMQ connection details</li>
+<li>receives S3 and RabbitMQ connection details</li>
 <li>loads worker definitions from the worker registry</li>
 <li>launches worker services asynchronously</li>
 <li>tracks which ports and workers it owns</li>
@@ -2235,15 +2235,16 @@
 <p>Redis is used for job status, worker status, schema targeting, and DLQ state.</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>$<span class="w"> </span>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span>--name<span class="w"> </span>redis<span class="w"> </span>-p<span class="w"> </span><span class="m">6379</span>:6379<span class="w"> </span>redis:latest
 </span></code></pre></div>
-<h3 id="minio-worker-registry">MinIO / worker registry</h3>
-<p>MinIO-backed Registry storage is used for worker launcher definitions.</p>
+<h3 id="s3-worker-registry">S3 / worker registry</h3>
+<p>S3-backed Registry storage is used for worker launcher definitions.</p>
 <p>Relevant environment variables include:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-26-1"><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>$<span class="w"> </span><span class="nb">export</span><span class="w"> </span><span class="nv">MINDTRACE_CLUSTER__DEFAULT_REDIS_URL</span><span class="o">=</span>redis://localhost:6379
 </span><span id="__span-26-2"><a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a>$<span class="w"> </span><span class="nb">export</span><span class="w"> </span><span class="nv">MINDTRACE_WORKER__DEFAULT_REDIS_URL</span><span class="o">=</span>redis://localhost:6379
-</span><span id="__span-26-3"><a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a>$<span class="w"> </span><span class="nb">export</span><span class="w"> </span><span class="nv">MINDTRACE_CLUSTER__MINIO_ENDPOINT</span><span class="o">=</span>localhost:9000
-</span><span id="__span-26-4"><a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a>$<span class="w"> </span><span class="nb">export</span><span class="w"> </span><span class="nv">MINDTRACE_CLUSTER__MINIO_ACCESS_KEY</span><span class="o">=</span>minioadmin
-</span><span id="__span-26-5"><a id="__codelineno-26-5" name="__codelineno-26-5" href="#__codelineno-26-5"></a>$<span class="w"> </span><span class="nb">export</span><span class="w"> </span><span class="nv">MINDTRACE_CLUSTER__MINIO_SECRET_KEY</span><span class="o">=</span>minioadmin
-</span><span id="__span-26-6"><a id="__codelineno-26-6" name="__codelineno-26-6" href="#__codelineno-26-6"></a>$<span class="w"> </span><span class="nb">export</span><span class="w"> </span><span class="nv">MINDTRACE_CLUSTER__MINIO_BUCKET</span><span class="o">=</span>workers
+</span><span id="__span-26-3"><a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a>$<span class="w"> </span><span class="nb">export</span><span class="w"> </span><span class="nv">MINDTRACE_CLUSTER__MINIO_HOST</span><span class="o">=</span>localhost
+</span><span id="__span-26-4"><a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a>$<span class="w"> </span><span class="nb">export</span><span class="w"> </span><span class="nv">MINDTRACE_CLUSTER__MINIO_PORT</span><span class="o">=</span><span class="m">9000</span>
+</span><span id="__span-26-5"><a id="__codelineno-26-5" name="__codelineno-26-5" href="#__codelineno-26-5"></a>$<span class="w"> </span><span class="nb">export</span><span class="w"> </span><span class="nv">MINDTRACE_CLUSTER__MINIO_ACCESS_KEY</span><span class="o">=</span>minioadmin
+</span><span id="__span-26-6"><a id="__codelineno-26-6" name="__codelineno-26-6" href="#__codelineno-26-6"></a>$<span class="w"> </span><span class="nb">export</span><span class="w"> </span><span class="nv">MINDTRACE_CLUSTER__MINIO_SECRET_KEY</span><span class="o">=</span>minioadmin
+</span><span id="__span-26-7"><a id="__codelineno-26-7" name="__codelineno-26-7" href="#__codelineno-26-7"></a>$<span class="w"> </span><span class="nb">export</span><span class="w"> </span><span class="nv">MINDTRACE_CLUSTER__MINIO_BUCKET</span><span class="o">=</span>workers
 </span></code></pre></div>
 <h2 id="examples">Examples</h2>
 <p>Related examples in the repo:</p>
@@ -2269,7 +2270,7 @@
 <li><code>ClusterManager</code>, <code>Node</code>, and <code>Worker</code> are services, not just helper classes.</li>
 <li>Direct endpoint routing and orchestrator/worker routing are different operational modes and should be chosen intentionally.</li>
 <li>Worker launch on nodes is asynchronous, so <code>launch_worker_status</code> is part of the normal workflow.</li>
-<li>The cluster relies on RabbitMQ, Redis, and MinIO/Registry being configured correctly.</li>
+<li>The cluster relies on RabbitMQ, Redis, and the S3-backed Registry being configured correctly.</li>
 <li><code>RunScriptWorker</code> can execute commands in Git or Docker environments, so environment setup and security expectations matter.</li>
 <li>Failed jobs can enter the DLQ; production workflows should include a plan for inspection, requeue, or discard.</li>
 </ul>

@@ -5517,8 +5517,8 @@ Uses boto3 with IfNoneMatch='*' for atomic conditional writes.</p>
             <td>
               <div class="doc-md-description">
                 <p>Optional separate endpoint used ONLY when minting presigned
-URLs. Needed for split-horizon deployments (e.g. MinIO reachable at an
-internal host <code>minio:9000</code> for server I/O but at <code>localhost:19000</code> for
+URLs. Needed for split-horizon deployments (e.g. a store reachable at an
+internal host <code>s3:9000</code> for server I/O but at <code>localhost:19000</code> for
 browsers). Presigning is a local signing operation (no network call), so a
 second client bound to this endpoint produces URLs whose <code>Host</code> the client
 can actually reach while leaving normal I/O on <code>endpoint</code>. When unset,
@@ -9644,8 +9644,8 @@ Uses boto3 with IfNoneMatch='*' for atomic conditional writes.</p>
             <td>
               <div class="doc-md-description">
                 <p>Optional separate endpoint used ONLY when minting presigned
-URLs. Needed for split-horizon deployments (e.g. MinIO reachable at an
-internal host <code>minio:9000</code> for server I/O but at <code>localhost:19000</code> for
+URLs. Needed for split-horizon deployments (e.g. a store reachable at an
+internal host <code>s3:9000</code> for server I/O but at <code>localhost:19000</code> for
 browsers). Presigning is a local signing operation (no network call), so a
 second client bound to this endpoint produces URLs whose <code>Host</code> the client
 can actually reach while leaving normal I/O on <code>endpoint</code>. When unset,
