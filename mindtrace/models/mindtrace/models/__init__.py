@@ -37,7 +37,7 @@ from mindtrace.models.inference import (
     HuggingFaceImageProcessor,
     TorchModel,
 )
-from mindtrace.models.protocols import Model
+from mindtrace.models.protocols import EmbeddingModel, Model
 from mindtrace.models.serving import (
     ClassificationResult,
     DetectionResult,
@@ -124,6 +124,7 @@ from mindtrace.models.lifecycle import (
 
 __all__ = [
     # runnable models
+    "EmbeddingModel",
     "Model",
     "TorchModel",
     "HuggingFaceImageProcessor",
