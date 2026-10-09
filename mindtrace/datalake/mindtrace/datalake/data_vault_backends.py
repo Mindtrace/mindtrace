@@ -15,6 +15,7 @@ from typing import Any
 from unittest.mock import Mock as _UnitTestMock
 
 from mindtrace.datalake.async_datalake import AsyncDatalake
+from mindtrace.datalake.card import DatasetCard
 from mindtrace.datalake.datalake import Datalake
 from mindtrace.datalake.pagination_types import CursorPage
 from mindtrace.datalake.service_types import (
@@ -362,6 +363,7 @@ class AsyncDataVaultBackend(ABC):
         description: str | None = None,
         source_dataset_version_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        card: DatasetCard | dict[str, Any] | None = None,
         created_by: str | None = None,
     ) -> DatasetVersion: ...
 
@@ -567,6 +569,7 @@ class DataVaultBackend(ABC):
         description: str | None = None,
         source_dataset_version_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        card: DatasetCard | dict[str, Any] | None = None,
         created_by: str | None = None,
     ) -> DatasetVersion: ...
 
@@ -868,6 +871,7 @@ class LocalAsyncDataVaultBackend(AsyncDataVaultBackend):
         description: str | None = None,
         source_dataset_version_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        card: DatasetCard | dict[str, Any] | None = None,
         created_by: str | None = None,
     ) -> DatasetVersion:
         return await self._datalake.create_dataset_version(
@@ -877,6 +881,7 @@ class LocalAsyncDataVaultBackend(AsyncDataVaultBackend):
             description=description,
             source_dataset_version_id=source_dataset_version_id,
             metadata=metadata,
+            card=card,
             created_by=created_by,
         )
 
@@ -1153,6 +1158,7 @@ class LocalDataVaultBackend(DataVaultBackend):
         description: str | None = None,
         source_dataset_version_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        card: DatasetCard | dict[str, Any] | None = None,
         created_by: str | None = None,
     ) -> DatasetVersion:
         return self._datalake.create_dataset_version(
@@ -1162,6 +1168,7 @@ class LocalDataVaultBackend(DataVaultBackend):
             description=description,
             source_dataset_version_id=source_dataset_version_id,
             metadata=metadata,
+            card=card,
             created_by=created_by,
         )
 
@@ -1600,6 +1607,7 @@ class DatalakeServiceAsyncDataVaultBackend(AsyncDataVaultBackend):
         description: str | None = None,
         source_dataset_version_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        card: DatasetCard | dict[str, Any] | None = None,
         created_by: str | None = None,
     ) -> DatasetVersion:
         out = await self._call(
@@ -1611,6 +1619,7 @@ class DatalakeServiceAsyncDataVaultBackend(AsyncDataVaultBackend):
                 description=description,
                 source_dataset_version_id=source_dataset_version_id,
                 metadata=metadata,
+                card=card,
                 created_by=created_by,
             ),
         )
@@ -2003,6 +2012,7 @@ class DatalakeServiceDataVaultBackend(DataVaultBackend):
         description: str | None = None,
         source_dataset_version_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        card: DatasetCard | dict[str, Any] | None = None,
         created_by: str | None = None,
     ) -> DatasetVersion:
         out = self._call(
@@ -2014,6 +2024,7 @@ class DatalakeServiceDataVaultBackend(DataVaultBackend):
                 description=description,
                 source_dataset_version_id=source_dataset_version_id,
                 metadata=metadata,
+                card=card,
                 created_by=created_by,
             ),
         )

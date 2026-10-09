@@ -11,6 +11,7 @@ from pymongo import IndexModel
 
 from mindtrace.core import utcnow
 from mindtrace.database import MindtraceDocument
+from mindtrace.datalake.card import DatasetCard
 
 AnnotationTaskType = Literal["classification", "detection", "segmentation", "keypoint", "other"]
 AnnotationKind = Literal[
@@ -624,6 +625,7 @@ class DatasetVersion(DatalakeDocument):
     manifest: list[str] = Field(default_factory=list)
     source_dataset_version_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    card: DatasetCard | None = None
     created_at: datetime = Field(default_factory=utcnow)
     created_by: str | None = None
 
