@@ -18,9 +18,16 @@ else:
 class HuggingFaceImageProcessor:
     """Lazily reconstruct a Hugging Face image processor from its model ID."""
 
-    def __init__(self, model_id: str, *, cache_dir: str | None = None) -> None:
+    def __init__(
+        self,
+        model_id: str,
+        *,
+        cache_dir: str | None = None,
+        use_fast: bool = True,
+    ) -> None:
         self.model_id = model_id
         self.cache_dir = cache_dir
+        self.use_fast = use_fast
         self._processor: Any = None
 
     def __call__(self, inputs: _ImageInput) -> Tensor:
@@ -53,6 +60,7 @@ class HuggingFaceImageProcessor:
             self._processor = AutoImageProcessor.from_pretrained(
                 self.model_id,
                 cache_dir=self.cache_dir,
+                use_fast=self.use_fast,
             )
 
         encoded = self._processor(images=images, return_tensors="pt")
