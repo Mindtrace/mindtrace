@@ -19,6 +19,9 @@ dependencies = [
     "redis>=5.3.0",
 ]
 
+[project.entry-points."mindtrace.benchmark_suites"]
+jobs = "mindtrace.jobs.testing:register_benchmark_suites"
+
 [project.urls]
 Homepage = "https://mindtrace.ai"
 Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/jobs"
