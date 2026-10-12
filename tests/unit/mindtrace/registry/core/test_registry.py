@@ -139,8 +139,9 @@ def test_registry_reopens_with_persisted_settings_and_objects(temp_registry_dir)
 @pytest.mark.parametrize("error_type", [PermissionError, OSError])
 def test_registry_metadata_open_failure_prevents_initialization_writes(temp_registry_dir, monkeypatch, error_type):
     """Failed metadata reads propagate unchanged before initialization can write."""
-    Registry(backend=temp_registry_dir, version_objects=True)
-    metadata_path = Path(temp_registry_dir) / "registry_metadata.json"
+    registry = Registry(backend=temp_registry_dir, version_objects=True)
+    # Match the backend's resolved path even when the temporary directory is an alias.
+    metadata_path = registry.backend.metadata_path
     original_bytes = metadata_path.read_bytes()
     error = error_type("cannot open registry metadata")
     reads = Mock(side_effect=error)
