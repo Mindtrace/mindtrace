@@ -500,13 +500,11 @@ def test_huggingface_semantic_segmentation_export_writes_typed_image_and_mask(tm
     assert "background_id" not in payload["train"][0]
     assert "ignore_index" not in payload["train"][0]
     assert metadata == {
-        "schema_version": 1,
-        "mindtrace": {
-            "profile": "semantic_segmentation",
-            "class_names": ["background", "person"],
-            "background_id": 0,
-            "ignore_index": 255,
-        },
+        "schema_version": 2,
+        "profile": "semantic_segmentation",
+        "class_names": ["background", "person"],
+        "background_id": 0,
+        "ignore_index": 255,
     }
 
 

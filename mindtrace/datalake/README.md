@@ -172,6 +172,11 @@ as `select()`, `filter()`, `shuffle()`, and `train_test_split()`—remains avail
 `build_dataloaders()` delegates to it, then adds batching, train-only shuffling, workers, seeding, and task-specific
 collation. Both accept one shared transform or a split-keyed transform mapping.
 
+Semantic-segmentation exports store artifact-level semantics in `mindtrace_metadata.json`.
+New exports use a flat JSON object with `schema_version: 2`; read it separately using
+[`read_export_metadata`](../models/mindtrace/models/training/README.md#export-metadata).
+The reader also accepts existing nested v1 sidecars without re-exporting the dataset.
+
 The public task API is:
 
 - `task="classification"` — infer single-label or multi-label classification from the schema.

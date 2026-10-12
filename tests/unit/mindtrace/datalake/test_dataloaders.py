@@ -1,4 +1,5 @@
 import copy
+import json
 import pickle
 from types import SimpleNamespace
 
@@ -21,7 +22,7 @@ class _FakeSplitDataset:
         self.rows = rows
         self.column_names = column_names or ["image", "label"]
         self.features = features or {"label": SimpleNamespace(names=["pink primrose", "orchid"])}
-        self.info = SimpleNamespace(metadata={})
+        self.info = SimpleNamespace()
         self._transform = None
 
     def __len__(self):
@@ -438,16 +439,6 @@ def test_semantic_segmentation_dataset_returns_image_and_long_mask(monkeypatch):
         "mask": mask,
     }
     split = _FakeSplitDataset([row], column_names=list(row), features={})
-    split.info = SimpleNamespace(
-        metadata={
-            "mindtrace": {
-                "profile": "semantic_segmentation",
-                "class_names": ["background", "person"],
-                "background_id": 0,
-                "ignore_index": 255,
-            }
-        }
-    )
     payload = _FakeDatasetDict(train=split)
     monkeypatch.setattr(
         dataloaders,
@@ -464,12 +455,7 @@ def test_semantic_segmentation_dataset_returns_image_and_long_mask(monkeypatch):
     assert target.value is mask
     assert target.squeezed_dimension == 0
     assert target.dtype == "long"
-    assert dataset.info.metadata["mindtrace"] == {
-        "profile": "semantic_segmentation",
-        "class_names": ["background", "person"],
-        "background_id": 0,
-        "ignore_index": 255,
-    }
+    assert not hasattr(dataset.info, "metadata")
 
 
 def test_semantic_segmentation_dataloader_uses_variable_size_collator(monkeypatch):
@@ -831,7 +817,7 @@ def test_build_dataloaders_forwards_native_dataloader_kwargs(monkeypatch):
     assert loaders["train"].kwargs["shuffle"] is False
 
 
-def test_semantic_dataset_reads_constants_without_decoding_first_sample(monkeypatch):
+def test_semantic_dataset_reads_constants_without_decoding_first_sample(monkeypatch, tmp_path):
     class _MetadataOnlySplit(_FakeSplitDataset):
         def __getitem__(self, index):
             raise AssertionError("dataset construction must not decode row zero")
@@ -841,16 +827,13 @@ def test_semantic_dataset_reads_constants_without_decoding_first_sample(monkeypa
         column_names=["asset_id", "background_id", "class_names", "ignore_index", "image", "mask"],
         features={},
     )
-    split.info = SimpleNamespace(
-        metadata={
-            "mindtrace": {
-                "profile": "semantic_segmentation",
-                "class_names": ["background", "person"],
-                "background_id": 0,
-                "ignore_index": 255,
-            }
-        }
-    )
+    metadata = {
+        "profile": "semantic_segmentation",
+        "class_names": ["background", "person"],
+        "background_id": 0,
+        "ignore_index": 255,
+    }
+    (tmp_path / "mindtrace_metadata.json").write_text(json.dumps({"schema_version": 2, **metadata}), encoding="utf-8")
     payload = _FakeDatasetDict(train=split)
     monkeypatch.setattr(
         dataloaders,
@@ -858,14 +841,10 @@ def test_semantic_dataset_reads_constants_without_decoding_first_sample(monkeypa
         lambda: _dependency_bundle(payload),
     )
 
-    dataset = dataloaders.build_datasets("/export", task="semantic_segmentation")["train"]
+    dataset = dataloaders.build_datasets(tmp_path, task="semantic_segmentation")["train"]
 
-    assert dataset.info.metadata["mindtrace"] == {
-        "profile": "semantic_segmentation",
-        "class_names": ["background", "person"],
-        "background_id": 0,
-        "ignore_index": 255,
-    }
+    assert dataloaders.read_export_metadata(tmp_path) == metadata
+    assert not hasattr(dataset.info, "metadata")
 
 
 def test_build_datasets_dispatches_to_caller_supplied_task_profile(monkeypatch):

@@ -30,6 +30,22 @@ The training sub-package provides:
 
 ## Architecture
 
+### Export metadata
+
+Use `from mindtrace.models.training import read_export_metadata` and call
+`read_export_metadata(export_path)` to read artifact-level task semantics such as
+semantic-segmentation class names, background IDs, and ignore IDs. Metadata is
+returned separately; it is never attached to Hugging Face `DatasetInfo`, so native
+dataset operations remain supported.
+
+The reader returns metadata fields without the schema envelope, or `{}` if the
+sidecar is absent. Invalid JSON, invalid structure, and unsupported schema versions
+raise `ValueError`; other read failures propagate. It accepts both legacy nested
+v1 and flat v2 `mindtrace_metadata.json` files. New exports use v2; existing exports
+do not need to be regenerated. Older readers must be upgraded to consume v2.
+
+### Package layout
+
 ```
 training/
 ├── __init__.py              # Public API exports

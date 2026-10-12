@@ -215,7 +215,7 @@ def _save_huggingface_rows(
             write_export_file(
                 destination,
                 "mindtrace_metadata.json",
-                json.dumps({"schema_version": 1, "mindtrace": artifact_metadata}, sort_keys=True).encode("utf-8"),
+                json.dumps({**artifact_metadata, "schema_version": 2}, sort_keys=True).encode("utf-8"),
             )
         )
     return ExportResult(
