@@ -382,6 +382,13 @@ model = store.load("my_model")       # -> searches all mounts
 - **Writes**: Qualified writes target the specified mount. Unqualified writes go to `default_mount`.
 - **Reads**: Qualified reads target the specified mount. Unqualified reads discover across all mounts — if the object exists in exactly one mount it loads; if found in multiple mounts a `StoreAmbiguousObjectError` is raised.
 
+Mounts marked `read_only=True` reject saves, deletes, and direct-upload target creation,
+commit, and cleanup with `PermissionError` before delegating to the mounted Registry.
+This applies to both explicitly selected and default mounts; writes do not fall back to
+another writable mount. Object reads, upload inspection, and download URL creation remain
+available. The flag governs operations through this Store, not independent use of the
+underlying Registry or previously issued upload URLs.
+
 ### Default Mount Behaviour
 
 - `default_mount` always points to a configured mount (initially `temp`).

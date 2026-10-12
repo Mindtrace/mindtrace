@@ -355,9 +355,17 @@ class Store(Mindtrace):
         expiration_minutes: int = 60,
         upload_id: str | None = None,
     ) -> dict[str, Any]:
+        """Create an upload target on the explicit or default write mount.
+
+        Raises:
+            PermissionError: If the selected mount is read-only.
+        """
         mount, object_name, _ = self.parse_key(key)
         resolved_mount = mount or self.default_mount
-        registry = self.get_mount(resolved_mount).registry
+        store_mount = self.get_mount(resolved_mount)
+        if store_mount.read_only:
+            raise PermissionError(f"Mount '{resolved_mount}' is read-only")
+        registry = store_mount.registry
         target = registry.create_direct_upload_target(
             upload_id or hashlib.sha1(key.encode()).hexdigest(),
             content_type=content_type,
@@ -421,9 +429,17 @@ class Store(Mindtrace):
         return registry.inspect_direct_upload_target(staged_target)
 
     def cleanup_direct_upload_target(self, key: str, *, staged_target: dict[str, Any]) -> bool:
+        """Delete a staged upload on the explicit or default write mount.
+
+        Raises:
+            PermissionError: If the selected mount is read-only.
+        """
         mount, _, _ = self.parse_key(key)
         resolved_mount = mount or self.default_mount
-        registry = self.get_mount(resolved_mount).registry
+        store_mount = self.get_mount(resolved_mount)
+        if store_mount.read_only:
+            raise PermissionError(f"Mount '{resolved_mount}' is read-only")
+        registry = store_mount.registry
         return registry.cleanup_direct_upload_target(staged_target)
 
     def commit_direct_upload(
@@ -435,9 +451,17 @@ class Store(Mindtrace):
         metadata: Dict[str, Any] | None = None,
         on_conflict: str | None = None,
     ) -> str:
+        """Publish a staged upload on the explicit or default write mount.
+
+        Raises:
+            PermissionError: If the selected mount is read-only.
+        """
         mount, object_name, key_version = self.parse_key(key)
         resolved_mount = mount or self.default_mount
-        registry = self.get_mount(resolved_mount).registry
+        store_mount = self.get_mount(resolved_mount)
+        if store_mount.read_only:
+            raise PermissionError(f"Mount '{resolved_mount}' is read-only")
+        registry = store_mount.registry
         resolved_version = registry.commit_direct_upload(
             object_name,
             staged_target=staged_target,

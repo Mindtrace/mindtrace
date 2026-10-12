@@ -26,7 +26,6 @@ def test_read_only_direct_writes_stop_before_backend_call(store, monkeypatch, op
     owner = store.get_mount("b").registry
     staged = owner.create_direct_upload_target("existing-upload")["staged_target"]
     Path(staged["path"]).write_bytes(b"owned")
-    owner = store.get_mount("b").registry
     store.remove_mount("b")
     store.add_mount(owner, name="b", read_only=True)
     if not qualified:
@@ -39,16 +38,87 @@ def test_read_only_direct_writes_stop_before_backend_call(store, monkeypatch, op
     }[operation]
     mutation = Mock(wraps=getattr(owner.backend, method))
     monkeypatch.setattr(owner.backend, method, mutation)
-    with pytest.raises(PermissionError):
+    delegation = Mock(wraps=getattr(owner, method))
+    monkeypatch.setattr(owner, method, delegation)
+    cache_update = Mock(wraps=store.cache_update_location)
+    monkeypatch.setattr(store, "cache_update_location", cache_update)
+    with pytest.raises(PermissionError, match="Mount 'b' is read-only"):
         if operation == "create":
             store.create_direct_upload_target(key, upload_id="new-upload")
         elif operation == "commit":
             store.commit_direct_upload(key, staged_target=staged, version="1.0.0")
         else:
             store.cleanup_direct_upload_target(key, staged_target=staged)
+    delegation.assert_not_called()
     mutation.assert_not_called()
+    cache_update.assert_not_called()
     assert Path(staged["path"]).read_bytes() == b"owned"
     assert not owner.has_object("item", "1.0.0")
+
+
+@pytest.mark.parametrize("qualified", [False, True], ids=["default", "qualified"])
+def test_writable_direct_upload_ignores_other_read_only_mount(store, qualified):
+    """Upload routing checks the selected mount, not every mount or always the default."""
+    other = store.get_mount("a").registry
+    store.remove_mount("a")
+    store.add_mount(other, name="a", read_only=True)
+    store.set_default_mount("a" if qualified else "b")
+    key = "b/item" if qualified else "item"
+
+    target = store.create_direct_upload_target(key, upload_id="writable-upload")
+    assert target["mount"] == "b"
+    assert target["name"] == "item"
+    staged = target["staged_target"]
+    Path(staged["path"]).write_bytes(b"payload")
+    assert store.inspect_direct_upload_target(key, staged_target=staged)["exists"] is True
+
+    assert store.commit_direct_upload(key, staged_target=staged, version="1.0.0") == "1.0.0"
+    assert store.load(key, version="1.0.0") == b"payload"
+    assert not Path(staged["path"]).exists()
+    assert not other.has_object("item", "1.0.0")
+
+    abandoned = store.create_direct_upload_target(key, upload_id="abandoned-upload")["staged_target"]
+    Path(abandoned["path"]).write_bytes(b"unused")
+    assert store.cleanup_direct_upload_target(key, staged_target=abandoned) is True
+    assert not Path(abandoned["path"]).exists()
+    assert store.load(key, version="1.0.0") == b"payload"
+
+
+@pytest.mark.parametrize("qualified", [False, True], ids=["default", "qualified"])
+def test_read_only_mount_allows_direct_upload_inspection_and_reads(store, qualified):
+    """Read-only mounts retain read access to objects and existing upload targets."""
+    owner = store.get_mount("b").registry
+    owner.save("item", b"existing", version="1.0.0")
+    staged = owner.create_direct_upload_target("existing-upload")["staged_target"]
+    Path(staged["path"]).write_bytes(b"staged")
+    store.remove_mount("b")
+    store.add_mount(owner, name="b", read_only=True)
+    if not qualified:
+        store.set_default_mount("b")
+    key = "b/item" if qualified else "item"
+
+    assert store.load(key, version="1.0.0") == b"existing"
+    inspection = store.inspect_direct_upload_target(key, staged_target=staged)
+    assert inspection["exists"] is True
+    assert inspection["size_bytes"] == len(b"staged")
+    assert store.create_direct_download_url(key, version="1.0.0") is None
+    assert Path(staged["path"]).read_bytes() == b"staged"
+
+
+@pytest.mark.parametrize("qualified", [False, True], ids=["default", "qualified"])
+def test_read_only_mount_allows_direct_download_urls(store, cached_mock_registry, qualified):
+    """Read-only remote mounts can still issue single and batch download URLs."""
+    remote = cached_mock_registry
+    remote.save("item", b"existing", version="1.0.0")
+    expected = remote.create_direct_download_url("item", version="1.0.0")
+    assert expected.startswith("https://example.invalid/")
+    store.add_mount(remote, name="remote", read_only=True)
+    if not qualified:
+        store.set_default_mount("remote")
+    key = "remote/item" if qualified else "item"
+
+    assert store.create_direct_download_url(key, version="1.0.0") == expected
+    assert store.create_direct_download_urls("remote" if qualified else "", ["item"], ["1.0.0"]) == [expected]
 
 
 def test_move_deletes_only_the_version_it_copied(store, monkeypatch):
