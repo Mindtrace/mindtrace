@@ -304,6 +304,34 @@ result = registry.save(
 result = registry.load(["model:a", "model:b"], version=["1.0.0", "1.0.0"])
 ```
 
+### Batch-save identity rule
+
+**Agreed contract; implementation pending in [repair package 5](https://github.com/Mindtrace/mindtrace/issues/579).**
+The current implementation does not yet enforce this rule.
+
+Within one batch save, each resolved `(name, version)` identity in a target registry
+must be unique. If any identity is duplicated, the entire call must raise
+`ValueError` **before materialization or any saves**, including saves of otherwise
+valid items. This applies regardless of `on_conflict`; inputs are not silently
+discarded using first-wins or last-wins behavior.
+
+- The same name with different concrete versions is allowed.
+- Versions are compared after normalization: with three version digits, `1` and
+  `1.0.0` identify the same version.
+- Automatic versions are planned before saving. Repeated names receive distinct
+  versions, avoiding stored versions, all explicitly requested versions, and
+  versions already allocated to other items in the batch.
+- In unversioned mode, repeated names target the same effective version and are
+  therefore rejected, even if different version strings were supplied.
+- Store batches apply the same check after resolving their target registries and
+  names; qualified and default-mount references to the same target must not evade it.
+
+`on_conflict` still governs conflicts with already stored versions. Once a batch
+passes preflight, later materializer or backend failures remain per-item outcomes;
+this rule does not make the batch transactional or promise rollback of successful
+items. Existing backend concurrency checks remain in force: planning versions
+within a batch is not a distributed version reservation.
+
 ## Dict-Like API
 
 The `Registry` also supports simple dict-like access for common operations:
