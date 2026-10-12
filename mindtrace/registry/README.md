@@ -64,6 +64,12 @@ local_backend = LocalRegistryBackend(uri="/path/to/registry")
 registry = Registry(backend=local_backend)
 ```
 
+For local registries, a missing `registry_metadata.json` permits normal
+initialization. Malformed JSON raises `json.JSONDecodeError`; permission and
+other I/O failures propagate unchanged. A failed metadata read stops
+`Registry(...)` initialization without rewriting the metadata file. Reopening
+a healthy registry retains its persisted settings and stored objects.
+
 ### S3-Compatible Backend (MinIO, AWS S3)
 
 The S3 backend provides distributed storage for any S3-compatible service.

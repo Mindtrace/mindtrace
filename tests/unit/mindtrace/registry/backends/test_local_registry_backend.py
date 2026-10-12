@@ -9,7 +9,7 @@ import types
 import uuid
 from pathlib import Path
 from typing import Generator
-from unittest.mock import patch
+from unittest.mock import mock_open, patch
 
 import pytest
 import yaml
@@ -1286,6 +1286,24 @@ def test_fetch_registry_metadata_propagates_open_failure(backend, monkeypatch):
     finally:
         assert calls
         assert backend.metadata_path.read_text() == "{}"
+
+
+@pytest.mark.parametrize("error_type", [OSError, FileNotFoundError])
+def test_fetch_registry_metadata_propagates_read_failure(backend, error_type):
+    """Only a missing file at open is absence; errors reading an open file propagate."""
+    original = b"{}"
+    backend.metadata_path.write_bytes(original)
+    error = error_type("cannot read opened registry metadata")
+    with patch("builtins.open", mock_open()) as opened:
+        stream = opened.return_value
+        stream.read.side_effect = error
+        try:
+            with pytest.raises(error_type) as raised:
+                backend.fetch_registry_metadata()
+            assert raised.value is error
+        finally:
+            stream.read.assert_called_once_with()
+            assert backend.metadata_path.read_bytes() == original
 
 
 def test_list_versions_non_numeric_versions_sort_to_front(backend, sample_metadata):

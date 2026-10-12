@@ -876,16 +876,21 @@ class LocalRegistryBackend(RegistryBackend):
         """Fetch registry-level metadata from the backend.
 
         Returns:
-            Dictionary containing registry metadata. Returns empty dict if no metadata exists.
+            Dictionary containing registry metadata, or an empty dict if the
+            metadata file does not exist when opened.
+
+        Raises:
+            json.JSONDecodeError: If the existing metadata contains malformed JSON.
+            OSError: If opening or reading the metadata fails for any other reason.
+                Read failures after opening, including FileNotFoundError, propagate.
         """
         try:
-            if not self._metadata_path.exists():
-                return {}
-            with open(self._metadata_path, "r") as f:
-                return json.load(f)
-        except Exception as e:
-            self.logger.debug(f"Could not load registry metadata: {e}")
+            stream = open(self._metadata_path, "r")
+        except FileNotFoundError:
             return {}
+
+        with stream:
+            return json.load(stream)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Discovery

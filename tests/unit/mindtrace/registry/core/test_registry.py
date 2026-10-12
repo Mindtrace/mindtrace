@@ -123,6 +123,52 @@ def test_registry_initialization(registry, temp_registry_dir):
     assert Path(temp_registry_dir).exists()
 
 
+def test_registry_reopens_with_persisted_settings_and_objects(temp_registry_dir):
+    """Healthy metadata retains non-default settings and existing objects on reopen."""
+    registry = Registry(backend=temp_registry_dir, version_objects=True, mutable=False, version_digits=4)
+    registry.save("existing", {"value": 42}, version="1.2.3.4")
+
+    reopened = Registry(backend=temp_registry_dir)
+
+    assert reopened.version_objects is True
+    assert reopened.mutable is False
+    assert reopened.version_digits == 4
+    assert reopened.load("existing", version="1.2.3.4") == {"value": 42}
+
+
+@pytest.mark.parametrize("error_type", [PermissionError, OSError])
+def test_registry_metadata_open_failure_prevents_initialization_writes(temp_registry_dir, monkeypatch, error_type):
+    """Failed metadata reads propagate unchanged before initialization can write."""
+    Registry(backend=temp_registry_dir, version_objects=True)
+    metadata_path = Path(temp_registry_dir) / "registry_metadata.json"
+    original_bytes = metadata_path.read_bytes()
+    error = error_type("cannot open registry metadata")
+    reads = Mock(side_effect=error)
+    writes = Mock()
+    original_open = open
+    original_save = LocalRegistryBackend.save_registry_metadata
+
+    def failing_open(file, mode="r", *args, **kwargs):
+        if Path(file) == metadata_path and "r" in mode:
+            return reads()
+        return original_open(file, mode, *args, **kwargs)
+
+    def record_write(backend, *args, **kwargs):
+        writes(*args, **kwargs)
+        return original_save(backend, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", failing_open)
+    monkeypatch.setattr(LocalRegistryBackend, "save_registry_metadata", record_write)
+    try:
+        with pytest.raises(error_type) as raised:
+            Registry(backend=temp_registry_dir)
+        assert raised.value is error
+    finally:
+        reads.assert_called()
+        writes.assert_not_called()
+        assert metadata_path.read_bytes() == original_bytes
+
+
 def test_registry_serialization_hints_for_object_uses_core_materializer_lookup(registry, test_bytes):
     hints = registry.serialization_hints_for_object(test_bytes)
 
