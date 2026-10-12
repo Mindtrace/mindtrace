@@ -13,7 +13,7 @@ The `Cluster` module provides Mindtrace’s distributed job-execution framework,
 - **Direct endpoint or queued execution** depending on job schema targeting
 - **RabbitMQ-backed job queues** through `mindtrace-jobs`
 - **Redis-backed job and worker status tracking**
-- **Worker registry and remote launch support** via Registry / MinIO
+- **Worker registry and remote launch support** via an S3-backed Registry
 - **Built-in workers** such as `EchoWorker` and `RunScriptWorker`
 - **Dead-letter queue (DLQ) tooling** for failed jobs
 
@@ -67,7 +67,7 @@ At a high level, the cluster module works like this:
 - `ClusterManager` routes jobs and is the usual **single entry point** for clients: submit work, inspect job and worker status, launch workers on nodes, plus registrations and DLQ handling
 - `Node` launches worker services on machines
 - `Worker` instances consume jobs and report results back
-- RabbitMQ carries queued work, Redis tracks status, and Registry/MinIO stores worker launcher definitions
+- RabbitMQ carries queued work, Redis tracks status, and an S3-backed Registry stores worker launcher definitions
 
 ## ClusterManager
 
@@ -189,7 +189,7 @@ print(worker_status)
 When a node is connected to a cluster manager, it:
 
 - registers itself with the cluster
-- receives MinIO and RabbitMQ connection details
+- receives S3 and RabbitMQ connection details
 - loads worker definitions from the worker registry
 - launches worker services asynchronously
 - tracks which ports and workers it owns
@@ -504,16 +504,17 @@ Redis is used for job status, worker status, schema targeting, and DLQ state.
 $ docker run -d --name redis -p 6379:6379 redis:latest
 ```
 
-### MinIO / worker registry
+### S3 / worker registry
 
-MinIO-backed Registry storage is used for worker launcher definitions.
+S3-backed Registry storage is used for worker launcher definitions.
 
 Relevant environment variables include:
 
 ```bash
 $ export MINDTRACE_CLUSTER__DEFAULT_REDIS_URL=redis://localhost:6379
 $ export MINDTRACE_WORKER__DEFAULT_REDIS_URL=redis://localhost:6379
-$ export MINDTRACE_CLUSTER__MINIO_ENDPOINT=localhost:9000
+$ export MINDTRACE_CLUSTER__MINIO_HOST=localhost
+$ export MINDTRACE_CLUSTER__MINIO_PORT=9000
 $ export MINDTRACE_CLUSTER__MINIO_ACCESS_KEY=minioadmin
 $ export MINDTRACE_CLUSTER__MINIO_SECRET_KEY=minioadmin
 $ export MINDTRACE_CLUSTER__MINIO_BUCKET=workers
@@ -548,6 +549,6 @@ $ ds test: --unit cluster
 - `ClusterManager`, `Node`, and `Worker` are services, not just helper classes.
 - Direct endpoint routing and orchestrator/worker routing are different operational modes and should be chosen intentionally.
 - Worker launch on nodes is asynchronous, so `launch_worker_status` is part of the normal workflow.
-- The cluster relies on RabbitMQ, Redis, and MinIO/Registry being configured correctly.
+- The cluster relies on RabbitMQ, Redis, and the S3-backed Registry being configured correctly.
 - `RunScriptWorker` can execute commands in Git or Docker environments, so environment setup and security expectations matter.
 - Failed jobs can enter the DLQ; production workflows should include a plan for inspection, requeue, or discard.
