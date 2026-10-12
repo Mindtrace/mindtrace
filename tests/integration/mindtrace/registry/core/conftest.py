@@ -1,6 +1,6 @@
 """Shared fixtures for registry core integration tests against remote backends.
 
-MinIO (S3-compatible, local Docker) is the default remote. GCP runs as a second
+S3/RustFS (local Docker) is the default remote. GCP runs as a second
 parametrized backend when credentials and a test bucket are configured — the
 same skip pattern as ``tests/integration/conftest.py``.
 """
@@ -21,7 +21,7 @@ from mindtrace.registry import (
 )
 
 
-@pytest.fixture(params=[pytest.param("minio", id="minio"), pytest.param("gcp", marks=pytest.mark.gcp, id="gcp")])
+@pytest.fixture(params=[pytest.param("s3", id="s3"), pytest.param("gcp", marks=pytest.mark.gcp, id="gcp")])
 def remote_kind(request):
     """Which remote object store this test should exercise."""
     return request.param
@@ -29,32 +29,28 @@ def remote_kind(request):
 
 @pytest.fixture
 def gcp_object_backend(gcp_test_bucket, gcp_test_prefix, gcp_project_id, gcp_credentials_path, gcs_client):
-    """Function-scoped GCP backend isolated by prefix."""
-    try:
-        from mindtrace.registry.backends.gcp_registry_backend import GCPRegistryBackend
+    """Prerequisite fixtures decide skips; unexpected backend failures must propagate."""
+    from mindtrace.registry.backends.gcp_registry_backend import GCPRegistryBackend
 
-        backend = GCPRegistryBackend(
-            uri=f"gs://{gcp_test_bucket}/{gcp_test_prefix}",
-            project_id=gcp_project_id,
-            bucket_name=gcp_test_bucket,
-            credentials_path=gcp_credentials_path,
-            prefix=gcp_test_prefix,
-        )
-    except Exception as exc:
-        pytest.skip(f"GCP backend creation failed: {exc}")
-    yield backend
+    backend = GCPRegistryBackend(
+        uri=f"gs://{gcp_test_bucket}/{gcp_test_prefix}",
+        project_id=gcp_project_id,
+        bucket_name=gcp_test_bucket,
+        credentials_path=gcp_credentials_path,
+        prefix=gcp_test_prefix,
+    )
     try:
+        yield backend
+    finally:
         bucket = gcs_client.bucket(gcp_test_bucket)
         for blob in bucket.list_blobs(prefix=gcp_test_prefix):
             blob.delete()
-    except Exception:
-        pass
 
 
 @pytest.fixture
 def remote_object_backend(remote_kind, request):
-    """Live S3/MinIO or GCS backend. Unused backends are not constructed."""
-    if remote_kind == "minio":
+    """Live S3 or GCS backend. Unused backends are not constructed."""
+    if remote_kind == "s3":
         return request.getfixturevalue("s3_backend")
     return request.getfixturevalue("gcp_object_backend")
 
@@ -73,7 +69,7 @@ def remote_and_local_store(remote_kind, temp_dir, request):
         is_default=True,
         registry_options={"version_objects": True, "mutable": True},
     )
-    if remote_kind == "minio":
+    if remote_kind == "s3":
         s3_config = request.getfixturevalue("s3_config")
         remote_mount = Mount(
             name="remote",
@@ -112,9 +108,6 @@ def remote_and_local_store(remote_kind, temp_dir, request):
     try:
         yield store
     finally:
-        try:
-            bucket = gcs_client.bucket(gcp_test_bucket)
-            for blob in bucket.list_blobs(prefix=gcp_test_prefix):
-                blob.delete()
-        except Exception:
-            pass
+        bucket = gcs_client.bucket(gcp_test_bucket)
+        for blob in bucket.list_blobs(prefix=gcp_test_prefix):
+            blob.delete()

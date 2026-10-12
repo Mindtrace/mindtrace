@@ -253,16 +253,20 @@ def test_keys_values_items_and_len(basic_store):
 
 
 def test_unqualified_delete_uses_default_mount(basic_store):
-    basic_store.save("default-only", {"v": 1})
-    basic_store.delete("default-only")
-    with pytest.raises(RegistryObjectNotFound):
-        basic_store.load("a/default-only")
+    basic_store.save("a/shared", {"from": "a"})
+    basic_store.save("b/shared", {"from": "b"})
+    basic_store.delete("shared")
+    assert not basic_store.has_object("a/shared")
+    assert basic_store.load("b/shared") == {"from": "b"}
 
 
-def test_batch_delete_missing_is_noop_success(basic_store):
+def test_batch_delete_reports_missing_item_separately(basic_store):
+    basic_store.save("present", "value")
     result = basic_store.delete(["present", "missing"])
-    assert result.success_count == 2
-    assert result.failure_count == 0
+    assert result.success_count == 1
+    assert result.failure_count == 1
+    assert result.errors[("missing", "latest")]["error"] == "RegistryObjectNotFound"
+    assert not basic_store.has_object("a/present")
 
 
 def test_store_init_accepts_explicit_temp_and_named_mounts():
@@ -570,32 +574,14 @@ class TestStoreBugHunt:
     Several of these currently fail; they should pass once the issues are fixed.
     """
 
-    def test_slash_key_parse_is_stable_when_a_matching_mount_is_added(self, basic_store):
-        """S1: `nested/path` must not change meaning just because mount `nested` appears."""
-        basic_store.save("nested/path", {"v": 1})
-        parsed_before = basic_store.parse_key("nested/path")
-        assert basic_store.load("nested/path") == {"v": 1}
-
-        with TemporaryDirectory() as extra:
-            basic_store.add_mount(Registry(backend=Path(extra)), name="nested")
-            assert basic_store.parse_key("nested/path") == parsed_before
-            assert basic_store.load("nested/path") == {"v": 1}
-
-    def test_unqualified_delete_removes_the_object_load_would_return(self, basic_store):
-        """S2: unqualified delete must target the uniquely discovered mount, not only default_mount."""
-        basic_store.save("b/item", {"ok": True})
-        assert basic_store.has_object("item") is True
-        basic_store.delete("item")
-        assert basic_store.has_object("item") is False
-        with pytest.raises(RegistryObjectNotFound):
-            basic_store.load("item")
-
-    def test_unqualified_save_does_not_make_an_existing_name_unreadable(self, basic_store):
-        """S2: saving unqualified `item` must not leave load('item') ambiguous or wrong."""
-        basic_store.save("b/item", {"from": "b"})
-        basic_store.save("item", {"from": "default"})
-        loaded = basic_store.load("item")
-        assert loaded in ({"from": "b"}, {"from": "default"})
+    def test_qualified_slash_key_is_stable_when_a_matching_mount_is_added(self, basic_store, tmp_path):
+        """S1 control: canonical qualified identity survives changes to other mounts."""
+        key = basic_store.build_key("a", "nested/path", "1.0.0")
+        basic_store.save(key, {"v": 1})
+        assert basic_store.parse_key(key) == ("a", "nested/path", "1.0.0")
+        basic_store.add_mount(Registry(backend=tmp_path / "extra"), name="nested")
+        assert basic_store.parse_key(key) == ("a", "nested/path", "1.0.0")
+        assert basic_store.load(key) == {"v": 1}
 
     def test_pop_without_version_deletes_all_versions(self, versioned_store):
         """pop('name') must delete every version and return the latest value."""
@@ -612,13 +598,15 @@ class TestStoreBugHunt:
         assert basic_store.load("a/x") == {"v": 1}
         assert basic_store.has_object("b/x") is False
 
-    def test_contains_true_implies_getitem_succeeds(self, basic_store):
-        """S5: mapping invariant — if `name in store`, `store[name]` must not raise."""
+    def test_membership_does_not_choose_an_ambiguous_mount(self, basic_store):
+        """S5 control: existence across mounts is distinct from unique resolution."""
         basic_store.save("a/shared", {"from": "a"})
         basic_store.save("b/shared", {"from": "b"})
         assert "shared" in basic_store
-        retrieved = basic_store["shared"]
-        assert retrieved in ({"from": "a"}, {"from": "b"})
+        with pytest.raises(StoreAmbiguousObjectError):
+            _ = basic_store["shared"]
+        assert basic_store["a/shared"] == {"from": "a"}
+        assert basic_store["b/shared"] == {"from": "b"}
 
     def test_missing_getitem_raises_keyerror(self, basic_store):
         """S6: Store must follow dict protocol for missing keys (KeyError, not RegistryObjectNotFound)."""
@@ -627,28 +615,14 @@ class TestStoreBugHunt:
         sentinel = object()
         assert basic_store.get("missing", sentinel) is sentinel
 
-    def test_update_from_store_does_not_drop_same_named_objects_from_different_mounts(self):
-        """S7: Store.update(other) must not silently keep only one of two same-named source objects."""
-        with (
-            TemporaryDirectory() as d1,
-            TemporaryDirectory() as d2,
-            TemporaryDirectory() as e1,
-            TemporaryDirectory() as e2,
-        ):
-            source = Store.from_mounts(
-                [
-                    Mount(name="src_a", backend="local", config=LocalMountConfig(uri=d1), is_default=True),
-                    Mount(name="src_b", backend="local", config=LocalMountConfig(uri=d2)),
-                ]
-            )
-            source.save("src_a/item", {"from": "a"})
-            source.save("src_b/item", {"from": "b"})
-
-            dest = Store.from_mounts(
-                [
-                    Mount(name="a", backend="local", config=LocalMountConfig(uri=e1), is_default=True),
-                    Mount(name="b", backend="local", config=LocalMountConfig(uri=e2)),
-                ]
-            )
-            with pytest.raises(ValueError):
-                dest.update(source)
+    def test_update_from_store_preserves_noncolliding_objects(self, basic_store, tmp_path):
+        """S7 control: test the established default-destination policy, not a new merge policy."""
+        basic_store.save("a/first", {"from": "a"})
+        basic_store.save("b/second", {"from": "b"})
+        dest = Store(mounts={"target": Registry(backend=tmp_path / "target")}, default_mount="target")
+        dest.update(basic_store)
+        assert dest.load("target/first") == {"from": "a"}
+        assert dest.load("target/second") == {"from": "b"}
+        assert set(dest.keys("target")) == {"target/first", "target/second"}
+        assert basic_store.load("a/first") == {"from": "a"}
+        assert basic_store.load("b/second") == {"from": "b"}

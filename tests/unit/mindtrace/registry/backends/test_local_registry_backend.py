@@ -224,13 +224,19 @@ def test_delete_object(backend, sample_object_dir, sample_metadata):
     assert not meta_path.exists()
 
 
-def test_invalid_object_name(backend):
-    """Test handling of invalid object names returns failed result."""
-    result = backend.push(["invalid_name"], ["1.0.0"], ["some_path"], [{"test": True}])
+def test_invalid_object_name(backend, sample_object_dir):
+    """Name validation must fail even when the source artifact actually exists."""
+    result = backend.push(["invalid@name"], ["1.0.0"], [sample_object_dir], [{"test": True}]).first()
+    assert result.is_error
+    assert isinstance(result.exception, ValueError)
+    assert "@" in str(result.exception)
+    assert not backend.has_object("invalid@name", "1.0.0")[("invalid@name", "1.0.0")]
 
-    # Backend returns failed result for validation errors
-    assert ("invalid_name", "1.0.0") in result
-    assert result[("invalid_name", "1.0.0")].is_error
+
+def test_underscore_name_is_valid(backend, sample_object_dir):
+    result = backend.push("valid_name", "1.0.0", sample_object_dir, {"test": True})
+    assert result.all_ok
+    assert backend.has_object("valid_name", "1.0.0")[("valid_name", "1.0.0")]
 
 
 def test_register_materializer_metadata_not_exists(backend):
@@ -248,32 +254,40 @@ def test_register_materializer_metadata_not_exists(backend):
     assert materializer == "TestMaterializer"
 
 
-def test_register_materializer_error(backend):
-    """Test error handling when registering a materializer fails."""
-    # Create the metadata file first
-    with open(backend.metadata_path, "w") as f:
-        json.dump({"materializers": {}}, f)
+def test_register_materializer_error(backend, monkeypatch):
+    """Inject a deterministic write failure, independent of the OS user privileges."""
+    backend.metadata_path.write_text('{"materializers": {}}')
+    real_open = open
+    calls = []
 
-    # Make the metadata file read-only to simulate a file system error
-    backend.metadata_path.chmod(0o444)
+    def failing_open(file, mode="r", *args, **kwargs):
+        if Path(file) == backend.metadata_path and "w" in mode:
+            calls.append(file)
+            raise PermissionError("metadata write denied")
+        return real_open(file, mode, *args, **kwargs)
 
-    # Try to register a materializer - should raise an error
-    with pytest.raises(Exception):
+    monkeypatch.setattr("builtins.open", failing_open)
+    with pytest.raises(PermissionError, match="metadata write denied"):
         backend.register_materializer("test.Object", "test.Materializer")
+    assert calls
 
 
-def test_registered_materializers_error(backend):
-    """Test error handling when fetching registered materializers fails."""
-    # Create the metadata file first
-    with open(backend.metadata_path, "w") as f:
-        json.dump({"materializers": {}}, f)
+def test_registered_materializers_error(backend, monkeypatch):
+    """Inject a deterministic read failure instead of relying on chmod as non-root."""
+    backend.metadata_path.write_text('{"materializers": {}}')
+    real_open = open
+    calls = []
 
-    # Make the metadata file unreadable to simulate a file system error
-    backend.metadata_path.chmod(0o000)
+    def failing_open(file, mode="r", *args, **kwargs):
+        if Path(file) == backend.metadata_path and "r" in mode:
+            calls.append(file)
+            raise PermissionError("metadata read denied")
+        return real_open(file, mode, *args, **kwargs)
 
-    # Try to get registered materializers - should raise an error
-    with pytest.raises(Exception):
+    monkeypatch.setattr("builtins.open", failing_open)
+    with pytest.raises(PermissionError, match="metadata read denied"):
         backend.registered_materializers()
+    assert calls
 
 
 def test_registered_materializers_empty(backend):
@@ -405,13 +419,14 @@ def test_fetch_registry_metadata_not_exists(backend):
 
 
 def test_fetch_registry_metadata_error(backend):
-    """Test fetch_registry_metadata error handling."""
-    # Create metadata file with invalid JSON
-    backend.metadata_path.write_text("invalid json content")
-
-    # Fetch metadata - should return empty dict on error
-    fetched_metadata = backend.fetch_registry_metadata()
-    assert fetched_metadata == {}
+    """Malformed existing metadata is an error, not a new empty registry."""
+    original = b"invalid json content"
+    backend.metadata_path.write_bytes(original)
+    try:
+        with pytest.raises(json.JSONDecodeError):
+            backend.fetch_registry_metadata()
+    finally:
+        assert backend.metadata_path.read_bytes() == original
 
 
 def test_push_on_conflict_skip_single(backend, sample_object_dir):
@@ -1253,14 +1268,24 @@ def test_fetch_and_delete_metadata_length_and_error_branches(backend, sample_met
     assert result[("test:object", "1.0.0")].is_error
 
 
-def test_fetch_registry_metadata_returns_empty_on_open_failure(backend, monkeypatch):
+def test_fetch_registry_metadata_propagates_open_failure(backend, monkeypatch):
     backend.metadata_path.write_text("{}")
+    real_open = open
+    calls = []
 
-    def boom(*args, **kwargs):
-        raise OSError("cannot read")
+    def failing_open(file, mode="r", *args, **kwargs):
+        if Path(file) == backend.metadata_path and "r" in mode:
+            calls.append(file)
+            raise PermissionError("cannot read registry metadata")
+        return real_open(file, mode, *args, **kwargs)
 
-    monkeypatch.setattr("builtins.open", boom)
-    assert backend.fetch_registry_metadata() == {}
+    monkeypatch.setattr("builtins.open", failing_open)
+    try:
+        with pytest.raises(PermissionError, match="cannot read registry metadata"):
+            backend.fetch_registry_metadata()
+    finally:
+        assert calls
+        assert backend.metadata_path.read_text() == "{}"
 
 
 def test_list_versions_non_numeric_versions_sort_to_front(backend, sample_metadata):

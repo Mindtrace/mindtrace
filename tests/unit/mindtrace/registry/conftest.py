@@ -5,6 +5,9 @@ from pathlib import Path
 
 import pytest
 
+from mindtrace.registry import Registry, S3RegistryBackend
+from tests.unit.mindtrace.registry.backends.test_s3_registry_backend import MockS3Handler
+
 
 @pytest.fixture
 def sample_object_dir():
@@ -26,3 +29,17 @@ def sample_metadata():
         "description": "Test object",
         "created_at": "2024-01-01T00:00:00Z",
     }
+
+
+@pytest.fixture
+def cached_mock_registry(monkeypatch, tmp_path):
+    monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.S3StorageHandler", MockS3Handler)
+    backend = S3RegistryBackend(
+        uri=tmp_path / "remote",
+        endpoint="example.invalid",
+        access_key="test",
+        secret_key="test",
+        bucket="registry-contract-tests",
+        secure=False,
+    )
+    return Registry(backend=backend, version_objects=True, mutable=True, use_cache=True)

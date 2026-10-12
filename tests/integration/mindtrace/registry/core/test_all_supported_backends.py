@@ -81,27 +81,20 @@ def s3_bucket_name(backend_type):
 
 @pytest.fixture
 def gcp_backend_instance(gcp_test_bucket, gcp_test_prefix, gcp_project_id, gcp_credentials_path, gcs_client):
-    """Create a function-scoped GCP backend with unique prefix for test isolation."""
+    """Unexpected backend construction/cleanup failures fail, not skip."""
+    backend_instance = GCPRegistryBackend(
+        uri=f"gs://{gcp_test_bucket}/{gcp_test_prefix}",
+        project_id=gcp_project_id,
+        bucket_name=gcp_test_bucket,
+        credentials_path=gcp_credentials_path,
+        prefix=gcp_test_prefix,
+    )
     try:
-        backend_instance = GCPRegistryBackend(
-            uri=f"gs://{gcp_test_bucket}/{gcp_test_prefix}",
-            project_id=gcp_project_id,
-            bucket_name=gcp_test_bucket,
-            credentials_path=gcp_credentials_path,
-            prefix=gcp_test_prefix,
-        )
         yield backend_instance
-
-        # Cleanup: delete all objects with our test prefix
-        try:
-            bucket = gcs_client.bucket(gcp_test_bucket)
-            blobs = list(bucket.list_blobs(prefix=gcp_test_prefix))
-            for blob in blobs:
-                blob.delete()
-        except Exception:
-            pass  # Best effort cleanup
-    except Exception as e:
-        pytest.skip(f"GCP backend creation failed: {e}")
+    finally:
+        bucket = gcs_client.bucket(gcp_test_bucket)
+        for blob in bucket.list_blobs(prefix=gcp_test_prefix):
+            blob.delete()
 
 
 @pytest.fixture
