@@ -30,9 +30,9 @@ class DatalakePayloadWriteInput(BaseModel):
 
 
 class DatalakePayloadWriteResources(BaseModel):
-    mongo_uri: str = Field("mongodb://127.0.0.1:27017", description="MongoDB URI used by the datalake ODM.")
+    mongo_uri: str = Field("mongodb://127.0.0.1:27018", description="MongoDB URI used by the datalake ODM.")
     mongo_db_name: str | None = Field(None, description="Optional Mongo database name for this run.")
-    minio_endpoint: str = Field("localhost:9100", description="S3-compatible endpoint for minio backend.")
+    minio_endpoint: str = Field("localhost:19000", description="S3-compatible endpoint for minio backend.")
     minio_access_key: str = Field(
         "minioadmin",
         description="Access key for minio backend.",
@@ -76,7 +76,7 @@ class DatalakePayloadWriteCeilingSuite(BenchTestSuite):
                 "backend": "local",
                 "payload_size": "64KiB",
                 "concurrency": 1,
-                "resources": {"mongo_uri": "mongodb://127.0.0.1:27017"},
+                "resources": {"mongo_uri": "mongodb://127.0.0.1:27018"},
             },
         },
     )
@@ -91,7 +91,7 @@ class DatalakePayloadWriteCeilingSuite(BenchTestSuite):
         )
         concurrency = int(config.parameters.get("concurrency", 1))
         payload = deterministic_payload(payload_size)
-        mongo_uri = str(config.resources.get("mongo_uri", "mongodb://127.0.0.1:27017"))
+        mongo_uri = str(config.resources.get("mongo_uri", "mongodb://127.0.0.1:27018"))
         mongo_db_name = str(
             config.resources.get("mongo_db_name") or f"mindtrace_bench_{config.run_id.replace('-', '_')}"
         )

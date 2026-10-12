@@ -58,11 +58,11 @@ Pass a :class:`LoRAConfig` to any factory or directly to
 
     info = build_backbone(
         "dino_v3_large",
-        lora_config=LoRAConfig(r=16, target_modules="qkv"),
+        lora_config=LoRAConfig(r=16),
     )
 
-The backbone module names for LoRA differ between DINOv2 and DINOv3 and are
-resolved automatically by :meth:`LoRAConfig.get_target_modules`.
+By default every linear layer is adapted; see :class:`LoRAConfig` to target
+specific modules instead.
 """
 
 from __future__ import annotations
@@ -116,89 +116,43 @@ def _require_peft() -> None:
 # LoRAConfig
 # ---------------------------------------------------------------------------
 
-_TargetModulesPreset = Literal["qv", "qkv", "qkv_proj", "mlp", "all"]
-
-# Attention / MLP module names differ between DINOv2 and DINOv3
-_DINOV2_MODULES: dict[str, list[str]] = {
-    "qv": ["attention.attention.query", "attention.attention.value"],
-    "qkv": ["attention.attention.query", "attention.attention.key", "attention.attention.value"],
-    "qkv_proj": [
-        "attention.attention.query",
-        "attention.attention.key",
-        "attention.attention.value",
-        "attention.output.dense",
-    ],
-    "mlp": ["mlp.fc1", "mlp.fc2"],
-    "all": [
-        "attention.attention.query",
-        "attention.attention.key",
-        "attention.attention.value",
-        "attention.output.dense",
-        "mlp.fc1",
-        "mlp.fc2",
-    ],
-}
-
-_DINOV3_MODULES: dict[str, list[str]] = {
-    "qv": ["attention.q_proj", "attention.v_proj"],
-    "qkv": ["attention.q_proj", "attention.k_proj", "attention.v_proj"],
-    "qkv_proj": ["attention.q_proj", "attention.k_proj", "attention.v_proj", "attention.o_proj"],
-    "mlp": ["mlp.up_proj", "mlp.down_proj"],
-    "all": [
-        "attention.q_proj",
-        "attention.k_proj",
-        "attention.v_proj",
-        "attention.o_proj",
-        "mlp.up_proj",
-        "mlp.down_proj",
-    ],
-}
+_ALL_LINEAR = "all-linear"
 
 
 @dataclass
 class LoRAConfig:
     """LoRA adaptation configuration for HuggingFace DINO backbones.
 
-    Target-module presets follow the LoRA literature for ViT models:
-
-    * ``"qv"``        — Q and V projections (original LoRA paper).
-    * ``"qkv"``       — Q, K, V projections (stable, parameter-efficient).
-    * ``"qkv_proj"``  — Q, K, V + output projection.
-    * ``"mlp"``       — MLP layers only.
-    * ``"all"``       — All attention + MLP layers.
-
-    Pass an explicit list of module name substrings to override the preset.
+    Layer selection is delegated to ``peft``, which resolves ``target_modules``
+    against the loaded model.
 
     Args:
         r: LoRA rank.
         lora_alpha: LoRA scaling factor.
         lora_dropout: Dropout probability on LoRA layers.
-        target_modules: Preset name or explicit list of module name substrings.
+        target_modules: ``"all-linear"`` adapts every linear layer of the
+            backbone. Pass a list of module names to adapt only those layers;
+            ``peft`` matches each entry against module names exactly or as a
+            suffix.
         bias: Which bias parameters to train: ``"none"``, ``"all"``, or
             ``"lora_only"``.
+
+    Raises:
+        ValueError: If ``target_modules`` is a string other than ``"all-linear"``.
     """
 
     r: int = 8
     lora_alpha: int = 8
     lora_dropout: float = 0.1
-    target_modules: Union[List[str], _TargetModulesPreset] = "qv"
+    target_modules: Union[List[str], Literal["all-linear"]] = _ALL_LINEAR
     bias: str = "none"
 
-    def get_target_modules(self, model_name: str) -> List[str]:
-        """Resolve the target module list for a given HuggingFace model name.
-
-        Args:
-            model_name: HuggingFace model identifier used to distinguish
-                DINOv2 (``"dinov2"`` in the name) from DINOv3.
-
-        Returns:
-            List of module name substrings for PEFT.
-        """
-        if isinstance(self.target_modules, list):
-            return self.target_modules
-
-        table = _DINOV2_MODULES if "dinov2" in model_name.lower() else _DINOV3_MODULES
-        return table.get(self.target_modules, table["qv"])
+    def __post_init__(self) -> None:
+        if isinstance(self.target_modules, str) and self.target_modules != _ALL_LINEAR:
+            raise ValueError(
+                f"target_modules must be {_ALL_LINEAR!r} or a list of module names, got {self.target_modules!r}. "
+                "Named presets such as 'qv' are not supported; pass the module names explicitly."
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -257,18 +211,17 @@ class HuggingFaceDINOBackbone(nn.Module):
             from peft import LoraConfig as _PeftCfg  # noqa: PLC0415
             from peft import get_peft_model
 
-            target_mods = lora_config.get_target_modules(hf_model_name)
             peft_cfg = _PeftCfg(
                 r=lora_config.r,
                 lora_alpha=lora_config.lora_alpha,
-                target_modules=target_mods,
+                target_modules=lora_config.target_modules,
                 lora_dropout=lora_config.lora_dropout,
                 bias=lora_config.bias,
                 task_type=None,
             )
             self.model = get_peft_model(self.model, peft_cfg)
             self.lora_enabled = True
-            logger.info("LoRA enabled — target modules: %s", target_mods)
+            logger.info("LoRA enabled — target modules: %s", lora_config.target_modules)
             self.print_trainable_parameters()
 
         # Cache config-derived values

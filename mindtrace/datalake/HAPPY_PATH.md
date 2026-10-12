@@ -6,7 +6,7 @@ It complements the conceptual overview in [README.md](./README.md). For containe
 
 ---
 
-## 1. Run a local datalake (Mongo + MinIO + service)
+## 1. Run a local datalake (Mongo + RustFS + service)
 
 From the **repository root**:
 
@@ -18,7 +18,7 @@ docker compose -f docker/datalake/docker-compose.yml --env-file docker/datalake/
 Defaults expose:
 
 - **DatalakeService** at `http://localhost:8080`
-- **MinIO** S3 API at `http://localhost:9000` (console on `9001`)
+- **RustFS** S3 API at `http://localhost:9000` (console on `9001`)
 
 The service image configures a single default S3 mount (see env vars in `docker/datalake/.env.example`). Adjust hostnames if you call the API from the host versus from another container.
 
@@ -36,7 +36,7 @@ The **`summary`** and **`mounts`** tasks are useful for quick introspection of t
 
 The datalake separates:
 
-- **Object storage** � blobs live in the registry/store (e.g. MinIO via a named mount).
+- **Object storage** � blobs live in the registry/store (e.g. an S3-compatible store via a named mount).
 - **Canonical records** � assets, datums, dataset versions, etc. live in Mongo via `AsyncDatalake`.
 
 Typical flow:

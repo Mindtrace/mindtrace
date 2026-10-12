@@ -175,19 +175,19 @@ async def async_datalake_secondary(datalake_store_secondary):
 
 
 @pytest_asyncio.fixture(scope="function")
-async def async_datalake_minio(s3_config, s3_test_bucket, s3_test_prefix):
-    """``AsyncDatalake`` backed by MinIO/S3.
+async def async_datalake_s3(s3_config, s3_test_bucket, s3_test_prefix):
+    """``AsyncDatalake`` backed by S3.
 
-    Uses mount name ``minio`` (not ``local``) so integration tests exercise
+    Uses mount name ``s3`` (not ``local``) so integration tests exercise
     :class:`~mindtrace.datalake.sync_types.DatasetSyncImportRequest.mount_map`
     when syncing from a filesystem-backed source lake whose default mount is ``local``.
     """
-    db_name = f"test_datalake_async_minio_{uuid4().hex[:12]}"
+    db_name = f"test_datalake_async_s3_{uuid4().hex[:12]}"
     prefix = f"{s3_test_prefix.rstrip('/')}/datalake-sync-{uuid4().hex[:10]}/"
     store = Store.from_mounts(
         [
             Mount(
-                name="minio",
+                name="s3",
                 backend=MountBackendKind.S3,
                 config=S3MountConfig(
                     bucket=s3_test_bucket,
@@ -203,7 +203,7 @@ async def async_datalake_minio(s3_config, s3_test_bucket, s3_test_prefix):
                 registry_options={"mutable": True},
             )
         ],
-        default_mount="minio",
+        default_mount="s3",
     )
     datalake = await AsyncDatalake.create(
         mongo_db_uri=MONGO_URL,
@@ -218,20 +218,20 @@ async def async_datalake_minio(s3_config, s3_test_bucket, s3_test_prefix):
 
 
 @pytest_asyncio.fixture(scope="function")
-async def async_datalake_minio_secondary_mongo(s3_config, s3_test_bucket, s3_test_prefix):
-    """``AsyncDatalake`` backed by MinIO on a **separate** MongoDB instance (``MONGO_URL_SECONDARY``).
+async def async_datalake_s3_secondary_mongo(s3_config, s3_test_bucket, s3_test_prefix):
+    """``AsyncDatalake`` backed by S3 on a **separate** MongoDB instance (``MONGO_URL_SECONDARY``).
 
-    Same as :func:`async_datalake_minio` but metadata uses ``mongodb_secondary`` (port 27019) so
-    replication tests can pair ``local`` + primary Mongo with ``minio`` + secondary Mongo.
+    Same as :func:`async_datalake_s3` but metadata uses ``mongodb_secondary`` (port 27019) so
+    replication tests can pair ``local`` + primary Mongo with ``s3`` + secondary Mongo.
     """
     if not _mongo_secondary_reachable():
         pytest.skip("Secondary MongoDB not reachable at localhost:27019 (start tests/docker-compose.yml)")
-    db_name = f"test_datalake_async_minio_secondary_{uuid4().hex[:12]}"
+    db_name = f"test_datalake_async_s3_secondary_{uuid4().hex[:12]}"
     prefix = f"{s3_test_prefix.rstrip('/')}/datalake-replication-{uuid4().hex[:10]}/"
     store = Store.from_mounts(
         [
             Mount(
-                name="minio",
+                name="s3",
                 backend=MountBackendKind.S3,
                 config=S3MountConfig(
                     bucket=s3_test_bucket,
@@ -247,7 +247,7 @@ async def async_datalake_minio_secondary_mongo(s3_config, s3_test_bucket, s3_tes
                 registry_options={"mutable": True},
             )
         ],
-        default_mount="minio",
+        default_mount="s3",
     )
     datalake = await AsyncDatalake.create(
         mongo_db_uri=MONGO_URL_SECONDARY,

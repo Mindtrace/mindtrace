@@ -69,17 +69,17 @@ registry = Registry(backend=local_backend)
 The S3 backend provides distributed storage for any S3-compatible service.
 
 ```python
-from mindtrace.registry import Registry, MinioRegistryBackend
+from mindtrace.registry import Registry, S3RegistryBackend
 
-# MinIO / S3-compatible registry
+# S3-compatible registry
 s3_backend = S3RegistryBackend(
     endpoint="localhost:9000",
     access_key="minioadmin",
     secret_key="minioadmin",
-    bucket="minio-registry",
+    bucket="my-registry",
     secure=False,
 )
-registry = Registry(backend=minio_backend)
+registry = Registry(backend=s3_backend)
 ```
 
 ### GCP Backend

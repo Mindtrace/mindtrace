@@ -480,7 +480,7 @@ def test_camera_configure_backend_and_close():
         cam = mgr.open(name)
 
         # Configure multiple settings via wrapper
-        cam.configure(
+        result = cam.configure(
             exposure=20000,
             gain=1.0,
             roi=(0, 0, 10, 10),
@@ -489,6 +489,7 @@ def test_camera_configure_backend_and_close():
             white_balance="auto",
             image_enhancement=True,
         )
+        assert result.success is True
 
         # backend property
         _ = cam.backend

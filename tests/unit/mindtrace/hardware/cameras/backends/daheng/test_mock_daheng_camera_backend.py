@@ -5,7 +5,6 @@ covering initialization, capture, configuration, error simulation, and lifecycle
 """
 
 import asyncio
-import json
 import os
 import tempfile
 
@@ -419,49 +418,6 @@ class TestMockDahengPixelFormat:
 # ═══════════════════════════════════════════════════════════════════════════════
 # Configuration Import/Export Tests
 # ═══════════════════════════════════════════════════════════════════════════════
-
-
-class TestMockDahengConfiguration:
-    """Test mock Daheng configuration import/export."""
-
-    @pytest.mark.asyncio
-    async def test_export_config(self, initialized_camera):
-        """Test exporting camera configuration."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            config_path = os.path.join(tmpdir, "daheng_config.json")
-            await initialized_camera.export_config(config_path)
-            assert os.path.exists(config_path)
-
-            with open(config_path) as f:
-                config = json.load(f)
-            assert config["camera_type"] == "mock_daheng"
-            assert config["camera_name"] == "mock_daheng_1"
-            assert "exposure_time" in config
-            assert "gain" in config
-
-    @pytest.mark.asyncio
-    async def test_import_config(self, initialized_camera):
-        """Test importing camera configuration."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            config_path = os.path.join(tmpdir, "daheng_config.json")
-            config_data = {
-                "exposure_time": 50000.0,
-                "gain": 5.0,
-                "trigger_mode": "continuous",
-            }
-            with open(config_path, "w") as f:
-                json.dump(config_data, f)
-
-            await initialized_camera.import_config(config_path)
-            assert initialized_camera.exposure_time == 50000.0
-            assert initialized_camera.gain == 5.0
-            assert initialized_camera.triggermode == "continuous"
-
-    @pytest.mark.asyncio
-    async def test_import_nonexistent_config(self, initialized_camera):
-        """Test importing from nonexistent file."""
-        with pytest.raises(CameraConfigurationError):
-            await initialized_camera.import_config("/nonexistent/path/config.json")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

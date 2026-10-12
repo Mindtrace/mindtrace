@@ -1,7 +1,7 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
-from pika.exceptions import AMQPConnectionError, ChannelClosedByBroker
+from pika.exceptions import AMQPConnectionError, ChannelClosedByBroker, ConnectionWrongStateError
 
 from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
 
@@ -86,6 +86,45 @@ class TestRabbitMQConnection:
     def test_get_channel_not_connected(self, rabbitmq_conn):
         rabbitmq_conn.connection = None
         assert rabbitmq_conn.get_channel() is None
+
+    def test_add_callback_threadsafe_schedules_on_connected_io_thread(self, rabbitmq_conn):
+        callback = MagicMock()
+        mock_conn = MagicMock(is_open=True)
+        rabbitmq_conn.connection = mock_conn
+
+        assert rabbitmq_conn.add_callback_threadsafe(callback) is True
+
+        mock_conn.add_callback_threadsafe.assert_called_once_with(callback)
+
+    def test_add_callback_threadsafe_returns_false_when_disconnected(self, rabbitmq_conn):
+        callback = MagicMock()
+        rabbitmq_conn.connection = None
+
+        assert rabbitmq_conn.add_callback_threadsafe(callback) is False
+
+    def test_add_callback_threadsafe_returns_false_for_connection_state_race(self, rabbitmq_conn):
+        callback = MagicMock()
+        mock_conn = MagicMock(is_open=True)
+        mock_conn.add_callback_threadsafe.side_effect = ConnectionWrongStateError
+        rabbitmq_conn.connection = mock_conn
+
+        assert rabbitmq_conn.add_callback_threadsafe(callback) is False
+
+    def test_add_callback_threadsafe_uses_one_connection_reference_during_cleanup_race(self, rabbitmq_conn):
+        callback = MagicMock()
+        active_connection = MagicMock(is_open=True)
+
+        with patch.object(
+            RabbitMQConnection,
+            "connection",
+            new_callable=PropertyMock,
+            create=True,
+        ) as connection:
+            connection.side_effect = [active_connection, active_connection, None]
+
+            assert rabbitmq_conn.add_callback_threadsafe(callback) is True
+
+        active_connection.add_callback_threadsafe.assert_called_once_with(callback)
 
     def test_count_queue_messages_success(self, rabbitmq_conn):
         mock_channel = MagicMock()
