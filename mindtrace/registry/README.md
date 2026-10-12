@@ -315,16 +315,28 @@ must be unique. If any identity is duplicated, the entire call must raise
 valid items. This applies regardless of `on_conflict`; inputs are not silently
 discarded using first-wins or last-wins behavior.
 
-- The same name with different concrete versions is allowed.
+- If a name occurs more than once, every occurrence must supply an explicit
+  version, and those versions must be distinct after normalization. If any
+  occurrence omits its version or supplies `None`, the entire batch must raise
+  `ValueError` before materialization or any saves, including unrelated items.
 - Versions are compared after normalization: with three version digits, `1` and
   `1.0.0` identify the same version.
-- Automatic versions are planned before saving. Repeated names receive distinct
-  versions, avoiding stored versions, all explicitly requested versions, and
-  versions already allocated to other items in the batch.
+- Automatic versioning remains available for names that occur only once. Do not
+  assign automatic versions to any occurrence of a repeated name: batch write
+  order is not guaranteed and must not decide which value becomes `latest`.
 - In unversioned mode, repeated names target the same effective version and are
   therefore rejected, even if different version strings were supplied.
 - Store batches apply the same check after resolving their target registries and
   names; qualified and default-mount references to the same target must not evade it.
+
+For a repeated name in a versioned registry:
+
+| Supplied versions | Result |
+| --- | --- |
+| `["1.0.0", "2.0.0"]` | Allowed |
+| `["1", "1.0.0"]` (three version digits) | Reject entire batch; no saves |
+| `[None, "2.0.0"]` or `["1.0.0", None]` | Reject entire batch; no saves |
+| Both versions omitted or `None` | Reject entire batch; no saves |
 
 `on_conflict` still governs conflicts with already stored versions. Once a batch
 passes preflight, later materializer or backend failures remain per-item outcomes;
