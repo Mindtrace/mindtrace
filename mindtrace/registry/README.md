@@ -47,6 +47,27 @@ print(registry.list_objects())
 print(registry.list_versions("my:model"))
 ```
 
+## Object names and relative inputs
+
+Object names must be non-empty, must not contain the reserved `@` separator,
+and must be relative paths without a `..` component. For example, `item`,
+`nested/item`, `namespace:object`, and `model..backup` are valid names;
+`../item`, `nested/../item`, and absolute paths are invalid. Store applies
+these rules to the object name after parsing the mount and version.
+
+The same relative-path rule applies to local direct-upload `upload_id` values
+and to `Registry.materialize_from_bytes(relative_path=...)`. Validation uses
+the host platform's path syntax and does not silently normalize invalid inputs.
+Single-object calls raise `ValueError`; batch operations report the invalid
+item's error while allowing valid items to proceed. Local-backend operations
+returning `OpResults` preserve errors per item; its queries returning booleans
+or version lists raise `ValueError` for invalid names.
+
+These are input-syntax checks, not a filesystem security boundary. Storage
+directories and symlinks remain operator-managed. Registry roots, source paths,
+output directories, and backend-generated `staged_target.path` values are not
+relative-name inputs and may be absolute.
+
 ## Backend Configuration
 
 ### Local Backend

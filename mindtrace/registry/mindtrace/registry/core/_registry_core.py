@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Tuple, Type
 from mindtrace.core import Mindtrace, compute_dir_hash, first_not_none, ifnone, instantiate_target
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
+from mindtrace.registry.core._paths import validate_relative_path
 from mindtrace.registry.core.base_materializer import Materializer
 from mindtrace.registry.core.exceptions import (
     RegistryCleanupRequired,
@@ -246,8 +247,9 @@ class _RegistryCore(Mindtrace):
 
         Raises:
             RegistryObjectNotFound: If object has no versions (when resolving None/"latest").
-            ValueError: If explicit version format is invalid.
+            ValueError: If the object name or explicit version format is invalid.
         """
+        self.backend.validate_object_name(name)
         if not self.version_objects:
             return str(Version("1", digits=self.version_digits))
 
@@ -329,6 +331,7 @@ class _RegistryCore(Mindtrace):
 
     def _resolve_save_version(self, name: str, version: str | None) -> str:
         """Resolve a concrete version string for a write path."""
+        self.backend.validate_object_name(name)
         if not self.version_objects:
             return str(Version("1", digits=self.version_digits))
         if version is None:
@@ -417,6 +420,7 @@ class _RegistryCore(Mindtrace):
         on_conflict: str = OnConflict.SKIP,
     ) -> str | None:
         """Save a single object to the registry. Raises on conflict."""
+        self.backend.validate_object_name(name)
         # In non-versioned mode, always use "1"
         if not self.version_objects:
             version = "1"
@@ -509,6 +513,7 @@ class _RegistryCore(Mindtrace):
                 zip(names, objs_list, versions_list, init_params_list, metadata_list)
             ):
                 try:
+                    self.backend.validate_object_name(name)
                     # Resolve version: None -> auto-increment, else validate
                     if version is None:
                         resolved_version = self._next_version(name)
@@ -634,6 +639,7 @@ class _RegistryCore(Mindtrace):
         **kwargs: Any,
     ) -> Any:
         """Write *raw* to *relative_path* under a staged directory and run the materializer."""
+        validate_relative_path(relative_path, parameter="relative_path")
         materializer = _resolve_materializer_string(materializer)
         with TemporaryDirectory(dir=self._artifact_store_path) as base:
             temp_dir = Path(base) / "staged"
@@ -902,6 +908,7 @@ class _RegistryCore(Mindtrace):
         version: str | None = None,
     ) -> None:
         """Delete a single object from the registry. Raises on error."""
+        self.backend.validate_object_name(name)
         if version is None:
             # Delete all versions
             if not self.version_objects:
@@ -950,6 +957,11 @@ class _RegistryCore(Mindtrace):
 
         for n, v in zip(names, versions_list):
             original_key = (n, v or "all")
+            try:
+                self.backend.validate_object_name(n)
+            except ValueError as e:
+                result.errors[original_key] = {"error": type(e).__name__, "message": str(e)}
+                continue
 
             if v is None:
                 # Delete all versions
@@ -1034,6 +1046,8 @@ class _RegistryCore(Mindtrace):
             registry.info("model", "1.0.0")  # Specific version
             registry.info("model", "latest")  # Latest version
         """
+        if name is not None:
+            self.backend.validate_object_name(name)
         # Build list of (name, version) to fetch
         if name is None:
             # All objects, all versions
@@ -1085,6 +1099,7 @@ class _RegistryCore(Mindtrace):
         Returns:
             True if the object exists, False otherwise.
         """
+        self.backend.validate_object_name(name)
         try:
             resolved_version = self._resolve_load_version(name, version)
         except (RegistryObjectNotFound, ValueError):
@@ -1164,6 +1179,7 @@ class _RegistryCore(Mindtrace):
         Returns:
             List of version strings
         """
+        self.backend.validate_object_name(object_name)
         # Check cache first
         with self._versions_cache_lock:
             if object_name in self._versions_cache:
@@ -1536,6 +1552,10 @@ class _RegistryCore(Mindtrace):
             name, version = self._parse_key(parsed_key)
             names.append(name)
             versions.append(version)
+        if not is_batch:
+            # Reject invalid input before mapping methods translate lookup errors
+            # into KeyError/defaults. Batch methods validate each item separately.
+            self.backend.validate_object_name(names[0])
         return names, versions, is_batch
 
     def __getitem__(self, key: str | list[str]) -> Any:

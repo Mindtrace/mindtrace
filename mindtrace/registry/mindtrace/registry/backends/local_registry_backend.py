@@ -31,6 +31,7 @@ from mindtrace.registry.backends.registry_backend import (
     PathArg,
     RegistryBackend,
 )
+from mindtrace.registry.core._paths import validate_relative_path
 from mindtrace.registry.core.exceptions import (
     LockAcquisitionError,
     RegistryObjectNotFound,
@@ -392,6 +393,7 @@ class LocalRegistryBackend(RegistryBackend):
         content_type: str = "application/octet-stream",
         expiration_minutes: int = 60,
     ) -> dict[str, Any]:
+        validate_relative_path(upload_id, parameter="upload_id")
         staging_dir = self.uri / "_direct_uploads" / upload_id
         staging_dir.mkdir(parents=True, exist_ok=True)
         upload_path = staging_dir / "data.txt"
@@ -435,12 +437,13 @@ class LocalRegistryBackend(RegistryBackend):
         metadata: dict[str, Any],
         on_conflict: str = OnConflict.SKIP,
     ) -> OpResult:
-        upload_path = Path(staged_target.get("path", ""))
-        if staged_target.get("kind") != "local_file" or not upload_path.exists():
-            return OpResult.failed(name, version, FileNotFoundError(f"Staged upload not found for {name}@{version}"))
-
         try:
             self.validate_object_name(name)
+            upload_path = Path(staged_target.get("path", ""))
+            if staged_target.get("kind") != "local_file" or not upload_path.exists():
+                return OpResult.failed(
+                    name, version, FileNotFoundError(f"Staged upload not found for {name}@{version}")
+                )
             with self._internal_lock(f"{name}@{version}"):
                 artifact_dst = self._full_path(self._object_key(name, version))
                 meta_path = self._object_metadata_path(name, version)
@@ -597,9 +600,7 @@ class LocalRegistryBackend(RegistryBackend):
 
         for obj_name, obj_version, dest_path in zip(names, versions, paths):
             try:
-                # No name validation needed - Registry already fetched metadata,
-                # so the object exists with this name (name was validated at push time)
-
+                self.validate_object_name(obj_name)
                 src = self._full_path(self._object_key(obj_name, obj_version))
 
                 if not src.exists():
@@ -655,6 +656,7 @@ class LocalRegistryBackend(RegistryBackend):
 
         for obj_name, obj_version in zip(names, versions):
             try:
+                self.validate_object_name(obj_name)
                 with self._internal_lock(f"{obj_name}@{obj_version}"):
                     target = self._full_path(self._object_key(obj_name, obj_version))
                     meta_path = self._object_metadata_path(obj_name, obj_version)
@@ -728,7 +730,11 @@ class LocalRegistryBackend(RegistryBackend):
         results = OpResults()
 
         for obj_name, obj_version, obj_meta in zip(names, versions, metadatas):
-            self.validate_object_name(obj_name)
+            try:
+                self.validate_object_name(obj_name)
+            except ValueError as e:
+                results.add(OpResult.failed(obj_name, obj_version, e))
+                continue
             meta_path = self._object_metadata_path(obj_name, obj_version)
 
             if meta_path.exists():
@@ -775,10 +781,10 @@ class LocalRegistryBackend(RegistryBackend):
         results = OpResults()
 
         for obj_name, obj_version in zip(names, versions):
-            meta_path = self._object_metadata_path(obj_name, obj_version)
-            self.logger.debug(f"Loading metadata from: {meta_path}")
-
             try:
+                self.validate_object_name(obj_name)
+                meta_path = self._object_metadata_path(obj_name, obj_version)
+                self.logger.debug(f"Loading metadata from: {meta_path}")
                 with open(meta_path, "r") as f:
                     meta = yaml.safe_load(f)
 
@@ -845,6 +851,7 @@ class LocalRegistryBackend(RegistryBackend):
 
         for obj_name, obj_version in zip(names, versions):
             try:
+                self.validate_object_name(obj_name)
                 meta_path = self._object_metadata_path(obj_name, obj_version)
                 self.logger.debug(f"Deleting metadata file: {meta_path}")
                 if meta_path.exists():
@@ -927,6 +934,7 @@ class LocalRegistryBackend(RegistryBackend):
         results: Dict[str, List[str]] = {}
 
         for obj_name in names:
+            self.validate_object_name(obj_name)
             # Build the prefix used in metadata filenames for this object.
             prefix = self._object_metadata_prefix(obj_name)
             versions = []
@@ -974,6 +982,7 @@ class LocalRegistryBackend(RegistryBackend):
         results: Dict[Tuple[str, str], bool] = {}
 
         for obj_name, obj_version in zip(names, versions):
+            self.validate_object_name(obj_name)
             # Check if metadata file exists directly (much faster than listing all objects)
             meta_path = self._object_metadata_path(obj_name, obj_version)
             results[(obj_name, obj_version)] = meta_path.exists()

@@ -230,7 +230,9 @@ def test_invalid_object_name(backend, sample_object_dir):
     assert result.is_error
     assert isinstance(result.exception, ValueError)
     assert "@" in str(result.exception)
-    assert not backend.has_object("invalid@name", "1.0.0")[("invalid@name", "1.0.0")]
+    assert not (backend.uri / "invalid@name").exists()
+    with pytest.raises(ValueError, match="@"):
+        backend.has_object("invalid@name", "1.0.0")
 
 
 def test_underscore_name_is_valid(backend, sample_object_dir):

@@ -797,6 +797,7 @@ class Registry(Mindtrace):
         **kwargs,
     ) -> Any:
         """Load a single object with cache-first pattern."""
+        self._remote.backend.validate_object_name(name)
         resolved_v = version if version and version != "latest" else self._remote._latest(name)
         check_staleness = verify == VerifyLevel.FULL
 
