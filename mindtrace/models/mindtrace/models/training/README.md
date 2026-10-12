@@ -2,18 +2,18 @@
 
 # Mindtrace Models -- Training
 
-Supervised training loop with automatic mixed precision, gradient accumulation, gradient checkpointing, gradient clipping, DDP multi-GPU support, a callback system, optimizer/scheduler factories, task-specific loss functions, and a Datalake bridge.
+Supervised training loop with automatic mixed precision, gradient accumulation, gradient checkpointing, gradient clipping, DDP multi-GPU support, a callback system, optimizer/scheduler factories, task-specific loss functions, and Hugging Face dataset and DataLoader builders over saved exports.
 
 ## Table of Contents
 
 - [Overview](#overview)
+- [Hugging Face Data Adapters](#hugging-face-data-adapters)
 - [Architecture](#architecture)
 - [Trainer](#trainer)
 - [Callbacks](#callbacks)
 - [Loss Functions](#loss-functions)
 - [Optimizers](#optimizers)
 - [Schedulers](#schedulers)
-- [Datalake Integration](#datalake-integration)
 - [Multi-GPU Training](#multi-gpu-training)
 - [API Reference](#api-reference)
 
@@ -28,7 +28,14 @@ The training sub-package provides:
 - **Scheduler Factory**: `build_scheduler` with warmup-cosine, step, plateau, and 1-cycle options
 - **Hugging Face Data Adapters**: typed datasets and DataLoaders over exported artifacts
 
-## Architecture
+## Hugging Face Data Adapters
+
+Import `build_datasets` and `build_dataloaders` from `mindtrace.models.training`
+to consume a saved Hugging Face export without a live Datalake connection.
+`build_datasets(export_path, ...)` returns native Hugging Face datasets keyed by
+split, with task-specific PyTorch transforms applied on access.
+`build_dataloaders(export_path, ...)` adds batching, worker seeding, and collation.
+Both support classification, detection, and segmentation task profiles.
 
 ### Export metadata
 
@@ -44,7 +51,7 @@ raise `ValueError`; other read failures propagate. It accepts both legacy nested
 v1 and flat v2 `mindtrace_metadata.json` files. New exports use v2; existing exports
 do not need to be regenerated. Older readers must be upgraded to consume v2.
 
-### Package layout
+## Architecture
 
 ```
 training/
@@ -369,7 +376,10 @@ from mindtrace.models.training import (
     build_optimizer,            # name -> Optimizer with param groups
     build_scheduler,            # name -> LRScheduler
 
-    # Datalake
+    # Hugging Face data adapters
+    build_datasets,             # saved export -> native HF datasets by split
+    build_dataloaders,          # saved export -> PyTorch DataLoaders by split
+    read_export_metadata,      # artifact semantics, separate from DatasetInfo
 )
 
 from mindtrace.models.training.losses import (
