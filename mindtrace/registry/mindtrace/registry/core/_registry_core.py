@@ -55,6 +55,17 @@ def _resolve_materializer_string(s: str | None) -> str | None:
     return _LEGACY_MATERIALIZER_ALIASES.get(s, s)
 
 
+def _materializer_class_path(materializer: Type[Materializer] | str) -> str:
+    """Return a class's import path, rejecting instances and resolving known aliases."""
+    if isinstance(materializer, type):
+        return f"{materializer.__module__}.{materializer.__name__}"
+    if isinstance(materializer, str):
+        return _resolve_materializer_string(materializer) or materializer
+    raise TypeError(
+        "materializer must be a class or fully qualified class-name string; materializer instances are not supported"
+    )
+
+
 def _version_sort_key(v: str, digits: int) -> tuple[int, ...]:
     """Sort key for fixed-width numeric version strings."""
     try:
@@ -141,13 +152,17 @@ class _RegistryCore(Mindtrace):
         self._warm_materializer_cache()
 
     @classmethod
-    def register_default_materializer(cls, object_class: str | type, materializer_class: str):
+    def register_default_materializer(cls, object_class: str | type, materializer_class: str | type):
         """Register a default materializer at the class level.
 
         Args:
             object_class: Object class (str or type) to register the materializer for.
-            materializer_class: Materializer class string to register.
+            materializer_class: Materializer class or fully qualified class-name string, not an instance.
+
+        Raises:
+            TypeError: If materializer_class is not a class or string.
         """
+        materializer_class = _materializer_class_path(materializer_class)
         if isinstance(object_class, type):
             object_class = f"{object_class.__module__}.{object_class.__name__}"
         with cls._materializer_lock:
@@ -261,7 +276,7 @@ class _RegistryCore(Mindtrace):
 
         return self._validate_version(version)
 
-    def _find_materializer(self, obj: Any, provided_materializer: Type[Materializer] | None = None) -> str:
+    def _find_materializer(self, obj: Any, provided_materializer: Type[Materializer] | str | None = None) -> str:
         """Find the appropriate materializer for an object.
 
         The order of precedence for determining the materializer is:
@@ -272,14 +287,18 @@ class _RegistryCore(Mindtrace):
 
         Args:
             obj: Object to find materializer for.
-            provided_materializer: Materializer provided as argument. If None, will be inferred.
+            provided_materializer: Class or fully qualified class-name string. None selects automatically.
+                Materializer instances are not supported.
 
         Returns:
             Materializer class string.
 
         Raises:
+            TypeError: If provided_materializer is not a class, string, or None.
             ValueError: If no materializer is found for the object.
         """
+        if provided_materializer is not None:
+            return _materializer_class_path(provided_materializer)
         object_class = f"{type(obj).__module__}.{type(obj).__name__}"
 
         # Get all base classes recursively
@@ -293,7 +312,6 @@ class _RegistryCore(Mindtrace):
         # Try to find a materializer in order of precedence
         materializer = first_not_none(
             (
-                provided_materializer,
                 self.registered_materializer(object_class),
                 *[
                     self.registered_materializer(f"{base.__module__}.{base.__name__}")
@@ -306,10 +324,7 @@ class _RegistryCore(Mindtrace):
         if materializer is None:
             raise ValueError(f"No materializer found for object of type {type(obj)}.")
 
-        # Convert to string if needed
-        if isinstance(materializer, str):
-            return materializer
-        return f"{type(materializer).__module__}.{type(materializer).__name__}"
+        return _materializer_class_path(materializer)
 
     def _build_file_manifest(self, local_path: str | Path) -> List[str]:
         """Build a file manifest from a local directory.
@@ -356,7 +371,7 @@ class _RegistryCore(Mindtrace):
         name: str | List[str],
         obj: Any | List[Any],
         *,
-        materializer: Type[Materializer] | None = None,
+        materializer: Type[Materializer] | str | None = None,
         version: str | None | List[str | None] = None,
         init_params: Dict[str, Any] | List[Dict[str, Any]] | None = None,
         metadata: Dict[str, Any] | List[Dict[str, Any]] | None = None,
@@ -367,7 +382,8 @@ class _RegistryCore(Mindtrace):
         Args:
             name: Name(s) of the object(s). Single string or list.
             obj: Object(s) to save.
-            materializer: Materializer to use. If None, uses the default for each object type.
+            materializer: Class or fully qualified class-name string. None uses automatic selection
+                for each object type. Materializer instances are not supported.
             version: Version(s). If None, auto-increments. In non-versioned mode, always "1".
             init_params: Additional parameters for the materializer(s).
             metadata: Additional metadata to store with the object(s).
@@ -384,6 +400,7 @@ class _RegistryCore(Mindtrace):
             Batch (list): BatchResult containing results (versions), errors, and status.
 
         Raises:
+            TypeError: If materializer is an instance or another unsupported value (single item only).
             ValueError: If no materializer is found for any object (single item only).
             ValueError: If version string is invalid (single item only).
             ValueError: If on_conflict="overwrite" and mutable=False.
@@ -413,7 +430,7 @@ class _RegistryCore(Mindtrace):
         self,
         name: str,
         obj: Any,
-        materializer: Type[Materializer] | None = None,
+        materializer: Type[Materializer] | str | None = None,
         version: str | None = None,
         init_params: Dict[str, Any] | None = None,
         metadata: Dict[str, Any] | None = None,
@@ -432,9 +449,9 @@ class _RegistryCore(Mindtrace):
 
         # Validate version
         validated_version = self._validate_version(version)
+        materializer_class = self._find_materializer(obj, materializer)
         with TemporaryDirectory(dir=self._artifact_store_path) as base_temp_dir:
             object_class = f"{type(obj).__module__}.{type(obj).__name__}"
-            materializer_class = self._find_materializer(obj, materializer)
 
             temp_dir = Path(base_temp_dir) / f"{name.replace(':', '_')}"
             temp_dir.mkdir(parents=True, exist_ok=True)
@@ -482,7 +499,7 @@ class _RegistryCore(Mindtrace):
         self,
         names: List[str],
         objs: Any | List[Any],
-        materializer: Type[Materializer] | None = None,
+        materializer: Type[Materializer] | str | None = None,
         versions: str | None | List[str | None] = None,
         init_params: Dict[str, Any] | List[Dict[str, Any]] | None = None,
         metadata: Dict[str, Any] | List[Dict[str, Any]] | None = None,
@@ -521,10 +538,10 @@ class _RegistryCore(Mindtrace):
                         raise ValueError("Cannot save with version='latest'. Use version=None for auto-increment.")
                     else:
                         resolved_version = self._validate_version(version)
+                    materializer_class = self._find_materializer(obj, materializer)
                     temp_dir = Path(base_temp_dir) / f"{idx}_{name.replace(':', '_')}"
                     temp_dir.mkdir(parents=True, exist_ok=True)
 
-                    materializer_class = self._find_materializer(obj, materializer)
                     mat_instance = instantiate_target(materializer_class, uri=str(temp_dir))
                     mat_instance.save(obj)
 
@@ -620,7 +637,7 @@ class _RegistryCore(Mindtrace):
     def serialization_hints_for_object(
         self,
         obj: Any,
-        materializer: Type[Materializer] | None = None,
+        materializer: Type[Materializer] | str | None = None,
     ) -> Dict[str, str]:
         """Return ``class`` and ``materializer`` strings for embedding in external metadata (e.g. datalake assets)."""
         return {
@@ -1112,12 +1129,14 @@ class _RegistryCore(Mindtrace):
 
         Args:
             object_class: Object class to register the materializer for.
-            materializer_class: Materializer class to register.
+            materializer_class: Materializer class or fully qualified class-name string, not an instance.
+
+        Raises:
+            TypeError: If materializer_class is not a class or string.
         """
+        materializer_class = _materializer_class_path(materializer_class)
         if isinstance(object_class, type):
             object_class = f"{object_class.__module__}.{object_class.__name__}"
-        if isinstance(materializer_class, type):
-            materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
 
         # Backend handles any necessary locking internally
         self.backend.register_materializer(object_class, materializer_class)
@@ -1482,17 +1501,12 @@ class _RegistryCore(Mindtrace):
         default_materializers = self.get_default_materializers()
         existing_materializers = self.backend.registered_materializers()
 
-        # Filter materializers that need to be registered. Treat any stored
-        # legacy zenml string as equivalent to its in-house replacement so we
-        # also override stale registrations from previous registry versions.
+        # Fill missing registrations without replacing custom mappings. Known
+        # legacy aliases are resolved on lookup, not rewritten on every reopen.
         materializers_to_register = {}
         for object_class, materializer_class in default_materializers.items():
-            # Ensure materializer_class is a string for JSON serialization
-            if isinstance(materializer_class, type):
-                materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
-            existing = _resolve_materializer_string(existing_materializers.get(object_class))
-            if override_preexisting_materializers or existing is None or existing != materializer_class:
-                materializers_to_register[object_class] = materializer_class
+            if override_preexisting_materializers or object_class not in existing_materializers:
+                materializers_to_register[object_class] = _materializer_class_path(materializer_class)
 
         if materializers_to_register:
             # Register all materializers using unified API with lists

@@ -272,8 +272,8 @@ class Registry(Mindtrace):
         return Mount.from_registry(self)
 
     @classmethod
-    def register_default_materializer(cls, object_class: str | type, materializer_class: str):
-        """Register a default materializer at the class level."""
+    def register_default_materializer(cls, object_class: str | type, materializer_class: str | type):
+        """Register a class-level default by class or fully qualified string, never by instance."""
         _RegistryCore.register_default_materializer(object_class, materializer_class)
 
     @classmethod
@@ -484,7 +484,7 @@ class Registry(Mindtrace):
         name: str | List[str],
         obj: Any | List[Any],
         *,
-        materializer: Type[Materializer] | None = None,
+        materializer: Type[Materializer] | str | None = None,
         version: str | None | List[str | None] = None,
         init_params: Dict[str, Any] | List[Dict[str, Any]] | None = None,
         metadata: Dict[str, Any] | List[Dict[str, Any]] | None = None,
@@ -498,7 +498,8 @@ class Registry(Mindtrace):
         Args:
             name: Name(s) of the object(s). Single string or list.
             obj: Object(s) to save.
-            materializer: Materializer to use. If ``None``, uses the default.
+            materializer: Class or fully qualified class-name string. ``None`` selects automatically.
+                Instances are rejected with TypeError (reported per item for batch saves).
             version: Version(s). If ``None``, auto-increments.
             init_params: Additional parameters for the materializer(s).
             metadata: Additional metadata to store with the object(s).
@@ -573,7 +574,7 @@ class Registry(Mindtrace):
         self,
         obj: Any,
         *,
-        materializer: Type[Materializer] | None = None,
+        materializer: Type[Materializer] | str | None = None,
     ) -> Dict[str, str]:
         """Return ``class`` and ``materializer`` strings for embedding in external metadata (e.g. datalake assets)."""
         return self._core.serialization_hints_for_object(obj, materializer=materializer)

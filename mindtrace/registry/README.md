@@ -236,6 +236,17 @@ registry.register_materializer("my_module.MyClass", "my_module.MyMaterializer")
 registry.save("custom:obj", my_object, materializer=MyMaterializer)
 ```
 
+`Registry.save()` and `Store.save()` accept a materializer class or its fully qualified
+class-name string (for example, `"my_module.MyMaterializer"`). `None` keeps automatic
+selection. Materializer instances are **not supported**: they raise `TypeError` for
+single saves, or produce per-item errors for batch saves. The registry constructs its
+own materializer with the appropriate artifact URI; it does not reuse instance state.
+The same class/string contract applies to serialization hints and materializer registration.
+
+Reopening a registry preserves custom materializer registrations. Default registrations
+fill missing entries without replacing existing mappings. Known legacy ZenML class-name
+aliases remain supported through the existing alias map.
+
 Built-in materializers cover scalars, container types, `bytes`, `pydantic.BaseModel`,
 `pathlib.Path`, numpy arrays, PIL images, PyTorch modules/dataloaders, and HuggingFace
 datasets. ML framework archivers for HuggingFace, ONNX, Ultralytics and timm models live
