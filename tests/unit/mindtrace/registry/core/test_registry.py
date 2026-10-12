@@ -5193,15 +5193,11 @@ class TestRegistryBugHunt:
         assert registry.info("b", "1.0.0")["init_params"] == {"offset": 10}
         assert registry.load(["a", "b"]).results == [11, 12]
 
-    def test_batch_save_same_name_autoincrement_assigns_distinct_versions(self, registry):
-        """R5: two version=None saves of the same name in one batch must not collide."""
-        result = registry.save(["m", "m"], [1, 2])
-        assert result.failure_count == 0
-        assert result.skipped_count == 0
-        assert result.success_count == 2
-        versions = set(registry.list_versions("m"))
-        assert len(versions) == 2
-        assert {registry.load("m", v) for v in versions} == {1, 2}
+    def test_batch_save_same_name_requires_explicit_versions(self, registry):
+        """Repeated names cannot use automatic versions; reject the whole batch."""
+        with pytest.raises(ValueError, match="explicit"):
+            registry.save(["unrelated", "m", "m"], [3, 1, 2])
+        assert registry.list_objects() == []
 
     def test_reopening_registry_does_not_clobber_custom_materializers(self, temp_registry_dir):
         """R6: defaults must not overwrite a custom materializer already stored for a type."""

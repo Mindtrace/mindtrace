@@ -384,8 +384,9 @@ def test_read_only_mount_blocks_save_and_delete(basic_store):
 
 
 def test_batch_operations_validate_lengths(basic_store):
-    with pytest.raises(ValueError, match="lengths must match"):
+    with pytest.raises(ValueError, match="same length"):
         basic_store.save(["one", "two"], [{"v": 1}], version=[None, None])
+    assert basic_store.get_mount(basic_store.default_mount).registry.list_objects() == []
 
     with pytest.raises(ValueError, match="same length"):
         basic_store.load(["one", "two"], version=["1"])

@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Tuple, Type
 from mindtrace.core import Mindtrace, compute_dir_hash, first_not_none, ifnone, instantiate_target
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
+from mindtrace.registry.core._batch import normalize_save_batch, validate_save_batch
 from mindtrace.registry.core._paths import validate_relative_path
 from mindtrace.registry.core.base_materializer import Materializer
 from mindtrace.registry.core.exceptions import (
@@ -384,9 +385,12 @@ class _RegistryCore(Mindtrace):
             obj: Object(s) to save.
             materializer: Class or fully qualified class-name string. None uses automatic selection
                 for each object type. Materializer instances are not supported.
-            version: Version(s). If None, auto-increments. In non-versioned mode, always "1".
-            init_params: Additional parameters for the materializer(s).
-            metadata: Additional metadata to store with the object(s).
+            version: Version(s). None auto-increments only for names occurring once in a batch.
+                Repeated names require distinct explicit versions. In non-versioned mode,
+                always "1", so repeated names are rejected.
+            init_params: Additional parameters for the materializer(s). A shared dictionary
+                is independently copied for every batch item, as is each per-item dictionary.
+            metadata: Additional metadata, with the same batch broadcasting/copying behavior.
             on_conflict: Behavior when version already exists.
                 If None (default): inferred from mutable setting.
                     - mutable=True: defaults to "overwrite"
@@ -400,6 +404,9 @@ class _RegistryCore(Mindtrace):
             Batch (list): BatchResult containing results (versions), errors, and status.
 
         Raises:
+            ValueError: If batch list lengths differ, a repeated name lacks an explicit
+                version, or normalized identities collide. Rejects the entire call before
+                materialization or saves, regardless of on_conflict.
             TypeError: If materializer is an instance or another unsupported value (single item only).
             ValueError: If no materializer is found for any object (single item only).
             ValueError: If version string is invalid (single item only).
@@ -506,18 +513,14 @@ class _RegistryCore(Mindtrace):
         on_conflict: str = OnConflict.SKIP,
     ) -> BatchResult:
         """Save multiple objects to the registry. Returns BatchResult with skipped items on conflict."""
-        # Normalize inputs to lists
-        objs_list = objs if isinstance(objs, list) else [objs] * len(names)
-        versions_list = (
-            ["1"] * len(names)
-            if not self.version_objects
-            else (versions if isinstance(versions, list) else [versions] * len(names))
+        objs_list, versions_list, init_params_list, metadata_list = normalize_save_batch(
+            names, objs, versions, init_params, metadata
         )
-        init_params_list = init_params if isinstance(init_params, list) else [None] * len(names)
-        metadata_list = metadata if isinstance(metadata, list) else [None] * len(names)
-
-        if not (len(names) == len(objs_list) == len(versions_list) == len(init_params_list) == len(metadata_list)):
-            raise ValueError("All list inputs must have the same length")
+        validate_save_batch(
+            names, versions_list, version_objects=self.version_objects, version_digits=self.version_digits
+        )
+        if not self.version_objects:
+            versions_list = ["1"] * len(names)
 
         result = BatchResult()
         prep_errors: Dict[Tuple[str, str], Dict[str, str]] = {}

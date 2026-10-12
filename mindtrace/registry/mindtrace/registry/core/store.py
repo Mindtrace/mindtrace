@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Type
 
 from mindtrace.core import Mindtrace
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
+from mindtrace.registry.core._batch import normalize_save_batch, registry_save_target, validate_save_batch
 from mindtrace.registry.core.base_materializer import Materializer
 from mindtrace.registry.core.exceptions import (
     RegistryObjectNotFound,
@@ -302,6 +303,19 @@ class Store(Mindtrace):
         metadata: Dict[str, Any] | List[Dict[str, Any]] | None = None,
         on_conflict: str | None = None,
     ) -> str | None | BatchResult:
+        """Save through the explicit or default write mount.
+
+        Batch inputs follow Registry.save's broadcasting and identity rules.
+        Every repeated name within a resolved target registry requires distinct
+        explicit versions; versions embedded in keys count unless overridden by
+        the version argument. Aliases of the same target share this check.
+
+        Raises:
+            ValueError: If list lengths differ or batch identities are invalid.
+                The whole batch is checked before materialization or saves to
+                any mount, regardless of on_conflict. Runtime failures after
+                preflight retain per-item outcomes without rollback.
+        """
         if isinstance(name, str):
             return self._single_save(
                 name,
@@ -313,13 +327,22 @@ class Store(Mindtrace):
                 on_conflict=on_conflict,
             )
 
-        objs = obj if isinstance(obj, list) else [obj] * len(name)
-        versions = version if isinstance(version, list) else [version] * len(name)
-        init_params_list = init_params if isinstance(init_params, list) else [init_params] * len(name)
-        metadata_list = metadata if isinstance(metadata, list) else [metadata] * len(name)
+        objs, versions, init_params_list, metadata_list = normalize_save_batch(
+            name, obj, version, init_params, metadata
+        )
 
-        if not (len(name) == len(objs) == len(versions)):
-            raise ValueError("name, obj, and version list lengths must match")
+        # Preflight the entire call before the first mount can save anything.
+        groups: dict[tuple, tuple[Registry, list[str], list[str | None]]] = {}
+        for key, supplied_version in zip(name, versions):
+            mount, object_name, key_version = self.parse_key(key)
+            registry = self.get_mount(mount or self.default_mount).registry
+            _, names, target_versions = groups.setdefault(registry_save_target(registry), (registry, [], []))
+            names.append(object_name)
+            target_versions.append(supplied_version if supplied_version is not None else key_version)
+        for registry, names, target_versions in groups.values():
+            validate_save_batch(
+                names, target_versions, version_objects=registry.version_objects, version_digits=registry.version_digits
+            )
 
         result = BatchResult()
         for i, key in enumerate(name):

@@ -165,29 +165,21 @@ class TestCacheArtifactRegressions:
 
 class TestBatchAccountingRegressions:
     @pytest.mark.parametrize("policy", ["skip", "overwrite"])
-    def test_duplicate_explicit_identity_reports_every_input(self, tmp_path, policy):
+    def test_duplicate_explicit_identity_rejects_every_input(self, tmp_path, policy):
         reg = Registry(backend=tmp_path / "registry", version_objects=True, mutable=True)
-        result = reg.save(["item", "item"], [1, 2], version="1.0.0", on_conflict=policy)
-        assert result.failure_count == 0, result.errors
-        assert len(result.results) == 2
-        if policy == "skip":
-            assert result.results == ["1.0.0", None]
-            assert result.success_count == result.skipped_count == 1
-            assert reg.load("item", "1.0.0") == 1
-        else:
-            assert result.results == ["1.0.0", "1.0.0"]
-            assert result.success_count == 2
-            assert result.skipped_count == 0
-            assert reg.load("item", "1.0.0") == 2
+        with pytest.raises(ValueError, match="[Dd]uplicate"):
+            reg.save(["unrelated", "item", "item"], [3, 1, 2], version="1.0.0", on_conflict=policy)
+        assert reg.list_objects() == []
 
-    def test_preparation_failure_does_not_mask_same_named_success(self, tmp_path):
+    def test_duplicate_identity_is_rejected_before_preparation_failure(self, tmp_path, monkeypatch):
         reg = Registry(backend=tmp_path / "registry", version_objects=True)
         reg.register_materializer(int, RejectNegativeMaterializer)
-        result = reg.save(["item", "item"], [-1, 2], version="1.0.0")
-        assert reg.load("item", "1.0.0") == 2
-        assert result.results == [None, "1.0.0"]
-        assert result.success_count == result.failure_count == 1
-        assert result.errors[("item", "1.0.0")]["error"] == "ValueError"
+        prepare = Mock(side_effect=ValueError("should not be called"))
+        monkeypatch.setattr(RejectNegativeMaterializer, "save", prepare)
+        with pytest.raises(ValueError, match="[Dd]uplicate"):
+            reg.save(["item", "item"], [-1, 2], version="1.0.0")
+        prepare.assert_not_called()
+        assert reg.list_objects() == []
 
     @pytest.mark.parametrize("field", ["metadata", "init_params"])
     def test_dictionary_list_length_mismatch_is_rejected_before_writes(self, tmp_path, field):

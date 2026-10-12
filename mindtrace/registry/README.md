@@ -306,11 +306,8 @@ result = registry.load(["model:a", "model:b"], version=["1.0.0", "1.0.0"])
 
 ### Batch-save identity rule
 
-**Agreed contract; implementation pending in [repair package 5](https://github.com/Mindtrace/mindtrace/issues/579).**
-The current implementation does not yet enforce this rule.
-
 Within one batch save, each resolved `(name, version)` identity in a target registry
-must be unique. If any identity is duplicated, the entire call must raise
+must be unique. If any identity is duplicated, the entire call raises
 `ValueError` **before materialization or any saves**, including saves of otherwise
 valid items. This applies regardless of `on_conflict`; inputs are not silently
 discarded using first-wins or last-wins behavior.
@@ -328,6 +325,8 @@ discarded using first-wins or last-wins behavior.
   therefore rejected, even if different version strings were supplied.
 - Store batches apply the same check after resolving their target registries and
   names; qualified and default-mount references to the same target must not evade it.
+  Explicit versions in Store keys (such as `archive/item@2`) count; a non-`None`
+  `version` argument takes precedence over the version embedded in a key.
 
 For a repeated name in a versioned registry:
 
@@ -343,6 +342,13 @@ passes preflight, later materializer or backend failures remain per-item outcome
 this rule does not make the batch transactional or promise rollback of successful
 items. Existing backend concurrency checks remain in force: planning versions
 within a batch is not a distributed version reservation.
+
+All list arguments must have the same length; mismatches are rejected before
+materialization or saves, including in unversioned mode. A shared `metadata` or
+`init_params` dictionary is copied independently for every item. Per-item
+dictionaries are also independently copied, so saving does not mutate caller
+data or share mutable nested values between items. The meaning of `init_params`
+is unchanged: parameters are persisted for materialization on load.
 
 ## Dict-Like API
 

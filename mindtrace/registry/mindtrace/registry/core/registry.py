@@ -500,14 +500,23 @@ class Registry(Mindtrace):
             obj: Object(s) to save.
             materializer: Class or fully qualified class-name string. ``None`` selects automatically.
                 Instances are rejected with TypeError (reported per item for batch saves).
-            version: Version(s). If ``None``, auto-increments.
-            init_params: Additional parameters for the materializer(s).
-            metadata: Additional metadata to store with the object(s).
+            version: Version(s). ``None`` auto-increments only for names occurring once in
+                a batch. Repeated names require distinct explicit versions after normalization;
+                unversioned registries reject repeated names.
+            init_params: Additional parameters for the materializer(s). Shared dictionaries
+                are broadcast using independent copies; per-item dictionaries are also copied.
+            metadata: Additional metadata, with the same batch broadcasting/copying behavior.
             on_conflict: Behavior when version already exists (``"skip"`` or ``"overwrite"``).
 
         Returns:
             Single item: Resolved version string.
             Batch (list): ``BatchResult`` with results, errors, and status.
+
+        Raises:
+            ValueError: If batch list lengths differ, a repeated name lacks an explicit
+                version, or normalized identities collide. The entire call is rejected
+                before materialization or any saves, regardless of ``on_conflict``.
+                Later runtime failures remain per-item outcomes, without rollback.
         """
         if not self._cached:
             return self._core.save(
