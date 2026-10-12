@@ -8,6 +8,10 @@ Supervised training loop with automatic mixed precision, gradient accumulation, 
 
 - [Overview](#overview)
 - [Hugging Face Data Adapters](#hugging-face-data-adapters)
+  - [Task profiles](#task-profiles)
+  - [Build datasets and DataLoaders](#build-datasets-and-dataloaders)
+  - [Runtime target contracts](#runtime-target-contracts)
+  - [Export metadata](#export-metadata)
 - [Architecture](#architecture)
 - [Trainer](#trainer)
 - [Callbacks](#callbacks)
@@ -32,10 +36,148 @@ The training sub-package provides:
 
 Import `build_datasets` and `build_dataloaders` from `mindtrace.models.training`
 to consume a saved Hugging Face export without a live Datalake connection.
-`build_datasets(export_path, ...)` returns native Hugging Face datasets keyed by
-split, with task-specific PyTorch transforms applied on access.
-`build_dataloaders(export_path, ...)` adds batching, worker seeding, and collation.
-Both support classification, detection, and segmentation task profiles.
+
+`build_datasets()` returns one native, indexable Hugging Face `Dataset` per available or requested split. Task
+preparation is applied on access with `Dataset.with_transform()`, so the usual Hugging Face composition API—such
+as `select()`, `filter()`, `shuffle()`, and `train_test_split()`—remains available.
+`build_dataloaders()` uses the same dataset-building path, then adds batching, train-only shuffling, workers, seeding, and task-specific
+collation. Both accept one shared transform or a split-keyed transform mapping.
+
+### Task profiles
+
+The public task API is:
+
+- `task="classification"` — infer single-label or multi-label classification from the schema.
+- `task="detection"` — full-image object detection.
+- `task="segmentation"` — infer semantic or instance segmentation from the schema.
+
+Explicit `semantic_segmentation` and `instance_segmentation` aliases are also accepted when profile validation is
+preferred to inference.
+
+The five built-in runtime profiles are:
+
+1. **Single-label classification** — scalar `torch.long` target, normally used with `CrossEntropyLoss`.
+2. **Multi-label classification** — fixed-length multi-hot `torch.float32` target, normally used with
+   `BCEWithLogitsLoss`.
+3. **Object detection** — one full image with all boxes and labels.
+4. **Semantic segmentation** — one full image and categorical class-ID mask, including an ignore index.
+5. **Instance segmentation** — one full image with per-instance masks, boxes, labels, areas, and crowd flags.
+
+### Build datasets and DataLoaders
+
+This example consumes the artifacts produced by the
+[Datalake import/export walkthrough](../../../../datalake/README.md#import-and-export-example).
+Complete that walkthrough first, or adjust `export_root` and the paths below to your saved exports.
+
+```python
+from pathlib import Path
+
+from mindtrace.core import Config
+from mindtrace.models.training import build_dataloaders, build_datasets
+from torchvision import transforms
+
+mindtrace_temp = Path(Config().MINDTRACE_DIR_PATHS.TEMP_DIR).expanduser()
+export_root = mindtrace_temp / "exports"
+
+classification_transform = transforms.Compose(
+    [
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+    ]
+)
+
+dataset_specs = {
+    "flowers102": (
+        export_root / "flowers102-single-label",
+        "classification",
+        classification_transform,
+    ),
+    "voc_single_label": (
+        export_root / "voc-single-label",
+        "classification",
+        classification_transform,
+    ),
+    "voc_multi_label": (
+        export_root / "voc-multi-label",
+        "classification",
+        classification_transform,
+    ),
+    "voc_detection": (export_root / "voc-detection", "detection", None),
+    "voc_semantic": (export_root / "voc-semantic-segmentation", "segmentation", None),
+    "penn_fudan_instance": (
+        export_root / "penn-fudan-instance-segmentation",
+        "segmentation",
+        None,
+    ),
+}
+
+datasets = {
+    name: build_datasets(path, task=task, transforms=transform)
+    for name, (path, task, transform) in dataset_specs.items()
+}
+
+# Direct random access to a Mask R-CNN-shaped instance-segmentation sample.
+sample = datasets["penn_fudan_instance"]["train"][0]
+image, target = sample["image"], sample["target"]
+# target["boxes"]:   FloatTensor[N, 4] in xyxy
+# target["labels"]:  LongTensor[N]
+# target["masks"]:   BoolTensor[N, H, W]
+# target["area"]:    FloatTensor[N]
+# target["iscrowd"]: LongTensor[N]
+
+loaders = {
+    name: build_dataloaders(
+        path,
+        task=task,
+        transforms=transform,
+        batch_size=32 if task == "classification" else 4,
+        num_workers=0,
+        seed=42,
+    )
+    for name, (path, task, transform) in dataset_specs.items()
+}
+
+flowers_train_loader = loaders["flowers102"]["train"]
+flowers_val_loader = loaders["flowers102"]["val"]
+flowers_test_loader = loaders["flowers102"]["test"]
+voc_detection_train_loader = loaders["voc_detection"]["train"]
+voc_semantic_train_loader = loaders["voc_semantic"]["train"]
+penn_fudan_train_loader = loaders["penn_fudan_instance"]["train"]
+penn_fudan_val_loader = loaders["penn_fudan_instance"]["val"]
+```
+
+Both builders return dictionaries keyed by available or requested split names. Pass `splits=(...)` to select a
+subset. One transform may be shared across splits, or `transforms={"train": ..., "val": ..., "test": ...}` may
+provide split-specific preprocessing.
+
+Classification images must have a consistent shape before default collation can stack them. Detection, semantic
+segmentation, and instance segmentation use list-based collation because image sizes and target counts vary.
+Geometric detection and segmentation transforms receive the image and target together so boxes and masks remain
+aligned. Semantic mask resizing must use nearest-neighbour interpolation.
+
+### Runtime target contracts
+
+Native datasets return mappings with `image` and `target` keys. DataLoaders collate those mappings into the
+training-facing `(images, targets)` batch structure below:
+
+- Single-label classification: scalar `LongTensor` targets.
+- Multi-label classification: `FloatTensor[num_classes]` targets.
+- Detection: target mappings containing `boxes`, `labels`, `area`, `iscrowd`, and `difficult`.
+- Semantic segmentation: `LongTensor[H, W]` targets.
+- Instance segmentation: target mappings containing `boxes`, `labels`, `masks`, `area`, and `iscrowd`.
+
+Pass `return_metadata=True` to include a separate `metadata` mapping in dataset samples and a third metadata
+column in DataLoader batches.
+
+Detection and instance targets follow torchvision conventions. The detection adapter is source-dataset-generic but
+expects the canonical Mindtrace HF detection schema: embedded image media, absolute pixel-space `xywh` boxes, and
+contiguous category IDs. VOC `difficult` remains available as its own boolean tensor and is also projected into the
+torchvision/COCO-compatible `iscrowd` ignore channel; this is an evaluator compatibility mapping, not an assertion
+that the source concepts are identical. The instance adapter similarly consumes the canonical Mindtrace HF
+objects-with-masks schema.
+
+These adapters consume saved Hugging Face artifacts, not COCO JSON exports.
+
 
 ### Export metadata
 
