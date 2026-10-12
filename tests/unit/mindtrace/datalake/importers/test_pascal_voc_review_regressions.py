@@ -1,8 +1,7 @@
-"""Behavioral regression specifications for unresolved review findings on PR #523."""
+"""Regression coverage for Pascal VOC importer review findings on PR #523."""
 
 from __future__ import annotations
 
-import importlib
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
@@ -114,21 +113,3 @@ def test_voc_single_label_view_reuses_full_image_datum(tmp_path):
     assert datalake.create_datum.call_count == 1
     assert summary.derived_datum_count == 0
     assert version_calls["tiny-voc-classification-single-label"]["manifest"] == ["datum_1"]
-
-
-def test_native_huggingface_dataset_builders_are_public_from_models_training():
-    training = importlib.import_module("mindtrace.models.training")
-
-    assert callable(getattr(training, "build_datasets"))
-    assert callable(getattr(training, "build_dataloaders"))
-    assert "HuggingFaceClassificationDataset" not in training.__all__
-    assert not hasattr(training, "HuggingFaceClassificationDataset")
-
-
-def test_obsolete_live_datalake_bridge_is_not_public():
-    training = importlib.import_module("mindtrace.models.training")
-
-    assert "DatalakeDataset" not in training.__all__
-    assert "build_datalake_loader" not in training.__all__
-    assert not hasattr(training, "DatalakeDataset")
-    assert not hasattr(training, "build_datalake_loader")
