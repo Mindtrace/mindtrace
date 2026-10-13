@@ -341,6 +341,8 @@ def test_classification_dataset_returns_requested_metadata_keys(monkeypatch, met
 
     result = getattr(dataloaders, builder)(
         "/export",
+        # This test exercises metadata collation; the default fake normalization returns a tuple.
+        transforms=lambda image: _FakeTensor(image, dtype="float32"),
         metadata_keys=("subject_id", "group_id"),
         **metadata_options,
     )["train"]
@@ -355,6 +357,8 @@ def test_classification_dataset_returns_requested_metadata_keys(monkeypatch, met
     if builder == "build_dataloaders":
         batch = result.kwargs["collate_fn"]([dataset[0]])
         assert len(batch) == 3
+        assert batch[0].value == [row["image"]]
+        assert batch[1].value == [1]
         assert batch[2] == [expected_metadata]
 
 
