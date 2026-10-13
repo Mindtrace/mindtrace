@@ -92,6 +92,65 @@ def test_huggingface_export_raises_helpful_error_when_dependency_missing(monkeyp
         )
 
 
+@pytest.mark.parametrize(
+    "path_options",
+    [
+        {"task": "classification", "classification_source": "bbox_crops"},
+        {"task": "classification", "classification_type": "multi_label"},
+        {"task": "detection"},
+        {"task": "object_detection"},
+        {"task": "semantic_segmentation"},
+        {"task": "semantic-segmentation"},
+        {"task": "instance_segmentation"},
+        {"task": "instance-segmentation"},
+        {"task": "segmentation"},
+        {},
+    ],
+)
+@pytest.mark.parametrize(
+    ("option_name", "option_value"),
+    [
+        ("annotation_attributes", {"field": "target"}),
+        ("class_names", ["healthy"]),
+        ("classification_class_names", ["healthy"]),
+        ("metadata_keys", {"subject_id": "string"}),
+        ("metadata_keys", {}),
+        ("metadata_keys", None),
+    ],
+)
+@pytest.mark.parametrize("path_from_metadata", [False, True])
+def test_huggingface_export_rejects_unsupported_options_before_preparing_destination(
+    tmp_path: Path, monkeypatch, path_options, option_name, option_value, path_from_metadata
+):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+
+    monkeypatch.setattr(huggingface_exporter.importlib, "import_module", lambda name: _fake_datasets_module())
+    prepare = Mock()
+    monkeypatch.setattr(huggingface_exporter, "prepare_export_destination", prepare)
+    metadata = {}
+    options = dict(path_options)
+    if path_from_metadata:
+        metadata = dict(options)
+        if "task" in metadata:
+            metadata["task_type"] = metadata.pop("task")
+        options = {}
+    options[option_name] = option_value
+
+    with pytest.raises(ValueError) as error:
+        export_dataset_as_huggingface(
+            ExportableDataset(name="unsupported", metadata=metadata),
+            destination=tmp_path / "hf",
+            overwrite=True,
+            options=options,
+        )
+
+    assert option_name in str(error.value)
+    assert "require task='classification'" in str(error.value)
+    assert "classification_type='single_label'" in str(error.value)
+    assert "classification_source='annotations'" in str(error.value)
+    prepare.assert_not_called()
+
+
 def test_huggingface_export_writes_media_for_default_split(tmp_path: Path, monkeypatch):
     from mindtrace.datalake.exporters import huggingface as huggingface_exporter
 

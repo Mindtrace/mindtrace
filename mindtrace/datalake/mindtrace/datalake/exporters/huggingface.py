@@ -814,15 +814,30 @@ def export_dataset_as_huggingface(
             "Install mindtrace-datalake[export-huggingface]."
         ) from exc
 
-    destination_path = prepare_export_destination(destination, overwrite=overwrite)
     requested_task = (options or {}).get("task") or dataset.metadata.get("task_type")
+    classification_type = (options or {}).get("classification_type") or dataset.metadata.get(
+        "classification_type", "single_label"
+    )
+    classification_source = (options or {}).get("classification_source") or dataset.metadata.get(
+        "classification_source", "annotations"
+    )
+    selected_options = sorted(
+        {"annotation_attributes", "class_names", "classification_class_names", "metadata_keys"}.intersection(options or {})
+    )
+    if selected_options and not (
+        requested_task == "classification"
+        and classification_type == "single_label"
+        and classification_source == "annotations"
+    ):
+        raise ValueError(
+            f"Hugging Face exporter options {selected_options} require task='classification', "
+            "classification_type='single_label', and classification_source='annotations'; "
+            f"received task={requested_task!r}, classification_type={classification_type!r}, "
+            f"classification_source={classification_source!r}."
+        )
+
+    destination_path = prepare_export_destination(destination, overwrite=overwrite)
     if requested_task == "classification":
-        classification_type = (options or {}).get("classification_type") or dataset.metadata.get(
-            "classification_type", "single_label"
-        )
-        classification_source = (options or {}).get("classification_source") or dataset.metadata.get(
-            "classification_source", "annotations"
-        )
         if classification_source not in {"annotations", "bbox_crops"}:
             raise ValueError(
                 "Hugging Face classification export requires classification_source='annotations' or 'bbox_crops'."

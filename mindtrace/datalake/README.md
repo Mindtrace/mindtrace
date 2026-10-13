@@ -398,7 +398,17 @@ records into stable HF schemas.
 
 For a DatasetVersion with multiple logical classification annotations, select one field by its exact annotation
 attributes. When the selected annotations do not have label IDs, provide an explicit class order. Required top-level
-row metadata can be copied into typed fields in the same export pass:
+row metadata can be copied into typed fields in the same export pass.
+
+The exporter options `annotation_attributes`, `class_names` (or `classification_class_names`), and `metadata_keys`
+are supported only for `task="classification"`, `classification_type="single_label"`, and
+`classification_source="annotations"`. The latter two default to these values unless overridden by dataset metadata.
+Supplying any of these option keys on bbox-crop, multi-label, detection, segmentation, or generic export paths raises
+`ValueError` before the destination is prepared, even if the option value is empty or `None`. Other typed paths
+continue to obtain class names from dataset metadata; they do not project custom metadata columns. Loader
+`metadata_keys` requests require columns already present in the saved artifact.
+
+For example:
 
 ```python
 datalake.export_dataset_version_to_format(
