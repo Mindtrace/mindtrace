@@ -438,6 +438,11 @@ names are stored in `dataset.features["label"].names`; their positions define th
 not duplicate that mapping. The `class_names` export option still controls this order. Existing exports without
 these options are unchanged.
 
+Requested metadata values are validated against the declared Arrow type while each row is prepared. Integer
+values must fit the declared signed/unsigned width; floats are not truncated into integers and booleans are not
+accepted as numbers. Conversion errors identify the source asset, metadata key, and requested dtype. Missing or
+null requested values remain errors.
+
 #### Consume the exported artifacts
 
 Continue with the [Models training guide](../models/mindtrace/models/training/README.md#build-datasets-and-dataloaders)

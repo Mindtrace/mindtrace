@@ -4,6 +4,7 @@ import importlib
 import io
 import json
 from collections.abc import Mapping, Sequence
+from numbers import Integral
 from pathlib import Path
 from typing import Any
 
@@ -70,19 +71,13 @@ def _annotation_matches_attributes(annotation: Any, attributes: Mapping[str, Any
     )
 
 
-def _metadata_value_matches_dtype(value: Any, dtype: str) -> bool:
-    if dtype == "string":
-        return isinstance(value, str)
-    if dtype == "bool":
-        return isinstance(value, bool)
-    if dtype in _INTEGER_DTYPES:
-        return isinstance(value, int) and not isinstance(value, bool)
-    if dtype in _FLOAT_DTYPES:
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
-    return False
-
-
 def _project_metadata_keys(item: Any, metadata_keys: Mapping[str, str]) -> dict[str, Any]:
+    if not metadata_keys:
+        return {}
+
+    import pyarrow as pa
+    from datasets import Value
+
     projected: dict[str, Any] = {}
     for key, dtype in metadata_keys.items():
         if key not in item.metadata or item.metadata[key] is None:
@@ -90,12 +85,19 @@ def _project_metadata_keys(item: Any, metadata_keys: Mapping[str, str]) -> dict[
                 f"Hugging Face export requires row metadata key {key!r}; asset {item.asset.asset_id!r} is missing it."
             )
         value = item.metadata[key]
-        if not _metadata_value_matches_dtype(value, dtype):
+        try:
+            # Preserve strict integer semantics instead of allowing Arrow to truncate floats.
+            if dtype in _INTEGER_DTYPES and (isinstance(value, bool) or not isinstance(value, Integral)):
+                raise TypeError("Integer metadata requires an integer value, not a boolean or float.")
+            if dtype in _FLOAT_DTYPES and isinstance(value, bool):
+                raise TypeError("Floating metadata does not accept boolean values.")
+            scalar = pa.scalar(value, type=Value(dtype).pa_type)
+        except (pa.ArrowException, TypeError, ValueError, OverflowError) as exc:
             raise ValueError(
                 f"Hugging Face export metadata key {key!r} on asset {item.asset.asset_id!r} "
-                f"must match dtype {dtype!r}; found {type(value).__name__}."
-            )
-        projected[key] = value
+                f"must match dtype {dtype!r}; found {type(value).__name__}: {exc}"
+            ) from exc
+        projected[key] = scalar.as_py()
     return projected
 
 
