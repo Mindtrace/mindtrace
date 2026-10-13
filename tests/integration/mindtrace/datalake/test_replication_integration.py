@@ -3,12 +3,12 @@
 Requires:
 
 - Primary MongoDB at ``mongodb://localhost:27018`` (``mongodb`` service) for the source lake.
-- Secondary MongoDB at ``mongodb://localhost:27019`` (``mongodb_secondary``) for the MinIO-backed target lake.
-- MinIO / S3 configuration (``MINDTRACE_MINIO__*`` / ``config.ini``), same as other
-  datalake integration tests that use MinIO.
+- Secondary MongoDB at ``mongodb://localhost:27019`` (``mongodb_secondary``) for the S3-backed target lake.
+- S3 configuration (``MINDTRACE_MINIO__*`` / ``config.ini``), same as other
+  datalake integration tests that use S3.
 
 The replication scenarios use **local** storage on the source (primary Mongo metadata)
-and **MinIO** on the target (secondary Mongo metadata). ``MongoMindtraceODM`` routes
+and **S3** on the target (secondary Mongo metadata). ``MongoMindtraceODM`` routes
 later document-model backends through Motor so multiple ``AsyncDatalake`` instances
 can coexist in one process across two URIs.
 """
@@ -35,7 +35,7 @@ from mindtrace.datalake.replication_types import (
 )
 from tests.integration.mindtrace.datalake.conftest import MONGO_URL, MONGO_URL_SECONDARY
 
-_MOUNT_MAP_LOCAL_TO_MINIO = {"local": "minio"}
+_MOUNT_MAP_LOCAL_TO_S3 = {"local": "s3"}
 _HOPPER = Path(__file__).resolve().parents[3] / "resources" / "hopper.png"
 _SENTINEL = object()
 
@@ -132,18 +132,18 @@ async def _replicate_asset_to_verified(
         ReplicationBatchRequest(
             assets=[asset],
             origin_lake_id=source.mongo_db_name,
-            mount_map=_MOUNT_MAP_LOCAL_TO_MINIO,
+            mount_map=_MOUNT_MAP_LOCAL_TO_S3,
         )
     )
-    await manager.reconcile_pending_payloads(ReplicationReconcileRequest(mount_map=_MOUNT_MAP_LOCAL_TO_MINIO))
-    await _drain_pending_payloads(manager, _MOUNT_MAP_LOCAL_TO_MINIO)
+    await manager.reconcile_pending_payloads(ReplicationReconcileRequest(mount_map=_MOUNT_MAP_LOCAL_TO_S3))
+    await _drain_pending_payloads(manager, _MOUNT_MAP_LOCAL_TO_S3)
     target_asset = await target.get_asset(asset.asset_id)
     assert ReplicationManager.get_payload_status(target_asset) == "present"
     return asset, target_asset
 
 
 def test_mongodb_secondary_container_accept_connections() -> None:
-    """Sanity-check the compose ``mongodb_secondary`` service used by the MinIO-on-secondary-Mongo fixture."""
+    """Sanity-check the compose ``mongodb_secondary`` service used by the S3-on-secondary-Mongo fixture."""
     if not _mongo_secondary_reachable():
         pytest.skip("Secondary MongoDB not reachable at localhost:27019 (start tests/docker-compose.yml)")
     client = MongoClient(MONGO_URL_SECONDARY, serverSelectionTimeoutMS=5000)
@@ -155,19 +155,19 @@ def test_mongodb_secondary_container_accept_connections() -> None:
 
 
 @pytest.mark.asyncio
-async def test_replication_continuous_ingest_local_to_minio_separate_metadata_dbs(
+async def test_replication_continuous_ingest_local_to_s3_separate_metadata_dbs(
     async_datalake: AsyncDatalake,
-    async_datalake_minio_secondary_mongo: AsyncDatalake,
+    async_datalake_s3_secondary_mongo: AsyncDatalake,
 ):
-    """Producer and consumer tasks: ingest waves on source while replicating to MinIO target."""
+    """Producer and consumer tasks: ingest waves on source while replicating to S3 target."""
     source = async_datalake
-    target = async_datalake_minio_secondary_mongo
+    target = async_datalake_s3_secondary_mongo
 
     assert source.mongo_db_uri == MONGO_URL
     assert target.mongo_db_uri == MONGO_URL_SECONDARY
     assert source.mongo_db_name != target.mongo_db_name
     assert source.store.default_mount == "local"
-    assert target.store.default_mount == "minio"
+    assert target.store.default_mount == "s3"
 
     manager = ReplicationManager(source, target)
     work: asyncio.Queue[Any] = asyncio.Queue(maxsize=8)
@@ -193,13 +193,13 @@ async def test_replication_continuous_ingest_local_to_minio_separate_metadata_db
             batch = ReplicationBatchRequest(
                 assets=item,
                 origin_lake_id=source.mongo_db_name,
-                mount_map=_MOUNT_MAP_LOCAL_TO_MINIO,
+                mount_map=_MOUNT_MAP_LOCAL_TO_S3,
             )
             await manager.upsert_metadata_batch(batch)
-            await manager.reconcile_pending_payloads(ReplicationReconcileRequest(mount_map=_MOUNT_MAP_LOCAL_TO_MINIO))
+            await manager.reconcile_pending_payloads(ReplicationReconcileRequest(mount_map=_MOUNT_MAP_LOCAL_TO_S3))
 
     await asyncio.gather(producer(), consumer())
-    await _drain_pending_payloads(manager, _MOUNT_MAP_LOCAL_TO_MINIO)
+    await _drain_pending_payloads(manager, _MOUNT_MAP_LOCAL_TO_S3)
 
     ids = list(created_asset_ids)
     assert len(ids) == 8
@@ -207,13 +207,13 @@ async def test_replication_continuous_ingest_local_to_minio_separate_metadata_db
 
 
 @pytest.mark.asyncio
-async def test_replication_concurrent_hydration_gather_local_to_minio(
+async def test_replication_concurrent_hydration_gather_local_to_s3(
     async_datalake: AsyncDatalake,
-    async_datalake_minio_secondary_mongo: AsyncDatalake,
+    async_datalake_s3_secondary_mongo: AsyncDatalake,
 ):
-    """Concurrent ``hydrate_asset_payload`` calls (same loop) stress MinIO hydration paths."""
+    """Concurrent ``hydrate_asset_payload`` calls (same loop) stress S3 hydration paths."""
     source = async_datalake
-    target = async_datalake_minio_secondary_mongo
+    target = async_datalake_s3_secondary_mongo
     manager = ReplicationManager(source, target)
 
     assets = []
@@ -225,28 +225,26 @@ async def test_replication_concurrent_hydration_gather_local_to_minio(
         ReplicationBatchRequest(
             assets=assets,
             origin_lake_id=source.mongo_db_name,
-            mount_map=_MOUNT_MAP_LOCAL_TO_MINIO,
+            mount_map=_MOUNT_MAP_LOCAL_TO_S3,
         )
     )
 
     st0 = await manager.status()
     assert st0.asset_counts_by_payload_status.get("missing", 0) == len(assets)
 
-    await asyncio.gather(
-        *[manager.hydrate_asset_payload(a.asset_id, mount_map=_MOUNT_MAP_LOCAL_TO_MINIO) for a in assets]
-    )
+    await asyncio.gather(*[manager.hydrate_asset_payload(a.asset_id, mount_map=_MOUNT_MAP_LOCAL_TO_S3) for a in assets])
 
-    await _drain_pending_payloads(manager, _MOUNT_MAP_LOCAL_TO_MINIO)
+    await _drain_pending_payloads(manager, _MOUNT_MAP_LOCAL_TO_S3)
     await _assert_target_bytes_match_source(source=source, target=target, asset_ids=[a.asset_id for a in assets])
 
 
 @pytest.mark.asyncio
 async def test_replication_reupsert_preserves_verified_payload_state(
     async_datalake: AsyncDatalake,
-    async_datalake_minio_secondary_mongo: AsyncDatalake,
+    async_datalake_s3_secondary_mongo: AsyncDatalake,
 ):
     source = async_datalake
-    target = async_datalake_minio_secondary_mongo
+    target = async_datalake_s3_secondary_mongo
     manager = ReplicationManager(source, target)
 
     asset, verified_target_asset = await _replicate_asset_to_verified(
@@ -262,7 +260,7 @@ async def test_replication_reupsert_preserves_verified_payload_state(
         ReplicationBatchRequest(
             assets=[asset],
             origin_lake_id=source.mongo_db_name,
-            mount_map=_MOUNT_MAP_LOCAL_TO_MINIO,
+            mount_map=_MOUNT_MAP_LOCAL_TO_S3,
         )
     )
 
@@ -276,10 +274,10 @@ async def test_replication_reupsert_preserves_verified_payload_state(
 @pytest.mark.asyncio
 async def test_replication_reconcile_after_reupsert_skips_verified_asset(
     async_datalake: AsyncDatalake,
-    async_datalake_minio_secondary_mongo: AsyncDatalake,
+    async_datalake_s3_secondary_mongo: AsyncDatalake,
 ):
     source = async_datalake
-    target = async_datalake_minio_secondary_mongo
+    target = async_datalake_s3_secondary_mongo
     manager = ReplicationManager(source, target)
 
     asset, _ = await _replicate_asset_to_verified(
@@ -293,12 +291,12 @@ async def test_replication_reconcile_after_reupsert_skips_verified_asset(
         ReplicationBatchRequest(
             assets=[asset],
             origin_lake_id=source.mongo_db_name,
-            mount_map=_MOUNT_MAP_LOCAL_TO_MINIO,
+            mount_map=_MOUNT_MAP_LOCAL_TO_S3,
         )
     )
 
     reconcile_result = await manager.reconcile_pending_payloads(
-        ReplicationReconcileRequest(asset_ids=[asset.asset_id], mount_map=_MOUNT_MAP_LOCAL_TO_MINIO)
+        ReplicationReconcileRequest(asset_ids=[asset.asset_id], mount_map=_MOUNT_MAP_LOCAL_TO_S3)
     )
 
     assert reconcile_result.attempted_asset_ids == []
@@ -310,10 +308,10 @@ async def test_replication_reconcile_after_reupsert_skips_verified_asset(
 @pytest.mark.asyncio
 async def test_replication_mark_local_delete_eligible_requires_verified_target_payload(
     async_datalake: AsyncDatalake,
-    async_datalake_minio_secondary_mongo: AsyncDatalake,
+    async_datalake_s3_secondary_mongo: AsyncDatalake,
 ):
     source = async_datalake
-    target = async_datalake_minio_secondary_mongo
+    target = async_datalake_s3_secondary_mongo
     manager = ReplicationManager(source, target)
 
     asset = await _create_image_asset(source, name=f"replication/reclaim/pending_{uuid4().hex}.png")
@@ -321,7 +319,7 @@ async def test_replication_mark_local_delete_eligible_requires_verified_target_p
         ReplicationBatchRequest(
             assets=[asset],
             origin_lake_id=source.mongo_db_name,
-            mount_map=_MOUNT_MAP_LOCAL_TO_MINIO,
+            mount_map=_MOUNT_MAP_LOCAL_TO_S3,
         )
     )
 
@@ -335,10 +333,10 @@ async def test_replication_mark_local_delete_eligible_requires_verified_target_p
 @pytest.mark.asyncio
 async def test_replication_reclaim_verified_payloads_tombstones_source_and_keeps_target_readable(
     async_datalake: AsyncDatalake,
-    async_datalake_minio_secondary_mongo: AsyncDatalake,
+    async_datalake_s3_secondary_mongo: AsyncDatalake,
 ):
     source = async_datalake
-    target = async_datalake_minio_secondary_mongo
+    target = async_datalake_s3_secondary_mongo
     manager = ReplicationManager(source, target)
 
     asset = await _create_image_asset(source, name=f"replication/reclaim/verified_{uuid4().hex}.png")
@@ -348,11 +346,11 @@ async def test_replication_reclaim_verified_payloads_tombstones_source_and_keeps
         ReplicationBatchRequest(
             assets=[asset],
             origin_lake_id=source.mongo_db_name,
-            mount_map=_MOUNT_MAP_LOCAL_TO_MINIO,
+            mount_map=_MOUNT_MAP_LOCAL_TO_S3,
         )
     )
-    await manager.reconcile_pending_payloads(ReplicationReconcileRequest(mount_map=_MOUNT_MAP_LOCAL_TO_MINIO))
-    await _drain_pending_payloads(manager, _MOUNT_MAP_LOCAL_TO_MINIO)
+    await manager.reconcile_pending_payloads(ReplicationReconcileRequest(mount_map=_MOUNT_MAP_LOCAL_TO_S3))
+    await _drain_pending_payloads(manager, _MOUNT_MAP_LOCAL_TO_S3)
 
     reclaim_result = await manager.reclaim_verified_payloads(
         ReplicationReclaimRequest(asset_ids=[asset.asset_id], limit=1)
@@ -381,10 +379,10 @@ async def test_replication_reclaim_verified_payloads_tombstones_source_and_keeps
 @pytest.mark.asyncio
 async def test_replication_reclaim_is_idempotent_after_source_tombstoned(
     async_datalake: AsyncDatalake,
-    async_datalake_minio_secondary_mongo: AsyncDatalake,
+    async_datalake_s3_secondary_mongo: AsyncDatalake,
 ):
     source = async_datalake
-    target = async_datalake_minio_secondary_mongo
+    target = async_datalake_s3_secondary_mongo
     manager = ReplicationManager(source, target)
 
     asset, target_asset = await _replicate_asset_to_verified(

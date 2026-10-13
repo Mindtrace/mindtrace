@@ -64,10 +64,46 @@ uv run python -m mindtrace.hardware.services.cameras.launcher --include-mocks
 
 - `POST /cameras/configure` - Configure camera parameters (runtime-configurable)
 - `POST /cameras/configure/batch` - Configure multiple cameras
-- `POST /cameras/configuration` - Get current camera configuration
+- `POST /cameras/config/get` - Get current camera configuration (live hardware)
+- `POST /cameras/config/saved/get` - Get persisted camera configuration from disk
 - `POST /cameras/config/import` - Import configuration from file
 - `POST /cameras/config/export` - Export configuration to file
 - `POST /cameras/config/reset` - Delete persisted configuration file
+
+#### Breaking Changes
+
+Recent (August 2026) API and backend contract changes:
+
+| Surface | Before | After |
+|---------|--------|-------|
+| `POST /cameras/configure` | `data: bool` | `data: {applied, total, failures, skipped, partial, success, …}` |
+| `POST /cameras/configure/batch` | `results: Dict[str, bool]` | `results: Dict[str, ConfigurationApplyResultData]` |
+| `POST /cameras/config/get` | All fields present, `null` when unset | Unset keys omitted from `data` |
+| `CameraBackend.__init__` | `(name, camera_config, …)` | `(name, …)` — positional shift; profile JSON is applied via `configure()` after construction |
+
+Migration notes:
+
+- Check `data.success` on configure responses instead of treating `data` as a boolean.
+- For batch configure, inspect per-camera `results[name].success`, `applied`, and `failures`.
+- `/cameras/config/get` JSON omits unset keys and can be posted directly to `/cameras/configure`.
+- Custom backends: remove the `camera_config` positional argument from `__init__` signatures.
+
+Example configure response:
+
+```json
+{
+  "success": true,
+  "message": "Camera 'Basler:cam0' configured successfully",
+  "data": {
+    "applied": 3,
+    "total": 3,
+    "failures": {},
+    "skipped": [],
+    "partial": {},
+    "success": true
+  }
+}
+```
 
 ### Image Capture
 
@@ -290,11 +326,24 @@ pick up that file on (re)open.
 |---|---|
 | `/cameras/configure` | No — runtime only |
 | `/cameras/configure/batch` | No — runtime only |
+| `/cameras/config/get` | No — reads live hardware state |
+| `/cameras/config/saved/get` | No — reads per-camera JSON from disk without applying it |
 | `/cameras/config/export` | Yes — writes per-camera JSON under `MINDTRACE_HW_CAMERA_CONFIG_DIR` |
 | `/cameras/config/import` | Reads per-camera JSON and applies to live camera |
 | `open()` (when restore enabled) | Reads per-camera JSON and applies to live camera before connection test |
+| `open(camera_config=path)` | Applies JSON from `path` after any saved-profile restore; overrides overlapping keys |
 | `/cameras/config/reset` | Deletes the managed per-camera profile; next close/open uses backend defaults |
 | Auto-reinit after capture failures | No — closes and reopens only; does not rewrite the saved file. Replays the original `open()` kwargs and accumulated runtime `/cameras/configure` settings. |
+
+Saved profiles use the same JSON payload shape as `/cameras/configure` and
+the `/cameras/config/get` and `/cameras/config/saved/get` responses
+(`exposure_time`, `gain`, `roi`, `trigger_mode`, `pixel_format`, `white_balance`,
+`image_enhancement`, `optical_power`, `packet_size`, `inter_packet_delay`,
+`bandwidth_limit`, plus backend-specific keys such as `focus_config`,
+`genicam_nodes`, or OpenCV properties). GET responses omit unset keys rather
+than serializing them as ``null``, so the ``data`` object can be posted back to
+configure. Legacy export files with metadata keys (`camera_type`, `timestamp`,
+etc.) still import successfully; unknown keys are ignored.
 
 Saved profiles restore **imaging settings** (exposure, gain, trigger, ROI, etc.)
 and **per-camera GigE transport settings** (`packet_size`, `inter_packet_delay`,
@@ -321,7 +370,7 @@ The camera manager tracks consecutive capture failures per camera. When a camera
 
 1. Checks the reinitialization cooldown (prevents thrashing)
 2. Closes the camera
-3. Re-opens with the original `open()` kwargs, restores the saved configuration (when restore is enabled), and replays accumulated runtime `/cameras/configure` settings
+3. Re-opens with the original `open()` kwargs, restores the saved configuration (when restore is enabled), and replays accumulated runtime `/cameras/configure` settings (in-process: `AsyncCameraManager.configure_camera`, not `camera.configure`)
 4. Resets the failure counter
 
 ### Configuration
@@ -351,7 +400,7 @@ Can be changed dynamically without reinitialization:
 - `gain` - Camera gain value
 - `trigger_mode` - Trigger mode (continuous/trigger)
 - `white_balance` - White balance setting
-- `image_quality_enhancement` - Enable CLAHE enhancement
+- `image_enhancement` - Enable CLAHE enhancement (legacy alias: `img_quality_enhancement`)
 - `pixel_format` - Pixel format (BGR8, RGB8, Mono8, etc.)
 - `packet_size` - GigE packet size in bytes (set to match NIC MTU, e.g., 8164 for jumbo frames)
 - `inter_packet_delay` - Ticks between GigE packets (e.g., 1000 = ~8us gap)

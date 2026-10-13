@@ -551,7 +551,7 @@ class TestPeftLoRA:
         from mindtrace.models.architectures.backbones.dino_hf import LoRAConfig
 
         # LoRA requires pretrained=True to freeze base weights then add adapters
-        lora_cfg = LoRAConfig(r=4, lora_alpha=4, target_modules="qv")
+        lora_cfg = LoRAConfig(r=4, lora_alpha=4)
         with skip_on_hub_error():
             model = build_model(
                 "dino_v2_small_reg",
@@ -578,7 +578,7 @@ class TestPeftLoRA:
                 "linear",
                 num_classes=NUM_CLASSES,
                 pretrained=False,
-                lora_config=LoRAConfig(r=4, target_modules="qv"),
+                lora_config=LoRAConfig(r=4),
             )
         model.eval()
 
@@ -597,7 +597,7 @@ class TestPeftLoRA:
                 "linear",
                 num_classes=NUM_CLASSES,
                 pretrained=False,
-                lora_config=LoRAConfig(r=4, target_modules="qv"),
+                lora_config=LoRAConfig(r=4),
             )
         optimizer = build_optimizer("adamw", model, lr=1e-3)
 

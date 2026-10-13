@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock
+
 import pytest
 
 from mindtrace.jobs import Consumer, JobSchema, Orchestrator
@@ -224,6 +226,38 @@ class TestConsumer:
         with pytest.raises(RuntimeError, match="Consumer not connected. Call connect\\(\\) first"):
             consumer.consume_until_empty()
 
+    def test_stop_reset_and_close_proxy_to_backend(self):
+        class Worker(Consumer):
+            def run(self, job_dict):
+                return {}
+
+        consumer = Worker()
+        consumer.consumer_backend = MagicMock()
+
+        consumer.stop()
+        consumer.reset()
+        consumer.close()
+
+        consumer.consumer_backend.stop.assert_called_once_with()
+        consumer.consumer_backend.reset.assert_called_once_with()
+        consumer.consumer_backend.close.assert_called_once_with()
+
+    def test_stop_requires_connection(self):
+        class Worker(Consumer):
+            def run(self, job_dict):
+                return {}
+
+        with pytest.raises(RuntimeError, match="Consumer not connected"):
+            Worker().stop()
+
+    def test_reset_requires_connection(self):
+        class Worker(Consumer):
+            def run(self, job_dict):
+                return {}
+
+        with pytest.raises(RuntimeError, match="Consumer not connected"):
+            Worker().reset()
+
     def test_abstract_run_method(self):
         """Test that Consumer is abstract and run method must be implemented."""
         consumer = Consumer()
@@ -282,3 +316,30 @@ class TestConsumer:
             # Second connect should raise RuntimeError
             with pytest.raises(RuntimeError, match="Consumer already connected"):
                 dummy.connect_to_orchestator_via_backend_args(backend_args, "test_queue")
+
+
+class TestConsumerDrainSignature:
+    def test_consume_until_empty_rejects_a_block_argument(self):
+        class DummyWorker(Consumer):
+            def run(self, job_dict):
+                return {}
+
+        dummy = DummyWorker()
+        dummy.consumer_backend = MagicMock()
+
+        with pytest.raises(TypeError):
+            dummy.consume_until_empty(block=False)
+
+        dummy.consumer_backend.consume_until_empty.assert_not_called()
+
+    def test_consume_until_empty_forwards_only_the_queues(self):
+        class DummyWorker(Consumer):
+            def run(self, job_dict):
+                return {}
+
+        dummy = DummyWorker()
+        dummy.consumer_backend = MagicMock()
+
+        dummy.consume_until_empty(queues="q")
+
+        dummy.consumer_backend.consume_until_empty.assert_called_once_with(queues="q")

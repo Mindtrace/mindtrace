@@ -1,7 +1,9 @@
 import json
 import uuid
+from contextlib import contextmanager
 
 import pydantic
+from redis.exceptions import LockNotOwnedError
 
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
 from mindtrace.jobs.consumers.consumer import Consumer
@@ -13,6 +15,10 @@ from mindtrace.jobs.redis.stack import RedisStack
 
 
 class RedisClient(OrchestratorBackend):
+    connection_kwarg_names = frozenset({"host", "port", "db"})
+    QUEUE_LOCK_KEY = "mindtrace:queue_lock"
+    QUEUE_LOCK_TIMEOUT = 5
+
     def __init__(self, host: str = "localhost", port: int = 6379, db: int = 0):
         """Initialize the Redis client and connect to the Redis server.
         Args:
@@ -24,61 +30,107 @@ class RedisClient(OrchestratorBackend):
         self.redis_params = {"host": host, "port": port, "db": db}
         self.connection = RedisConnection(**self.redis_params)
 
+    @contextmanager
+    def _queue_lock(self):
+        """Hold the distributed queue lock for the duration of the block.
+
+        Raises:
+            BlockingIOError: If the lock is still held elsewhere when the wait expires.
+        """
+        lock = self.connection.connection.lock(
+            self.QUEUE_LOCK_KEY, timeout=self.QUEUE_LOCK_TIMEOUT, blocking_timeout=self.QUEUE_LOCK_TIMEOUT
+        )
+        if not lock.acquire():
+            raise BlockingIOError("Could not acquire distributed lock.")
+        try:
+            yield
+        finally:
+            try:
+                lock.release()
+            except LockNotOwnedError:
+                self.logger.warning(
+                    f"Distributed queue lock expired after {self.QUEUE_LOCK_TIMEOUT}s and was released elsewhere."
+                )
+
+    def _publish_queue_event(self, event: dict) -> None:
+        """Notify other clients of a queue change without failing the change itself."""
+        try:
+            self.connection.connection.publish(self.connection.EVENTS_CHANNEL, json.dumps(event))
+        except Exception as exc:
+            self.logger.warning(f"Failed to publish queue event {event}: {exc}")
+
     @property
     def consumer_backend_args(self):
         return {"cls": "mindtrace.jobs.redis.consumer_backend.RedisConsumerBackend", "kwargs": self.redis_params}
 
-    def create_consumer_backend(self, consumer_frontend: Consumer, queue_name: str) -> RedisConsumerBackend:
-        return RedisConsumerBackend(queue_name, consumer_frontend, **self.consumer_backend_args["kwargs"])
+    def create_consumer_backend(self, consumer_frontend: Consumer, queue_name: str, **kwargs) -> RedisConsumerBackend:
+        backend_kwargs = self.consumer_backend_args["kwargs"] | self._reject_connection_overrides(kwargs)
+        return RedisConsumerBackend(queue_name, consumer_frontend, **backend_kwargs)
+
+    @staticmethod
+    def _queue_type(instance) -> str | None:
+        for queue_type, queue_class in {
+            "fifo": RedisQueue,
+            "stack": RedisStack,
+            "priority": RedisPriorityQueue,
+        }.items():
+            if isinstance(instance, queue_class):
+                return queue_type
+        return None
 
     def declare_queue(self, queue_name: str, queue_type: str = "fifo", **kwargs) -> dict[str, str]:
         """Declare a Redis-backed queue of type 'fifo', 'stack', or 'priority'."""
+        queue_type = queue_type.lower()
+        queue_class = {
+            "fifo": RedisQueue,
+            "stack": RedisStack,
+            "priority": RedisPriorityQueue,
+        }.get(queue_type)
+        if queue_class is None:
+            raise TypeError(f"Unknown queue type '{queue_type}'.")
         with self.connection._local_lock:
-            if queue_name in self.connection.queues:
+            local_instance = self.connection.queues.get(queue_name)
+            if local_instance is not None:
+                local_queue_type = self._queue_type(local_instance)
+                if local_queue_type is not None and local_queue_type != queue_type:
+                    raise ValueError(f"Queue '{queue_name}' is already declared as {local_queue_type}.")
+        with self._queue_lock():
+            central_queue_type = self.connection.connection.hget(self.connection.METADATA_KEY, queue_name)
+            if isinstance(central_queue_type, bytes):
+                central_queue_type = central_queue_type.decode("utf-8")
+            if isinstance(central_queue_type, str):
+                if central_queue_type != queue_type:
+                    raise ValueError(f"Queue '{queue_name}' is already declared as {central_queue_type}.")
+                if local_instance is None:
+                    instance = queue_class(
+                        queue_name,
+                        host=self.redis_params["host"],
+                        port=self.redis_params["port"],
+                        db=self.redis_params["db"],
+                    )
+                    with self.connection._local_lock:
+                        self.connection.queues[queue_name] = instance
                 return {
                     "status": "success",
                     "message": f"Queue '{queue_name}' already exists.",
                 }
-        lock = self.connection.connection.lock("mindtrace:queue_lock", timeout=5)
-        if not lock.acquire(blocking=True):
-            raise BlockingIOError("Could not acquire distributed lock.")
-        try:
-            pipe = self.connection.connection.pipeline()
-            pipe.hset(self.connection.METADATA_KEY, queue_name, queue_type.lower())
-            pipe.execute()
-            if queue_type.lower() == "fifo":
-                instance = RedisQueue(
+
+            instance = local_instance
+            if instance is None:
+                instance = queue_class(
                     queue_name,
                     host=self.redis_params["host"],
                     port=self.redis_params["port"],
                     db=self.redis_params["db"],
                 )
-            elif queue_type.lower() == "stack":
-                instance = RedisStack(
-                    queue_name,
-                    host=self.redis_params["host"],
-                    port=self.redis_params["port"],
-                    db=self.redis_params["db"],
-                )
-            elif queue_type.lower() == "priority":
-                instance = RedisPriorityQueue(
-                    queue_name,
-                    host=self.redis_params["host"],
-                    port=self.redis_params["port"],
-                    db=self.redis_params["db"],
-                )
-            else:
-                raise TypeError(f"Unknown queue type '{queue_type}'.")
+            self.connection.connection.hset(self.connection.METADATA_KEY, queue_name, queue_type)
             with self.connection._local_lock:
                 self.connection.queues[queue_name] = instance
-            event_data = json.dumps({"event": "declare", "queue": queue_name, "queue_type": queue_type})
-            self.connection.connection.publish(self.connection.EVENTS_CHANNEL, event_data)
+            self._publish_queue_event({"event": "declare", "queue": queue_name, "queue_type": queue_type})
             return {
                 "status": "success",
                 "message": f"Queue '{queue_name}' declared as {queue_type} successfully.",
             }
-        finally:
-            lock.release()
 
     def delete_queue(self, queue_name: str, **kwargs) -> dict:
         """Delete a declared queue.
@@ -88,24 +140,19 @@ class RedisClient(OrchestratorBackend):
         with self.connection._local_lock:
             if queue_name not in self.connection.queues:
                 raise KeyError(f"Queue '{queue_name}' is not declared.")
-        lock = self.connection.connection.lock("mindtrace:queue_lock", timeout=5)
-        if not lock.acquire(blocking=True):
-            raise BlockingIOError("Could not acquire distributed lock.")
-        try:
+            instance = self.connection.queues[queue_name]
+        with self._queue_lock():
             pipe = self.connection.connection.pipeline()
             pipe.hdel(self.connection.METADATA_KEY, queue_name)
+            pipe.delete(instance.key)
             pipe.execute()
             with self.connection._local_lock:
-                if queue_name in self.connection.queues:
-                    del self.connection.queues[queue_name]
-            event_data = json.dumps({"event": "delete", "queue": queue_name})
-            self.connection.connection.publish(self.connection.EVENTS_CHANNEL, event_data)
+                self.connection.queues.pop(queue_name, None)
+            self._publish_queue_event({"event": "delete", "queue": queue_name})
             return {
                 "status": "success",
                 "message": f"Queue '{queue_name}' deleted successfully.",
             }
-        finally:
-            lock.release()
 
     def publish(self, queue_name: str, message: pydantic.BaseModel, **kwargs) -> str:
         """Publish a message (a pydantic model) to the specified Redis queue."""
@@ -114,18 +161,15 @@ class RedisClient(OrchestratorBackend):
             if queue_name not in self.connection.queues:
                 raise KeyError(f"Queue '{queue_name}' is not declared.")
             instance = self.connection.queues[queue_name]
-        try:
-            message_dict = message.model_dump()
-            if "job_id" not in message_dict:
-                message_dict["job_id"] = str(uuid.uuid1())
-            body = json.dumps(message_dict)
-            if type(instance).__name__ == "RedisPriorityQueue" and priority is not None:
-                instance.push(item=body, priority=priority)
-            else:
-                instance.push(item=body)
-            return message_dict["job_id"]
-        except Exception:
-            raise
+        message_dict = message.model_dump()
+        if not message_dict.get("job_id"):
+            message_dict["job_id"] = str(uuid.uuid1())
+        body = json.dumps(message_dict)
+        if isinstance(instance, RedisPriorityQueue) and priority is not None:
+            instance.push(item=body, priority=priority)
+        else:
+            instance.push(item=body)
+        return message_dict["job_id"]
 
     def clean_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Clean (purge) a specified Redis queue by deleting its underlying key.
@@ -140,20 +184,13 @@ class RedisClient(OrchestratorBackend):
             if queue_name not in self.connection.queues:
                 raise KeyError(f"Queue '{queue_name}' is not declared.")
             instance = self.connection.queues[queue_name]
-        lock = self.connection.connection.lock("mindtrace:queue_lock", timeout=5)
-        if not lock.acquire(blocking=True):
-            raise BlockingIOError("Could not acquire distributed lock.")
-        try:
-            count = self.connection.connection.llen(instance.key)
+        with self._queue_lock():
+            count = instance.qsize()
             self.connection.connection.delete(instance.key)
             return {
                 "status": "success",
                 "message": f"Queue '{queue_name}' cleaned; deleted {count} key(s).",
             }
-        except Exception:
-            raise
-        finally:
-            lock.release()
 
     def move_to_dlq(
         self,

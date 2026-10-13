@@ -1,4 +1,4 @@
-import pickle
+import uuid
 from queue import Empty
 
 import redis
@@ -8,24 +8,32 @@ class RedisPriorityQueue:
     """A priority message queue backed by Redis.
     This class uses a Redis sorted set to store messages with priorities.
     Higher numerical priority values are retrieved first (higher priority).
+
+    Each member is a unique hexadecimal entry prefix, a colon, and the payload, so identical
+    payloads occupy distinct members of the sorted set.
     """
 
     def __init__(self, name, namespace="priority_queue", **redis_kwargs):
         self.__db = redis.Redis(**redis_kwargs)
         self.key = f"{namespace}:{name}"
 
-    def push(self, item, priority=0):
-        """Serialize and add an item to the priority queue.
+    def push(self, item: str, priority=0):
+        """Add an item to the priority queue under its own entry prefix.
         Args:
-            item: The item to add to the queue.
+            item: The payload to add to the queue.
             priority: Priority value (higher numbers = higher priority).
         """
-        import random
+        self.__db.zadd(self.key, {f"{uuid.uuid4().hex}:{item}": priority})
 
-        random.seed(hash(str(item)) % 2147483647)  # Deterministic seed based on item content
-        tie_breaker = random.random() * 1e-10  # Very small tie breaker
-        score = priority + tie_breaker
-        self.__db.zadd(self.key, {pickle.dumps(item): score})
+    @staticmethod
+    def _decode(member) -> str:
+        """Return the payload carried by a stored member."""
+        if isinstance(member, bytes):
+            member = member.decode("utf-8")
+        _, separator, payload = member.partition(":")
+        if not separator:
+            raise ValueError(f"Priority queue member is missing its entry prefix: {member!r}")
+        return payload
 
     def pop(self, block=True, timeout=None):
         """Remove and return the highest priority item from the queue.
@@ -42,14 +50,14 @@ class RedisPriorityQueue:
             while True:
                 items = self.__db.zpopmax(self.key, 1)
                 if items:
-                    return pickle.loads(items[0][0])
+                    return self._decode(items[0][0])
                 if timeout is not None and (time.time() - start_time) > timeout:
                     raise Empty
                 time.sleep(0.1)  # Sleep briefly before checking again
         else:
             items = self.__db.zpopmax(self.key, 1)
             if items:
-                return pickle.loads(items[0][0])
+                return self._decode(items[0][0])
             else:
                 raise Empty
 

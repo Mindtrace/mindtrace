@@ -6,7 +6,7 @@ import tempfile
 
 from PIL import Image
 
-from mindtrace.registry import MinioRegistryBackend, Registry
+from mindtrace.registry import Registry, S3RegistryBackend
 
 EXAMPLES = """
 Examples:
@@ -158,7 +158,7 @@ def init_registry(args: argparse.Namespace, parser: argparse.ArgumentParser) -> 
         for r in required:
             if getattr(args, r) is None:
                 parser.error(f"--{r.replace('_', '-')} is required for minio backend")
-        minio_backend = MinioRegistryBackend(
+        minio_backend = S3RegistryBackend(
             uri=args.minio_uri,
             endpoint=args.minio_endpoint,
             access_key=args.minio_access_key,

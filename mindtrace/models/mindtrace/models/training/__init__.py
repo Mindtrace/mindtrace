@@ -42,6 +42,7 @@ from mindtrace.models.training.callbacks import (
 from mindtrace.models.training.huggingface_dataloaders import (
     build_dataloaders,
     build_datasets,
+    read_export_metadata,
 )
 from mindtrace.models.training.optimizers import build_optimizer, build_scheduler
 from mindtrace.models.training.trainer import Trainer
@@ -62,4 +63,5 @@ __all__ = [
     "build_scheduler",
     "build_datasets",
     "build_dataloaders",
+    "read_export_metadata",
 ]

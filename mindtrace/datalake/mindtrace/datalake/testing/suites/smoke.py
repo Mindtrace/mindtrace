@@ -28,7 +28,7 @@ class DatalakeSmokeInput(BaseModel):
 
 
 class DatalakeSmokeResources(BaseModel):
-    mongo_uri: str = Field("mongodb://127.0.0.1:27017", description="MongoDB URI used by the datalake ODM.")
+    mongo_uri: str = Field("mongodb://127.0.0.1:27018", description="MongoDB URI used by the datalake ODM.")
     mongo_db_name: str | None = Field(None, description="Optional Mongo database name for this run.")
 
 
@@ -52,7 +52,7 @@ class DatalakeSmokeSuite(BenchTestSuite):
             "smoke": {
                 "duration_seconds": 2.0,
                 "backend": "local",
-                "resources": {"mongo_uri": "mongodb://127.0.0.1:27017"},
+                "resources": {"mongo_uri": "mongodb://127.0.0.1:27018"},
             },
         },
     )

@@ -2130,7 +2130,7 @@ async def test_service_import_prepare_failure_surfaces_error_detail(service, dat
     request = DatasetSyncImportRequest(bundle=bundle)
     with patch.object(SERVICE_MODULE, "DatasetSyncManager") as manager_cls:
         manager = manager_cls.return_value
-        manager.plan_import = AsyncMock(side_effect=KeyError("minio"))
+        manager.plan_import = AsyncMock(side_effect=KeyError("s3-mount"))
 
         started = await service.import_dataset_version_prepare_start(request)
         await service._dataset_sync_jobs[started.job_id].task
@@ -2143,10 +2143,10 @@ async def test_service_import_prepare_failure_surfaces_error_detail(service, dat
     assert status.error_detail.traceback == result.error_detail.traceback
     assert result.error is not None
     assert "KeyError" in result.error
-    assert "minio" in result.error
+    assert "s3-mount" in result.error
     assert result.error_detail is not None
     assert result.error_detail.exception_type.endswith("KeyError")
-    assert "minio" in result.error_detail.exception_repr
+    assert "s3-mount" in result.error_detail.exception_repr
     assert result.error_detail.traceback is not None
     assert "_run_dataset_sync_job" in result.error_detail.traceback
 
@@ -2178,7 +2178,7 @@ async def test_service_replication_upsert_batch_uses_replication_manager(service
 
 @pytest.mark.asyncio
 async def test_service_replication_hydrate_asset_payload_uses_replication_manager(service, datalake_objects):
-    request = ReplicationHydrateAssetPayloadInput(asset_id=datalake_objects.asset.asset_id, mount_map={"raw": "minio"})
+    request = ReplicationHydrateAssetPayloadInput(asset_id=datalake_objects.asset.asset_id, mount_map={"raw": "s3"})
     with patch.object(SERVICE_MODULE, "ReplicationManager") as manager_cls:
         manager = manager_cls.return_value
         manager.hydrate_asset_payload = AsyncMock(return_value=datalake_objects.asset)
@@ -2187,14 +2187,12 @@ async def test_service_replication_hydrate_asset_payload_uses_replication_manage
 
     assert isinstance(result, AssetOutput)
     assert result.asset == datalake_objects.asset
-    manager.hydrate_asset_payload.assert_awaited_once_with(datalake_objects.asset.asset_id, mount_map={"raw": "minio"})
+    manager.hydrate_asset_payload.assert_awaited_once_with(datalake_objects.asset.asset_id, mount_map={"raw": "s3"})
 
 
 @pytest.mark.asyncio
 async def test_service_replication_reconcile_uses_replication_manager(service):
-    request = ReplicationReconcileRequest(
-        asset_ids=["asset_1"], limit=5, include_failed=False, mount_map={"raw": "minio"}
-    )
+    request = ReplicationReconcileRequest(asset_ids=["asset_1"], limit=5, include_failed=False, mount_map={"raw": "s3"})
     reconcile_result = ReplicationReconcileResult(
         attempted_asset_ids=["asset_1"],
         verified_asset_ids=["asset_1"],
@@ -4145,7 +4143,7 @@ async def test_import_session_start_plan_validation_and_storage_errors(service, 
 
 @pytest.mark.asyncio
 async def test_import_session_start_put_object_failure_is_500(service, datalake_objects, mock_datalake):
-    mock_datalake.put_object = AsyncMock(side_effect=OSError("minio"))
+    mock_datalake.put_object = AsyncMock(side_effect=OSError("s3"))
     imp_db = _import_session_db(mock_datalake)
     imp_db.insert = AsyncMock()
     plan = DatasetSyncImportPlan(

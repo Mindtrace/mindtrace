@@ -2,12 +2,12 @@
 
 Requires MongoDB at ``mongodb://localhost:27018`` (see ``tests/integration/mindtrace/datalake/conftest.py``).
 
-Tests that use ``async_datalake_minio`` additionally require MinIO/S3 configuration
+Tests that use ``async_datalake_s3`` additionally require S3 configuration
 (``MINDTRACE_MINIO__*`` / ``tests/integration/README.md``). Those tests are skipped
-automatically when MinIO is unavailable via the shared registry ``s3_config`` fixtures.
+automatically when the S3 store is unavailable via the shared registry ``s3_config`` fixtures.
 
-Local ? MinIO cases pass ``mount_map={"local": "minio"}`` because the MinIO datalake uses
-mount name ``minio`` while seeded source objects live on mount ``local``.
+Local → S3 cases pass ``mount_map={"local": "s3"}`` because the S3 datalake uses
+mount name ``s3`` while seeded source objects live on mount ``local``.
 """
 
 from __future__ import annotations
@@ -39,8 +39,8 @@ from tests.integration.mindtrace.datalake.conftest import MONGO_URL
 
 _HOPPER = Path(__file__).resolve().parents[3] / "resources" / "hopper.png"
 
-# Source integration lakes use default mount ``local``; ``async_datalake_minio`` uses ``minio``.
-_MOUNT_MAP_LOCAL_TO_MINIO = {"local": "minio"}
+# Source integration lakes use default mount ``local``; ``async_datalake_s3`` uses ``s3``.
+_MOUNT_MAP_LOCAL_TO_S3 = {"local": "s3"}
 
 
 def _mongo_reachable() -> bool:
@@ -134,68 +134,68 @@ async def test_dataset_sync_local_to_local_transfers_bytes(
 
 
 @pytest.mark.asyncio
-async def test_dataset_sync_local_to_minio_transfers_bytes(
-    async_datalake: AsyncDatalake, async_datalake_minio: AsyncDatalake
+async def test_dataset_sync_local_to_s3_transfers_bytes(
+    async_datalake: AsyncDatalake, async_datalake_s3: AsyncDatalake
 ):
     dataset_name = f"sync-s3-{uuid4().hex[:10]}"
     version = "2.0.0"
     image_bytes = _HOPPER.read_bytes()
     await _seed_minimal_image_dataset(async_datalake, dataset_name=dataset_name, version=version)
 
-    manager = DatasetSyncManager(async_datalake, async_datalake_minio)
+    manager = DatasetSyncManager(async_datalake, async_datalake_s3)
     result = await manager.sync_dataset_version(
         dataset_name,
         version,
         transfer_policy="copy_if_missing",
         origin_lake_id=async_datalake.mongo_db_name,
-        mount_map=_MOUNT_MAP_LOCAL_TO_MINIO,
+        mount_map=_MOUNT_MAP_LOCAL_TO_S3,
     )
 
     assert result.transferred_payloads >= 1
     remote_asset_id = None
-    remote = await async_datalake_minio.get_dataset_version(dataset_name, version)
+    remote = await async_datalake_s3.get_dataset_version(dataset_name, version)
     for datum_id in remote.manifest:
-        datum = await async_datalake_minio.get_datum(datum_id)
+        datum = await async_datalake_s3.get_datum(datum_id)
         for aid in datum.asset_refs.values():
             remote_asset_id = aid
             break
     assert remote_asset_id is not None
-    asset = await async_datalake_minio.get_asset(remote_asset_id)
-    loaded = await async_datalake_minio.get_object(asset.storage_ref)
+    asset = await async_datalake_s3.get_asset(remote_asset_id)
+    loaded = await async_datalake_s3.get_object(asset.storage_ref)
     assert loaded == image_bytes
-    assert asset.storage_ref.mount == "minio"
+    assert asset.storage_ref.mount == "s3"
 
 
 @pytest.mark.asyncio
-async def test_dataset_sync_local_to_minio_plan_uses_mapped_target_ref(
-    async_datalake: AsyncDatalake, async_datalake_minio: AsyncDatalake
+async def test_dataset_sync_local_to_s3_plan_uses_mapped_target_ref(
+    async_datalake: AsyncDatalake, async_datalake_s3: AsyncDatalake
 ):
     dataset_name = f"sync-plan-s3-{uuid4().hex[:10]}"
     version = "1.0.0"
     await _seed_minimal_image_dataset(async_datalake, dataset_name=dataset_name, version=version)
-    manager = DatasetSyncManager(async_datalake, async_datalake_minio)
+    manager = DatasetSyncManager(async_datalake, async_datalake_s3)
     bundle = await manager.export_dataset_version(dataset_name, version)
 
     plan = await manager.plan_import(
         DatasetSyncImportRequest(
             bundle=bundle,
             transfer_policy="copy_if_missing",
-            mount_map=_MOUNT_MAP_LOCAL_TO_MINIO,
+            mount_map=_MOUNT_MAP_LOCAL_TO_S3,
         )
     )
 
     assert plan.payloads[0].source_storage_ref.mount == "local"
-    assert plan.payloads[0].target_storage_ref.mount == "minio"
+    assert plan.payloads[0].target_storage_ref.mount == "s3"
 
 
 @pytest.mark.asyncio
 async def test_cross_lake_plan_import_rejects_bundle_when_resolved_mount_missing_on_target_without_map(
-    async_datalake: AsyncDatalake, async_datalake_minio: AsyncDatalake
+    async_datalake: AsyncDatalake, async_datalake_s3: AsyncDatalake
 ):
     dataset_name = f"sync-mount-validate-{uuid4().hex[:10]}"
     version = "1.0.0"
     await _seed_minimal_image_dataset(async_datalake, dataset_name=dataset_name, version=version)
-    manager = DatasetSyncManager(async_datalake, async_datalake_minio)
+    manager = DatasetSyncManager(async_datalake, async_datalake_s3)
     bundle = await manager.export_dataset_version(dataset_name, version)
 
     with pytest.raises(ValueError, match="After applying mount_map"):
@@ -392,7 +392,7 @@ async def test_dataset_sync_copy_policy_forces_transfer(
 
 @pytest.mark.asyncio
 async def test_datalake_service_import_prepare_honors_mount_map(
-    async_datalake: AsyncDatalake, async_datalake_minio: AsyncDatalake
+    async_datalake: AsyncDatalake, async_datalake_s3: AsyncDatalake
 ):
     dataset_name = f"sync-svc-{uuid4().hex[:10]}"
     version = "1.0.0"
@@ -407,8 +407,8 @@ async def test_datalake_service_import_prepare_honors_mount_map(
     )
     target_svc = DatalakeService(
         mongo_db_uri=MONGO_URL,
-        mongo_db_name=async_datalake_minio.mongo_db_name,
-        async_datalake=async_datalake_minio,
+        mongo_db_name=async_datalake_s3.mongo_db_name,
+        async_datalake=async_datalake_s3,
         live_service=False,
         initialize_on_startup=False,
     )
@@ -422,7 +422,7 @@ async def test_datalake_service_import_prepare_honors_mount_map(
     request = DatasetSyncImportRequest(
         bundle=bundle_out.bundle,
         transfer_policy="copy_if_missing",
-        mount_map=_MOUNT_MAP_LOCAL_TO_MINIO,
+        mount_map=_MOUNT_MAP_LOCAL_TO_S3,
     )
     plan_raw = await _post_datalake_json(
         target_svc,
@@ -432,7 +432,7 @@ async def test_datalake_service_import_prepare_honors_mount_map(
     plan_out = DatasetSyncImportPlanOutput.model_validate(plan_raw)
 
     assert plan_out.plan.payloads[0].source_storage_ref.mount == "local"
-    assert plan_out.plan.payloads[0].target_storage_ref.mount == "minio"
+    assert plan_out.plan.payloads[0].target_storage_ref.mount == "s3"
 
 
 async def _seed_image_dataset_with_bbox_annotation(
@@ -676,28 +676,28 @@ async def test_datalake_service_import_commit_metadata_only_roundtrip(
 
 
 @pytest.mark.asyncio
-async def test_datalake_direct_upload_client_presigned_minio(async_datalake_minio: AsyncDatalake):
-    """``DatalakeDirectUploadClient`` async path against MinIO uses presigned PUT (``_aupload_payload``)."""
-    client = DatalakeDirectUploadClient(async_datalake_minio)
+async def test_datalake_direct_upload_client_presigned_s3(async_datalake_s3: AsyncDatalake):
+    """``DatalakeDirectUploadClient`` async path against S3 uses presigned PUT (``_aupload_payload``)."""
+    client = DatalakeDirectUploadClient(async_datalake_s3)
     name = f"upload-client/{uuid4().hex[:12]}.bin"
     payload = b"presigned-upload-client-bytes"
     session = await client.aupload_bytes(
         name=name,
         data=payload,
-        mount="minio",
+        mount="s3",
         content_type="application/octet-stream",
         expires_in_minutes=60,
         created_by="pytest-upload-client",
     )
     assert session.storage_ref is not None
-    assert session.storage_ref.mount == "minio"
-    loaded = await async_datalake_minio.get_object(session.storage_ref)
+    assert session.storage_ref.mount == "s3"
+    loaded = await async_datalake_s3.get_object(session.storage_ref)
     assert loaded == payload
 
 
 @pytest.mark.asyncio
-async def test_datalake_direct_upload_client_acreate_asset_from_bytes_minio(async_datalake_minio: AsyncDatalake):
-    client = DatalakeDirectUploadClient(async_datalake_minio)
+async def test_datalake_direct_upload_client_acreate_asset_from_bytes_s3(async_datalake_s3: AsyncDatalake):
+    client = DatalakeDirectUploadClient(async_datalake_s3)
     name = f"upload-client-asset/{uuid4().hex[:12]}.png"
     data = _HOPPER.read_bytes()
     asset = await client.acreate_asset_from_bytes(
@@ -705,11 +705,11 @@ async def test_datalake_direct_upload_client_acreate_asset_from_bytes_minio(asyn
         data=data,
         kind="image",
         media_type="image/png",
-        mount="minio",
+        mount="s3",
         created_by="pytest-upload-client",
     )
-    assert asset.storage_ref.mount == "minio"
-    loaded = await async_datalake_minio.get_object(asset.storage_ref)
+    assert asset.storage_ref.mount == "s3"
+    loaded = await async_datalake_s3.get_object(asset.storage_ref)
     assert loaded == data
 
 
