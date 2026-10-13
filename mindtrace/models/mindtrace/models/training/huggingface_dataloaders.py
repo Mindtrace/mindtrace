@@ -441,7 +441,7 @@ def _infer_segmentation_profile(dataset: Any) -> str:
     )
 
 
-def _normalize_metadata_keys(metadata_keys: Sequence[str] | None, *, return_metadata: bool) -> tuple[str, ...]:
+def _normalize_metadata_keys(metadata_keys: Sequence[str] | None) -> tuple[str, ...]:
     if metadata_keys is None:
         return ()
     if isinstance(metadata_keys, (str, bytes)) or not isinstance(metadata_keys, Sequence):
@@ -451,8 +451,6 @@ def _normalize_metadata_keys(metadata_keys: Sequence[str] | None, *, return_meta
         raise ValueError("metadata_keys must contain non-empty string field names.")
     if len(set(normalized)) != len(normalized):
         raise ValueError("metadata_keys must not contain duplicate field names.")
-    if normalized and not return_metadata:
-        raise ValueError("metadata_keys requires return_metadata=True.")
     return normalized
 
 
@@ -466,7 +464,8 @@ def _build_datasets_and_profiles(
     return_metadata: bool = False,
     metadata_keys: Sequence[str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, str | None]]:
-    selected_metadata_keys = _normalize_metadata_keys(metadata_keys, return_metadata=return_metadata)
+    selected_metadata_keys = _normalize_metadata_keys(metadata_keys)
+    return_metadata = return_metadata or bool(selected_metadata_keys)
     custom_profiles = dict(task_profiles or {})
     normalized_task = task.strip().lower().replace("-", "_")
     if normalized_task not in custom_profiles:
@@ -512,7 +511,11 @@ def build_datasets(
     return_metadata: bool = False,
     metadata_keys: Sequence[str] | None = None,
 ) -> dict[str, Any]:
-    """Build split-aware native Hugging Face datasets with on-access PyTorch transforms."""
+    """Build split-aware native Hugging Face datasets with on-access PyTorch transforms.
+
+    For built-in profiles, non-empty metadata_keys enable metadata return regardless
+    of return_metadata. Custom profile builders control their own output structure.
+    """
 
     built, _ = _build_datasets_and_profiles(
         export_path,
@@ -547,7 +550,11 @@ def build_dataloaders(
     per_split_dataloader_kwargs: Mapping[str, Mapping[str, Any]] | None = None,
     seed: int = 0,
 ) -> dict[str, Any]:
-    """Build split-aware PyTorch DataLoaders over a Mindtrace dataset export."""
+    """Build split-aware PyTorch DataLoaders over a Mindtrace dataset export.
+
+    For built-in profiles, non-empty metadata_keys enable metadata return regardless
+    of return_metadata. Custom profile builders control their own output structure.
+    """
 
     if batch_size <= 0:
         raise ValueError("batch_size must be greater than zero")

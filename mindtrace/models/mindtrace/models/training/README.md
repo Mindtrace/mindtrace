@@ -168,17 +168,17 @@ training-facing `(images, targets)` batch structure below:
 
 Pass `return_metadata=True` to include a separate `metadata` mapping in dataset samples and a third metadata
 column in DataLoader batches. By default that mapping contains `asset_id`. Pass `metadata_keys=(...)` to add typed
-top-level fields that were selected during export:
+top-level fields that were selected during export. For built-in profiles, non-empty `metadata_keys` automatically
+enable metadata return, even when `return_metadata=False`. Empty or omitted keys leave the flag in control.
+Custom task-profile builders continue to control their own output structure.
 
 ```python
 datasets = build_datasets(
     export_root / "selected-classification",
-    return_metadata=True,
     metadata_keys=("subject_id", "group_id"),
 )
 loaders = build_dataloaders(
     export_root / "selected-classification",
-    return_metadata=True,
     metadata_keys=("subject_id", "group_id"),
 )
 ```
