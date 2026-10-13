@@ -435,8 +435,14 @@ artifact. Supported scalar dtypes are `string`, `bool`, signed and unsigned inte
 and `float16`, `float32`, and `float64`. The resolved selector and metadata-key types are recorded in
 `mindtrace_metadata.json` and available through `read_export_metadata(export_path)`. The ordered classification
 names are stored in `dataset.features["label"].names`; their positions define the label IDs, so the sidecar does
-not duplicate that mapping. The `class_names` export option still controls this order. Existing exports without
-these options are unchanged.
+not duplicate that mapping. The `class_names` export option still controls this order.
+
+Single-label classification exports from annotations always write this sidecar, even when no exporter options
+are supplied. It contains `schema_version: 2`, `task: "classification"`, and the resolved `annotation_attributes`
+and `metadata_keys` mappings (empty when unused). Dataset rows and features are unchanged when the options are
+omitted; only the sidecar and its entry in `files_written` are added. Other export paths retain their existing
+metadata behaviour. Older artifacts without a sidecar remain readable; `read_export_metadata()` returns `{}`
+for them.
 
 Requested metadata values are validated against the declared Arrow type while each row is prepared. Integer
 values must fit the declared signed/unsigned width; floats are not truncated into integers and booleans are not

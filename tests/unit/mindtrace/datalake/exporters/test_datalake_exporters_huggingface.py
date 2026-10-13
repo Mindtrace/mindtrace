@@ -174,7 +174,8 @@ def test_huggingface_export_writes_media_for_default_split(tmp_path: Path, monke
     assert payload[0]["image_path"] == "media/default/asset_img.png"
 
 
-def test_huggingface_classification_export_writes_typed_split_dataset(tmp_path: Path, monkeypatch):
+@pytest.mark.parametrize("options", [None, {}, {"annotation_attributes": {}, "metadata_keys": {}}])
+def test_huggingface_classification_export_writes_typed_split_dataset(tmp_path: Path, monkeypatch, options):
     from mindtrace.datalake.exporters import huggingface as huggingface_exporter
     from mindtrace.datalake.types import AnnotationRecord
 
@@ -208,10 +209,16 @@ def test_huggingface_classification_export_writes_typed_split_dataset(tmp_path: 
         ],
     )
 
-    result = export_dataset_as_huggingface(dataset, destination=tmp_path / "flowers-hf")
+    result = export_dataset_as_huggingface(dataset, destination=tmp_path / "flowers-hf", options=options)
     payload = json.loads((tmp_path / "flowers-hf" / "dataset_dict.json").read_text())
 
-    assert result.files_written == ["."]
+    assert result.files_written == ["mindtrace_metadata.json", "."]
+    assert json.loads((tmp_path / "flowers-hf" / "mindtrace_metadata.json").read_text()) == {
+        "schema_version": 2,
+        "task": "classification",
+        "annotation_attributes": {},
+        "metadata_keys": {},
+    }
     assert payload["train"][0]["asset_id"] == "asset_img"
     assert payload["train"][0]["label"] == 1
     assert payload["train"][0]["label_name"] == "hard-leaved pocket orchid"

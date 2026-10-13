@@ -374,19 +374,11 @@ def _export_single_label_classification_dataset(
         row.update(_project_metadata_keys(item, selected_metadata_keys))
         rows_by_split.setdefault(split_name, []).append(row)
 
-    requested_provenance = bool(
-        selected_attributes
-        or selected_metadata_keys
-        or (options or {}).get("class_names")
-        or (options or {}).get("classification_class_names")
-    )
-    artifact_metadata = None
-    if requested_provenance:
-        artifact_metadata = {
-            "task": "classification",
-            "annotation_attributes": selected_attributes,
-            "metadata_keys": selected_metadata_keys,
-        }
+    artifact_metadata = {
+        "task": "classification",
+        "annotation_attributes": selected_attributes,
+        "metadata_keys": selected_metadata_keys,
+    }
 
     return _save_huggingface_rows(
         datasets_module,
