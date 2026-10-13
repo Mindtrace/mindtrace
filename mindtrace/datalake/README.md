@@ -422,8 +422,11 @@ datalake.export_dataset_version_to_format(
 The attribute mapping is matched exactly against classification records, and every item must have exactly one
 match. Metadata keys refer to required, top-level Datum metadata; the key name is preserved in the Hugging Face
 artifact. Supported scalar dtypes are `string`, `bool`, signed and unsigned integer widths from 8 through 64 bits,
-and `float16`, `float32`, and `float64`. The resolved selector, class mapping, and metadata-key types are recorded in
-`mindtrace_metadata.json`. Existing exports without these options are unchanged.
+and `float16`, `float32`, and `float64`. The resolved selector and metadata-key types are recorded in
+`mindtrace_metadata.json` and available through `read_export_metadata(export_path)`. The ordered classification
+names are stored in `dataset.features["label"].names`; their positions define the label IDs, so the sidecar does
+not duplicate that mapping. The `class_names` export option still controls this order. Existing exports without
+these options are unchanged.
 
 #### Consume the exported artifacts
 

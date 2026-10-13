@@ -7,7 +7,7 @@ from PIL import Image
 from mindtrace.datalake.exporters.huggingface import export_dataset_as_huggingface
 from mindtrace.datalake.exporters.types import ExportableDataset, ExportableItem
 from mindtrace.datalake.types import AnnotationRecord, Asset, StorageRef
-from mindtrace.models.training import build_datasets
+from mindtrace.models.training import build_datasets, read_export_metadata
 
 
 def _png_bytes() -> bytes:
@@ -125,4 +125,11 @@ def test_selected_classification_metadata_keys_round_trip_to_dataset_samples(tmp
         "group_id": "group-1",
     }
     assert dataset.features["subject_id"].dtype == "string"
-    assert dataset.info.metadata["mindtrace"]["label_to_id"] == {"healthy": 0, "defective": 1}
+    assert dataset.features["label"].names == ["healthy", "defective"]
+    assert read_export_metadata(export_path) == {
+        "task": "classification",
+        "annotation_attributes": {"field": "target"},
+        "metadata_keys": {"subject_id": "string", "group_id": "string"},
+    }
+    selected = dataset.select([0])
+    assert selected[0]["target"].item() == 1

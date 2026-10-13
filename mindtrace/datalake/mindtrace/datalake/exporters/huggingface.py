@@ -383,8 +383,6 @@ def _export_single_label_classification_dataset(
         artifact_metadata = {
             "task": "classification",
             "annotation_attributes": selected_attributes,
-            "class_names": class_names,
-            "label_to_id": class_ids,
             "metadata_keys": selected_metadata_keys,
         }
 

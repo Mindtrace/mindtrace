@@ -278,11 +278,10 @@ def test_huggingface_classification_export_selects_idless_annotation_and_metadat
     assert payload["train"][0]["source_annotation_id"] == "defect-type"
     assert payload["train"][0]["subject_id"] == "subject-1"
     assert payload["train"][0]["group_id"] == "group-1"
-    assert artifact_metadata["mindtrace"] == {
+    assert artifact_metadata == {
+        "schema_version": 2,
         "task": "classification",
         "annotation_attributes": {"field": "defect_type"},
-        "class_names": ["healthy", "defective"],
-        "label_to_id": {"healthy": 0, "defective": 1},
         "metadata_keys": {"subject_id": "string", "group_id": "string"},
     }
 
