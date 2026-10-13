@@ -1374,11 +1374,11 @@ class GCPRegistryBackend(RegistryBackend):
         meta_prefix = self._prefixed("_meta_")
         for obj_path in self.gcs.list_objects(prefix=meta_prefix):
             if obj_path.endswith(".json"):
-                # Extract just the filename part after prefix
-                filename = obj_path[len(self._prefix) + 1 :] if self._prefix else obj_path
-                name_part = Path(filename).stem.split("@")[0].replace("_meta_", "")
-                name = name_part.replace("%3A", ":")
-                objects.add(name)
+                # Decode the full key after the storage prefix and leading
+                # marker; Path.stem would discard a nested name's parents.
+                name_part, separator, version = obj_path[len(meta_prefix) : -len(".json")].rpartition("@")
+                if separator and name_part and version and "/" not in version:
+                    objects.add(name_part.replace("%3A", ":"))
         return sorted(list(objects))
 
     def list_versions(self, name: NameArg) -> Dict[str, List[str]]:

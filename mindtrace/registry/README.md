@@ -55,6 +55,15 @@ and must be relative paths without a `..` component. For example, `item`,
 `../item`, `nested/../item`, and absolute paths are invalid. Store applies
 these rules to the object name after parsing the mount and version.
 
+Slash-delimited names retain their full identity: `models/resnet` and
+`archive/resnet` are distinct objects. Object listing includes nested names,
+and version discovery, latest loading, and automatic version increments work
+for them when versioning is enabled. New registries default to unversioned
+mode, where ordinary save/load uses a fixed internal version instead.
+Deleting `models/resnet` removes only that object's versions, not a separately
+saved `models/resnet/child`; `clear()` includes all nested objects. Nested
+discovery uses the existing storage layout without relocating saved artifacts.
+
 The same relative-path rule applies to local direct-upload `upload_id` values
 and to `Registry.materialize_from_bytes(relative_path=...)`. Validation uses
 the host platform's path syntax and does not silently normalize invalid inputs.

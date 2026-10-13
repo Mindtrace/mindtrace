@@ -904,25 +904,29 @@ class LocalRegistryBackend(RegistryBackend):
     # ─────────────────────────────────────────────────────────────────────────
 
     def list_objects(self) -> List[str]:
-        """List all objects in the backend.
+        """List all objects in the backend, preserving full nested names.
 
         Returns:
             List of object names sorted alphabetically.
         """
         objects = set()
-        # Look for metadata files that follow the pattern _meta_objectname@version.yaml
-        for meta_file in self.uri.glob("_meta_*.yaml"):
-            # Extract the object name from the metadata filename
-            # Remove '_meta_' prefix and split at '@' to get the object name part
-            name_part = meta_file.stem.split("@")[0].replace("_meta_", "")
-            # Convert back from filesystem-safe format to original object name
-            name = name_part.replace("%3A", ":")
-            objects.add(name)
+        # Nested names put the leading marker on a directory, e.g.
+        # _meta_models/resnet@1.0.0.yaml. Only descend into metadata roots,
+        # not payload/staging directories that may also contain YAML files.
+        for entry in self.uri.glob("_meta_*"):
+            candidates = entry.rglob("*.yaml") if entry.is_dir() else (entry,)
+            for meta_file in candidates:
+                if not meta_file.is_file() or meta_file.suffix != ".yaml":
+                    continue
+                relative_key = meta_file.relative_to(self.uri).as_posix()
+                name_part, separator, version = relative_key[len("_meta_") : -len(".yaml")].rpartition("@")
+                if separator and name_part and version and "/" not in version:
+                    objects.add(name_part.replace("%3A", ":"))
 
         return sorted(list(objects))
 
     def list_versions(self, name: NameArg) -> Dict[str, List[str]]:
-        """List all versions available for the given object(s).
+        """List versions for exact object names, including slash-delimited names.
 
         Args:
             name: Name of the object(s)
@@ -935,15 +939,18 @@ class LocalRegistryBackend(RegistryBackend):
 
         for obj_name in names:
             self.validate_object_name(obj_name)
-            # Build the prefix used in metadata filenames for this object.
-            prefix = self._object_metadata_prefix(obj_name)
+            # Separate the exact directory from the filename prefix. A nested
+            # name's full prefix cannot be sliced off a file's basename.
+            prefix_path = self.uri / self._object_metadata_prefix(obj_name)
+            filename_prefix = prefix_path.name
             versions = []
 
-            # Search for metadata files matching the prefix pattern in the base directory.
-            for meta_file in self.uri.glob(f"{prefix}*.yaml"):
-                # Extract the version from the filename by removing the prefix and the '.yaml' extension.
-                version = meta_file.name[len(prefix) : -5]
-                versions.append(version)
+            # The object name is a literal identifier, not a glob pattern.
+            for meta_file in prefix_path.parent.glob("*.yaml"):
+                if meta_file.is_file() and meta_file.name.startswith(filename_prefix):
+                    version = meta_file.name[len(filename_prefix) : -len(".yaml")]
+                    if version:
+                        versions.append(version)
 
             # Semantic sort
             def version_key(v):
