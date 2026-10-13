@@ -977,6 +977,11 @@ class Registry(Mindtrace):
         Returns:
             Single item: ``None``.
             Batch (list): ``BatchResult`` with results, errors, and status.
+                Missing targets are failed entries with error ``RegistryObjectNotFound``.
+
+        Raises:
+            RegistryObjectNotFound: If a single name or explicit version does not exist.
+            ValueError: If a single explicit version is invalid or ``latest``.
         """
         if not self._cached:
             return self._core.delete(name, version)
@@ -990,6 +995,8 @@ class Registry(Mindtrace):
             removed_cache_entries: List[tuple[str, str]] = []
 
             for n, v in zip(names_list, versions_list):
+                if isinstance(result, BatchResult) and (n, v or "all") not in result.succeeded:
+                    continue
                 try:
                     if v is None:
                         for ver in self._cache.list_versions(n):
@@ -1067,24 +1074,14 @@ class Registry(Mindtrace):
         name, version = names[0], versions[0]
         self.save(name, value, version=version)
 
-    def __delitem__(self, key: str | list[str]) -> None:
+    def __delitem__(self, key: str | list[str]) -> None | BatchResult:
+        """Delegate to delete, preserving its exception types and batch results.
+
+        Python's del statement discards the result; use delete([...]) to inspect
+        per-item outcomes. Single missing targets raise RegistryObjectNotFound.
+        """
         names, versions, is_batch = self._core._parse_key_input(key)
-        if is_batch:
-            self.delete(name=names, version=versions)
-            return
-        try:
-            name, version = names[0], versions[0]
-            if version is None:
-                if not self._core.list_versions(name):
-                    raise RegistryObjectNotFound(f"Object {name} does not exist")
-            else:
-                version = self._core._validate_version(version)
-                exists = self._core.backend.has_object([name], [version])
-                if not exists.get((name, version), False):
-                    raise RegistryObjectNotFound(f"Object {name}@{version} does not exist")
-            self.delete(name, version)
-        except (ValueError, RegistryObjectNotFound) as e:
-            raise KeyError(f"Object not found: {key}") from e
+        return self.delete(name=names if is_batch else names[0], version=versions if is_batch else versions[0])
 
     def __contains__(self, key: str | list[str]) -> bool:
         if isinstance(key, list):

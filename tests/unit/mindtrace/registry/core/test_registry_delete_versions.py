@@ -3,6 +3,7 @@
 import pytest
 
 from mindtrace.registry import GCPRegistryBackend, LocalRegistryBackend, Registry, S3RegistryBackend
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from tests.unit.mindtrace.registry.backends.test_gcp_registry_backend import MockGCSHandler
 from tests.unit.mindtrace.registry.backends.test_s3_registry_backend import MockS3Handler
 
@@ -116,13 +117,13 @@ def test_delitem_respects_configured_version_digits(deletion_backend, digits, sh
 
 @pytest.mark.parametrize("versioned", [False, True])
 @pytest.mark.parametrize("key", ["absent@1", "item@2"])
-def test_delitem_missing_explicit_identity_still_raises_keyerror(deletion_backend, versioned, key):
+def test_delitem_missing_explicit_identity_raises_registry_error(deletion_backend, versioned, key):
     registry = Registry(backend=deletion_backend, version_objects=versioned)
     registry.save("item", 42, version="1")
     replicas = _replicas(registry)
     before = [_stored_files(backend) for backend in replicas]
 
-    with pytest.raises(KeyError, match="Object not found"):
+    with pytest.raises(RegistryObjectNotFound):
         del registry[key]
 
     assert [_stored_files(backend) for backend in replicas] == before
@@ -134,7 +135,7 @@ def test_delitem_does_not_introduce_latest_deletion(deletion_backend):
     replicas = _replicas(registry)
     before = [_stored_files(backend) for backend in replicas]
 
-    with pytest.raises(KeyError):
+    with pytest.raises(ValueError):
         del registry["item@latest"]
 
     assert [_stored_files(backend) for backend in replicas] == before

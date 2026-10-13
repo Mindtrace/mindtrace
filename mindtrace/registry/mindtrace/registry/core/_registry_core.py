@@ -22,6 +22,8 @@ from mindtrace.registry.core.types import (
     VERSION_PENDING,
     BatchResult,
     OnConflict,
+    OpResult,
+    OpResults,
     VerifyLevel,
     Version,
 )
@@ -913,14 +915,74 @@ class _RegistryCore(Mindtrace):
         Returns:
             Single item: None (raises on error).
             Batch (list): BatchResult containing results, errors, and status for each item.
+                Missing targets are failed entries with error ``RegistryObjectNotFound``;
+                independent valid items are still deleted.
 
         Raises:
-            RegistryObjectNotFound: If object doesn't exist (single item only).
+            RegistryObjectNotFound: If the name or explicit version doesn't exist (single item only).
             ValueError: If version is "latest" or has invalid format (single item only).
         """
         if isinstance(name, list):
             return self._delete_batch(name, version)
         return self._delete_single(name, version)
+
+    def _resolve_delete_versions(self, name: str, version: str | None) -> List[str]:
+        """Resolve deletion targets without trusting cached version discovery."""
+        self.backend.validate_object_name(name)
+        if version is not None:
+            return [self._validate_version(version)]
+        if not self.version_objects:
+            return [str(Version("1", digits=self.version_digits))]
+        versions = self.backend.list_versions(name).get(name, [])
+        if not versions:
+            raise RegistryObjectNotFound(f"Object {name} does not exist")
+        return versions
+
+    def _delete_verified_objects(self, targets: List[Tuple[str, str]]) -> OpResults:
+        """Check authoritative metadata before invoking idempotent backend cleanup.
+
+        Backend result errors retain their original exception/type. A shared lookup
+        or deletion failure applies to all targets in that call, not to unrelated
+        inputs already rejected during resolution. This is not an atomic reservation.
+        """
+        targets = list(dict.fromkeys(targets))
+        results = OpResults()
+        if not targets:
+            return results
+        try:
+            metadata = self.backend.fetch_metadata([n for n, _ in targets], [v for _, v in targets])
+        except Exception as error:
+            for name, version in targets:
+                results.add(OpResult.failed(name, version, error))
+            return results
+
+        eligible = []
+        for name, version in targets:
+            entry = metadata.get((name, version))
+            if entry is None:
+                results.add(OpResult.failed(name, version, RuntimeError("Backend returned no metadata result")))
+            elif not entry.ok:
+                results.add(entry)
+            else:
+                eligible.append((name, version))
+
+        if eligible:
+            try:
+                deleted = self.backend.delete(
+                    [n for n, _ in eligible], [v for _, v in eligible], acquire_lock=self.mutable
+                )
+            except Exception as error:
+                for name, version in eligible:
+                    results.add(OpResult.failed(name, version, error))
+            else:
+                for name, version in eligible:
+                    entry = deleted.get((name, version))
+                    results.add(
+                        entry
+                        if entry is not None
+                        else OpResult.failed(name, version, RuntimeError("Backend returned no deletion result"))
+                    )
+        return results
 
     def _delete_single(
         self,
@@ -928,32 +990,16 @@ class _RegistryCore(Mindtrace):
         version: str | None = None,
     ) -> None:
         """Delete a single object from the registry. Raises on error."""
-        self.backend.validate_object_name(name)
-        if version is None:
-            # Delete all versions
-            if not self.version_objects:
-                versions_to_delete = [str(Version("1", digits=self.version_digits))]
-            else:
-                versions_to_delete = self.list_versions(name)
-                if not versions_to_delete:
-                    raise RegistryObjectNotFound(f"Object {name} does not exist")
-        else:
-            # Explicit version only — validate format, pass directly
-            validated = self._validate_version(version)
-            versions_to_delete = [validated]
-
-        # Delete and check for errors
-        delete_results = self.backend.delete(
-            [name] * len(versions_to_delete),
-            versions_to_delete,
-            acquire_lock=self.mutable,
-        )
+        versions_to_delete = self._resolve_delete_versions(name, version)
+        delete_results = self._delete_verified_objects([(name, v) for v in versions_to_delete])
 
         # For single object delete, raise on any error
         for del_result in delete_results:
             if del_result.is_error:
                 if del_result.exception:
                     raise del_result.exception
+                if del_result.error == "RegistryObjectNotFound":
+                    raise RegistryObjectNotFound(del_result.message or f"Object {name}@{del_result.version} not found")
                 # Fallback when exception not preserved (e.g., remote backends)
                 raise RuntimeError(f"Failed to delete {name}@{del_result.version}: {del_result.message}")
 
@@ -973,59 +1019,28 @@ class _RegistryCore(Mindtrace):
 
         result = BatchResult()
         items_to_delete: List[Tuple[str, str]] = []
-        resolved_to_original: Dict[Tuple[str, str], Tuple[str, str]] = {}
+        resolved_to_original: Dict[Tuple[str, str], List[Tuple[str, str]]] = {}
 
         for n, v in zip(names, versions_list):
             original_key = (n, v or "all")
             try:
-                self.backend.validate_object_name(n)
-            except ValueError as e:
+                concrete_versions = self._resolve_delete_versions(n, v)
+            except Exception as e:
                 result.errors[original_key] = {"error": type(e).__name__, "message": str(e)}
                 continue
-
-            if v is None:
-                # Delete all versions
-                all_versions = (
-                    [str(Version("1", digits=self.version_digits))]
-                    if not self.version_objects
-                    else self.list_versions(n)
-                )
-                if not all_versions:
-                    result.errors[original_key] = {
-                        "error": "RegistryObjectNotFound",
-                        "message": f"Object {n} does not exist",
-                    }
-                else:
-                    for ver in all_versions:
-                        items_to_delete.append((n, ver))
-                        resolved_to_original[(n, ver)] = original_key
-            else:
-                # Explicit version only — validate format, pass directly
-                try:
-                    validated = self._validate_version(v)
-                    items_to_delete.append((n, validated))
-                    resolved_to_original[(n, validated)] = original_key
-                except ValueError as e:
-                    result.errors[original_key] = {
-                        "error": type(e).__name__,
-                        "message": str(e),
-                    }
+            for concrete in concrete_versions:
+                items_to_delete.append((n, concrete))
+                resolved_to_original.setdefault((n, concrete), []).append(original_key)
 
         # Batch delete - backend returns results without raising
         if items_to_delete:
-            for op_result in self.backend.delete(
-                [n for n, _ in items_to_delete],
-                [v for _, v in items_to_delete],
-                acquire_lock=self.mutable,
-            ):
+            for op_result in self._delete_verified_objects(items_to_delete):
                 if op_result.is_error:
-                    original_key = resolved_to_original.get(
-                        (op_result.name, op_result.version), (op_result.name, op_result.version)
-                    )
-                    result.errors[original_key] = {
-                        "error": op_result.error or ERROR_UNKNOWN,
-                        "message": op_result.message or "",
-                    }
+                    for original_key in resolved_to_original[(op_result.name, op_result.version)]:
+                        result.errors[original_key] = {
+                            "error": op_result.error or ERROR_UNKNOWN,
+                            "message": op_result.message or "",
+                        }
 
         # Build result lists
         for n, v in zip(names, versions_list):
@@ -1617,24 +1632,22 @@ class _RegistryCore(Mindtrace):
             version=versions if is_batch else versions[0],
         )
 
-    def __delitem__(self, key: str | list[str]) -> None:
+    def __delitem__(self, key: str | list[str]) -> None | BatchResult:
         """Delete object(s) from the registry using dictionary-like syntax.
 
         Args:
             key: The object name(s), optionally including version (e.g. "name@version").
                 Can be a single string or a list of strings for batch deletion.
 
+        Returns:
+            The same result as delete; Python's del statement discards it.
+
         Raises:
-            KeyError: If the object doesn't exist (single key only).
+            RegistryObjectNotFound: If the name/version doesn't exist (single key only).
+            ValueError: If an explicit version is invalid or "latest" (single key only).
         """
         names, versions, is_batch = self._parse_key_input(key)
-        if is_batch:
-            self.delete(name=names, version=versions)
-            return
-        try:
-            self.delete(name=names[0], version=versions[0])
-        except (ValueError, RegistryObjectNotFound) as e:
-            raise KeyError(f"Object not found: {key}") from e
+        return self.delete(name=names if is_batch else names[0], version=versions if is_batch else versions[0])
 
     def __contains__(self, key: str) -> bool:
         """Check if an object exists in the registry using dictionary-like syntax.

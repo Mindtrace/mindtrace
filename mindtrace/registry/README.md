@@ -385,8 +385,31 @@ Explicit-version deletion uses the same version normalization as saving and
 loading: with the default three components, `del registry["item@1"]` deletes
 only `item@1.0.0`, including its local cache entry when caching is enabled.
 Normalization respects the configured `version_digits` in both versioned and
-unversioned registries. Other versions remain intact, missing mapping keys raise
-`KeyError`, and `@latest` is not supported for deletion.
+unversioned registries. Other versions remain intact, and `@latest` is not
+supported for deletion.
+
+### Missing targets and deletion errors
+
+`registry.delete("name")` and `del registry["name"]` share the same deletion
+contract: a missing name raises `RegistryObjectNotFound`. An explicit missing
+version also raises that exception, in both versioned and unversioned registries.
+An invalid explicit version, including `latest`, raises `ValueError`. Dictionary
+deletion does not translate these or operational failures into `KeyError`.
+
+For batches, `registry.delete(["present", "missing"])` returns a `BatchResult`:
+the present item is deleted, while the missing item appears in `failed` and
+`errors` with error type `RegistryObjectNotFound`. Results retain input order;
+successful entries have result `True`, failed entries have result `None`.
+Keys use the requested `(name, version)` or `(name, "all")` for an omitted version.
+Use `delete([...])` to inspect outcomes: `del registry[[...]]` delegates to the
+same operation, but Python discards the result of a `del` statement.
+
+Deletion checks the backend rather than trusting cached objects or version
+listings. Successful remote deletions clean up their local cache entries;
+failed batch items do not evict theirs. Low-level backend cleanup remains
+idempotent. Batch deletion is not transactional and does not promise rollback
+or an atomic distributed existence check and deletion. Retrieval/get/pop
+exception policies are unchanged.
 
 ## Backend Comparison
 

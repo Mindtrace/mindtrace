@@ -1260,11 +1260,11 @@ def test_dict_like_interface_error_handling(registry):
         _ = registry["test:str@invalid"]
 
     # Test __delitem__ with nonexistent key
-    with pytest.raises(KeyError):
+    with pytest.raises(RegistryObjectNotFound):
         del registry["nonexistent"]
 
     # Test __delitem__ with invalid version
-    with pytest.raises(KeyError):
+    with pytest.raises(ValueError):
         del registry["test:str@invalid"]
 
     # Test pop() without default
@@ -1320,11 +1320,11 @@ def test_getitem_not_found(registry):
 
 
 def test_delitem_not_found(registry):
-    """Missing names/versions raise KeyError without removing another version."""
-    with pytest.raises(KeyError):
+    """Missing names/versions raise RegistryObjectNotFound without removing another version."""
+    with pytest.raises(RegistryObjectNotFound):
         del registry["missing"]
     registry.save("present", "value", version="1.0.0")
-    with pytest.raises(KeyError):
+    with pytest.raises(RegistryObjectNotFound):
         del registry["present@9.0.0"]
     assert registry.load("present", "1.0.0") == "value"
 
@@ -3527,6 +3527,9 @@ def test_delete_with_cache(temp_registry_dir):
     delete_results = OpResults()
     delete_results.add(OpResult.success("test:obj", "1.0.0"))
     mock_backend.delete = Mock(return_value=delete_results)
+    metadata_results = OpResults()
+    metadata_results.add(OpResult.success("test:obj", "1.0.0", metadata={"name": "test:obj"}))
+    mock_backend.fetch_metadata = Mock(return_value=metadata_results)
     mock_backend.delete_metadata = Mock()
     mock_backend.list_objects = Mock(return_value=["test:obj"])
 
@@ -3564,6 +3567,9 @@ def test_delete_cache_error_handling(temp_registry_dir):
     delete_results = OpResults()
     delete_results.add(OpResult.success("test:obj", "1.0.0"))
     mock_backend.delete = Mock(return_value=delete_results)
+    metadata_results = OpResults()
+    metadata_results.add(OpResult.success("test:obj", "1.0.0", metadata={"name": "test:obj"}))
+    mock_backend.fetch_metadata = Mock(return_value=metadata_results)
     mock_backend.delete_metadata = Mock()
     mock_backend.list_objects = Mock(return_value=["test:obj"])
 
@@ -3852,6 +3858,9 @@ def test_delete_cache_delete_error(temp_registry_dir):
     delete_results = OpResults()
     delete_results.add(OpResult.success("test:obj", "1.0.0"))
     mock_backend.delete = Mock(return_value=delete_results)
+    metadata_results = OpResults()
+    metadata_results.add(OpResult.success("test:obj", "1.0.0", metadata={"name": "test:obj"}))
+    mock_backend.fetch_metadata = Mock(return_value=metadata_results)
     mock_backend.delete_metadata = Mock()
     mock_backend.list_objects = Mock(return_value=["test:obj"])
 
@@ -4953,8 +4962,12 @@ class TestRegistryCoreCoverage:
         with pytest.raises(ValueError, match="same length"):
             registry.delete(["test:a", "test:b"], version=["1.0.0"])
 
+        registry.save("test:error", "value", version="1.0.0")
+        registry.save("test:ok", "value", version="1.0.0")
+
         def batch_delete(names, versions, **kwargs):
             results = OpResults()
+            results.add(OpResult.success("test:ok", "1.0.0"))
             results.add(OpResult.failed("test:error", "1.0.0", error_type="DeleteError", message="bad delete"))
             return results
 
@@ -4987,7 +5000,7 @@ class TestRegistryCoreCoverage:
         del core[["test:dict@1.0.0"]]
         assert "test:dict" not in core
 
-        with pytest.raises(KeyError, match="Object not found"):
+        with pytest.raises(RegistryObjectNotFound, match="does not exist"):
             del core["test:missing"]
 
         assert core.get("test:missing", "fallback") == "fallback"
