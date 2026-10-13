@@ -1078,6 +1078,7 @@ class Registry(Mindtrace):
                 if not self._core.list_versions(name):
                     raise RegistryObjectNotFound(f"Object {name} does not exist")
             else:
+                version = self._core._validate_version(version)
                 exists = self._core.backend.has_object([name], [version])
                 if not exists.get((name, version), False):
                     raise RegistryObjectNotFound(f"Object {name}@{version} does not exist")

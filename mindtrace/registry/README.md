@@ -381,6 +381,13 @@ del registry["my:config"]
 
 This is convenient for unversioned or latest-version style access when you want a compact interface.
 
+Explicit-version deletion uses the same version normalization as saving and
+loading: with the default three components, `del registry["item@1"]` deletes
+only `item@1.0.0`, including its local cache entry when caching is enabled.
+Normalization respects the configured `version_digits` in both versioned and
+unversioned registries. Other versions remain intact, missing mapping keys raise
+`KeyError`, and `@latest` is not supported for deletion.
+
 ## Backend Comparison
 
 | Feature | Local | S3 / MinIO | GCP |
