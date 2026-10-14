@@ -291,6 +291,26 @@ class TestLocalClient:
         result = client.delete_queue("does-not-exist")
         assert result["status"] == "success"
 
+    def test_delete_queue_twice(self, temp_local_client):
+        client = temp_local_client
+        client.declare_queue("delete-twice")
+
+        first = client.delete_queue("delete-twice")
+        assert first["status"] == "success"
+        assert client.delete_queue("delete-twice") == first
+
+    @pytest.mark.parametrize("error_type", [PermissionError, OSError, KeyError])
+    def test_delete_queue_preserves_operational_errors(self, temp_local_client, monkeypatch, error_type):
+        client = temp_local_client
+        error = error_type("queue storage failure")
+        delete = MagicMock(side_effect=error)
+        monkeypatch.setattr(client.queues, "delete", delete)
+
+        with pytest.raises(error_type) as exc:
+            client.delete_queue("item")
+        assert exc.value is error
+        delete.assert_called_once_with("item")
+
     def test_receive_empty_does_not_log_warning(self, temp_local_client):
         client = temp_local_client
         q = "empty-queue"
