@@ -199,6 +199,12 @@ the exception. Cache deletion is best-effort: failures are logged and may leave
 stale entries, without changing the import outcome. This does not add synchronization
 with concurrent readers/writers or change the freshness policy for external writes.
 
+Successful `commit_direct_upload()` calls use the same object-level invalidation:
+all cached versions of the uploaded object are evicted, while unrelated objects
+remain cached. Failed or skipped commits leave the cache untouched. Successful
+commits do not warm the cache or add remote requests for invalidation. Local cache
+failures are logged without changing the successful commit's returned version.
+
 **Verification levels** (`VerifyLevel`):
 - `"none"`: Trust cache completely. Fastest.
 - `"integrity"`: Verify loaded artifacts match the hash in metadata. Default.

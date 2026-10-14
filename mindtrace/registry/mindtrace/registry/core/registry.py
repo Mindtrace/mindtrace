@@ -704,7 +704,7 @@ class Registry(Mindtrace):
         metadata: Dict[str, Any] | None = None,
         on_conflict: str | None = None,
     ) -> str:
-        """Commit a previously uploaded bytes artifact into canonical registry storage."""
+        """Commit uploaded bytes, then invalidate this object's cached versions (best effort)."""
         target_core = self._remote if self._cached else self._core
         backend = target_core.backend
 
@@ -735,8 +735,7 @@ class Registry(Mindtrace):
             raise RuntimeError(f"Object {name}@{resolved_version} already exists.")
 
         target_core._invalidate_versions_cache(name)
-        if self._cached:
-            self.clear_cache()
+        self._invalidate_object_cache(name)
         return result.version
 
     @overload
@@ -1037,8 +1036,8 @@ class Registry(Mindtrace):
         else:
             self._core.clear(clear_registry_metadata)
 
-    def _invalidate_import_cache(self, name: str) -> None:
-        """Best-effort object-level invalidation after a committed import."""
+    def _invalidate_object_cache(self, name: str) -> None:
+        """Best-effort object-level invalidation after a committed write."""
         if not self._cached:
             return
         try:
@@ -1048,9 +1047,9 @@ class Registry(Mindtrace):
                 result = self._cache.delete([name] * len(versions), versions)
                 self._remove_cache_lru_entries(result.succeeded)
                 if result.errors:
-                    self.logger.warning(f"Error invalidating imported cache for {name}: {result.errors}")
+                    self.logger.warning(f"Error invalidating cache for {name}: {result.errors}")
         except Exception as error:
-            self.logger.warning(f"Error invalidating imported cache for {name}: {error}")
+            self.logger.warning(f"Error invalidating cache for {name}: {error}")
 
     def download(
         self,
@@ -1074,9 +1073,9 @@ class Registry(Mindtrace):
             )
         except RegistryCleanupRequired:
             # The write committed even though backend cleanup still needs attention.
-            self._invalidate_import_cache(destination_name)
+            self._invalidate_object_cache(destination_name)
             raise
-        self._invalidate_import_cache(destination_name)
+        self._invalidate_object_cache(destination_name)
         return result
 
     # ─────────────────────────────────────────────────────────────────────────
