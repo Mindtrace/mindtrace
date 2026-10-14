@@ -17,7 +17,7 @@ from mindtrace.registry.backends.local_registry_backend import LocalRegistryBack
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
 from mindtrace.registry.core.base_materializer import Materializer
-from mindtrace.registry.core.exceptions import RegistryObjectNotFound
+from mindtrace.registry.core.exceptions import RegistryCleanupRequired, RegistryObjectNotFound
 from mindtrace.registry.core.mount import (
     AmbientAuth,
     GCSMountConfig,
@@ -1037,6 +1037,21 @@ class Registry(Mindtrace):
         else:
             self._core.clear(clear_registry_metadata)
 
+    def _invalidate_import_cache(self, name: str) -> None:
+        """Best-effort object-level invalidation after a committed import."""
+        if not self._cached:
+            return
+        try:
+            # Read the local backend directly: version-list memoization may be stale.
+            versions = self._cache.backend.list_versions(name).get(name, [])
+            if versions:
+                result = self._cache.delete([name] * len(versions), versions)
+                self._remove_cache_lru_entries(result.succeeded)
+                if result.errors:
+                    self.logger.warning(f"Error invalidating imported cache for {name}: {result.errors}")
+        except Exception as error:
+            self.logger.warning(f"Error invalidating imported cache for {name}: {error}")
+
     def download(
         self,
         source_registry,
@@ -1044,15 +1059,25 @@ class Registry(Mindtrace):
         version: str = "latest",
         target_name: str | None = None,
         target_version: str | None = None,
-    ) -> str:
+    ) -> None:
         """Download an object from another registry into this one.
 
-        Accepts both ``Registry`` and ``_RegistryCore`` as the source.
+        Accepts both ``Registry`` and ``_RegistryCore`` as the source. After a
+        committed import, invalidates cached versions of the destination object
+        (best effort); unrelated objects are retained. Does not warm the cache.
         """
         source = source_registry._core if isinstance(source_registry, Registry) else source_registry
-        return self._core.download(
-            source, name, version=version, target_name=target_name, target_version=target_version
-        )
+        destination_name = name if target_name is None else target_name
+        try:
+            result = self._core.download(
+                source, name, version=version, target_name=target_name, target_version=target_version
+            )
+        except RegistryCleanupRequired:
+            # The write committed even though backend cleanup still needs attention.
+            self._invalidate_import_cache(destination_name)
+            raise
+        self._invalidate_import_cache(destination_name)
+        return result
 
     # ─────────────────────────────────────────────────────────────────────────
     # Dict-like interface — must be explicit (dunders bypass __getattr__,
@@ -1162,7 +1187,7 @@ class Registry(Mindtrace):
                         raise ValueError(f"Object {name} version {version} already exists in registry.")
             for name in core.list_objects():
                 for version in core.list_versions(name):
-                    self._core.download(core, name, version=version)
+                    self.download(core, name, version=version)
         else:
             for key, value in mapping.items():
                 self[key] = value

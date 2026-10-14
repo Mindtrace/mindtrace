@@ -186,6 +186,19 @@ value. Check `BatchResult.succeeded` and `.errors` to distinguish that value fro
 a failed item's `None` placeholder. A valid cached `None` does not trigger a
 remote artifact load unless the existing verification checks require a refresh.
 
+After `download()` imports an object into a cached remote Registry, cached versions
+of that **destination object** are invalidated. Registry-to-registry `update()` does
+the same after each successful import. Other objects remain cached. This is
+object-level invalidation, so other cached versions of the imported object are also
+evicted. The import does not warm the cache; the next load fetches from the backend
+and uses the normal cache-fill path, including with `verify="none"`.
+
+Imports that fail before committing leave the cache untouched. A committed write
+that raises `RegistryCleanupRequired` still invalidates the cache and propagates
+the exception. Cache deletion is best-effort: failures are logged and may leave
+stale entries, without changing the import outcome. This does not add synchronization
+with concurrent readers/writers or change the freshness policy for external writes.
+
 **Verification levels** (`VerifyLevel`):
 - `"none"`: Trust cache completely. Fastest.
 - `"integrity"`: Verify loaded artifacts match the hash in metadata. Default.
