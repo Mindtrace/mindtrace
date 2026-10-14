@@ -7,13 +7,14 @@ architecture with comprehensive MCP tool integration and typed client access.
 
 import logging
 import time
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi.middleware.cors import CORSMiddleware
 
 from mindtrace.hardware.core.exceptions import PLCNotFoundError
 from mindtrace.hardware.core.types import ServiceStatus
 from mindtrace.hardware.plcs.plc_manager import PLCManager
+from mindtrace.hardware.plcs.types import TagResult
 from mindtrace.hardware.services.plcs.models import (
     # Response models
     ActivePLCsResponse,
@@ -52,6 +53,25 @@ from mindtrace.hardware.services.plcs.models import (
 from mindtrace.hardware.services.plcs.models.requests import BackendFilterRequest
 from mindtrace.hardware.services.plcs.schemas import ALL_SCHEMAS, HealthSchema
 from mindtrace.services import Service
+
+# The HTTP surface predates typed tag results: value-or-None for reads, bool for
+# writes. These adapters do that lossy mapping at the boundary only.
+
+
+def _read_values(results: Dict[str, TagResult]) -> Dict[str, Any]:
+    return {tag: result.value_or(None) for tag, result in results.items()}
+
+
+def _write_flags(results: Dict[str, TagResult]) -> Dict[str, bool]:
+    return {tag: result.ok for tag, result in results.items()}
+
+
+def _adapt_batch(batch: Dict[str, Dict[str, Any]], adapt) -> Dict[str, Dict[str, Any]]:
+    """Adapt per-PLC TagResult maps, passing through the {"error": ...} entries."""
+    return {
+        plc: adapt(entry) if all(isinstance(v, TagResult) for v in entry.values()) else entry
+        for plc, entry in batch.items()
+    }
 
 
 class PLCManagerService(Service):
@@ -246,7 +266,6 @@ class PLCManagerService(Service):
                 connection_timeout=request.connection_timeout,
                 read_timeout=request.read_timeout,
                 write_timeout=request.write_timeout,
-                retry_count=request.retry_count,
                 retry_delay=request.retry_delay,
             )
 
@@ -279,7 +298,6 @@ class PLCManagerService(Service):
                         connection_timeout=plc_req.connection_timeout,
                         read_timeout=plc_req.read_timeout,
                         write_timeout=plc_req.write_timeout,
-                        retry_count=plc_req.retry_count,
                         retry_delay=plc_req.retry_delay,
                     )
 
@@ -380,11 +398,11 @@ class PLCManagerService(Service):
         """Read tag values from a PLC."""
         try:
             manager = self._get_plc_manager()
-            values = await manager.read_tag(request.plc, request.tags)
+            values = _read_values(await manager.read_tag(request.plc, request.tags))
 
-            self._total_tag_reads += len(values) if isinstance(values, dict) else 1
+            self._total_tag_reads += len(values)
 
-            tag_count = len(values) if isinstance(values, dict) else 1
+            tag_count = len(values)
             return TagReadResponse(success=True, message=f"Read {tag_count} tags from PLC '{request.plc}'", data=values)
         except Exception as e:
             self.logger.error(f"Failed to read tags from PLC '{request.plc}': {e}")
@@ -394,11 +412,11 @@ class PLCManagerService(Service):
         """Write tag values to a PLC."""
         try:
             manager = self._get_plc_manager()
-            results = await manager.write_tag(request.plc, request.tags)
+            results = _write_flags(await manager.write_tag(request.plc, request.tags))
 
-            self._total_tag_writes += len(results) if isinstance(results, dict) else 1
+            self._total_tag_writes += len(results)
 
-            tag_count = len(results) if isinstance(results, dict) else 1
+            tag_count = len(results)
             return TagWriteResponse(
                 success=True, message=f"Wrote {tag_count} tags to PLC '{request.plc}'", data=results
             )
@@ -410,7 +428,7 @@ class PLCManagerService(Service):
         """Read tags from multiple PLCs in batch."""
         try:
             manager = self._get_plc_manager()
-            results = await manager.read_tags_batch(request.requests)
+            results = _adapt_batch(await manager.read_tags_batch(request.requests), _read_values)
 
             successful_count = sum(1 for v in results.values() if not isinstance(v, dict) or "error" not in v)
             failed_count = len(results) - successful_count
@@ -430,7 +448,7 @@ class PLCManagerService(Service):
         """Write tags to multiple PLCs in batch."""
         try:
             manager = self._get_plc_manager()
-            results = await manager.write_tags_batch(request.requests)
+            results = _adapt_batch(await manager.write_tags_batch(request.requests), _write_flags)
 
             successful_count = sum(1 for v in results.values() if not isinstance(v, dict) or "error" not in v)
             failed_count = len(results) - successful_count
@@ -509,24 +527,24 @@ class PLCManagerService(Service):
             raise
 
     async def get_plc_info(self, request: PLCQueryRequest) -> PLCInfoResponse:
-        """Get detailed PLC information."""
+        """Get detailed PLC information (a live device probe; typed failures propagate)."""
         try:
             manager = self._get_plc_manager()
-            status_dict = await manager.get_plc_status(request.plc)
+            info_dict = await manager.get_plc_info(request.plc)
 
             info = PLCInfo(
                 name=request.plc,
-                backend=status_dict.get("backend", "Unknown"),
-                ip_address=status_dict.get("ip_address", ""),
-                plc_type=status_dict.get("plc_type"),
+                backend=manager.plcs[request.plc].__class__.__name__,
+                ip_address=info_dict.get("ip_address", ""),
+                plc_type=info_dict.get("plc_type"),
                 active=True,
-                connected=status_dict.get("connected", False),
-                driver_type=status_dict.get("driver_type"),
-                product_name=status_dict.get("product_name"),
-                product_type=status_dict.get("product_type"),
-                vendor=status_dict.get("vendor"),
-                revision=status_dict.get("revision"),
-                serial=status_dict.get("serial"),
+                connected=info_dict.get("connected", False),
+                driver_type=info_dict.get("driver_type"),
+                product_name=info_dict.get("product_name"),
+                product_type=info_dict.get("product_type"),
+                vendor=info_dict.get("vendor"),
+                revision=info_dict.get("revision"),
+                serial=info_dict.get("serial"),
             )
 
             return PLCInfoResponse(success=True, message=f"Retrieved information for PLC '{request.plc}'", data=info)

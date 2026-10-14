@@ -6,9 +6,11 @@ allowing full test coverage without requiring physical hardware.
 """
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
+from pycomm3.exceptions import CommError, DataError, RequestError, ResponseError
 
 from mindtrace.hardware.core.exceptions import (
     PLCCommunicationError,
@@ -20,6 +22,7 @@ from mindtrace.hardware.core.exceptions import (
     PLCTagWriteError,
     SDKNotAvailableError,
 )
+from mindtrace.hardware.plcs.types import TagErrorKind, TagResult
 
 
 @pytest.fixture(scope="session")
@@ -49,9 +52,13 @@ def mock_pycomm3_unavailable():
         yield
 
 
-@pytest.fixture
-def mock_logix_driver():
-    """Create a mock LogixDriver instance."""
+def make_logix_driver():
+    """Build one mock LogixDriver session.
+
+    The backend opens two sessions per PLC (read + write). Tests that only care
+    about payloads let a single mock stand in for both channels; tests about the
+    channels themselves build one of these per channel.
+    """
     mock_driver = MagicMock()
     mock_driver.open.return_value = True
     mock_driver.close.return_value = None
@@ -65,7 +72,9 @@ def mock_logix_driver():
     mock_read_result.value = 1500.0
     mock_read_result.error = None
     mock_driver.read.return_value = mock_read_result
-    mock_driver.write.return_value = True
+    mock_write_result = MagicMock()
+    mock_write_result.error = None
+    mock_driver.write.return_value = mock_write_result
     mock_driver.get_plc_info.return_value = MagicMock(
         product_name="ControlLogix L75",
         product_type="Programmable Logic Controller",
@@ -75,6 +84,12 @@ def mock_logix_driver():
     )
     mock_driver.get_plc_name.return_value = "TestProgram"
     return mock_driver
+
+
+@pytest.fixture
+def mock_logix_driver():
+    """A mock LogixDriver instance, used for both channels unless a test splits them."""
+    return make_logix_driver()
 
 
 @pytest.fixture
@@ -155,13 +170,11 @@ class TestAllenBradleyPLCInitialization:
             connection_timeout=5.0,
             read_timeout=2.0,
             write_timeout=2.0,
-            retry_count=3,
             retry_delay=1.0,
         )
         assert plc.connection_timeout == 5.0
         assert plc.read_timeout == 2.0
         assert plc.write_timeout == 2.0
-        assert plc.retry_count == 3
         assert plc.retry_delay == 1.0
 
 
@@ -169,23 +182,53 @@ class TestAllenBradleyPLCConnection:
     """Test suite for Allen Bradley PLC connection methods."""
 
     @pytest.mark.asyncio
-    async def test_connect_logix_driver(self, mock_pycomm3_available, mock_logix_driver):
-        """Test connection with LogixDriver."""
+    async def test_connect_logix_driver(self, mock_pycomm3_available):
+        """Connecting with LogixDriver opens a read session AND a write session."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
         )
 
-        LogixDriver.return_value = mock_logix_driver
+        read_driver = make_logix_driver()
+        write_driver = make_logix_driver()
+        LogixDriver.side_effect = [read_driver, write_driver]
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         result = await plc.connect()
 
         assert result is True
         assert plc.driver_type == "LogixDriver"
-        assert plc.plc is not None
-        LogixDriver.assert_called_once_with("192.168.1.100")
-        mock_logix_driver.open.assert_called_once()
+        assert plc._read_driver is read_driver
+        assert plc._write_driver is write_driver
+        # ``plc`` stays an alias of the READ session.
+        assert plc.plc is read_driver
+        assert LogixDriver.call_args_list == [call("192.168.1.100"), call("192.168.1.100")]
+        read_driver.open.assert_called_once()
+        write_driver.open.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_a_second_connect_closes_the_sessions_it_replaces(self, mock_pycomm3_available):
+        """Redundant connects must not orphan CIP sessions on a session-capped controller."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            LogixDriver,
+        )
+
+        first_read, first_write = make_logix_driver(), make_logix_driver()
+        second_read, second_write = make_logix_driver(), make_logix_driver()
+        LogixDriver.side_effect = [first_read, first_write, second_read, second_write]
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        await plc.connect()
+        await plc.connect()
+
+        first_read.close.assert_called_once()
+        first_write.close.assert_called_once()
+        second_read.close.assert_not_called()
+        second_write.close.assert_not_called()
+        assert plc._read_driver is second_read
+        assert plc._write_driver is second_write
+        assert plc.plc is second_read
 
     @pytest.mark.asyncio
     async def test_connect_slc_driver(self, mock_pycomm3_available, mock_slc_driver):
@@ -202,8 +245,8 @@ class TestAllenBradleyPLCConnection:
 
         assert result is True
         assert plc.driver_type == "SLCDriver"
-        SLCDriver.assert_called_once_with("192.168.1.100")
-        mock_slc_driver.open.assert_called_once()
+        assert SLCDriver.call_args_list == [call("192.168.1.100"), call("192.168.1.100")]
+        assert mock_slc_driver.open.call_count == 2
 
     @pytest.mark.asyncio
     async def test_connect_cip_driver(self, mock_pycomm3_available, mock_cip_driver):
@@ -220,8 +263,8 @@ class TestAllenBradleyPLCConnection:
 
         assert result is True
         assert plc.driver_type == "CIPDriver"
-        CIPDriver.assert_called_once_with("192.168.1.100")
-        mock_cip_driver.open.assert_called_once()
+        assert CIPDriver.call_args_list == [call("192.168.1.100"), call("192.168.1.100")]
+        assert mock_cip_driver.open.call_count == 2
 
     @pytest.mark.asyncio
     async def test_connect_auto_detection_logix(self, mock_pycomm3_available, mock_logix_driver):
@@ -291,27 +334,30 @@ class TestAllenBradleyPLCConnection:
         assert plc.driver_type == "CIPDriver"
 
     @pytest.mark.asyncio
-    async def test_connect_retry_logic(self, mock_pycomm3_available, mock_logix_driver):
-        """Test connection retry logic."""
+    async def test_connect_makes_a_single_attempt(self, mock_pycomm3_available, mock_logix_driver):
+        """Connect never retries: the first failed open ends the attempt.
+
+        ``retry_count`` is app-facing metadata; a would-be-successful second
+        attempt is never made.
+        """
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
         )
 
-        # First two attempts fail, third succeeds
-        mock_logix_driver.open.side_effect = [Exception("Failed"), Exception("Failed"), True]
+        mock_logix_driver.open.side_effect = [Exception("Failed"), True, True]
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=3)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
 
-        result = await plc.connect()
+        with pytest.raises(PLCConnectionError):
+            await plc.connect()
 
-        assert result is True
-        assert mock_logix_driver.open.call_count == 3
+        assert mock_logix_driver.open.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_connect_failure_after_retries(self, mock_pycomm3_available, mock_logix_driver):
-        """Test connection failure after all retries."""
+    async def test_connect_raises_on_open_exception(self, mock_pycomm3_available, mock_logix_driver):
+        """A driver exception during open surfaces as PLCConnectionError, chained."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
@@ -319,11 +365,15 @@ class TestAllenBradleyPLCConnection:
 
         mock_logix_driver.open.side_effect = Exception("Connection failed")
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=2)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
 
-        with pytest.raises(PLCConnectionError):
+        with pytest.raises(PLCConnectionError) as exc_info:
             await plc.connect()
+
+        assert "Connection failed" in str(exc_info.value)
+        assert isinstance(exc_info.value.__cause__, Exception)
+        assert mock_logix_driver.open.call_count == 1
 
     @pytest.mark.asyncio
     async def test_connect_returns_false(self, mock_pycomm3_available, mock_logix_driver):
@@ -341,26 +391,55 @@ class TestAllenBradleyPLCConnection:
         with pytest.raises(PLCConnectionError):
             await plc.connect()
 
+        # The read open failed first, was closed, and the write driver was
+        # never constructed - sequential opens cannot leak a second session.
+        assert mock_logix_driver.close.call_count == 1
+
     @pytest.mark.asyncio
-    async def test_disconnect_success(self, mock_pycomm3_available, mock_logix_driver):
-        """Test successful disconnection."""
+    async def test_connect_fails_when_only_the_read_session_opens(self, mock_pycomm3_available):
+        """A half-open device is not a connection: both sessions must open."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
         )
 
-        mock_logix_driver.connected = True
+        read_driver = make_logix_driver()
+        write_driver = make_logix_driver()
+        write_driver.open.return_value = False
+        LogixDriver.side_effect = [read_driver, write_driver]
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
-        LogixDriver.return_value = mock_logix_driver
+
+        with pytest.raises(PLCConnectionError) as exc_info:
+            await plc.connect()
+
+        assert "read channel opened but the write channel did not" in str(exc_info.value)
+        read_driver.close.assert_called_once()
+        write_driver.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_disconnect_success(self, mock_pycomm3_available):
+        """Disconnecting closes both sessions."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            LogixDriver,
+        )
+
+        read_driver = make_logix_driver()
+        write_driver = make_logix_driver()
+        LogixDriver.side_effect = [read_driver, write_driver]
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         await plc.connect()
 
-        mock_logix_driver.connected = False
+        read_driver.connected = False
+        write_driver.connected = False
         result = await plc.disconnect()
 
         assert result is True
         assert not plc.initialized
-        mock_logix_driver.close.assert_called_once()
+        read_driver.close.assert_called_once()
+        write_driver.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_disconnect_when_not_connected(self, mock_pycomm3_available):
@@ -407,7 +486,7 @@ class TestAllenBradleyPLCConnection:
         result = await plc.disconnect()
 
         assert result is False
-        mock_logix_driver.close.assert_called_once()
+        assert mock_logix_driver.close.call_count == 2
 
     @pytest.mark.asyncio
     async def test_is_connected_true(self, mock_pycomm3_available, mock_logix_driver):
@@ -427,7 +506,7 @@ class TestAllenBradleyPLCConnection:
 
     @pytest.mark.asyncio
     async def test_is_connected_false_no_plc(self, mock_pycomm3_available):
-        """Test is_connected returns False when plc is None."""
+        """Test is_connected returns False when no session exists."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import AllenBradleyPLC
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
@@ -436,26 +515,29 @@ class TestAllenBradleyPLCConnection:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_is_connected_exception_handling(self, mock_pycomm3_available, mock_logix_driver):
-        """Test is_connected exception handling."""
+    async def test_is_connected_is_the_lifecycle_state(self, mock_pycomm3_available):
+        """A dropped channel is NOT a disconnection — it reopens at the next
+        call's entry, and a supervisor reacting to False here would tear down
+        the healthy channel. Only disconnect() (or never connecting) is False."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
         )
 
-        # Make accessing connected property raise an exception
-        def _get_connected():
-            raise Exception("Access failed")
-
-        type(mock_logix_driver).connected = property(_get_connected)
+        read_driver = make_logix_driver()
+        write_driver = make_logix_driver()
+        LogixDriver.side_effect = [read_driver, write_driver]
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
-        LogixDriver.return_value = mock_logix_driver
         await plc.connect()
+        assert await plc.is_connected() is True
 
-        result = await plc.is_connected()
+        write_driver.connected = False  # closed on proof: self-healing, still connected
+        assert await plc.is_connected() is True
 
-        assert result is False
+        read_driver.connected = False
+        await plc.disconnect()
+        assert await plc.is_connected() is False
 
 
 class TestAllenBradleyPLCInitialize:
@@ -489,7 +571,7 @@ class TestAllenBradleyPLCInitialize:
 
         mock_logix_driver.open.side_effect = Exception("Connection failed")
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=1)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
 
         with pytest.raises(PLCInitializationError):
@@ -506,7 +588,7 @@ class TestAllenBradleyPLCInitialize:
         mock_driver = MagicMock()
         mock_driver.open.return_value = False
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=1)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_driver
 
         # This will raise PLCConnectionError, which gets caught and re-raised as PLCInitializationError
@@ -524,7 +606,7 @@ class TestAllenBradleyPLCInitialize:
         mock_driver = MagicMock()
         mock_driver.open.return_value = False
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=1)
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_driver
 
         # Mock connect to return False directly (simulating a case where it returns False)
@@ -540,6 +622,69 @@ class TestAllenBradleyPLCInitialize:
         assert device_manager is None
 
 
+class TestTagErrorClassification:
+    """Test suite for the per-tag error classifier and Tag → TagResult conversion."""
+
+    @pytest.mark.parametrize(
+        "message, expected_kind",
+        [
+            ("Tag doesn't exist - Motor1_Speed", TagErrorKind.missing_tag),
+            ("Instance does not exist", TagErrorKind.missing_tag),
+            ("('Failed to parse tag request', 'Bad{Tag')", TagErrorKind.missing_tag),
+            ("Invalid tag request - RequestError('Failed to parse tag request', 'Bad{Tag')", TagErrorKind.missing_tag),
+            ("Error packing -128 as USINT", TagErrorKind.encode),
+            ("Error unpacking response", TagErrorKind.encode),
+            ("Error encoding value for tag", TagErrorKind.encode),
+            # 0xFF ext 0x2107, verbatim.
+            ("Tag type used in request does not match the target tag's data type", TagErrorKind.type_mismatch),
+            # socket related
+            # Socket deaths always RAISE; their texts are not stamp patterns.
+            ("Connection reset by peer", TagErrorKind.unknown),
+            ("'NoneType' object has no attribute 'read'", TagErrorKind.unknown),
+        ],
+    )
+    def test_classify_tag_error(self, mock_pycomm3_available, message, expected_kind):
+        """Driver error strings map onto the documented kinds, raw text preserved."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.error_text import classify_tag_error
+
+        error = classify_tag_error(message)
+
+        assert error.kind is expected_kind
+        assert error.message == message
+
+    def test_classify_tag_error_accepts_an_exception(self, mock_pycomm3_available):
+        """A raised exception classifies on its string form."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.error_text import classify_tag_error
+
+        error = classify_tag_error(ValueError("Tag does not exist"))
+
+        assert error.kind is TagErrorKind.missing_tag
+        assert error.message == "Tag does not exist"
+
+    def test_tag_to_result_missing_driver_result(self, mock_pycomm3_available):
+        """A missing driver result is an error, not a None value — and not a
+        licence to bounce the session: nothing here says the exchange failed."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.error_text import tag_to_result
+
+        result = tag_to_result(None)
+
+        assert result.ok is False
+        assert result.error.kind is TagErrorKind.unknown
+        assert result.error.message == "driver returned None"
+
+    def test_tag_to_result_write_reports_the_written_value(self, mock_pycomm3_available):
+        """Write results carry the value that was written, not the driver's echo."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.error_text import tag_to_result
+
+        tag = MagicMock()
+        tag.error = None
+        tag.value = "driver echo"
+
+        result = tag_to_result(tag, value_on_success=1500.0, use_tag_value=False)
+
+        assert result == TagResult(value=1500.0)
+
+
 class TestAllenBradleyPLCTagReading:
     """Test suite for tag reading operations."""
 
@@ -551,28 +696,56 @@ class TestAllenBradleyPLCTagReading:
             LogixDriver,
         )
 
-        # For LogixDriver, the result can be the value directly or have a .value attribute
-        # The code checks hasattr(result, "value") and uses result.value if present, otherwise result
-        # Important: MagicMock has an 'error' attribute by default which is truthy, so we need to set it to None
         mock_result = MagicMock()
         mock_result.value = 1500.0
-        mock_result.error = None  # Explicitly set error to None to avoid the error check
+        mock_result.error = None
         mock_logix_driver.read.return_value = mock_result
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
         await plc.connect()
 
-        # After connect, plc.plc should be mock_logix_driver, so we can also set it there
-        # But the fixture should already have it set, so this should work
-        result = await plc.read_tag("Motor1_Speed")
+        result = await plc.read_tag(["Motor1_Speed"])
 
         assert "Motor1_Speed" in result
-        # The code checks hasattr and uses .value if present
-        # Since we set mock_result.value = 1500.0, it should use that
-        assert result["Motor1_Speed"] == 1500.0
-        # Verify the read was called on the actual plc instance
-        assert plc.plc.read.called
+        assert result["Motor1_Speed"].ok is True
+        assert result["Motor1_Speed"].value == 1500.0
+        plc._read_driver.read.assert_called_once_with("Motor1_Speed")
+
+    @pytest.mark.asyncio
+    async def test_read_tag_use_the_read_session(self, mock_pycomm3_available):
+        """Reads go to the read session only; the write session is untouched."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            LogixDriver,
+        )
+
+        read_driver = make_logix_driver()
+        write_driver = make_logix_driver()
+        LogixDriver.side_effect = [read_driver, write_driver]
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        await plc.connect()
+
+        await plc.read_tag(["Motor1_Speed"])
+
+        read_driver.read.assert_called_once_with("Motor1_Speed")
+        write_driver.read.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_read_no_tags_is_a_no_op(self, mock_pycomm3_available, mock_logix_driver):
+        """An empty batch returns an empty mapping without hitting the device."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            LogixDriver,
+        )
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        LogixDriver.return_value = mock_logix_driver
+        await plc.connect()
+
+        assert await plc.read_tag([]) == {}
+        mock_logix_driver.read.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_read_tag_logix_multiple(self, mock_pycomm3_available, mock_logix_driver):
@@ -601,9 +774,9 @@ class TestAllenBradleyPLCTagReading:
         result = await plc.read_tag(["Motor1_Speed", "Production_Count", "Conveyor_Status"])
 
         assert len(result) == 3
-        assert result["Motor1_Speed"] == 1500.0
-        assert result["Production_Count"] == 100
-        assert result["Conveyor_Status"] is True
+        assert result["Motor1_Speed"] == TagResult(value=1500.0)
+        assert result["Production_Count"] == TagResult(value=100)
+        assert result["Conveyor_Status"] == TagResult(value=True)
 
     @pytest.mark.asyncio
     async def test_read_tag_logix_single_as_list(self, mock_pycomm3_available, mock_logix_driver):
@@ -613,16 +786,81 @@ class TestAllenBradleyPLCTagReading:
             LogixDriver,
         )
 
-        mock_result = [MagicMock(value=1500.0)]
+        mock_result = [MagicMock(value=1500.0, error=None)]
         mock_logix_driver.read.return_value = mock_result
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
         await plc.connect()
 
-        result = await plc.read_tag("Motor1_Speed")
+        result = await plc.read_tag(["Motor1_Speed"])
 
         assert "Motor1_Speed" in result
+        assert result["Motor1_Speed"] == TagResult(value=1500.0)
+
+    @pytest.mark.asyncio
+    async def test_read_tag_result_count_mismatch_raises(self, mock_pycomm3_available, mock_logix_driver):
+        """A short result list is a whole-call failure, not a silently truncated dict."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            LogixDriver,
+        )
+
+        mock_logix_driver.read.return_value = [MagicMock(value=1500.0, error=None)]
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        LogixDriver.return_value = mock_logix_driver
+        await plc.connect()
+
+        with pytest.raises(PLCTagReadError) as exc_info:
+            await plc.read_tag(["Motor1_Speed", "Production_Count"])
+
+        assert "1 results" in str(exc_info.value)
+        assert "2 requested tags" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("driver_error_class", [CommError, DataError, ResponseError])
+    async def test_read_transport_errors_raise_communication_error(
+        self, mock_pycomm3_available, mock_logix_driver, driver_error_class
+    ):
+        """Transport-class pycomm3 failures are retryable: PLCCommunicationError, chained."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            LogixDriver,
+        )
+
+        mock_logix_driver.read.side_effect = driver_error_class("socket closed")
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        LogixDriver.return_value = mock_logix_driver
+        await plc.connect()
+
+        with pytest.raises(PLCCommunicationError) as exc_info:
+            await plc.read_tag(["Motor1_Speed"])
+
+        assert isinstance(exc_info.value.__cause__, driver_error_class)
+
+    @pytest.mark.asyncio
+    async def test_read_request_error_is_never_retried(self, mock_pycomm3_available, mock_logix_driver):
+        """A malformed request is a config problem: PLCTagReadError on the first try."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            LogixDriver,
+        )
+
+        mock_logix_driver.read.side_effect = RequestError("Failed to parse tag request")
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        LogixDriver.return_value = mock_logix_driver
+        await plc.connect()
+        plc._reconnect_channel = AsyncMock(return_value=True)
+
+        with pytest.raises(PLCTagReadError) as exc_info:
+            await plc.read_tag(["Motor1_Speed"])
+
+        assert isinstance(exc_info.value.__cause__, RequestError)
+        assert mock_logix_driver.read.call_count == 1
+        plc._reconnect_channel.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_read_tag_slc_success(self, mock_pycomm3_available, mock_slc_driver):
@@ -642,18 +880,22 @@ class TestAllenBradleyPLCTagReading:
 
         assert "N7:0" in result
         assert "B3:0" in result
-        assert result["N7:0"] == 100
+        assert result["N7:0"] == TagResult(value=100)
 
     @pytest.mark.asyncio
     async def test_read_tag_slc_with_error(self, mock_pycomm3_available, mock_slc_driver):
-        """Test reading SLC tags with error handling."""
+        """A failing SLC address is a per-tag verdict; its neighbours still report values.
+
+        The driver's text names no link trouble, so the address — not the channel —
+        is what failed, and the batch is returned rather than retried.
+        """
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             SLCDriver,
         )
 
         # First tag succeeds, second fails
-        mock_slc_driver.read.side_effect = [100, Exception("Read failed")]
+        mock_slc_driver.read.side_effect = [100, SimpleNamespace(value=None, error="Read failed")]
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="slc")
         SLCDriver.return_value = mock_slc_driver
@@ -661,10 +903,49 @@ class TestAllenBradleyPLCTagReading:
 
         result = await plc.read_tag(["N7:0", "B3:0"])
 
-        assert "N7:0" in result
-        assert result["N7:0"] == 100
-        assert "B3:0" in result
-        assert result["B3:0"] is None  # Error result returns None
+        assert result["N7:0"] == TagResult(value=100)
+        assert result["B3:0"].ok is False
+        assert result["B3:0"].value_or(None) is None
+        assert result["B3:0"].error.kind is TagErrorKind.unknown
+        assert result["B3:0"].error.message == "Read failed"
+
+    @pytest.mark.asyncio
+    async def test_read_tag_slc_comm_error_is_a_whole_call_failure(self, mock_pycomm3_available, mock_slc_driver):
+        """A dropped socket mid-batch raises typed; it is not spread over the tags."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            SLCDriver,
+        )
+
+        mock_slc_driver.read.side_effect = [100, CommError("socket closed")]
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="slc")
+        SLCDriver.return_value = mock_slc_driver
+        await plc.connect()
+
+        with pytest.raises(PLCCommunicationError) as exc_info:
+            await plc.read_tag(["N7:0", "B3:0"])
+
+        assert isinstance(exc_info.value.__cause__, CommError)
+
+    @pytest.mark.asyncio
+    async def test_read_tag_slc_missing_address(self, mock_pycomm3_available, mock_slc_driver):
+        """An address the controller doesn't have is classified as a missing tag."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            SLCDriver,
+        )
+
+        mock_slc_driver.read.return_value = SimpleNamespace(value=None, error="N99:0 does not exist")
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="slc")
+        SLCDriver.return_value = mock_slc_driver
+        await plc.connect()
+
+        result = await plc.read_tag(["N99:0"])
+
+        assert result["N99:0"].ok is False
+        assert result["N99:0"].error.kind is TagErrorKind.missing_tag
 
     @pytest.mark.asyncio
     async def test_read_tag_cip_identity(self, mock_pycomm3_available, mock_cip_driver):
@@ -682,10 +963,10 @@ class TestAllenBradleyPLCTagReading:
         CIPDriver.return_value = mock_cip_driver
         await plc.connect()
 
-        result = await plc.read_tag("Identity")
+        result = await plc.read_tag(["Identity"])
 
         assert "Identity" in result
-        assert result["Identity"] == device_info
+        assert result["Identity"] == TagResult(value=device_info)
 
     @pytest.mark.asyncio
     async def test_read_tag_cip_assembly(self, mock_pycomm3_available, mock_cip_driver):
@@ -702,10 +983,10 @@ class TestAllenBradleyPLCTagReading:
         CIPDriver.return_value = mock_cip_driver
         await plc.connect()
 
-        result = await plc.read_tag("Assembly:20")
+        result = await plc.read_tag(["Assembly:20"])
 
         assert "Assembly:20" in result
-        assert result["Assembly:20"] == assembly_data
+        assert result["Assembly:20"] == TagResult(value=assembly_data)
         mock_cip_driver.generic_message.assert_called_once()
 
     @pytest.mark.asyncio
@@ -723,10 +1004,10 @@ class TestAllenBradleyPLCTagReading:
         CIPDriver.return_value = mock_cip_driver
         await plc.connect()
 
-        result = await plc.read_tag("Module:0")
+        result = await plc.read_tag(["Module:0"])
 
         assert "Module:0" in result
-        assert result["Module:0"] == module_info
+        assert result["Module:0"] == TagResult(value=module_info)
 
     @pytest.mark.asyncio
     async def test_read_tag_cip_connection(self, mock_pycomm3_available, mock_cip_driver):
@@ -743,10 +1024,10 @@ class TestAllenBradleyPLCTagReading:
         CIPDriver.return_value = mock_cip_driver
         await plc.connect()
 
-        result = await plc.read_tag("Connection")
+        result = await plc.read_tag(["Connection"])
 
         assert "Connection" in result
-        assert result["Connection"] == connection_data
+        assert result["Connection"] == TagResult(value=connection_data)
 
     @pytest.mark.asyncio
     async def test_read_tag_cip_generic_format(self, mock_pycomm3_available, mock_cip_driver):
@@ -763,10 +1044,10 @@ class TestAllenBradleyPLCTagReading:
         CIPDriver.return_value = mock_cip_driver
         await plc.connect()
 
-        result = await plc.read_tag("0x04:1:3")
+        result = await plc.read_tag(["0x04:1:3"])
 
         assert "0x04:1:3" in result
-        assert result["0x04:1:3"] == cip_value
+        assert result["0x04:1:3"] == TagResult(value=cip_value)
 
     @pytest.mark.asyncio
     async def test_read_tag_cip_generic_decimal_format(self, mock_pycomm3_available, mock_cip_driver):
@@ -783,34 +1064,31 @@ class TestAllenBradleyPLCTagReading:
         CIPDriver.return_value = mock_cip_driver
         await plc.connect()
 
-        result = await plc.read_tag("4:1:3")
+        result = await plc.read_tag(["4:1:3"])
 
         assert "4:1:3" in result
-        assert result["4:1:3"] == cip_value
+        assert result["4:1:3"] == TagResult(value=cip_value)
 
     @pytest.mark.asyncio
-    async def test_read_tag_cip_direct_read(self, mock_pycomm3_available, mock_cip_driver):
-        """Test reading CIP tag with direct read fallback."""
+    async def test_read_tag_cip_unsupported_form_is_a_verdict(self, mock_pycomm3_available, mock_cip_driver):
+        """CIPDriver has no read(); an unservable address form is a per-tag verdict."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             CIPDriver,
         )
 
-        direct_value = "test_value"
-        mock_cip_driver.read.return_value = direct_value
-
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
         CIPDriver.return_value = mock_cip_driver
         await plc.connect()
 
-        result = await plc.read_tag("SimpleTag")
+        result = await plc.read_tag(["SimpleTag"])
 
-        assert "SimpleTag" in result
-        assert result["SimpleTag"] == direct_value
+        assert result["SimpleTag"].error.kind is TagErrorKind.missing_tag
+        mock_cip_driver.read.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_read_tag_not_connected(self, mock_pycomm3_available, mock_logix_driver):
-        """Test reading tag when not connected."""
+        """A never-connected channel is a lifecycle error: nothing gets opened."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
@@ -818,11 +1096,40 @@ class TestAllenBradleyPLCTagReading:
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
-        # Mock reconnect to fail
-        plc.reconnect = AsyncMock(return_value=False)
 
-        with pytest.raises(PLCCommunicationError):
-            await plc.read_tag("Motor1_Speed")
+        with pytest.raises(PLCConnectionError, match="never opened"):
+            await plc.read_tag(["Motor1_Speed"])
+
+        LogixDriver.assert_not_called()
+        mock_logix_driver.read.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_read_tag_after_channel_drops(self, mock_pycomm3_available, mock_logix_driver):
+        """A session that drops after connect reopens at the next call, read channel only."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            LogixDriver,
+        )
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        LogixDriver.return_value = mock_logix_driver
+        await plc.connect()
+        plc.reconnect = AsyncMock(return_value=True)
+        write_driver = plc._write_driver
+
+        mock_logix_driver.connected = False
+        replacement = MagicMock()
+        replacement.open.return_value = True
+        replacement.connected = True
+        replacement.read.return_value = SimpleNamespace(value=1500.0, error=None)
+        LogixDriver.return_value = replacement
+
+        results = await plc.read_tag(["Motor1_Speed"])
+
+        assert results["Motor1_Speed"].value == 1500.0
+        assert plc._read_driver is replacement
+        plc.reconnect.assert_not_called()
+        assert plc._write_driver is write_driver
 
     @pytest.mark.asyncio
     async def test_read_tag_exception_raises_error(self, mock_pycomm3_available, mock_logix_driver):
@@ -838,12 +1145,15 @@ class TestAllenBradleyPLCTagReading:
         LogixDriver.return_value = mock_logix_driver
         await plc.connect()
 
-        with pytest.raises(PLCTagReadError):
-            await plc.read_tag("Motor1_Speed")
+        with pytest.raises(PLCTagReadError) as exc_info:
+            await plc.read_tag(["Motor1_Speed"])
+
+        assert isinstance(exc_info.value.__cause__, Exception)
 
     @pytest.mark.asyncio
     async def test_read_tag_none_result(self, mock_pycomm3_available, mock_logix_driver):
-        """Test reading tag when result is None."""
+        """A driver that returns nothing is an error, not a None value — and an
+        unnameable one, so it stays a verdict on the address."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
@@ -855,14 +1165,17 @@ class TestAllenBradleyPLCTagReading:
         LogixDriver.return_value = mock_logix_driver
         await plc.connect()
 
-        result = await plc.read_tag("Motor1_Speed")
+        result = await plc.read_tag(["Motor1_Speed"])
 
         assert "Motor1_Speed" in result
-        assert result["Motor1_Speed"] is None
+        assert result["Motor1_Speed"].ok is False
+        assert result["Motor1_Speed"].value_or(None) is None
+        assert result["Motor1_Speed"].error.kind is TagErrorKind.unknown
+        assert result["Motor1_Speed"].error.message == "driver returned None"
 
     @pytest.mark.asyncio
     async def test_read_tag_result_with_error_attribute(self, mock_pycomm3_available, mock_cip_driver):
-        """Test reading tag when result has error attribute."""
+        """A driver Tag carrying an error becomes a classified per-tag failure."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             CIPDriver,
@@ -877,29 +1190,57 @@ class TestAllenBradleyPLCTagReading:
         CIPDriver.return_value = mock_cip_driver
         await plc.connect()
 
-        result = await plc.read_tag("Assembly:20")
+        result = await plc.read_tag(["Assembly:20"])
 
         assert "Assembly:20" in result
-        assert result["Assembly:20"] is None
+        assert result["Assembly:20"].ok is False
+        assert result["Assembly:20"].value_or(None) is None
+        assert result["Assembly:20"].error.kind is TagErrorKind.unknown
+        assert result["Assembly:20"].error.message == "Read error"
+
+    @pytest.mark.asyncio
+    async def test_read_tag_missing_tag_is_classified(self, mock_pycomm3_available, mock_logix_driver):
+        """A tag the controller doesn't have reports kind ``missing_tag``."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            LogixDriver,
+        )
+
+        missing = MagicMock()
+        missing.error = "Tag doesn't exist - NoSuchTag"
+        missing.value = None
+        mock_logix_driver.read.return_value = missing
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        LogixDriver.return_value = mock_logix_driver
+        await plc.connect()
+
+        result = await plc.read_tag(["NoSuchTag"])
+
+        assert result["NoSuchTag"].ok is False
+        assert result["NoSuchTag"].error.kind is TagErrorKind.missing_tag
+        assert result["NoSuchTag"].error.message == "Tag doesn't exist - NoSuchTag"
 
     @pytest.mark.asyncio
     async def test_read_tag_cip_identity_exception(self, mock_pycomm3_available, mock_cip_driver):
-        """Test reading CIP Identity tag when list_identity raises exception."""
+        """list_identity opens its own throwaway connection: its failure is a
+        per-tag verdict, never evidence against the channel driver."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             CIPDriver,
         )
 
-        mock_cip_driver.list_identity.side_effect = Exception("Identity read failed")
+        mock_cip_driver.list_identity.side_effect = ResponseError("Identity read failed")
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
         CIPDriver.return_value = mock_cip_driver
         await plc.connect()
 
-        result = await plc.read_tag("Identity")
+        result = await plc.read_tag(["Identity"])
 
-        assert "Identity" in result
-        assert result["Identity"] is None
+        assert result["Identity"].error.kind is TagErrorKind.unknown
+        assert "identity probe failed" in result["Identity"].error.message
+        mock_cip_driver.close.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_read_tag_cip_assembly_exception(self, mock_pycomm3_available, mock_cip_driver):
@@ -909,35 +1250,37 @@ class TestAllenBradleyPLCTagReading:
             CIPDriver,
         )
 
-        mock_cip_driver.generic_message.side_effect = Exception("Assembly read failed")
+        mock_cip_driver.generic_message.return_value = MagicMock(value=None, error="Assembly read failed")
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
         CIPDriver.return_value = mock_cip_driver
         await plc.connect()
 
-        result = await plc.read_tag("Assembly:20")
+        result = await plc.read_tag(["Assembly:20"])
 
         assert "Assembly:20" in result
-        assert result["Assembly:20"] is None
+        assert result["Assembly:20"].ok is False
+        assert result["Assembly:20"].error.kind is TagErrorKind.unknown
+        assert result["Assembly:20"].error.message == "Assembly read failed"
 
     @pytest.mark.asyncio
     async def test_read_tag_cip_module_exception(self, mock_pycomm3_available, mock_cip_driver):
-        """Test reading CIP Module tag when get_module_info raises exception."""
+        """get_module_info raises (never stamps) in pycomm3: whole-call, channel closes."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             CIPDriver,
         )
 
-        mock_cip_driver.get_module_info.side_effect = Exception("Module read failed")
+        mock_cip_driver.get_module_info.side_effect = ResponseError("Module read failed")
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
         CIPDriver.return_value = mock_cip_driver
         await plc.connect()
 
-        result = await plc.read_tag("Module:0")
+        with pytest.raises(PLCCommunicationError, match="Module read failed"):
+            await plc.read_tag(["Module:0"])
 
-        assert "Module:0" in result
-        assert result["Module:0"] is None
+        mock_cip_driver.close.assert_called()
 
     @pytest.mark.asyncio
     async def test_read_tag_cip_connection_exception(self, mock_pycomm3_available, mock_cip_driver):
@@ -947,16 +1290,18 @@ class TestAllenBradleyPLCTagReading:
             CIPDriver,
         )
 
-        mock_cip_driver.generic_message.side_effect = Exception("Connection read failed")
+        mock_cip_driver.generic_message.return_value = MagicMock(value=None, error="Connection read failed")
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
         CIPDriver.return_value = mock_cip_driver
         await plc.connect()
 
-        result = await plc.read_tag("Connection")
+        result = await plc.read_tag(["Connection"])
 
         assert "Connection" in result
-        assert result["Connection"] is None
+        assert result["Connection"].ok is False
+        assert result["Connection"].error.kind is TagErrorKind.unknown
+        assert result["Connection"].error.message == "Connection read failed"
 
     @pytest.mark.asyncio
     async def test_read_tag_cip_generic_format_exception(self, mock_pycomm3_available, mock_cip_driver):
@@ -966,16 +1311,18 @@ class TestAllenBradleyPLCTagReading:
             CIPDriver,
         )
 
-        mock_cip_driver.generic_message.side_effect = Exception("Generic read failed")
+        mock_cip_driver.generic_message.return_value = MagicMock(value=None, error="Generic read failed")
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
         CIPDriver.return_value = mock_cip_driver
         await plc.connect()
 
-        result = await plc.read_tag("0x04:1:3")
+        result = await plc.read_tag(["0x04:1:3"])
 
         assert "0x04:1:3" in result
-        assert result["0x04:1:3"] is None
+        assert result["0x04:1:3"].ok is False
+        assert result["0x04:1:3"].error.kind is TagErrorKind.unknown
+        assert result["0x04:1:3"].error.message == "Generic read failed"
 
 
 class TestAllenBradleyPLCTagWriting:
@@ -989,17 +1336,56 @@ class TestAllenBradleyPLCTagWriting:
             LogixDriver,
         )
 
-        mock_logix_driver.write.return_value = True
+        write_result = MagicMock()
+        write_result.error = None
+        mock_logix_driver.write.return_value = write_result
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
         await plc.connect()
 
-        result = await plc.write_tag(("Motor1_Speed", 1500.0))
+        result = await plc.write_tag([("Motor1_Speed", 1500.0)])
 
         assert "Motor1_Speed" in result
-        assert result["Motor1_Speed"] is True
-        mock_logix_driver.write.assert_called_once_with(("Motor1_Speed", 1500.0))
+        # A successful write reports the value that was written.
+        assert result["Motor1_Speed"] == TagResult(value=1500.0)
+        assert result["Motor1_Speed"].ok is True
+        plc._write_driver.write.assert_called_once_with(("Motor1_Speed", 1500.0))
+
+    @pytest.mark.asyncio
+    async def test_write_tag_use_the_write_session(self, mock_pycomm3_available):
+        """Writes go to the write session only; the read session is untouched."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            LogixDriver,
+        )
+
+        read_driver = make_logix_driver()
+        write_driver = make_logix_driver()
+        LogixDriver.side_effect = [read_driver, write_driver]
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        await plc.connect()
+
+        await plc.write_tag([("Motor1_Speed", 1500.0)])
+
+        write_driver.write.assert_called_once_with(("Motor1_Speed", 1500.0))
+        read_driver.write.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_write_no_tags_is_a_no_op(self, mock_pycomm3_available, mock_logix_driver):
+        """An empty batch returns an empty mapping without hitting the device."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            LogixDriver,
+        )
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        LogixDriver.return_value = mock_logix_driver
+        await plc.connect()
+
+        assert await plc.write_tag([]) == {}
+        mock_logix_driver.write.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_write_tag_logix_multiple(self, mock_pycomm3_available, mock_logix_driver):
@@ -1009,7 +1395,7 @@ class TestAllenBradleyPLCTagWriting:
             LogixDriver,
         )
 
-        mock_results = [True, True]
+        mock_results = [MagicMock(error=None), MagicMock(error=None)]
         mock_logix_driver.write.return_value = mock_results
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
@@ -1019,8 +1405,72 @@ class TestAllenBradleyPLCTagWriting:
         result = await plc.write_tag([("Motor1_Speed", 1500.0), ("Production_Count", 100)])
 
         assert len(result) == 2
-        assert result["Motor1_Speed"] is True
-        assert result["Production_Count"] is True
+        assert result["Motor1_Speed"] == TagResult(value=1500.0)
+        assert result["Production_Count"] == TagResult(value=100)
+
+    @pytest.mark.asyncio
+    async def test_write_tag_result_count_mismatch_raises(self, mock_pycomm3_available, mock_logix_driver):
+        """A short result list is a whole-call failure, not a silently truncated dict."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            LogixDriver,
+        )
+
+        mock_logix_driver.write.return_value = [MagicMock(error=None)]
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        LogixDriver.return_value = mock_logix_driver
+        await plc.connect()
+
+        with pytest.raises(PLCTagWriteError) as exc_info:
+            await plc.write_tag([("Motor1_Speed", 1500.0), ("Production_Count", 100)])
+
+        assert "1 results" in str(exc_info.value)
+        assert "2 requested writes" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("driver_error_class", [CommError, DataError, ResponseError])
+    async def test_write_transport_errors_raise_communication_error(
+        self, mock_pycomm3_available, mock_logix_driver, driver_error_class
+    ):
+        """Transport-class pycomm3 failures are retryable: PLCCommunicationError, chained."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            LogixDriver,
+        )
+
+        mock_logix_driver.write.side_effect = driver_error_class("socket closed")
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        LogixDriver.return_value = mock_logix_driver
+        await plc.connect()
+
+        with pytest.raises(PLCCommunicationError) as exc_info:
+            await plc.write_tag([("Motor1_Speed", 1500.0)])
+
+        assert isinstance(exc_info.value.__cause__, driver_error_class)
+
+    @pytest.mark.asyncio
+    async def test_write_request_error_is_never_retried(self, mock_pycomm3_available, mock_logix_driver):
+        """A malformed request is a config problem: PLCTagWriteError on the first try."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            LogixDriver,
+        )
+
+        mock_logix_driver.write.side_effect = RequestError("Failed to parse tag request")
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        LogixDriver.return_value = mock_logix_driver
+        await plc.connect()
+        plc._reconnect_channel = AsyncMock(return_value=True)
+
+        with pytest.raises(PLCTagWriteError) as exc_info:
+            await plc.write_tag([("Motor1_Speed", 1500.0)])
+
+        assert isinstance(exc_info.value.__cause__, RequestError)
+        assert mock_logix_driver.write.call_count == 1
+        plc._reconnect_channel.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_write_tag_slc_success(self, mock_pycomm3_available, mock_slc_driver):
@@ -1038,19 +1488,23 @@ class TestAllenBradleyPLCTagWriting:
 
         result = await plc.write_tag([("N7:0", 100), ("B3:0", True)])
 
-        assert result["N7:0"] is True
-        assert result["B3:0"] is True
+        assert result["N7:0"] == TagResult(value=100)
+        assert result["B3:0"] == TagResult(value=True)
 
     @pytest.mark.asyncio
     async def test_write_tag_slc_with_error(self, mock_pycomm3_available, mock_slc_driver):
-        """Test writing SLC tags with error handling."""
+        """A failing SLC address is a per-tag verdict; its neighbours still succeed.
+
+        The driver's text names no link trouble, so the address — not the channel —
+        is what failed, and the batch is returned rather than retried.
+        """
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             SLCDriver,
         )
 
         # First write succeeds, second fails
-        mock_slc_driver.write.side_effect = [True, Exception("Write failed")]
+        mock_slc_driver.write.side_effect = [True, SimpleNamespace(value=None, error="Write failed")]
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="slc")
         SLCDriver.return_value = mock_slc_driver
@@ -1058,8 +1512,30 @@ class TestAllenBradleyPLCTagWriting:
 
         result = await plc.write_tag([("N7:0", 100), ("B3:0", True)])
 
-        assert result["N7:0"] is True
-        assert result["B3:0"] is False
+        assert result["N7:0"] == TagResult(value=100)
+        assert result["B3:0"].ok is False
+        assert result["B3:0"].value_or(None) is None
+        assert result["B3:0"].error.kind is TagErrorKind.unknown
+        assert result["B3:0"].error.message == "Write failed"
+
+    @pytest.mark.asyncio
+    async def test_write_tag_slc_encode_failure(self, mock_pycomm3_available, mock_slc_driver):
+        """A value the driver can't pack is classified as an encode failure."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            SLCDriver,
+        )
+
+        mock_slc_driver.write.side_effect = RequestError("Unable to create a writable value")
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="slc")
+        SLCDriver.return_value = mock_slc_driver
+        await plc.connect()
+
+        result = await plc.write_tag([("N7:0", -128)])
+
+        assert result["N7:0"].ok is False
+        assert result["N7:0"].error.kind is TagErrorKind.encode
 
     @pytest.mark.asyncio
     async def test_write_tag_cip_assembly(self, mock_pycomm3_available, mock_cip_driver):
@@ -1077,7 +1553,7 @@ class TestAllenBradleyPLCTagWriting:
 
         result = await plc.write_tag([("Assembly:20", [1500, 0, 255, 0])])
 
-        assert result["Assembly:20"] is True
+        assert result["Assembly:20"] == TagResult(value=[1500, 0, 255, 0])
         mock_cip_driver.generic_message.assert_called_once()
 
     @pytest.mark.asyncio
@@ -1096,7 +1572,7 @@ class TestAllenBradleyPLCTagWriting:
 
         result = await plc.write_tag([("Parameter:1", 1500.0)])
 
-        assert result["Parameter:1"] is True
+        assert result["Parameter:1"] == TagResult(value=1500.0)
 
     @pytest.mark.asyncio
     async def test_write_tag_cip_generic_format(self, mock_pycomm3_available, mock_cip_driver):
@@ -1114,17 +1590,15 @@ class TestAllenBradleyPLCTagWriting:
 
         result = await plc.write_tag([("0x04:1:3", [1500, 0, 255, 0])])
 
-        assert result["0x04:1:3"] is True
+        assert result["0x04:1:3"] == TagResult(value=[1500, 0, 255, 0])
 
     @pytest.mark.asyncio
-    async def test_write_tag_cip_direct_write(self, mock_pycomm3_available, mock_cip_driver):
-        """Test writing CIP tag with direct write fallback."""
+    async def test_write_tag_cip_unsupported_form_is_a_verdict(self, mock_pycomm3_available, mock_cip_driver):
+        """CIPDriver has no write(); an unservable address form is a per-tag verdict."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             CIPDriver,
         )
-
-        mock_cip_driver.write.return_value = True
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
         CIPDriver.return_value = mock_cip_driver
@@ -1132,7 +1606,8 @@ class TestAllenBradleyPLCTagWriting:
 
         result = await plc.write_tag([("SimpleTag", "value")])
 
-        assert result["SimpleTag"] is True
+        assert result["SimpleTag"].error.kind is TagErrorKind.missing_tag
+        mock_cip_driver.write.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_write_tag_cip_with_error(self, mock_pycomm3_available, mock_cip_driver):
@@ -1152,11 +1627,14 @@ class TestAllenBradleyPLCTagWriting:
 
         result = await plc.write_tag([("Assembly:20", [1500, 0, 255, 0])])
 
-        assert result["Assembly:20"] is False
+        assert result["Assembly:20"].ok is False
+        assert result["Assembly:20"].value_or(None) is None
+        assert result["Assembly:20"].error.kind is TagErrorKind.unknown
+        assert result["Assembly:20"].error.message == "Write error"
 
     @pytest.mark.asyncio
     async def test_write_tag_not_connected(self, mock_pycomm3_available, mock_logix_driver):
-        """Test writing tag when not connected."""
+        """A never-connected channel is a lifecycle error: nothing gets opened."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
@@ -1164,11 +1642,38 @@ class TestAllenBradleyPLCTagWriting:
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
-        # Mock reconnect to fail
-        plc.reconnect = AsyncMock(return_value=False)
 
-        with pytest.raises(PLCCommunicationError):
+        with pytest.raises(PLCConnectionError, match="never opened"):
             await plc.write_tag([("Motor1_Speed", 1500.0)])
+
+        LogixDriver.assert_not_called()
+        mock_logix_driver.write.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_write_tag_after_channel_drops(self, mock_pycomm3_available, mock_logix_driver):
+        """A session that drops after connect reopens at the next call, write channel only."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            LogixDriver,
+        )
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        LogixDriver.return_value = mock_logix_driver
+        await plc.connect()
+        plc.reconnect = AsyncMock(return_value=True)
+
+        mock_logix_driver.connected = False
+        replacement = MagicMock()
+        replacement.open.return_value = True
+        replacement.connected = True
+        replacement.write.return_value = SimpleNamespace(value=None, error=None)
+        LogixDriver.return_value = replacement
+
+        results = await plc.write_tag([("Motor1_Speed", 1500.0)])
+
+        assert results["Motor1_Speed"].value == 1500.0
+        assert plc._write_driver is replacement
+        plc.reconnect.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_write_tag_exception_raises_error(self, mock_pycomm3_available, mock_logix_driver):
@@ -1184,18 +1689,22 @@ class TestAllenBradleyPLCTagWriting:
         LogixDriver.return_value = mock_logix_driver
         await plc.connect()
 
-        with pytest.raises(PLCTagWriteError):
+        with pytest.raises(PLCTagWriteError) as exc_info:
             await plc.write_tag([("Motor1_Speed", 1500.0)])
 
+        assert isinstance(exc_info.value.__cause__, Exception)
+
     @pytest.mark.asyncio
-    async def test_write_tag_false_result(self, mock_pycomm3_available, mock_logix_driver):
-        """Test writing tag when result is False."""
+    async def test_write_tag_failed_result(self, mock_pycomm3_available, mock_logix_driver):
+        """A rejected Logix write is a classified per-tag failure, not a value."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
         )
 
-        mock_logix_driver.write.return_value = False
+        failed_result = MagicMock()
+        failed_result.error = "General Error (see extended status) - Wrong data type"
+        mock_logix_driver.write.return_value = failed_result
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
@@ -1203,27 +1712,39 @@ class TestAllenBradleyPLCTagWriting:
 
         result = await plc.write_tag([("Motor1_Speed", 1500.0)])
 
-        assert result["Motor1_Speed"] is False
+        assert result["Motor1_Speed"].ok is False
+        assert result["Motor1_Speed"].value_or(None) is None
+        assert result["Motor1_Speed"].error.kind is TagErrorKind.type_mismatch
+        assert result["Motor1_Speed"].error.message == "General Error (see extended status) - Wrong data type"
 
     @pytest.mark.asyncio
-    async def test_write_tag_result_with_error_attribute(self, mock_pycomm3_available, mock_cip_driver):
-        """Test writing tag when result has error attribute."""
+    async def test_write_tag_result_stamped_with_link_trouble_raises(self, mock_pycomm3_available, mock_cip_driver):
+        """A tag stamped with pycomm3's own link text is a channel failure, not a result.
+
+        The exchange carrying this write never happened, so the caller is told by
+        a raise (stamped addresses go to the log) and the channel is closed on
+        the controller's word.
+        """
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             CIPDriver,
         )
 
         error_result = MagicMock()
-        error_result.error = "Write error"
+        error_result.error = "Connection lost"
         mock_cip_driver.generic_message.return_value = error_result
 
-        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip", retry_delay=0.01)
         CIPDriver.return_value = mock_cip_driver
         await plc.connect()
 
-        result = await plc.write_tag([("Assembly:20", [1500, 0, 255, 0])])
+        with pytest.raises(PLCCommunicationError, match=r"1/1") as exc_info:
+            await plc.write_tag([("Assembly:20", [1500, 0, 255, 0])])
 
-        assert result["Assembly:20"] is False
+        assert not hasattr(exc_info.value, "transport_addresses")
+        assert not hasattr(exc_info.value, "results")
+        assert mock_cip_driver.generic_message.call_count == 1
+        assert mock_cip_driver.close.called  # the write channel was closed on proof
 
     @pytest.mark.asyncio
     async def test_write_tag_cip_assembly_exception(self, mock_pycomm3_available, mock_cip_driver):
@@ -1233,7 +1754,7 @@ class TestAllenBradleyPLCTagWriting:
             CIPDriver,
         )
 
-        mock_cip_driver.generic_message.side_effect = Exception("Assembly write failed")
+        mock_cip_driver.generic_message.return_value = MagicMock(value=None, error="Assembly write failed")
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
         CIPDriver.return_value = mock_cip_driver
@@ -1241,7 +1762,9 @@ class TestAllenBradleyPLCTagWriting:
 
         result = await plc.write_tag([("Assembly:20", [1500, 0, 255, 0])])
 
-        assert result["Assembly:20"] is False
+        assert result["Assembly:20"].ok is False
+        assert result["Assembly:20"].error.kind is TagErrorKind.unknown
+        assert result["Assembly:20"].error.message == "Assembly write failed"
 
     @pytest.mark.asyncio
     async def test_write_tag_cip_parameter_exception(self, mock_pycomm3_available, mock_cip_driver):
@@ -1251,7 +1774,7 @@ class TestAllenBradleyPLCTagWriting:
             CIPDriver,
         )
 
-        mock_cip_driver.generic_message.side_effect = Exception("Parameter write failed")
+        mock_cip_driver.generic_message.return_value = MagicMock(value=None, error="Parameter write failed")
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
         CIPDriver.return_value = mock_cip_driver
@@ -1259,7 +1782,9 @@ class TestAllenBradleyPLCTagWriting:
 
         result = await plc.write_tag([("Parameter:1", 1500.0)])
 
-        assert result["Parameter:1"] is False
+        assert result["Parameter:1"].ok is False
+        assert result["Parameter:1"].error.kind is TagErrorKind.unknown
+        assert result["Parameter:1"].error.message == "Parameter write failed"
 
     @pytest.mark.asyncio
     async def test_write_tag_cip_generic_format_exception(self, mock_pycomm3_available, mock_cip_driver):
@@ -1269,7 +1794,7 @@ class TestAllenBradleyPLCTagWriting:
             CIPDriver,
         )
 
-        mock_cip_driver.generic_message.side_effect = Exception("Generic write failed")
+        mock_cip_driver.generic_message.return_value = MagicMock(value=None, error="Generic write failed")
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
         CIPDriver.return_value = mock_cip_driver
@@ -1277,7 +1802,9 @@ class TestAllenBradleyPLCTagWriting:
 
         result = await plc.write_tag([("0x04:1:3", [1500, 0, 255, 0])])
 
-        assert result["0x04:1:3"] is False
+        assert result["0x04:1:3"].ok is False
+        assert result["0x04:1:3"].error.kind is TagErrorKind.unknown
+        assert result["0x04:1:3"].error.message == "Generic write failed"
 
 
 class TestAllenBradleyPLCTagDiscovery:
@@ -1455,6 +1982,47 @@ class TestAllenBradleyPLCTagDiscovery:
         assert any("0x04:" in tag for tag in tags)
 
     @pytest.mark.asyncio
+    async def test_get_all_tags_wire_death_escapes_typed(self, mock_pycomm3_available, mock_cip_driver):
+        """A CommError during discovery closes the channel and ESCAPES as
+        PLCCommunicationError - the outer catch-all must not rewrap it."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            CIPDriver,
+        )
+
+        CIPDriver.list_identity.return_value = {}
+        mock_cip_driver.generic_message.side_effect = CommError("socket closed")
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
+        CIPDriver.return_value = mock_cip_driver
+        await plc.connect()
+
+        with pytest.raises(PLCCommunicationError, match="Tag discovery failed"):
+            await plc.get_all_tags()
+
+        mock_cip_driver.close.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_get_plc_info_wire_death_escapes_typed(self, mock_pycomm3_available, mock_logix_driver):
+        """An exchange failure in the info probe closes the channel and ESCAPES -
+        the outer catch-all must not turn it into a returned dict."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
+            AllenBradleyPLC,
+            LogixDriver,
+        )
+
+        mock_logix_driver.get_plc_info.side_effect = CommError("socket closed")
+
+        plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        LogixDriver.return_value = mock_logix_driver
+        await plc.connect()
+
+        with pytest.raises(PLCCommunicationError, match="PLC info read failed"):
+            await plc.get_plc_info()
+
+        mock_logix_driver.close.assert_called()
+
+    @pytest.mark.asyncio
     async def test_get_all_tags_cache_valid(self, mock_pycomm3_available, mock_logix_driver):
         """Test tag cache is used when still valid."""
         import time
@@ -1521,7 +2089,7 @@ class TestAllenBradleyPLCTagDiscovery:
 
     @pytest.mark.asyncio
     async def test_get_all_tags_not_connected(self, mock_pycomm3_available, mock_logix_driver):
-        """Test getting all tags when not connected."""
+        """A never-connected channel is a lifecycle error: nothing gets opened."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
@@ -1529,11 +2097,11 @@ class TestAllenBradleyPLCTagDiscovery:
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
-        # Mock reconnect to fail
-        plc.reconnect = AsyncMock(return_value=False)
 
-        with pytest.raises(PLCCommunicationError):
+        with pytest.raises(PLCConnectionError, match="never opened"):
             await plc.get_all_tags()
+
+        LogixDriver.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_get_all_tags_exception_raises_error(self, mock_pycomm3_available, mock_logix_driver):
@@ -1707,7 +2275,7 @@ class TestAllenBradleyPLCTagInfo:
 
     @pytest.mark.asyncio
     async def test_get_tag_info_not_connected(self, mock_pycomm3_available, mock_logix_driver):
-        """Test getting tag info when not connected."""
+        """A never-connected channel is a lifecycle error: nothing gets opened."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
@@ -1715,11 +2283,11 @@ class TestAllenBradleyPLCTagInfo:
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
-        # Mock reconnect to fail
-        plc.reconnect = AsyncMock(return_value=False)
 
-        with pytest.raises(PLCCommunicationError):
+        with pytest.raises(PLCConnectionError, match="never opened"):
             await plc.get_tag_info("Motor1_Speed")
+
+        LogixDriver.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_get_tag_info_exception_raises_error(self, mock_pycomm3_available, mock_logix_driver):
@@ -1840,7 +2408,7 @@ class TestAllenBradleyPLCPLCInfo:
 
     @pytest.mark.asyncio
     async def test_get_plc_info_not_connected(self, mock_pycomm3_available, mock_logix_driver):
-        """Test getting PLC info when not connected."""
+        """A never-connected channel is a lifecycle error: nothing gets opened."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
@@ -1848,11 +2416,11 @@ class TestAllenBradleyPLCPLCInfo:
 
         plc = AllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
         LogixDriver.return_value = mock_logix_driver
-        # Mock reconnect to fail
-        plc.reconnect = AsyncMock(return_value=False)
 
-        with pytest.raises(PLCCommunicationError):
+        with pytest.raises(PLCConnectionError, match="never opened"):
             await plc.get_plc_info()
+
+        LogixDriver.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_get_plc_info_exception_handling(self, mock_pycomm3_available, mock_logix_driver):
@@ -1932,7 +2500,8 @@ class TestAllenBradleyPLCPLCInfo:
 
     @pytest.mark.asyncio
     async def test_get_plc_info_outer_exception(self, mock_pycomm3_available, mock_logix_driver):
-        """Test getting PLC info when outer exception occurs."""
+        """An unexpected failure is reported in-band — with only honest fields:
+        no fabricated ``connected``."""
         from mindtrace.hardware.plcs.backends.allen_bradley.allen_bradley_plc import (
             AllenBradleyPLC,
             LogixDriver,
@@ -1942,25 +2511,15 @@ class TestAllenBradleyPLCPLCInfo:
         LogixDriver.return_value = mock_logix_driver
         await plc.connect()
 
-        # Make is_connected raise an exception when called inside the try block
-        original_is_connected = plc.is_connected
-        call_count = 0
-
-        async def mock_is_connected():
-            nonlocal call_count
-            call_count += 1
-            if call_count == 2:  # Second call is inside the try block
-                raise Exception("Connection check failed")
-            return await original_is_connected()
-
-        plc.is_connected = mock_is_connected
+        # The read channel is open (so the channel check passes), but the status
+        # probe blows up.
+        plc.is_connected = AsyncMock(side_effect=RuntimeError("Connection check failed"))
 
         info = await plc.get_plc_info()
 
         assert info["name"] == "TestPLC"
-        assert info["connected"] is False
-        assert "error" in info
         assert "Connection check failed" in info["error"]
+        assert "connected" not in info  # absent is honest; fabricated is not
 
 
 class TestAllenBradleyPLCStaticMethods:

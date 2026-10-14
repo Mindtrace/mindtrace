@@ -39,7 +39,7 @@ Usage:
     async with PLCManager() as plc_manager:
         await plc_manager.register_plc("PLC1", "AllenBradley", "192.168.1.100")
         await plc_manager.connect_plc("PLC1")
-        values = await plc_manager.read_tag("PLC1", ["Tag1", "Tag2"])
+        results = await plc_manager.read_tag("PLC1", ["Tag1", "Tag2"])
 
     # Sensor operations (direct manager)
     async with SensorManager() as sensor_manager:
@@ -81,6 +81,10 @@ def __getattr__(name):
         from mindtrace.hardware.plcs.plc_manager import PLCManager
 
         return PLCManager
+    elif name in {"TagError", "TagErrorKind", "TagResult"}:
+        from mindtrace.hardware.plcs.types import TagError, TagErrorKind, TagResult
+
+        return {"TagError": TagError, "TagErrorKind": TagErrorKind, "TagResult": TagResult}[name]
     elif name == "SensorManager":
         from .sensors.core.manager import SensorManager
 
@@ -111,6 +115,9 @@ def __getattr__(name):
 __all__ = [
     "CameraManager",
     "PLCManager",
+    "TagError",
+    "TagErrorKind",
+    "TagResult",
     "SensorManager",
     "HomographyCalibrator",
     "CalibrationData",

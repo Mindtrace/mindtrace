@@ -407,8 +407,7 @@ class PLCSettings:
         connection_timeout: PLC connection timeout in seconds
         read_timeout: Tag read operation timeout in seconds
         write_timeout: Tag write operation timeout in seconds
-        retry_count: Number of retry attempts for PLC operations
-        retry_delay: Delay between retry attempts in seconds
+        retry_delay: Settle delay between close and reopen inside reconnect()
         max_concurrent_connections: Maximum number of concurrent PLC connections
         keep_alive_interval: Keep-alive ping interval in seconds
         reconnect_attempts: Number of reconnection attempts
@@ -419,7 +418,6 @@ class PLCSettings:
     connection_timeout: float = 10.0
     read_timeout: float = 5.0
     write_timeout: float = 5.0
-    retry_count: int = 3
     retry_delay: float = 1.0
     max_concurrent_connections: int = 10
     keep_alive_interval: float = 30.0
@@ -886,12 +884,6 @@ class HardwareConfigManager(Mindtrace):
         if env_val := os.getenv("MINDTRACE_HW_PLC_WRITE_TIMEOUT"):
             try:
                 self._config.plcs.write_timeout = float(env_val)
-            except ValueError:
-                pass  # Keep default value on invalid input
-
-        if env_val := os.getenv("MINDTRACE_HW_PLC_RETRY_COUNT"):
-            try:
-                self._config.plcs.retry_count = int(env_val)
             except ValueError:
                 pass  # Keep default value on invalid input
 

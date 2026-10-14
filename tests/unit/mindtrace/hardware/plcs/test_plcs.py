@@ -11,6 +11,9 @@ import asyncio
 import pytest
 import pytest_asyncio
 
+from mindtrace.hardware.core.exceptions import PLCNotFoundError
+from mindtrace.hardware.plcs import TagErrorKind
+
 
 # Fixtures
 @pytest.fixture(scope="session")
@@ -153,11 +156,12 @@ class TestLogixDriverFunctionality:
         assert "Motor1_Speed" in results
         assert "Conveyor_Status" in results
         assert "Production_Count" in results
+        assert all(result.ok for result in results.values())
 
         # Verify data types
-        assert isinstance(results["Motor1_Speed"], float)
-        assert isinstance(results["Conveyor_Status"], bool)
-        assert isinstance(results["Production_Count"], int)
+        assert isinstance(results["Motor1_Speed"].value, float)
+        assert isinstance(results["Conveyor_Status"].value, bool)
+        assert isinstance(results["Production_Count"].value, int)
 
     @pytest.mark.asyncio
     async def test_logix_tag_writing(self):
@@ -170,11 +174,13 @@ class TestLogixDriverFunctionality:
         # Test writing single tag (use a tag that won't get variation)
         write_result = await plc.write_tag([("Production_Count", 2000)])
         assert isinstance(write_result, dict)
-        assert write_result["Production_Count"] is True
+        assert write_result["Production_Count"].ok is True
+        assert write_result["Production_Count"].value == 2000
 
         # Verify the write by reading back
         read_result = await plc.read_tag("Production_Count")
-        assert read_result["Production_Count"] == 2000
+        assert read_result["Production_Count"].ok is True
+        assert read_result["Production_Count"].value == 2000
 
     @pytest.mark.asyncio
     async def test_logix_tag_discovery(self):
@@ -217,12 +223,13 @@ class TestSLCDriverFunctionality:
         assert "B3:0" in results
         assert "T4:0.PRE" in results
         assert "C5:0.ACC" in results
+        assert all(result.ok for result in results.values())
 
         # Verify SLC data types
-        assert isinstance(results["N7:0"], int)  # Integer file
-        assert isinstance(results["B3:0"], bool)  # Binary file
-        assert isinstance(results["T4:0.PRE"], int)  # Timer preset
-        assert isinstance(results["C5:0.ACC"], int)  # Counter accumulated
+        assert isinstance(results["N7:0"].value, int)  # Integer file
+        assert isinstance(results["B3:0"].value, bool)  # Binary file
+        assert isinstance(results["T4:0.PRE"].value, int)  # Timer preset
+        assert isinstance(results["C5:0.ACC"].value, int)  # Counter accumulated
 
     @pytest.mark.asyncio
     async def test_slc_timer_operations(self):
@@ -237,11 +244,12 @@ class TestSLCDriverFunctionality:
         results = await plc.read_tag(timer_tags)
 
         assert len(results) == 5
-        assert isinstance(results["T4:0.PRE"], int)  # Preset value
-        assert isinstance(results["T4:0.ACC"], int)  # Accumulated value
-        assert isinstance(results["T4:0.EN"], bool)  # Enable bit
-        assert isinstance(results["T4:0.TT"], bool)  # Timer timing bit
-        assert isinstance(results["T4:0.DN"], bool)  # Done bit
+        assert all(result.ok for result in results.values())
+        assert isinstance(results["T4:0.PRE"].value, int)  # Preset value
+        assert isinstance(results["T4:0.ACC"].value, int)  # Accumulated value
+        assert isinstance(results["T4:0.EN"].value, bool)  # Enable bit
+        assert isinstance(results["T4:0.TT"].value, bool)  # Timer timing bit
+        assert isinstance(results["T4:0.DN"].value, bool)  # Done bit
 
     @pytest.mark.asyncio
     async def test_slc_counter_operations(self):
@@ -256,10 +264,11 @@ class TestSLCDriverFunctionality:
         results = await plc.read_tag(counter_tags)
 
         assert len(results) == 4
-        assert isinstance(results["C5:0.PRE"], int)  # Preset value
-        assert isinstance(results["C5:0.ACC"], int)  # Accumulated value
-        assert isinstance(results["C5:0.CU"], bool)  # Count up bit
-        assert isinstance(results["C5:0.DN"], bool)  # Done bit
+        assert all(result.ok for result in results.values())
+        assert isinstance(results["C5:0.PRE"].value, int)  # Preset value
+        assert isinstance(results["C5:0.ACC"].value, int)  # Accumulated value
+        assert isinstance(results["C5:0.CU"].value, bool)  # Count up bit
+        assert isinstance(results["C5:0.DN"].value, bool)  # Done bit
 
     @pytest.mark.asyncio
     async def test_slc_io_operations(self):
@@ -274,10 +283,11 @@ class TestSLCDriverFunctionality:
         results = await plc.read_tag(io_tags)
 
         assert len(results) == 4
-        assert isinstance(results["I:0.0"], int)  # Input word
-        assert isinstance(results["O:0.0"], int)  # Output word
-        assert isinstance(results["I:0.0/0"], bool)  # Input bit
-        assert isinstance(results["O:0.0/1"], bool)  # Output bit
+        assert all(result.ok for result in results.values())
+        assert isinstance(results["I:0.0"].value, int)  # Input word
+        assert isinstance(results["O:0.0"].value, int)  # Output word
+        assert isinstance(results["I:0.0/0"].value, bool)  # Input bit
+        assert isinstance(results["O:0.0/1"].value, bool)  # Output bit
 
 
 class TestCIPDriverFunctionality:
@@ -298,10 +308,11 @@ class TestCIPDriverFunctionality:
         assert isinstance(results, dict)
         assert "Assembly:20" in results
         assert "Assembly:21" in results
+        assert all(result.ok for result in results.values())
 
         # Assembly objects should return lists (I/O data)
-        assert isinstance(results["Assembly:20"], list)
-        assert isinstance(results["Assembly:21"], list)
+        assert isinstance(results["Assembly:20"].value, list)
+        assert isinstance(results["Assembly:21"].value, list)
 
     @pytest.mark.asyncio
     async def test_cip_parameter_operations(self):
@@ -321,8 +332,9 @@ class TestCIPDriverFunctionality:
         assert "Parameter:3" in results  # Torque Reference
 
         # Parameters should be numeric values
-        for param_value in results.values():
-            assert isinstance(param_value, (int, float))
+        for param_result in results.values():
+            assert param_result.ok is True
+            assert isinstance(param_result.value, (int, float))
 
     @pytest.mark.asyncio
     async def test_cip_identity_operations(self):
@@ -338,9 +350,10 @@ class TestCIPDriverFunctionality:
 
         assert "Identity" in results
         assert "DeviceInfo" in results
+        assert all(result.ok for result in results.values())
 
         # Identity should be a dictionary with device information
-        identity = results["Identity"]
+        identity = results["Identity"].value
         assert isinstance(identity, dict)
         assert "vendor_id" in identity
         assert "device_type" in identity
@@ -409,10 +422,42 @@ class TestPLCManager:
             [("BatchTest0", ["Production_Count"]), ("BatchTest1", ["N7:0"]), ("BatchTest2", ["Parameter:1"])]
         )
         assert isinstance(tag_results, dict)
+        assert tag_results["BatchTest0"]["Production_Count"].ok is True
+        assert tag_results["BatchTest1"]["N7:0"].ok is True
+        assert tag_results["BatchTest2"]["Parameter:1"].ok is True
+
+        # Test batch tag writing using correct method
+        write_results = await manager.write_tags_batch(
+            [("BatchTest0", [("Production_Count", 4242)]), ("BatchTest1", [("N7:0", 7)])]
+        )
+        assert isinstance(write_results, dict)
+        assert write_results["BatchTest0"]["Production_Count"].ok is True
+        assert write_results["BatchTest0"]["Production_Count"].value == 4242
+        assert write_results["BatchTest1"]["N7:0"].ok is True
 
         # Test batch disconnection
         results = await manager.disconnect_all_plcs()
         assert isinstance(results, dict)
+
+    @pytest.mark.asyncio
+    async def test_manager_tag_round_trip(self, mock_plc_manager):
+        """Read and write a single PLC's tags through the manager."""
+        manager = mock_plc_manager
+
+        assert await manager.register_plc("RoundTrip", "AllenBradley", "192.168.1.210", plc_type="logix")
+        assert await manager.connect_plc("RoundTrip")
+
+        write_results = await manager.write_tag("RoundTrip", [("Production_Count", 321), ("NoSuchTag", 1)])
+        assert write_results["Production_Count"].ok is True
+        assert write_results["Production_Count"].value == 321
+        assert write_results["NoSuchTag"].ok is False
+        assert write_results["NoSuchTag"].error.kind is TagErrorKind.missing_tag
+
+        read_results = await manager.read_tag("RoundTrip", ["Production_Count", "NoSuchTag"])
+        assert read_results["Production_Count"].ok is True
+        assert read_results["Production_Count"].value == 321
+        assert read_results["NoSuchTag"].ok is False
+        assert read_results["NoSuchTag"].error.kind is TagErrorKind.missing_tag
 
     @pytest.mark.asyncio
     async def test_manager_error_handling(self, mock_plc_manager):
@@ -425,10 +470,15 @@ class TestPLCManager:
         assert len(results) == 0
 
         # Test invalid PLC operations
-        try:
+        with pytest.raises(PLCNotFoundError):
             await manager.read_tag("NonExistentPLC", ["SomeTag"])
-        except Exception:
-            pass
+
+        with pytest.raises(PLCNotFoundError):
+            await manager.write_tag("NonExistentPLC", [("SomeTag", 1)])
+
+        # A batch request naming an unregistered PLC reports it inline instead
+        batch = await manager.read_tags_batch([("NonExistentPLC", ["SomeTag"])])
+        assert "error" in batch["NonExistentPLC"]
 
 
 class TestPLCErrorHandling:
@@ -457,10 +507,11 @@ class TestPLCErrorHandling:
         # Mock should handle reads quickly
         result = await plc.read_tag("Motor1_Speed")
         assert "Motor1_Speed" in result
+        assert result["Motor1_Speed"].ok is True
 
     @pytest.mark.asyncio
     async def test_invalid_tag_operations(self):
-        """Test handling of invalid tag operations."""
+        """An unknown tag is a classified per-tag error on both read and write."""
         from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
 
         plc = MockAllenBradleyPLC("InvalidTagTest", "192.168.1.100", plc_type="logix")
@@ -468,11 +519,13 @@ class TestPLCErrorHandling:
 
         # Test reading non-existent tag
         result = await plc.read_tag("NonExistentTag")
-        assert result["NonExistentTag"] is None
+        assert result["NonExistentTag"].ok is False
+        assert result["NonExistentTag"].error.kind is TagErrorKind.missing_tag
 
         # Test writing to non-existent tag
         write_result = await plc.write_tag([("NonExistentTag", 123)])
-        assert write_result["NonExistentTag"] is False
+        assert write_result["NonExistentTag"].ok is False
+        assert write_result["NonExistentTag"].error.kind is TagErrorKind.missing_tag
 
     @pytest.mark.asyncio
     async def test_connection_recovery(self):
@@ -494,7 +547,7 @@ class TestPLCErrorHandling:
 
         # Should still be able to read tags
         result = await plc.read_tag("Motor1_Speed")
-        assert "Motor1_Speed" in result
+        assert result["Motor1_Speed"].ok is True
 
 
 class TestPLCPerformance:
@@ -527,6 +580,7 @@ class TestPLCPerformance:
             for result in results:
                 assert isinstance(result, dict)
                 assert "Production_Count" in result
+                assert result["Production_Count"].ok is True
 
         finally:
             # Cleanup
@@ -548,11 +602,13 @@ class TestPLCPerformance:
         for i in range(10):
             # Write a value
             write_result = await plc.write_tag([("Production_Count", i * 100)])
-            assert write_result["Production_Count"] is True
+            assert write_result["Production_Count"].ok is True
+            assert write_result["Production_Count"].value == i * 100
 
             # Read it back
             read_result = await plc.read_tag("Production_Count")
-            assert read_result["Production_Count"] == i * 100
+            assert read_result["Production_Count"].ok is True
+            assert read_result["Production_Count"].value == i * 100
 
     @pytest.mark.asyncio
     async def test_plc_resource_cleanup(self):
@@ -568,7 +624,7 @@ class TestPLCPerformance:
 
             # Perform some operations
             result = await plc.read_tag("Motor1_Speed")
-            assert "Motor1_Speed" in result
+            assert result["Motor1_Speed"].ok is True
 
             await plc.disconnect()
             assert not await plc.is_connected()
@@ -630,13 +686,13 @@ class TestPLCConfiguration:
             # Test basic operations for each driver type
             if plc_type == "logix":
                 result = await plc.read_tag("Motor1_Speed")
-                assert "Motor1_Speed" in result
+                assert result["Motor1_Speed"].ok is True
             elif plc_type == "slc":
                 result = await plc.read_tag("N7:0")
-                assert "N7:0" in result
+                assert result["N7:0"].ok is True
             elif plc_type == "cip":
                 result = await plc.read_tag("Parameter:1")
-                assert "Parameter:1" in result
+                assert result["Parameter:1"].ok is True
 
             await plc.disconnect()
 
@@ -669,39 +725,47 @@ async def test_plc_integration_scenario():
         slc_data = await slc_plc.read_tag(["N7:0", "B3:0"])
         cip_data = await cip_plc.read_tag(["Parameter:1", "Parameter:2"])
 
-        assert "Production_Count" in logix_data
-        assert "N7:0" in slc_data
-        assert "Parameter:1" in cip_data
+        assert logix_data["Production_Count"].ok is True
+        assert slc_data["N7:0"].ok is True
+        assert cip_data["Parameter:1"].ok is True
+
+        # "Station_Status" is not configured on this controller — the read reports
+        # it as missing instead of handing back a value that was never read.
+        assert logix_data["Station_Status"].ok is False
+        assert logix_data["Station_Status"].error.kind is TagErrorKind.missing_tag
 
         # Test writing to different PLC types
         logix_write = await logix_plc.write_tag([("Production_Count", 1000)])
         slc_write = await slc_plc.write_tag([("N7:0", 500)])
         cip_write = await cip_plc.write_tag([("Parameter:1", 1500.0)])
 
-        assert logix_write["Production_Count"] is True
-        assert slc_write["N7:0"] is True
-        assert cip_write["Parameter:1"] is True
+        assert logix_write["Production_Count"].ok is True
+        assert slc_write["N7:0"].ok is True
+        assert cip_write["Parameter:1"].ok is True
 
         # Verify writes by reading back
         logix_verify = await logix_plc.read_tag("Production_Count")
         slc_verify = await slc_plc.read_tag("N7:0")
         cip_verify = await cip_plc.read_tag("Parameter:1")
 
-        assert logix_verify["Production_Count"] == 1000
-        assert slc_verify["N7:0"] == 500
-        assert cip_verify["Parameter:1"] == 1500.0
+        assert logix_verify["Production_Count"].value == 1000
+        assert slc_verify["N7:0"].value == 500
+        assert cip_verify["Parameter:1"].value == 1500.0
 
         # Test concurrent operations
         import asyncio
 
         concurrent_reads = await asyncio.gather(
-            logix_plc.read_tag(["Production_Count"]), slc_plc.read_tag(["N7:0"]), cip_plc.read_tag(["Parameter:1"])
+            logix_plc.read_tag(["Production_Count"]),
+            slc_plc.read_tag(["N7:0"]),
+            cip_plc.read_tag(["Parameter:1"]),
         )
 
         assert len(concurrent_reads) == 3
         for result in concurrent_reads:
             assert isinstance(result, dict)
             assert len(result) > 0
+            assert all(tag_result.ok for tag_result in result.values())
 
     finally:
         # Cleanup

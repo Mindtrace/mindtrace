@@ -28,7 +28,6 @@ class PLCConnectRequest(BaseModel):
     connection_timeout: Optional[float] = Field(None, description="Connection timeout in seconds")
     read_timeout: Optional[float] = Field(None, description="Tag read timeout in seconds")
     write_timeout: Optional[float] = Field(None, description="Tag write timeout in seconds")
-    retry_count: Optional[int] = Field(None, description="Number of retry attempts")
     retry_delay: Optional[float] = Field(None, description="Delay between retries in seconds")
 
 
