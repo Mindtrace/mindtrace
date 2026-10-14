@@ -1069,7 +1069,7 @@ def test_pop_nonexistent_object(registry):
 
 
 def test_pop_keyerror_handling(registry, test_config):
-    """Test that KeyError is properly handled in pop method."""
+    """An operational load KeyError propagates even when pop has a default."""
     # Save an object first
     registry.save("test:config", test_config, version="1.0.0")
 
@@ -1079,8 +1079,9 @@ def test_pop_keyerror_handling(registry, test_config):
         with pytest.raises(KeyError, match="Object not found"):
             registry.pop("test:config@1.0.0")
 
-        # With default, KeyError should be caught and default returned
-        assert registry.pop("test:config@1.0.0", "default") == "default"
+        # A default is only for genuine absence, not a failed load.
+        with pytest.raises(KeyError, match="Object not found"):
+            registry.pop("test:config@1.0.0", "default")
 
 
 def test_dict_like_interface_basic(registry):
@@ -1129,9 +1130,11 @@ def test_dict_like_interface_get(registry):
     assert registry.get("test:str@2.0.0") == "hello v2"
     assert registry.get("test:str@2.0.0", "default") == "hello v2"
 
-    # Test with invalid version
-    assert registry.get("test:str@invalid") is None
-    assert registry.get("test:str@invalid", "default") == "default"
+    # Invalid versions retain load's validation error rather than becoming absence.
+    with pytest.raises(ValueError):
+        registry.get("test:str@invalid")
+    with pytest.raises(ValueError):
+        registry.get("test:str@invalid", "default")
 
 
 def test_dict_like_interface_keys_values_items(registry):
@@ -1256,7 +1259,7 @@ def test_dict_like_interface_error_handling(registry):
         _ = registry["nonexistent"]
 
     # Test __getitem__ with invalid version
-    with pytest.raises(KeyError):
+    with pytest.raises(ValueError):
         _ = registry["test:str@invalid"]
 
     # Test __delitem__ with nonexistent key

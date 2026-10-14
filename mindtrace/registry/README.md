@@ -381,6 +381,40 @@ del registry["my:config"]
 
 This is convenient for unversioned or latest-version style access when you want a compact interface.
 
+### Read errors and defaults
+
+Defaults are for reported absence, not for an operation that reports a read error:
+
+| Operation | Reported missing object | Operational read error |
+| --- | --- | --- |
+| `load(name, version)` | `RegistryObjectNotFound` | Propagates |
+| `registry[key]` | `KeyError` | Propagates |
+| `get(key, default)` | Returns the default | Propagates |
+| `setdefault(key, default)` | Saves/returns a non-`None` default | Propagates without saving a replacement |
+
+For example, a decoder failure or a detected artifact hash mismatch must not become
+`"Object not found"` or cause `setdefault()` to replace an existing artifact. A
+`KeyError` from malformed metadata or materializer code is also an operational
+error, not evidence of absence. Invalid explicit versions rejected by `load()`
+retain `ValueError` through `registry[key]`, `get()`, and `setdefault()`.
+
+Single loads preserve exceptions already supplied in failed metadata-fetch results.
+If a backend supplies only an operational error type/message, a descriptive
+`RuntimeError` is raised; an explicitly reported missing object remains
+`RegistryObjectNotFound`. Batch loads retain per-item errors in `BatchResult`.
+
+`pop()` retains its existing version selection and existence check. Once it proceeds
+to loading and deletion, errors from either operation propagate even if a default
+was supplied. A default is not a fallback for failed deletion.
+
+These rules add no existence preflights, metadata requests, or integrity passes.
+Cache-aware reads retain their existing cache/fallback behavior. They do not promise
+corruption recovery, universal detection, atomicity, or rollback, and do not change
+membership/backend-boolean classification or existing empty metadata-response
+handling. Existing `None`-default and unversioned-version semantics are unchanged.
+
+### Explicit-version deletion
+
 Explicit-version deletion uses the same version normalization as saving and
 loading: with the default three components, `del registry["item@1"]` deletes
 only `item@1.0.0`, including its local cache entry when caching is enabled.

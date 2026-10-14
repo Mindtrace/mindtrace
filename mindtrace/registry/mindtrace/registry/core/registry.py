@@ -1055,15 +1055,21 @@ class Registry(Mindtrace):
     # instead of the facade's cache-aware versions)
     # ─────────────────────────────────────────────────────────────────────────
 
-    def __getitem__(self, key: str | list[str]) -> Any:
+    def _load_key(self, key: str | list[str]) -> Any:
+        """Load mapping keys through the cache-aware path without reclassifying errors."""
         names, versions, is_batch = self._core._parse_key_input(key)
         if is_batch:
             versions = [v if v is not None else "latest" for v in versions]
             return self.load(name=names, version=versions)
         name, version = names[0], versions[0]
+        return self.load(name, version if version else "latest")
+
+    def __getitem__(self, key: str | list[str]) -> Any:
+        if isinstance(key, list):
+            return self._load_key(key)
         try:
-            return self.load(name, version if version else "latest")
-        except (ValueError, RegistryObjectNotFound) as e:
+            return self._load_key(key)
+        except RegistryObjectNotFound as e:
             raise KeyError(f"Object not found: {key}") from e
 
     def __setitem__(self, key: str | list[str], value: Any) -> None:
@@ -1095,9 +1101,12 @@ class Registry(Mindtrace):
         return self._core.__str__(color=color, latest_only=latest_only)
 
     def get(self, key: str, default: Any = None) -> Any:
+        """Return the default only for reported absence; other read errors propagate."""
+        if isinstance(key, list):
+            return self._load_key(key)
         try:
-            return self[key]
-        except KeyError:
+            return self._load_key(key)
+        except RegistryObjectNotFound:
             return default
 
     def keys(self) -> List[str]:
@@ -1110,32 +1119,31 @@ class Registry(Mindtrace):
         return [(name, self[name]) for name in self.keys()]
 
     def pop(self, key: str, default: Any = None) -> Any:
-        try:
-            name, version = self._core._parse_key(key)
+        """Remove the selected version; never turn a load/delete failure into a default."""
+        name, version = self._core._parse_key(key)
+        if version is None:
+            version = self._core._latest(name)
             if version is None:
-                version = self._core._latest(name)
-                if version is None:
-                    if default is not None:
-                        return default
-                    raise KeyError(f"Object {name} does not exist")
-
-            if not self._core.has_object(name, version):
                 if default is not None:
                     return default
-                raise KeyError(f"Object {name} version {version} does not exist")
+                raise KeyError(f"Object {name} does not exist")
 
-            value = self.load(name=name, version=version)
-            self.delete(name=name, version=version)
-            return value
-        except KeyError:
+        if not self._core.has_object(name, version):
             if default is not None:
                 return default
-            raise
+            raise KeyError(f"Object {name} version {version} does not exist")
+
+        value = self.load(name=name, version=version)
+        self.delete(name=name, version=version)
+        return value
 
     def setdefault(self, key: str, default: Any = None) -> Any:
+        """Save the default only for reported absence, never after an operational read error."""
+        if isinstance(key, list):
+            return self._load_key(key)
         try:
-            return self[key]
-        except KeyError:
+            return self._load_key(key)
+        except RegistryObjectNotFound:
             if default is not None:
                 self[key] = default
             return default

@@ -724,8 +724,16 @@ class _RegistryCore(Mindtrace):
         # Fetch metadata (single item)
         fetch_results = self.backend.fetch_metadata([name], [v])
         result = fetch_results.first()
-        if not result or not result.ok:
+        if result is None:
             raise RegistryObjectNotFound(f"Object {name}@{v} not found.")
+        if not result.ok:
+            if result.exception is not None:
+                raise result.exception
+            if result.error == "RegistryObjectNotFound":
+                raise RegistryObjectNotFound(result.message or f"Object {name}@{v} not found.")
+            raise RuntimeError(
+                f"Failed to fetch metadata for {name}@{v}: {result.error or ERROR_UNKNOWN}: {result.message or ''}"
+            )
         metadata = result.metadata
 
         # Pull and materialize
@@ -1590,6 +1598,12 @@ class _RegistryCore(Mindtrace):
             self.backend.validate_object_name(names[0])
         return names, versions, is_batch
 
+    def _load_key(self, key: str | list[str]) -> Any:
+        """Load a mapping key without translating operational errors into absence."""
+        names, versions, is_batch = self._parse_key_input(key)
+        versions = [v or "latest" for v in versions]
+        return self.load(name=names if is_batch else names[0], version=versions if is_batch else versions[0])
+
     def __getitem__(self, key: str | list[str]) -> Any:
         """Get object(s) from the registry using dictionary-like syntax.
 
@@ -1603,14 +1617,14 @@ class _RegistryCore(Mindtrace):
 
         Raises:
             KeyError: If the object doesn't exist (single key only).
+            ValueError: If the version is invalid or integrity verification fails.
+                Other operational errors propagate unchanged.
         """
-        names, versions, is_batch = self._parse_key_input(key)
-        versions = [v or "latest" for v in versions]
-        if is_batch:
-            return self.load(name=names, version=versions)
+        if isinstance(key, list):
+            return self._load_key(key)
         try:
-            return self.load(name=names[0], version=versions[0])
-        except (ValueError, RegistryObjectNotFound) as e:
+            return self._load_key(key)
+        except RegistryObjectNotFound as e:
             raise KeyError(f"Object not found: {key}") from e
 
     def __setitem__(self, key: str | list[str], value: Any) -> None:
@@ -1673,10 +1687,14 @@ class _RegistryCore(Mindtrace):
 
         Returns:
             The loaded object if it exists, otherwise the default value.
+
+        Operational and validation errors propagate; no extra existence check is made.
         """
+        if isinstance(key, list):
+            return self._load_key(key)
         try:
-            return self[key]
-        except KeyError:
+            return self._load_key(key)
+        except RegistryObjectNotFound:
             return default
 
     def keys(self) -> List[str]:
@@ -1753,30 +1771,25 @@ class _RegistryCore(Mindtrace):
 
         Raises:
             KeyError: If the object doesn't exist and no default is provided.
+                Operational errors from loading or deletion propagate even with a default.
         """
-        try:
-            name, version = self._parse_key(key)
+        name, version = self._parse_key(key)
+        if version is None:
+            version = self._latest(name)
             if version is None:
-                version = self._latest(name)
-                if version is None:
-                    if default is not None:
-                        return default
-                    raise KeyError(f"Object {name} does not exist")
-
-            # Check existence first
-            if not self.has_object(name, version):
                 if default is not None:
                     return default
-                raise KeyError(f"Object {name} version {version} does not exist")
+                raise KeyError(f"Object {name} does not exist")
 
-            # Load and delete (backend handles locking internally)
-            value = self.load(name=name, version=version)
-            self.delete(name=name, version=version)
-            return value
-        except KeyError:
+        # Retain the existing existence check, without interpreting later errors as absence.
+        if not self.has_object(name, version):
             if default is not None:
                 return default
-            raise
+            raise KeyError(f"Object {name} version {version} does not exist")
+
+        value = self.load(name=name, version=version)
+        self.delete(name=name, version=version)
+        return value
 
     def setdefault(self, key: str, default: Any = None) -> Any:
         """Get an object from the registry, setting it to default if it doesn't exist.
@@ -1787,10 +1800,14 @@ class _RegistryCore(Mindtrace):
 
         Returns:
             The object if it exists, otherwise the default value.
+
+        A reported read error propagates without saving the default.
         """
+        if isinstance(key, list):
+            return self._load_key(key)
         try:
-            return self[key]
-        except KeyError:
+            return self._load_key(key)
+        except RegistryObjectNotFound:
             if default is not None:
                 # Backend handles locking internally during save
                 self[key] = default
