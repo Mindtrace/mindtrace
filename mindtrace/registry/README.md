@@ -177,6 +177,10 @@ If the selected remote version disappears before it can be loaded, the read fail
 than switching versions. Existing version-list caching/freshness rules still apply;
 this does not provide snapshot isolation for concurrent overwrites of the same version.
 
+For batch loads returning file or directory `Path` objects, `output_dir` applies to
+both cache hits and remote misses. Results are placed beneath that directory using
+the existing per-object/version layout, including mixed cached/remote batches.
+
 **Verification levels** (`VerifyLevel`):
 - `"none"`: Trust cache completely. Fastest.
 - `"integrity"`: Verify loaded artifacts match the hash in metadata. Default.

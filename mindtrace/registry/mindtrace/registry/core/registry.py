@@ -882,6 +882,7 @@ class Registry(Mindtrace):
             cache_result = self._cache.load(
                 [resolved[i][0] for i in pending],
                 [resolved[i][1] for i in pending],
+                output_dir=output_dir,
                 verify=verify,
                 **kwargs,
             )
