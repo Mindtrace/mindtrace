@@ -806,14 +806,13 @@ class Registry(Mindtrace):
         verify: str = VerifyLevel.FULL,
         **kwargs,
     ) -> Any:
-        """Load a single object with cache-first pattern."""
-        self._remote.backend.validate_object_name(name)
-        resolved_v = version if version and version != "latest" else self._remote._latest(name)
+        """Load a single object using one concrete version for cache and remote."""
+        resolved_v = self._remote._resolve_load_version(name, version)
         check_staleness = verify == VerifyLevel.FULL
 
         # Try cache first
         try:
-            if resolved_v and self._cache.has_object(name, resolved_v):
+            if self._cache.has_object(name, resolved_v):
                 if not check_staleness or not self._is_cache_stale(name, resolved_v):
                     try:
                         obj = self._cache.load(name, resolved_v, output_dir=output_dir, verify=verify, **kwargs)
@@ -830,20 +829,18 @@ class Registry(Mindtrace):
             pass  # Any cache error — fall through to remote
 
         # Load from remote
-        obj = self._remote.load(name, version, output_dir=output_dir, verify=verify, **kwargs)
+        obj = self._remote.load(name, resolved_v, output_dir=output_dir, verify=verify, **kwargs)
 
         # Update cache (best effort)
-        cache_v = resolved_v or (version if version and version != "latest" else self._remote._latest(name))
-        if cache_v:
-            try:
-                cache_entries = [(name, cache_v)]
-                new_cache_entries = self._count_new_cache_entries(cache_entries)
-                self._cache.save(name, obj, version=cache_v, on_conflict=OnConflict.OVERWRITE)
-                self._touch_cache_entry(name, cache_v)
-                self._note_cache_entries_added(new_cache_entries)
-                self._maybe_prune_cache_lru()
-            except Exception as e:
-                self.logger.warning(f"Error caching {name}: {e}")
+        try:
+            cache_entries = [(name, resolved_v)]
+            new_cache_entries = self._count_new_cache_entries(cache_entries)
+            self._cache.save(name, obj, version=resolved_v, on_conflict=OnConflict.OVERWRITE)
+            self._touch_cache_entry(name, resolved_v)
+            self._note_cache_entries_added(new_cache_entries)
+            self._maybe_prune_cache_lru()
+        except Exception as e:
+            self.logger.warning(f"Error caching {name}: {e}")
 
         return obj
 
