@@ -519,6 +519,28 @@ another writable mount. Object reads, upload inspection, and download URL creati
 available. The flag governs operations through this Store, not independent use of the
 underlying Registry or previously issued upload URLs.
 
+### Download URL Routing
+
+`create_direct_download_url()` follows read routing, including on read-only mounts:
+
+```python
+# Direct mount selection; no cross-mount discovery.
+url = store.create_direct_download_url("datasets/archive@1.0.0")
+
+# Discover the unique mount containing this object/version.
+url = store.create_direct_download_url("archive", version="1.0.0")
+```
+
+Unqualified requests use the existing cross-mount existence checks: no match raises
+`RegistryObjectNotFound`, and multiple matches raise `StoreAmbiguousObjectError`.
+Use a qualified key to avoid those checks. An explicit non-`None` `version` argument,
+including `"latest"`, overrides the version in the key. URL options are forwarded to
+the selected Registry; a backend without presigning support still returns `None`.
+
+The batch `create_direct_download_urls(mount, names, versions, ...)` API remains
+single-mount: an empty mount selects `default_mount`, without discovery. Uploads
+and other writes retain explicit/default write routing.
+
 ### Moving Between Mounts
 
 ```python

@@ -408,14 +408,18 @@ class Store(Mindtrace):
     ) -> str | None:
         """Mint a presigned GET URL for the object addressed by ``key``.
 
+        Qualified keys route directly; unqualified keys use read discovery and
+        raise on missing or ambiguous matches. An explicit version overrides
+        the key's version, including ``"latest"``.
         Returns ``None`` for mounts whose backend cannot presign (local filesystem).
         """
         mount, object_name, key_version = self.parse_key(key)
-        resolved_mount = mount or self.default_mount
+        resolved_version = version if version is not None else key_version
+        resolved_mount = mount or self._resolve_load_location(object_name, resolved_version)
         registry = self.get_mount(resolved_mount).registry
         return registry.create_direct_download_url(
             object_name,
-            version if version is not None else key_version,
+            resolved_version,
             expiration_minutes=expiration_minutes,
             response_content_type=response_content_type,
             response_content_disposition=response_content_disposition,
