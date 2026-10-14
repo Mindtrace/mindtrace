@@ -483,6 +483,7 @@ def test_camera_configure_backend_and_close():
         result = cam.configure(
             exposure=20000,
             gain=1.0,
+            gamma=0.8,
             roi=(0, 0, 10, 10),
             trigger_mode="continuous",
             pixel_format="BGR8",
@@ -490,12 +491,36 @@ def test_camera_configure_backend_and_close():
             image_enhancement=True,
         )
         assert result.success is True
+        assert cam.get_gamma() == 0.8
 
         # backend property
         _ = cam.backend
 
         # Explicit close wrapper
         cam.close()
+    finally:
+        mgr.close()
+
+
+def test_sync_camera_gamma_round_trip():
+    """Test sync Camera gamma accessors and configure(gamma=...)."""
+    mgr = CameraManager(include_mocks=True)
+    try:
+        name = CameraManager.discover(backends=["MockBasler"], include_mocks=True)[0]
+        cam = mgr.open(name)
+
+        gamma_range = cam.get_gamma_range()
+        assert gamma_range == (0.25, 2.0)
+
+        cam.set_gamma(1.5)
+        assert cam.get_gamma() == 1.5
+
+        result = cam.configure(gamma=0.75)
+        assert result.success is True
+        assert cam.get_gamma() == 0.75
+
+        with pytest.raises(CameraConfigurationError, match="out of range"):
+            cam.set_gamma(5.0)
     finally:
         mgr.close()
 

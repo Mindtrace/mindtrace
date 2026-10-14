@@ -214,6 +214,8 @@ class CameraSettings:
     opencv_width_range_max: int = 1920
     opencv_height_range_min: int = 120
     opencv_height_range_max: int = 1080
+    opencv_gamma_range_min: float = 0.25
+    opencv_gamma_range_max: float = 2.0
 
 
 @dataclass
