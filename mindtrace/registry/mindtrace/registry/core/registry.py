@@ -864,6 +864,7 @@ class Registry(Mindtrace):
         # Resolve versions from remote (authoritative source)
         resolved: List[tuple[str, str] | None] = []
         objects: List[Any | None] = [None] * n
+        loaded = [False] * n  # A successful materializer may return None.
         errors: Dict[tuple[str, str], dict] = {}
 
         for name, ver in zip(names, versions_list):
@@ -886,21 +887,23 @@ class Registry(Mindtrace):
                 verify=verify,
                 **kwargs,
             )
+            cache_succeeded = set(cache_result.succeeded)
             for i, obj in zip(pending, cache_result.results):
                 objects[i] = obj
+                loaded[i] = resolved[i] in cache_succeeded
 
         # Step 2: Check staleness for cache hits
         if check_staleness:
-            cached = [i for i in pending if objects[i] is not None]
+            cached = [i for i in pending if loaded[i]]
             for i in self._find_stale_indices(resolved, cached):
-                objects[i] = None  # add to misses list
+                loaded[i] = False  # add to misses list
 
-        for i in [i for i in pending if objects[i] is not None]:
+        for i in [i for i in pending if loaded[i]]:
             cache_name, cache_version = resolved[i]
             self._touch_cache_entry(cache_name, cache_version)
 
         # Step 3: Remote load for misses
-        misses = [i for i in pending if objects[i] is None]
+        misses = [i for i in pending if not loaded[i]]
         if misses:
             remote_result = self._remote.load(
                 [resolved[i][0] for i in misses],
@@ -911,13 +914,17 @@ class Registry(Mindtrace):
             )
 
             to_cache = []
+            remote_succeeded = set(remote_result.succeeded)
             for i, obj in zip(misses, remote_result.results):
                 name_ver = resolved[i]
-                if obj is not None:
-                    objects[i] = obj
-                    to_cache.append((name_ver[0], name_ver[1], obj))
-                elif name_ver in remote_result.errors:
+                if name_ver in remote_result.errors:
                     errors[name_ver] = remote_result.errors[name_ver]
+                elif name_ver in remote_succeeded:
+                    objects[i] = obj
+                    loaded[i] = True
+                    # Keep existing cache-fill eligibility separate from read success.
+                    if obj is not None:
+                        to_cache.append((name_ver[0], name_ver[1], obj))
 
             if to_cache:
                 try:
@@ -947,7 +954,7 @@ class Registry(Mindtrace):
             elif item in errors:
                 result.results.append(None)
                 result.failed.append(item)
-            elif objects[i] is not None:
+            elif loaded[i]:
                 result.results.append(objects[i])
                 result.succeeded.append(item)
             else:

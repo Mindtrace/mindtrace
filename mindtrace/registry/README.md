@@ -181,6 +181,11 @@ For batch loads returning file or directory `Path` objects, `output_dir` applies
 both cache hits and remote misses. Results are placed beneath that directory using
 the existing per-object/version layout, including mixed cached/remote batches.
 
+Cached batch loads also accept a materializer returning `None` as a successful
+value. Check `BatchResult.succeeded` and `.errors` to distinguish that value from
+a failed item's `None` placeholder. A valid cached `None` does not trigger a
+remote artifact load unless the existing verification checks require a refresh.
+
 **Verification levels** (`VerifyLevel`):
 - `"none"`: Trust cache completely. Fastest.
 - `"integrity"`: Verify loaded artifacts match the hash in metadata. Default.
