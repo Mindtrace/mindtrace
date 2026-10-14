@@ -15,6 +15,7 @@ from mindtrace.agents.events import (
     PartStartEvent,
     ResponseCompleteEvent,
     TextPartDelta,
+    ThinkingPartDelta,
     ToolCallArgsDelta,
 )
 from mindtrace.agents.messages import ModelMessage, TextPart, ToolCallPart, ToolReturnPart
@@ -39,8 +40,8 @@ class _AsyncStream:
         return self._items.pop(0)
 
 
-def _make_chunk(*, content=None, tool_calls=None, include_delta=True, finish_reason=None, usage=None):
-    delta = SimpleNamespace(content=content, tool_calls=tool_calls) if include_delta else None
+def _make_chunk(*, content=None, tool_calls=None, reasoning=None, include_delta=True, finish_reason=None, usage=None):
+    delta = SimpleNamespace(content=content, tool_calls=tool_calls, reasoning=reasoning) if include_delta else None
     return SimpleNamespace(
         choices=[SimpleNamespace(delta=delta, finish_reason=finish_reason)],
         usage=usage,
@@ -553,6 +554,152 @@ async def test_request_stream_omits_stream_options_when_profile_disables_it():
     await _collect_stream_events(model)
 
     assert "stream_options" not in client.chat.completions.create.call_args.kwargs
+
+
+# ── Reasoning channel (thinking models) ──────────────────────────────────────
+#
+# OpenAI-compatible servers stream a thinking model's reasoning separately
+# from content (`reasoning` on Ollama, `reasoning_content` on llama.cpp/vLLM).
+# It is surfaced as part_kind="thinking" so a consumer can still see what a
+# turn produced when the model ends it with empty content.
+
+
+@pytest.mark.asyncio
+async def test_request_stream_reasoning_only_turn_emits_thinking_part():
+    # The failure this exists for: the model ends the turn with its whole
+    # answer in the reasoning channel and empty content.
+    stream = _AsyncStream(
+        [
+            _make_chunk(reasoning="thinking about"),
+            _make_chunk(reasoning=" the answer"),
+            _make_chunk(finish_reason="stop"),
+        ]
+    )
+    create = AsyncMock(return_value=stream)
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    model, _ = _make_model(client=client)
+
+    events = await _collect_stream_events(model)
+
+    complete = events.pop()
+    assert isinstance(complete, ResponseCompleteEvent)
+    assert [type(event) for event in events] == [PartStartEvent, PartDeltaEvent, PartDeltaEvent, PartEndEvent]
+    assert events[0].part_kind == "thinking"
+    assert isinstance(events[1].delta, ThinkingPartDelta)
+    assert events[1].delta.content_delta == "thinking about"
+    assert events[-1].part_kind == "thinking"
+    assert events[-1].part.content == "thinking about the answer"
+
+
+@pytest.mark.asyncio
+async def test_request_stream_closes_thinking_before_text_starts():
+    stream = _AsyncStream(
+        [
+            _make_chunk(reasoning="hmm"),
+            _make_chunk(content="Hello"),
+        ]
+    )
+    create = AsyncMock(return_value=stream)
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    model, _ = _make_model(client=client)
+
+    events = await _collect_stream_events(model)
+
+    kinds = [e.part_kind for e in events if isinstance(e, (PartStartEvent, PartEndEvent))]
+    assert kinds == ["thinking", "thinking", "text", "text"]
+    thinking_end = next(e for e in events if isinstance(e, PartEndEvent) and e.part_kind == "thinking")
+    assert thinking_end.part.content == "hmm"
+    text_end = next(e for e in events if isinstance(e, PartEndEvent) and e.part_kind == "text")
+    assert text_end.part.content == "Hello"
+
+
+@pytest.mark.asyncio
+async def test_request_stream_closes_thinking_before_tool_calls():
+    stream = _AsyncStream(
+        [
+            _make_chunk(reasoning="which tool?"),
+            _make_chunk(tool_calls=[_make_tool_call(tool_call_id="call-1", index=0, name="weather", arguments="{}")]),
+        ]
+    )
+    create = AsyncMock(return_value=stream)
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    model, _ = _make_model(client=client)
+
+    events = await _collect_stream_events(model)
+
+    kinds = [e.part_kind for e in events if isinstance(e, (PartStartEvent, PartEndEvent))]
+    assert kinds == ["thinking", "thinking", "tool_call", "tool_call"]
+
+
+@pytest.mark.asyncio
+async def test_request_stream_reopens_thinking_as_a_new_part_after_content():
+    # A server interleaving reasoning after content must not append deltas
+    # to a thinking part that already ended.
+    stream = _AsyncStream(
+        [
+            _make_chunk(reasoning="first thoughts"),
+            _make_chunk(content="Partial"),
+            _make_chunk(reasoning="more thoughts"),
+        ]
+    )
+    create = AsyncMock(return_value=stream)
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    model, _ = _make_model(client=client)
+
+    events = await _collect_stream_events(model)
+
+    thinking_ends = [e for e in events if isinstance(e, PartEndEvent) and e.part_kind == "thinking"]
+    assert [e.part.content for e in thinking_ends] == ["first thoughts", "more thoughts"]
+    assert thinking_ends[0].index != thinking_ends[1].index
+
+
+@pytest.mark.asyncio
+async def test_request_stream_supports_reasoning_content_field_name():
+    # llama.cpp / vLLM name the field `reasoning_content`.
+    delta = SimpleNamespace(content=None, tool_calls=None, reasoning_content="via llama.cpp")
+    chunk = SimpleNamespace(choices=[SimpleNamespace(delta=delta, finish_reason=None)], usage=None)
+    create = AsyncMock(return_value=_AsyncStream([chunk]))
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    model, _ = _make_model(client=client)
+
+    events = await _collect_stream_events(model)
+
+    end = next(e for e in events if isinstance(e, PartEndEvent))
+    assert end.part_kind == "thinking"
+    assert end.part.content == "via llama.cpp"
+
+
+@pytest.mark.asyncio
+async def test_request_maps_thinking_from_message_reasoning():
+    message = SimpleNamespace(content="", tool_calls=None, reasoning="all in the think phase")
+    response = SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="stop")])
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response))))
+    model, _ = _make_model(client=client)
+
+    result = await model.request(
+        messages=[ModelMessage(role="user", parts=[UserPromptPart(content="hi")])],
+        model_settings=None,
+        model_request_parameters=ModelRequestParameters(),
+    )
+
+    assert result.text == ""
+    assert result.thinking == "all in the think phase"
+
+
+@pytest.mark.asyncio
+async def test_request_thinking_is_none_without_a_reasoning_field():
+    message = SimpleNamespace(content="plain answer", tool_calls=None)
+    response = SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="stop")])
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=response))))
+    model, _ = _make_model(client=client)
+
+    result = await model.request(
+        messages=[ModelMessage(role="user", parts=[UserPromptPart(content="hi")])],
+        model_settings=None,
+        model_request_parameters=ModelRequestParameters(),
+    )
+
+    assert result.thinking is None
 
 
 @pytest.mark.asyncio

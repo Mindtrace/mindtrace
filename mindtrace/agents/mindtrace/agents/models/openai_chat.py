@@ -13,6 +13,7 @@ from ..events import (
     PartStartEvent,
     ResponseCompleteEvent,
     TextPartDelta,
+    ThinkingPartDelta,
     ToolCallArgsDelta,
 )
 from ..messages import ModelMessage, TextPart, ToolCallPart, ToolReturnPart
@@ -44,6 +45,17 @@ def _map_finish_reason(raw: str | None) -> FinishReason | None:
     if raw is None:
         return None
     return _FINISH_REASON_MAP.get(raw, "stop")
+
+
+def _reasoning_of(obj: Any) -> str | None:
+    """The reasoning channel of a thinking model's delta or message, if any.
+
+    OpenAI-compatible servers name the field differently: ``reasoning``
+    (Ollama) or ``reasoning_content`` (llama.cpp, vLLM). Plain OpenAI chat
+    responses carry neither, so this returns None and nothing downstream
+    changes for non-thinking models.
+    """
+    return getattr(obj, "reasoning", None) or getattr(obj, "reasoning_content", None)
 
 
 def _map_usage(usage: Any) -> Usage | None:
@@ -286,6 +298,7 @@ class OpenAIChatModel(Model):
             self.logger.warning(f"Response from {self.model_name!r} was truncated by the output token limit")
         return ModelResponse(
             text=message.content or "",
+            thinking=_reasoning_of(message),
             tool_calls=tool_calls,
             model_name=self.model_name,
             provider_name=self._provider.name,
@@ -311,6 +324,14 @@ class OpenAIChatModel(Model):
         text_started = False
         text_ended = False
         text_content: list[str] = []
+        # Reasoning channel (thinking models). One part per contiguous run of
+        # reasoning chunks: content or tool calls close it, and a server that
+        # interleaves reasoning again afterwards opens a fresh part rather
+        # than appending deltas to a part that already ended.
+        thinking_open = False
+        thinking_index = 0
+        thinking_parts = 0
+        thinking_content: list[str] = []
         part_index = 0
         tool_calls: dict[str, dict[str, str]] = {}
         tool_call_order: list[str] = []
@@ -340,7 +361,29 @@ class OpenAIChatModel(Model):
                 continue
             delta = choice.delta
 
+            reasoning_delta = _reasoning_of(delta)
+            if reasoning_delta:
+                if not thinking_open:
+                    thinking_index = thinking_parts
+                    thinking_parts += 1
+                    thinking_content = []
+                    yield PartStartEvent(
+                        index=thinking_index, part=TextPart(content=""), part_kind="thinking"
+                    )
+                    thinking_open = True
+                thinking_content.append(reasoning_delta)
+                yield PartDeltaEvent(
+                    delta=ThinkingPartDelta(content_delta=reasoning_delta), index=thinking_index
+                )
+
             if delta.content:
+                if thinking_open:
+                    thinking_open = False
+                    yield PartEndEvent(
+                        index=thinking_index,
+                        part=TextPart(content="".join(thinking_content)),
+                        part_kind="thinking",
+                    )
                 if not text_started:
                     yield PartStartEvent(index=0, part=TextPart(content=""), part_kind="text")
                     text_started = True
@@ -349,6 +392,13 @@ class OpenAIChatModel(Model):
                     yield PartDeltaEvent(delta=TextPartDelta(content_delta=delta.content), index=0)
 
             if delta.tool_calls:
+                if thinking_open:
+                    thinking_open = False
+                    yield PartEndEvent(
+                        index=thinking_index,
+                        part=TextPart(content="".join(thinking_content)),
+                        part_kind="thinking",
+                    )
                 if text_started and not text_ended:
                     text_ended = True
                     yield PartEndEvent(
@@ -399,6 +449,15 @@ class OpenAIChatModel(Model):
                                 tool_call_id=tool_calls[tc_key]["id"],
                             )
 
+        if thinking_open:
+            # A turn that ended while still reasoning — empty content. The
+            # accumulated reasoning on this end event is the only place the
+            # turn's text survives.
+            yield PartEndEvent(
+                index=thinking_index,
+                part=TextPart(content="".join(thinking_content)),
+                part_kind="thinking",
+            )
         if text_started and not text_ended:
             yield PartEndEvent(
                 index=0,
