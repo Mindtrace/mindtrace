@@ -660,19 +660,40 @@ class Store(Mindtrace):
         source_version: str = "latest",
         target_version: str | None = None,
     ) -> str:
-        saved = self.copy(source, target=target, source_version=source_version, target_version=target_version)
+        """Copy the selected source version, then delete that same version.
 
+        Resolve the source mount and concrete version before copying, and reject
+        read-only source mounts before loading or writing. An explicit non-latest
+        source_version overrides a key-embedded version; otherwise the key's
+        version or latest is used. Destination routing follows save().
+
+        Returns:
+            The saved destination version.
+
+        Raises:
+            PermissionError: If a source or destination mount is read-only.
+            RegistryObjectNotFound: If the selected source does not exist.
+            StoreAmbiguousObjectError: If an unqualified source matches multiple mounts.
+
+        Load, save, and delete errors propagate. A failed copy leaves the source
+        intact; a failed deletion does not roll back the destination. This is not
+        a transaction or protection against overwriting the same mutable version.
+        """
         mount, name, key_version = self.parse_key(source)
         resolved_source_version = (
             source_version if source_version not in (None, "latest") else (key_version or source_version)
         )
         resolved_mount = mount or self._resolve_load_location(name, resolved_source_version)
+        source_mount = self.get_mount(resolved_mount)
+        if source_mount.read_only:
+            raise PermissionError(f"Mount '{resolved_mount}' is read-only")
 
-        delete_version = resolved_source_version
-        if delete_version in (None, "latest"):
-            delete_version = self.get_mount(resolved_mount).registry.list_versions(name)[-1]
-
-        self.delete(self.build_key(resolved_mount, name), version=delete_version)
+        resolved_source_version = source_mount.registry._core._resolve_load_version(name, resolved_source_version)
+        source_key = self.build_key(resolved_mount, name)
+        saved = self.copy(
+            source_key, target=target, source_version=resolved_source_version, target_version=target_version
+        )
+        self.delete(source_key, version=resolved_source_version)
         return saved
 
     def __getitem__(self, key: str | list[str]) -> Any:

@@ -519,6 +519,25 @@ another writable mount. Object reads, upload inspection, and download URL creati
 available. The flag governs operations through this Store, not independent use of the
 underlying Registry or previously issued upload URLs.
 
+### Moving Between Mounts
+
+```python
+# Move the latest version to the built-in temporary mount.
+store.move("models/my_model", target="temp/my_model")
+```
+
+`move()` resolves the source mount and concrete version before copying, then deletes
+that same source version only after the destination save succeeds. Unqualified sources
+use read discovery; destinations use explicit/default write routing. An explicit
+non-`latest` `source_version` overrides a version embedded in the source key; otherwise
+the embedded version or latest is selected. The return value is the destination version.
+
+A read-only source is rejected before loading or writing the destination. A newer source
+version published during copying is not deleted, and failed source reads or destination
+writes leave the source intact. Deletion errors propagate; the destination may remain.
+This is not a transaction: no rollback, same-physical-target/alias guarantees, or protection
+against concurrent overwrites of the same mutable source version is provided.
+
 ### Default Mount Behaviour
 
 - `default_mount` always points to a configured mount (initially `temp`).
