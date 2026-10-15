@@ -617,25 +617,20 @@ def test_huggingface_instance_segmentation_export_writes_typed_objects(tmp_path:
     ]
 
 
-def test_huggingface_export_consumes_rows_through_streaming_constructor(tmp_path: Path, monkeypatch):
+def test_huggingface_export_uses_in_memory_constructor(tmp_path: Path, monkeypatch):
     from mindtrace.datalake.exporters import huggingface as huggingface_exporter
     from mindtrace.datalake.types import AnnotationRecord
 
-    class _StreamingOnlyDataset(_FakeDataset):
-        @classmethod
-        def from_list(cls, rows, features=None):
-            raise AssertionError("export must not materialize all rows before Arrow construction")
-
+    class _InMemoryOnlyDataset(_FakeDataset):
         @classmethod
         def from_generator(cls, generator, features=None):
-            rows = generator() if callable(generator) else generator
-            return cls(list(rows), features=features)
+            raise AssertionError("in-memory exports must not create a persistent generator cache")
 
     fake_module = _fake_datasets_module()
-    fake_module.Dataset = _StreamingOnlyDataset
+    fake_module.Dataset = _InMemoryOnlyDataset
     monkeypatch.setattr(huggingface_exporter.importlib, "import_module", lambda name: fake_module)
     dataset = ExportableDataset(
-        name="streamed-classification",
+        name="in-memory-classification",
         metadata={"classification_class_names": ["healthy"]},
         items=[
             ExportableItem(
@@ -657,12 +652,12 @@ def test_huggingface_export_consumes_rows_through_streaming_constructor(tmp_path
 
     result = export_dataset_as_huggingface(
         dataset,
-        destination=tmp_path / "streamed-hf",
+        destination=tmp_path / "in-memory-hf",
         options={"task": "classification"},
     )
 
     assert result.asset_count == 1
-    assert (tmp_path / "streamed-hf" / "dataset.json").exists()
+    assert (tmp_path / "in-memory-hf" / "dataset.json").exists()
 
 
 def test_huggingface_detection_export_traverses_items_once_for_rows_and_counts(tmp_path: Path, monkeypatch):

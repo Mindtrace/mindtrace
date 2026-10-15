@@ -166,6 +166,10 @@ train / val / test native HF Datasets with PyTorch transforms
 train / val / test PyTorch DataLoaders
 ```
 
+This export path materializes rows in memory and builds Arrow tables with `Dataset.from_list()` before saving.
+It does not provide streaming or leave an intermediate generator dataset in the global Hugging Face cache.
+Python rows and Arrow tables can coexist during conversion, so allow additional peak memory for large exports.
+
 Dataset and DataLoader builders belong to `mindtrace.models.training`. See the
 [Models data-adapter guide](../models/mindtrace/models/training/README.md#hugging-face-data-adapters)
 for the supported task profiles and consumption API.
