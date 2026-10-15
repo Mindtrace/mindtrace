@@ -272,7 +272,8 @@ def test_huggingface_multi_label_classification_export_writes_multi_hot_targets(
     assert payload["train"][0]["label_names"] == ["aeroplane", "bird"]
 
 
-def test_huggingface_bbox_crop_classification_export_preserves_lineage(tmp_path: Path, monkeypatch):
+@pytest.mark.parametrize("background", [[], ["background"]])
+def test_huggingface_bbox_crop_classification_export_preserves_lineage(tmp_path: Path, monkeypatch, background):
     from mindtrace.datalake.exporters import huggingface as huggingface_exporter
     from mindtrace.datalake.types import AnnotationRecord
 
@@ -295,7 +296,7 @@ def test_huggingface_bbox_crop_classification_export_preserves_lineage(tmp_path:
         metadata={
             "classification_type": "single_label",
             "classification_source": "bbox_crops",
-            "detection_class_names": ["aeroplane", "bicycle"],
+            "detection_class_names": [*background, "aeroplane", "bicycle"],
         },
         items=[
             ExportableItem(
@@ -347,7 +348,11 @@ def test_huggingface_bbox_crop_classification_export_preserves_lineage(tmp_path:
     assert second_row["image"]["path"] == "asset_img-detection_2.jpg"
 
 
-def test_huggingface_detection_export_writes_typed_objects_and_remaps_labels(tmp_path: Path, monkeypatch):
+@pytest.mark.parametrize("background", [[], ["background"]])
+@pytest.mark.parametrize(("label", "label_id"), [("aeroplane", 1), ("bicycle", 2)])
+def test_huggingface_detection_export_writes_typed_objects_and_remaps_labels(
+    tmp_path: Path, monkeypatch, background, label, label_id
+):
     from mindtrace.datalake.exporters import huggingface as huggingface_exporter
     from mindtrace.datalake.types import AnnotationRecord
 
@@ -360,7 +365,7 @@ def test_huggingface_detection_export_writes_typed_objects_and_remaps_labels(tmp
         name="pascal-voc",
         metadata={
             "task_types": ["classification", "detection", "semantic_segmentation"],
-            "detection_class_names": ["aeroplane", "bicycle"],
+            "detection_class_names": [*background, "aeroplane", "bicycle"],
         },
         items=[
             ExportableItem(
@@ -372,8 +377,8 @@ def test_huggingface_detection_export_writes_typed_objects_and_remaps_labels(tmp
                     AnnotationRecord(
                         annotation_id="detection_1",
                         kind="bbox",
-                        label="bicycle",
-                        label_id=2,
+                        label=label,
+                        label_id=label_id,
                         geometry={"type": "bbox", "x": 10, "y": 20, "width": 30, "height": 40},
                         attributes={"difficult": 1, "truncated": 0},
                         source={"type": "human", "name": "pascal-voc"},
@@ -396,13 +401,46 @@ def test_huggingface_detection_export_writes_typed_objects_and_remaps_labels(tmp
     assert payload["train"][0]["objects"] == {
         "area": [1200.0],
         "bbox": [[10.0, 20.0, 30.0, 40.0]],
-        "category": [1],
-        "category_name": ["bicycle"],
+        "category": [label_id],
+        "category_name": [label],
         "difficult": [True],
         "id": ["detection_1"],
         "occluded": [False],
         "truncated": [False],
     }
+
+
+def test_detection_class_names_inferred_from_annotations_reserve_background():
+    from mindtrace.datalake.exporters.huggingface import _detection_class_names
+    from mindtrace.datalake.types import AnnotationRecord
+
+    dataset = ExportableDataset(
+        name="inferred-classes",
+        items=[
+            ExportableItem(
+                assets={"image": sample_asset()},
+                primary_role="image",
+                annotations=[
+                    AnnotationRecord(
+                        annotation_id="bbox-1",
+                        kind="bbox",
+                        label="aeroplane",
+                        geometry={"type": "bbox", "x": 0, "y": 0, "width": 1, "height": 1},
+                        source={"type": "human", "name": "pytest"},
+                    )
+                ],
+            )
+        ],
+    )
+    assert _detection_class_names(dataset) == ["background", "aeroplane"]
+
+
+@pytest.mark.parametrize("names", [["person", "background"], ["background", "person", "person"]])
+def test_object_class_names_reject_ambiguous_mappings(names):
+    from mindtrace.datalake.exporters.huggingface import _object_class_names
+
+    with pytest.raises(ValueError):
+        _object_class_names(names)
 
 
 def test_huggingface_detection_export_rejects_degenerate_boxes(tmp_path: Path, monkeypatch):
@@ -509,7 +547,8 @@ def test_huggingface_semantic_segmentation_export_writes_typed_image_and_mask(tm
 
 
 @pytest.mark.parametrize("task", ["segmentation", "instance_segmentation"])
-def test_huggingface_instance_segmentation_export_writes_typed_objects(tmp_path: Path, monkeypatch, task):
+@pytest.mark.parametrize("background", [[], ["background"]])
+def test_huggingface_instance_segmentation_export_writes_typed_objects(tmp_path: Path, monkeypatch, task, background):
     from mindtrace.datalake.exporters import huggingface as huggingface_exporter
     from mindtrace.datalake.types import AnnotationRecord
 
@@ -526,7 +565,7 @@ def test_huggingface_instance_segmentation_export_writes_typed_objects(tmp_path:
         name="penn-fudan",
         metadata={
             "task_type": "instance_segmentation",
-            "instance_segmentation_class_names": ["background", "person"],
+            "instance_segmentation_class_names": [*background, "person"],
         },
         items=[
             ExportableItem(

@@ -625,7 +625,7 @@ def import_pascal_voc(datalake: Datalake, config: PascalVocImportConfig) -> Pasc
     if "detection" in tasks:
         dataset_metadata.update(
             {
-                "detection_class_names": VOC_CLASSES,
+                "detection_class_names": ["background", *VOC_CLASSES],
                 "detection_bbox_format": "xywh",
                 "detection_bbox_coordinates": "pixels",
             }

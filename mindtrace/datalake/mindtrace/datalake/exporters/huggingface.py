@@ -43,16 +43,25 @@ def _classification_class_names(dataset: ExportableDataset) -> list[str]:
     return [labels_by_id[label_id] for label_id in expected_ids]
 
 
+def _object_class_names(class_names: list[str]) -> list[str]:
+    """Reserve category zero for background in torchvision-compatible object targets."""
+    if len(set(class_names)) != len(class_names):
+        raise ValueError("Object class names must be unique.")
+    if "background" in class_names and class_names[0] != "background":
+        raise ValueError("Object class names must place background at index 0.")
+    return class_names if class_names[0] == "background" else ["background", *class_names]
+
+
 def _detection_class_names(dataset: ExportableDataset) -> list[str]:
     configured = _configured_class_names(dataset, "detection")
     if configured:
-        return configured
+        return _object_class_names(configured)
     labels = {
         annotation.label for item in dataset.items for annotation in item.annotations if annotation.kind == "bbox"
     }
     if not labels:
         raise ValueError("Detection export requires bbox annotations or dataset metadata detection_class_names.")
-    return sorted(labels)
+    return _object_class_names(sorted(labels))
 
 
 def _classification_annotation(item) -> Any:
@@ -371,7 +380,7 @@ def _export_bbox_crop_classification_dataset(
     destination: Path,
     include_media: bool,
 ) -> ExportResult:
-    class_names = _detection_class_names(dataset)
+    class_names = _detection_class_names(dataset)[1:]
     class_ids = {name: index for index, name in enumerate(class_names)}
     features = _single_label_classification_features(datasets_module, class_names)
     rows_by_split: dict[str, list[dict[str, Any]]] = {}
@@ -427,7 +436,7 @@ def _export_detection_dataset(
     include_media: bool,
 ) -> ExportResult:
     class_names = _detection_class_names(dataset)
-    class_ids = {name: index for index, name in enumerate(class_names)}
+    class_ids = {name: index for index, name in enumerate(class_names) if index > 0}
     features = _detection_features(datasets_module, class_names)
     rows_by_split: dict[str, list[dict[str, Any]]] = {}
     annotation_count = 0
@@ -622,7 +631,8 @@ def _export_instance_segmentation_dataset(
     class_names = _configured_class_names(dataset, "instance_segmentation")
     if not class_names:
         raise ValueError("Instance segmentation export requires dataset metadata instance_segmentation_class_names.")
-    class_ids = {name: index for index, name in enumerate(class_names)}
+    class_names = _object_class_names(class_names)
+    class_ids = {name: index for index, name in enumerate(class_names) if index > 0}
     features = _instance_segmentation_features(datasets_module, class_names)
     rows_by_split: dict[str, list[dict[str, Any]]] = {}
     annotation_count = 0

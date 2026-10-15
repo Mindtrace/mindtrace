@@ -171,7 +171,11 @@ column in DataLoader batches.
 
 Detection and instance targets follow torchvision conventions. The detection adapter is source-dataset-generic but
 expects the canonical Mindtrace HF detection schema: embedded image media, absolute pixel-space `xywh` boxes, and
-contiguous category IDs. VOC `difficult` remains available as its own boolean tensor and is also projected into the
+contiguous category IDs with index 0 reserved for background and foreground IDs starting at 1. Instance
+segmentation uses the same convention. Bbox-crop classification excludes background and retains zero-based
+foreground IDs. Re-export older detection artifacts with zero-based foreground IDs before using them for
+torchvision training; the loader preserves stored category IDs rather than guessing an offset.
+VOC `difficult` remains available as its own boolean tensor and is also projected into the
 torchvision/COCO-compatible `iscrowd` ignore channel; this is an evaluator compatibility mapping, not an assertion
 that the source concepts are identical. The instance adapter similarly consumes the canonical Mindtrace HF
 objects-with-masks schema.

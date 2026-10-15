@@ -242,9 +242,11 @@ def test_classification_dataloader_collates_native_dataset_mappings(monkeypatch)
     assert targets.value == [0, 1]
 
 
-def test_detection_dataset_returns_xywh_targets_and_zero_based_labels(monkeypatch):
+def test_detection_dataset_converts_xywh_boxes_and_preserves_foreground_labels(monkeypatch):
     image = _FakeImage()
-    objects_feature = SimpleNamespace(feature={"category": SimpleNamespace(names=["aeroplane", "bicycle"])})
+    objects_feature = SimpleNamespace(
+        feature={"category": SimpleNamespace(names=["background", "aeroplane", "bicycle"])}
+    )
     payload = _FakeDatasetDict(
         train=_FakeSplitDataset(
             [

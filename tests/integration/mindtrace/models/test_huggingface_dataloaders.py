@@ -21,7 +21,7 @@ def test_voc_difficult_is_preserved_and_projected_to_torchvision_ignore_channel(
             "objects": datasets.Sequence(
                 {
                     "bbox": datasets.Sequence(datasets.Value("float32"), length=4),
-                    "category": datasets.ClassLabel(names=["person"]),
+                    "category": datasets.ClassLabel(names=["background", "person"]),
                     "area": datasets.Value("float32"),
                     "difficult": datasets.Value("bool"),
                 }
@@ -35,7 +35,7 @@ def test_voc_difficult_is_preserved_and_projected_to_torchvision_ignore_channel(
                 "image": {"bytes": _png_bytes(), "path": "voc-image-1.png"},
                 "objects": {
                     "bbox": [[0.0, 0.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0]],
-                    "category": [0, 0],
+                    "category": [1, 1],
                     "area": [1.0, 1.0],
                     "difficult": [True, False],
                 },
