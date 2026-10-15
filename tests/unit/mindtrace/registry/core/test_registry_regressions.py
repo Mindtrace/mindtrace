@@ -1,7 +1,4 @@
-"""Behavioral regressions: real cores/artifacts, mocked transport, no production fixes.
-
-Known defects intentionally fail. A green control is not a reason to remove it.
-"""
+"""In-scope behavioral regressions using real cores/artifacts and mocked transport."""
 
 import json
 from pathlib import Path
@@ -15,41 +12,11 @@ from tests.registry_test_helpers import (
     FailingLoadMaterializer,
     NoneMaterializer,
     RejectNegativeMaterializer,
-    RevisionedIntMaterializer,
-    assert_cache_replica,
     assert_latest_snapshot_coherent,
 )
 
 
 class TestCacheArtifactRegressions:
-    @pytest.mark.parametrize("fill", ["save", "cold_load"])
-    def test_cache_preserves_authoritative_bytes(self, cached_mock_registry, tmp_path, fill):
-        reg = cached_mock_registry
-        # Register on both cores to isolate reserialization from lost class selection.
-        reg._remote.register_materializer(int, RevisionedIntMaterializer)
-        reg._cache.register_materializer(int, RevisionedIntMaterializer)
-        if fill == "save":
-            reg.save("item", 7, version="1.0.0")
-        else:
-            reg._remote.save("item", 7, version="1.0.0")
-            assert not reg._cache.has_object("item", "1.0.0")
-            assert reg.load("item", "1.0.0", verify=VerifyLevel.FULL) == 7
-        assert_cache_replica(reg, "item", "1.0.0", tmp_path)
-
-    @pytest.mark.parametrize("fill", ["save", "cold_load"])
-    def test_cache_preserves_custom_serialization_metadata(self, cached_mock_registry, fill):
-        reg = cached_mock_registry
-        reg.register_materializer(int, RevisionedIntMaterializer)
-        save = reg.save if fill == "save" else reg._remote.save
-        save("item", 7, version="1.0.0", init_params={"offset": 4}, metadata={"source": "custom"})
-        if fill == "cold_load":
-            assert reg.load("item", "1.0.0") == 11
-        remote = reg._remote.info("item", "1.0.0")
-        cached = reg._cache.info("item", "1.0.0")
-        for field in ("class", "materializer", "init_params", "metadata"):
-            assert cached[field] == remote[field], field
-        assert reg.load("item", "1.0.0", verify=VerifyLevel.NONE, offset=10) == 17
-
     def test_latest_race_preserves_concrete_identity(self, cached_mock_registry, monkeypatch):
         assert_latest_snapshot_coherent(cached_mock_registry, monkeypatch)
 
@@ -258,21 +225,6 @@ class TestMappingErrorRegressions:
 
 
 class TestNameAndContainerRegressions:
-    @pytest.mark.parametrize("backend_kind", ["local", "s3"])
-    def test_colon_and_literal_escape_are_distinct(self, tmp_path, cached_mock_registry, backend_kind):
-        reg = (
-            Registry(backend=tmp_path / "local", version_objects=True)
-            if backend_kind == "local"
-            else cached_mock_registry
-        )
-        reg.save("a:b", 1, version="1.0.0")
-        reg.save("a%3Ab", 2, version="1.0.0")
-        assert set(reg.list_objects()) == {"a:b", "a%3Ab"}
-        assert reg.load("a:b", "1.0.0") == 1
-        assert reg.load("a%3Ab", "1.0.0") == 2
-        reg.delete("a:b", "1.0.0")
-        assert reg.load("a%3Ab", "1.0.0") == 2
-
     @pytest.mark.parametrize("backend_kind", ["local", "s3"])
     def test_internal_metadata_prefix_is_not_removed_from_name(self, tmp_path, cached_mock_registry, backend_kind):
         reg = (

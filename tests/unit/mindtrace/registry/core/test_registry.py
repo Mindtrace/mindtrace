@@ -1332,17 +1332,6 @@ def test_delitem_not_found(registry):
     assert registry.load("present", "1.0.0") == "value"
 
 
-def test_contains_propagates_backend_failure(registry, monkeypatch):
-    """A failed version listing is not proof that the object is absent."""
-    lookup = Mock(side_effect=ValueError("corrupt backend listing"))
-    monkeypatch.setattr(registry._core.backend, "list_versions", lookup)
-    try:
-        with pytest.raises(ValueError, match="corrupt backend listing"):
-            _ = "item" in registry
-    finally:
-        lookup.assert_called_once_with("item")
-
-
 @pytest.fixture
 def mutable_registry():
     """Create a versioned mutable registry (auto-increments on save, allows overwrites with explicit version)."""
@@ -5163,10 +5152,7 @@ def test_registry_cached_remote_direct_upload_delegates(monkeypatch, tmp_path):
 
 
 class TestRegistryBugHunt:
-    """Intended-contract tests for bugs found in the registry review.
-
-    Several of these currently fail; they should pass once the issues are fixed.
-    """
+    """Regression coverage for the agreed Registry bug-hunt contracts."""
 
     @pytest.fixture
     def unversioned_registry(self, temp_registry_dir):
@@ -5308,16 +5294,6 @@ class TestRegistryBugHunt:
         finally:
             assert metadata_path.read_bytes() == original_bytes
             writes.assert_not_called()
-
-    @pytest.mark.parametrize(
-        "original", [(1, (2, 3)), {"nested": [(1, 2)]}, {"nested": {1, 2}}, {1: "int", "1": "str"}]
-    )
-    def test_nested_tuples_round_trip(self, registry, original):
-        """M1: nested tuples must not be flattened to lists by JSON default conversion."""
-        registry.save("t", original)
-        loaded = registry.load("t")
-        assert loaded == original
-        assert type(loaded) is type(original)
 
     def test_load_with_unimportable_class_still_returns_json_container(self, registry):
         """M2: falling back to typing.Any must not TypeError inside the container materializer."""

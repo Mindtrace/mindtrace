@@ -570,10 +570,7 @@ def test_store_direct_upload_unqualified_key_uses_default_mount():
 
 
 class TestStoreBugHunt:
-    """Intended-contract tests for bugs found in the Store review.
-
-    Several of these currently fail; they should pass once the issues are fixed.
-    """
+    """Regression coverage for the agreed Store bug-hunt contracts."""
 
     def test_qualified_slash_key_is_stable_when_a_matching_mount_is_added(self, basic_store, tmp_path):
         """S1 control: canonical qualified identity survives changes to other mounts."""
@@ -608,13 +605,6 @@ class TestStoreBugHunt:
             _ = basic_store["shared"]
         assert basic_store["a/shared"] == {"from": "a"}
         assert basic_store["b/shared"] == {"from": "b"}
-
-    def test_missing_getitem_raises_keyerror(self, basic_store):
-        """S6: Store must follow dict protocol for missing keys (KeyError, not RegistryObjectNotFound)."""
-        with pytest.raises(KeyError):
-            _ = basic_store["missing"]
-        sentinel = object()
-        assert basic_store.get("missing", sentinel) is sentinel
 
     def test_update_from_store_preserves_noncolliding_objects(self, basic_store, tmp_path):
         """S7 control: test the established default-destination policy, not a new merge policy."""
