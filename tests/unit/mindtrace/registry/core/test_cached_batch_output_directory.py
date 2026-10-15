@@ -42,7 +42,13 @@ def test_directory_output_preserves_cache_and_remote_call_budget(
         (source / "nested" / "data.txt").write_text(str(index), encoding="utf-8")
         registry._remote.save(name, source, version="1.0.0")
     for name in names[:warm_count]:
-        registry._cache.download(registry._remote, name, version="1.0.0", target_version="1.0.0")
+        # Prime an exact replica: download() reserializes gzip directories, whose
+        # timestamps can change the hash and turn a warm FULL read into a miss.
+        metadata = registry._remote.info(name, "1.0.0")
+        artifact_dir = tmp_path / "cache-prime" / name
+        assert registry.backend.pull(name, "1.0.0", artifact_dir, metadata=metadata).all_ok
+        assert registry._cache.backend.push(name, "1.0.0", artifact_dir, metadata=metadata).all_ok
+        assert registry._cache.info(name, "1.0.0")["hash"] == metadata["hash"]
 
     calls = {}
     for method in ("list_versions", "fetch_metadata", "pull"):

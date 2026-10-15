@@ -540,9 +540,13 @@ def test_dict_like_interface_error_handling(registry, test_config):
     with pytest.raises(KeyError):
         _ = registry["nonexistent"]
 
-    # Test KeyError for non-existent version
+    # A valid but absent version remains a missing-key error.
     registry["test:error"] = test_config
     with pytest.raises(KeyError):
+        _ = registry["test:error@9.9.9"]
+
+    # Invalid version syntax is not object absence.
+    with pytest.raises(ValueError):
         _ = registry["test:error@nonexistent"]
 
     # Test ValueError for invalid version format
@@ -907,13 +911,11 @@ def test_delete_all_versions(registry):
 
 
 def test_delete_nonexistent_raises(registry):
-    """Test that deleting nonexistent object raises error when version is None.
-    Note: Deleting with a specific version is idempotent (succeeds even if not found).
-    """
+    """Missing Registry targets raise for explicit versions and whole-object deletion."""
     from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 
-    # Deleting with specific version is idempotent - no error
-    registry.delete("test:nonexistent", version="1.0.0")  # Should not raise
+    with pytest.raises(RegistryObjectNotFound):
+        registry.delete("test:nonexistent", version="1.0.0")
 
     # Deleting with version=None raises because object has no versions
     with pytest.raises(RegistryObjectNotFound):

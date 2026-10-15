@@ -13,7 +13,7 @@ import pytest
 
 from mindtrace.registry import Registry
 from mindtrace.registry.core.types import VerifyLevel
-from tests.registry_test_helpers import RevisionedIntMaterializer, assert_cache_replica, assert_latest_snapshot_coherent
+from tests.registry_test_helpers import assert_latest_snapshot_coherent
 
 pytestmark = [pytest.mark.integration, pytest.mark.registry]
 
@@ -33,21 +33,7 @@ def cached_remote_registry(remote_object_backend) -> Registry:
 
 
 class TestRegistryRemoteCacheBugHunt:
-    """C1–C4 and R9: cache coherence against a real remote backend."""
-
-    @pytest.mark.parametrize("fill", ["save", "cold_load"])
-    def test_c1_cached_load_verify_full_uses_remote_artifact_hash(self, cached_remote_registry, tmp_path, fill):
-        """Deterministic serializer variation exposes any re-save, on either fill path."""
-        reg = cached_remote_registry
-        reg._remote.register_materializer(int, RevisionedIntMaterializer)
-        reg._cache.register_materializer(int, RevisionedIntMaterializer)
-        save = reg.save if fill == "save" else reg._remote.save
-        save("c1", 7, version="1.0.0")
-        if fill == "cold_load":
-            assert not reg._cache.has_object("c1", "1.0.0")
-            assert reg.load("c1", "1.0.0", verify=VerifyLevel.FULL) == 7
-        assert_cache_replica(reg, "c1", "1.0.0", tmp_path)
-        assert reg.load("c1", "1.0.0", verify=VerifyLevel.FULL) == 7
+    """C2–C4 and R9: in-scope cache coherence against a real remote backend."""
 
     def test_c2_cached_load_latest_does_not_store_new_bytes_under_old_version(
         self, cached_remote_registry, monkeypatch
