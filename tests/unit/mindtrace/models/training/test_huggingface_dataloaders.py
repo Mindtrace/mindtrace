@@ -283,7 +283,7 @@ def test_detection_dataset_converts_xywh_boxes_and_preserves_foreground_labels(m
     assert target["area"].value == [1200.0]
     assert target["iscrowd"].value == [0]
     assert "asset_id" not in target
-    assert dataset.features["objects"].feature["category"].names == ["aeroplane", "bicycle"]
+    assert dataset.features["objects"].feature["category"].names == ["background", "aeroplane", "bicycle"]
 
 
 def test_detection_dataset_can_return_provenance_outside_tensor_target(monkeypatch):
