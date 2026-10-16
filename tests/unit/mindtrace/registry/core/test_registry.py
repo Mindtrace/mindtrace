@@ -4987,7 +4987,7 @@ class TestRegistryCoreCoverage:
         assert batch.results[0] == "value"
         assert batch.results[1] is None
 
-        with pytest.raises(KeyError, match="Object not found"):
+        with pytest.raises(KeyError, match="test:missing"):
             _ = core["test:missing"]
 
         del core[["test:dict@1.0.0"]]

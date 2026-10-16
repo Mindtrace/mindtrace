@@ -1502,3 +1502,29 @@ class TestVersionDiscovery:
         monkeypatch.setattr(Path, "is_file", is_file)
         assert backend.list_versions("a[1]") == {"a[1]": ["1.0.0"]}
         assert sorted(checked) == ["_meta_a[1]@1.0.0.yaml", "_meta_a[1]@2.0.0.yaml"]
+
+
+class TestPathBoundaries:
+    @pytest.mark.parametrize(
+        "operation", ["push", "pull", "delete", "save_metadata", "fetch_metadata", "delete_metadata"]
+    )
+    @pytest.mark.parametrize("version", ["../../../victim", "/absolute"])
+    def test_invalid_version_rejected_before_filesystem_changes(self, backend, tmp_path, operation, version):
+        victim = backend.uri.parent / "victim"
+        victim.mkdir(exist_ok=True)
+        source = tmp_path / "source"
+        source.mkdir(exist_ok=True)
+        (source / "data.txt").write_text("payload")
+        before = sorted(str(path) for path in tmp_path.rglob("*"))
+        args = ["x", version]
+        if operation == "push":
+            args.extend([source, {"_files": ["data.txt"]}])
+        elif operation == "pull":
+            args.append(tmp_path / "download")
+        elif operation == "save_metadata":
+            args.append({"value": 1})
+        kwargs = {"metadata": {"_files": ["data.txt"]}} if operation == "pull" else {}
+        result = getattr(backend, operation)(*args, **kwargs).first()
+        assert isinstance(result.exception, ValueError)
+        assert victim.is_dir()
+        assert sorted(str(path) for path in tmp_path.rglob("*")) == before

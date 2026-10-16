@@ -94,6 +94,7 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             Path: The full resolved filesystem path.
         """
+        validate_relative_path(remote_key, parameter="Storage key")
         return self.uri / remote_key
 
     def _object_key(self, name: str, version: str) -> str:
@@ -106,6 +107,10 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             Storage key for the object version.
         """
+        self.validate_object_name(name)
+        if not version or version == ".":
+            raise ValueError("Version must be a non-empty relative path")
+        validate_relative_path(version, parameter="Version")
         return f"{name}/{version}"
 
     def _object_metadata_path(self, name: str, version: str) -> Path:
@@ -118,6 +123,7 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             Metadata file path (e.g., Path("_meta_object_name@1.0.0.yaml")).
         """
+        self._object_key(name, version)  # Validate both components before constructing metadata paths.
         return self.uri / f"_meta_{name.replace(':', '%3A')}@{version}.yaml"
 
     def _ensure_metadata_parent(self, meta_path: Path) -> None:
@@ -133,10 +139,16 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             Metadata file prefix (e.g., "_meta_object_name@").
         """
+        self.validate_object_name(name)
         return f"_meta_{name.replace(':', '%3A')}@"
 
     def _lock_dir(self, key: str) -> Path:
         """Get the directory for lock files for a given key."""
+        name, separator, version = key.partition("@")
+        if separator:
+            self._object_key(name, version)
+        else:
+            self.validate_object_name(key)
         return self._full_path(f"_locks_{key}")
 
     def _exclusive_lock_path(self, key: str) -> Path:
@@ -361,6 +373,7 @@ class LocalRegistryBackend(RegistryBackend):
         Raises:
             LockAcquisitionError: If the lock cannot be acquired within the timeout period.
         """
+        self._lock_dir(key)  # Reject invalid components before acquisition/retry or any filesystem I/O.
         if timeout is None:
             timeout = self._lock_timeout
         timeout_handler = Timeout(
@@ -445,7 +458,6 @@ class LocalRegistryBackend(RegistryBackend):
         on_conflict: str = OnConflict.SKIP,
     ) -> OpResult:
         try:
-            self.validate_object_name(name)
             upload_path = Path(staged_target.get("path", ""))
             if staged_target.get("kind") != "local_file" or not upload_path.exists():
                 return OpResult.failed(
@@ -518,8 +530,6 @@ class LocalRegistryBackend(RegistryBackend):
 
         for obj_name, obj_version, obj_path, obj_meta in zip(names, versions, paths, metadatas):
             try:
-                self.validate_object_name(obj_name)
-
                 # Lock on the specific object@version for proper coordination with pull() and delete()
                 # Registry resolves versions before calling backend, so obj_version is always concrete
                 with self._internal_lock(f"{obj_name}@{obj_version}"):
@@ -607,7 +617,6 @@ class LocalRegistryBackend(RegistryBackend):
 
         for obj_name, obj_version, dest_path in zip(names, versions, paths):
             try:
-                self.validate_object_name(obj_name)
                 src = self._full_path(self._object_key(obj_name, obj_version))
 
                 if not src.exists():
@@ -663,7 +672,6 @@ class LocalRegistryBackend(RegistryBackend):
 
         for obj_name, obj_version in zip(names, versions):
             try:
-                self.validate_object_name(obj_name)
                 with self._internal_lock(f"{obj_name}@{obj_version}"):
                     target = self._full_path(self._object_key(obj_name, obj_version))
                     meta_path = self._object_metadata_path(obj_name, obj_version)
@@ -738,11 +746,10 @@ class LocalRegistryBackend(RegistryBackend):
 
         for obj_name, obj_version, obj_meta in zip(names, versions, metadatas):
             try:
-                self.validate_object_name(obj_name)
+                meta_path = self._object_metadata_path(obj_name, obj_version)
             except ValueError as e:
                 results.add(OpResult.failed(obj_name, obj_version, e))
                 continue
-            meta_path = self._object_metadata_path(obj_name, obj_version)
 
             if meta_path.exists():
                 if on_conflict == OnConflict.OVERWRITE:
@@ -789,7 +796,6 @@ class LocalRegistryBackend(RegistryBackend):
 
         for obj_name, obj_version in zip(names, versions):
             try:
-                self.validate_object_name(obj_name)
                 meta_path = self._object_metadata_path(obj_name, obj_version)
                 self.logger.debug(f"Loading metadata from: {meta_path}")
                 with open(meta_path, "r") as f:
@@ -858,7 +864,6 @@ class LocalRegistryBackend(RegistryBackend):
 
         for obj_name, obj_version in zip(names, versions):
             try:
-                self.validate_object_name(obj_name)
                 meta_path = self._object_metadata_path(obj_name, obj_version)
                 self.logger.debug(f"Deleting metadata file: {meta_path}")
                 if meta_path.exists():
@@ -945,7 +950,6 @@ class LocalRegistryBackend(RegistryBackend):
         results: Dict[str, List[str]] = {}
 
         for obj_name in names:
-            self.validate_object_name(obj_name)
             # Separate the exact directory from the filename prefix. A nested
             # name's full prefix cannot be sliced off a file's basename.
             prefix_path = self.uri / self._object_metadata_prefix(obj_name)
@@ -996,7 +1000,6 @@ class LocalRegistryBackend(RegistryBackend):
         results: Dict[Tuple[str, str], bool] = {}
 
         for obj_name, obj_version in zip(names, versions):
-            self.validate_object_name(obj_name)
             # Check if metadata file exists directly (much faster than listing all objects)
             meta_path = self._object_metadata_path(obj_name, obj_version)
             results[(obj_name, obj_version)] = meta_path.exists()

@@ -462,7 +462,7 @@ class _RegistryCore(Mindtrace):
         with TemporaryDirectory(dir=self._artifact_store_path) as base_temp_dir:
             object_class = f"{type(obj).__module__}.{type(obj).__name__}"
 
-            temp_dir = Path(base_temp_dir) / f"{name.replace(':', '_')}"
+            temp_dir = Path(base_temp_dir) / "0"
             temp_dir.mkdir(parents=True, exist_ok=True)
 
             mat_instance = instantiate_target(materializer_class, uri=str(temp_dir))
@@ -544,7 +544,7 @@ class _RegistryCore(Mindtrace):
                     else:
                         resolved_version = self._validate_version(version)
                     materializer_class = self._find_materializer(obj, materializer)
-                    temp_dir = Path(base_temp_dir) / f"{idx}_{name.replace(':', '_')}"
+                    temp_dir = Path(base_temp_dir) / str(idx)
                     temp_dir.mkdir(parents=True, exist_ok=True)
 
                     mat_instance = instantiate_target(materializer_class, uri=str(temp_dir))
@@ -738,7 +738,7 @@ class _RegistryCore(Mindtrace):
 
         # Pull and materialize
         with TemporaryDirectory(dir=self._artifact_store_path) as base_temp_dir:
-            temp_dir = Path(base_temp_dir) / f"{name}_{v}".replace(":", "_")
+            temp_dir = Path(base_temp_dir) / "0"
             temp_dir.mkdir(parents=True, exist_ok=True)
 
             pull_results = self.backend.pull([name], [v], [temp_dir], acquire_lock=self.mutable, metadata=[metadata])
@@ -827,8 +827,8 @@ class _RegistryCore(Mindtrace):
         with TemporaryDirectory(dir=self._artifact_store_path) as base_temp_dir:
             temp_dirs = {}
             paths = []
-            for n, v in items_to_pull:
-                temp_dir = Path(base_temp_dir) / f"{n}_{v}".replace(":", "_")
+            for index, (n, v) in enumerate(items_to_pull):
+                temp_dir = Path(base_temp_dir) / str(index)
                 temp_dir.mkdir(parents=True, exist_ok=True)
                 temp_dirs[(n, v)] = temp_dir
                 paths.append(temp_dir)
