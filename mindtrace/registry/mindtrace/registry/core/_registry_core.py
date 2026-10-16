@@ -1660,8 +1660,6 @@ class _RegistryCore(Mindtrace):
 
         Operational and validation errors propagate; no extra existence check is made.
         """
-        if isinstance(key, list):
-            return self._load_key(key)
         try:
             return self._load_key(key)
         except RegistryObjectNotFound:
@@ -1773,8 +1771,6 @@ class _RegistryCore(Mindtrace):
 
         A reported read error propagates without saving the default.
         """
-        if isinstance(key, list):
-            return self._load_key(key)
         try:
             return self._load_key(key)
         except RegistryObjectNotFound:

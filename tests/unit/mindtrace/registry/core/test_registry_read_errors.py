@@ -107,15 +107,14 @@ def test_batch_metadata_errors_preserve_independent_results(reader, monkeypatch)
 
 
 @pytest.mark.parametrize("operation", ["getitem", "get", "setdefault"])
-def test_whole_batch_exceptions_do_not_become_single_key_fallbacks(reader, monkeypatch, operation):
-    _, target = reader
-    error = RegistryObjectNotFound("batch lookup failed")
-    load = Mock(side_effect=error)
-    monkeypatch.setattr(target, "load", load)
-    with pytest.raises(RegistryObjectNotFound) as caught:
-        _read(target, operation, key=["item@1.0.0"])
-    assert caught.value is error
-    load.assert_called_once_with(name=["item"], version=["1.0.0"])
+def test_batch_missing_items_remain_results_without_default_writes(reader, operation):
+    registry, target = reader
+    registry.save("item", 7, version="1")
+    result = _read(target, operation, key=["item@1", "missing@1"])
+    assert result.results == [7, None]
+    assert result.failed == [("missing", "1.0.0")]
+    assert result.errors[("missing", "1.0.0")]["error"] == "RegistryObjectNotFound"
+    assert registry.list_objects() == ["item"]
 
 
 @pytest.mark.parametrize("stage", ["load", "delete"])

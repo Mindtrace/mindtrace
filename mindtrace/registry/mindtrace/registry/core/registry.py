@@ -1135,8 +1135,6 @@ class Registry(Mindtrace):
 
     def get(self, key: str, default: Any = None) -> Any:
         """Return the default only for reported absence; other read errors propagate."""
-        if isinstance(key, list):
-            return self._load_key(key)
         try:
             return self._load_key(key)
         except RegistryObjectNotFound:
@@ -1172,8 +1170,6 @@ class Registry(Mindtrace):
 
     def setdefault(self, key: str, default: Any = None) -> Any:
         """Save the default only for reported absence, never after an operational read error."""
-        if isinstance(key, list):
-            return self._load_key(key)
         try:
             return self._load_key(key)
         except RegistryObjectNotFound:
