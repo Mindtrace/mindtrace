@@ -1481,3 +1481,24 @@ def test_local_commit_direct_upload_metadata_yaml_failure(backend, monkeypatch):
         on_conflict=OnConflict.OVERWRITE,
     )
     assert r.is_error
+
+
+class TestVersionDiscovery:
+    def test_filters_names_before_file_checks(self, backend, monkeypatch):
+        from pathlib import Path
+
+        (backend.uri / "_meta_a[1]@1.0.0.yaml").write_text("{}")
+        (backend.uri / "_meta_a[1]@2.0.0.yaml").mkdir()
+        for index in range(12):
+            (backend.uri / f"_meta_other{index}@1.0.0.yaml").write_text("{}")
+        (backend.uri / "_meta_a1@3.0.0.yaml").write_text("{}")
+        checked = []
+        original = Path.is_file
+
+        def is_file(path):
+            checked.append(path.name)
+            return original(path)
+
+        monkeypatch.setattr(Path, "is_file", is_file)
+        assert backend.list_versions("a[1]") == {"a[1]": ["1.0.0"]}
+        assert sorted(checked) == ["_meta_a[1]@1.0.0.yaml", "_meta_a[1]@2.0.0.yaml"]

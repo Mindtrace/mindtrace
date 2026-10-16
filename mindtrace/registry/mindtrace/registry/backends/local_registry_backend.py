@@ -3,6 +3,7 @@
 All object directories and registry files are stored under a configurable base directory.
 """
 
+import glob
 import json
 import os
 import platform
@@ -946,8 +947,8 @@ class LocalRegistryBackend(RegistryBackend):
             versions = []
 
             # The object name is a literal identifier, not a glob pattern.
-            for meta_file in prefix_path.parent.glob("*.yaml"):
-                if meta_file.is_file() and meta_file.name.startswith(filename_prefix):
+            for meta_file in prefix_path.parent.glob(glob.escape(filename_prefix) + "*.yaml"):
+                if meta_file.is_file():
                     version = meta_file.name[len(filename_prefix) : -len(".yaml")]
                     if version:
                         versions.append(version)
