@@ -119,9 +119,17 @@ def _rgb_image(image: Any, *, consumer: str) -> Any:
     return image.convert("RGB") if hasattr(image, "convert") else image
 
 
-def _add_metadata(output: dict[str, list[Any]], batch: Mapping[str, list[Any]], return_metadata: bool) -> None:
+def _add_metadata(
+    output: dict[str, list[Any]],
+    batch: Mapping[str, list[Any]],
+    return_metadata: bool,
+    metadata_keys: Sequence[str],
+) -> None:
     if return_metadata:
-        output["metadata"] = [{"asset_id": asset_id} for asset_id in batch["asset_id"]]
+        output["metadata"] = [
+            {"asset_id": asset_id, **{key: batch[key][index] for key in metadata_keys}}
+            for index, asset_id in enumerate(batch["asset_id"])
+        ]
 
 
 def _transform_classification_batch(
@@ -130,6 +138,7 @@ def _transform_classification_batch(
     classification_type: str,
     transform: Callable[[Any], Any] | None,
     return_metadata: bool,
+    metadata_keys: Sequence[str],
 ) -> dict[str, list[Any]]:
     _, torch, _, pil_to_tensor = _require_huggingface_dataloader_dependencies()
     target_column = "labels" if classification_type == "multi_label" else "label"
@@ -142,7 +151,7 @@ def _transform_classification_batch(
         target_value = raw_target if classification_type == "multi_label" else int(raw_target)
         targets.append(torch.tensor(target_value, dtype=target_dtype))
     output = {"image": images, "target": targets}
-    _add_metadata(output, batch, return_metadata)
+    _add_metadata(output, batch, return_metadata, metadata_keys)
     return output
 
 
@@ -151,6 +160,7 @@ def _transform_detection_batch(
     *,
     transform: Callable[[Any, dict[str, Any]], tuple[Any, dict[str, Any]]] | None,
     return_metadata: bool,
+    metadata_keys: Sequence[str],
 ) -> dict[str, list[Any]]:
     _, torch, _, pil_to_tensor = _require_huggingface_dataloader_dependencies()
     images: list[Any] = []
@@ -175,7 +185,7 @@ def _transform_detection_batch(
         images.append(image)
         targets.append(target)
     output = {"image": images, "target": targets}
-    _add_metadata(output, batch, return_metadata)
+    _add_metadata(output, batch, return_metadata, metadata_keys)
     return output
 
 
@@ -184,6 +194,7 @@ def _transform_semantic_segmentation_batch(
     *,
     transform: Callable[[Any, Any], tuple[Any, Any]] | None,
     return_metadata: bool,
+    metadata_keys: Sequence[str],
 ) -> dict[str, list[Any]]:
     _, _, _, pil_to_tensor = _require_huggingface_dataloader_dependencies()
     images: list[Any] = []
@@ -209,7 +220,7 @@ def _transform_semantic_segmentation_batch(
         images.append(image)
         targets.append(mask)
     output = {"image": images, "target": targets}
-    _add_metadata(output, batch, return_metadata)
+    _add_metadata(output, batch, return_metadata, metadata_keys)
     return output
 
 
@@ -218,6 +229,7 @@ def _transform_instance_segmentation_batch(
     *,
     transform: Callable[[Any, dict[str, Any]], tuple[Any, dict[str, Any]]] | None,
     return_metadata: bool,
+    metadata_keys: Sequence[str],
 ) -> dict[str, list[Any]]:
     _, torch, _, pil_to_tensor = _require_huggingface_dataloader_dependencies()
     images: list[Any] = []
@@ -258,7 +270,7 @@ def _transform_instance_segmentation_batch(
         images.append(image)
         targets.append(target)
     output = {"image": images, "target": targets}
-    _add_metadata(output, batch, return_metadata)
+    _add_metadata(output, batch, return_metadata, metadata_keys)
     return output
 
 
@@ -267,12 +279,13 @@ def _build_classification_dataset(
     *,
     transform: Callable[..., Any] | None,
     return_metadata: bool,
+    metadata_keys: Sequence[str],
 ) -> Any:
     classification_type = "multi_label" if "labels" in dataset.column_names else "single_label"
     target_column = "labels" if classification_type == "multi_label" else "label"
     required_columns = {"image", target_column}
     if return_metadata:
-        required_columns.add("asset_id")
+        required_columns.update(("asset_id", *metadata_keys))
     _require_columns(dataset, "classification", required_columns)
     return dataset.with_transform(
         partial(
@@ -280,6 +293,7 @@ def _build_classification_dataset(
             classification_type=classification_type,
             transform=transform,
             return_metadata=return_metadata,
+            metadata_keys=metadata_keys,
         )
     )
 
@@ -289,10 +303,16 @@ def _build_detection_dataset(
     *,
     transform: Callable[..., Any] | None,
     return_metadata: bool,
+    metadata_keys: Sequence[str],
 ) -> Any:
-    _require_columns(dataset, "detection", {"asset_id", "image", "objects"})
+    _require_columns(dataset, "detection", {"asset_id", "image", "objects", *metadata_keys})
     return dataset.with_transform(
-        partial(_transform_detection_batch, transform=transform, return_metadata=return_metadata)
+        partial(
+            _transform_detection_batch,
+            transform=transform,
+            return_metadata=return_metadata,
+            metadata_keys=metadata_keys,
+        )
     )
 
 
@@ -301,10 +321,16 @@ def _build_semantic_segmentation_dataset(
     *,
     transform: Callable[..., Any] | None,
     return_metadata: bool,
+    metadata_keys: Sequence[str],
 ) -> Any:
-    _require_columns(dataset, "semantic segmentation", {"asset_id", "image", "mask"})
+    _require_columns(dataset, "semantic segmentation", {"asset_id", "image", "mask", *metadata_keys})
     return dataset.with_transform(
-        partial(_transform_semantic_segmentation_batch, transform=transform, return_metadata=return_metadata)
+        partial(
+            _transform_semantic_segmentation_batch,
+            transform=transform,
+            return_metadata=return_metadata,
+            metadata_keys=metadata_keys,
+        )
     )
 
 
@@ -313,10 +339,16 @@ def _build_instance_segmentation_dataset(
     *,
     transform: Callable[..., Any] | None,
     return_metadata: bool,
+    metadata_keys: Sequence[str],
 ) -> Any:
-    _require_columns(dataset, "instance segmentation", {"asset_id", "image", "objects"})
+    _require_columns(dataset, "instance segmentation", {"asset_id", "image", "objects", *metadata_keys})
     return dataset.with_transform(
-        partial(_transform_instance_segmentation_batch, transform=transform, return_metadata=return_metadata)
+        partial(
+            _transform_instance_segmentation_batch,
+            transform=transform,
+            return_metadata=return_metadata,
+            metadata_keys=metadata_keys,
+        )
     )
 
 
@@ -409,6 +441,19 @@ def _infer_segmentation_profile(dataset: Any) -> str:
     )
 
 
+def _normalize_metadata_keys(metadata_keys: Sequence[str] | None) -> tuple[str, ...]:
+    if metadata_keys is None:
+        return ()
+    if isinstance(metadata_keys, (str, bytes)) or not isinstance(metadata_keys, Sequence):
+        raise ValueError("metadata_keys must be a sequence of exported field names.")
+    normalized = tuple(metadata_keys)
+    if any(not isinstance(key, str) or not key for key in normalized):
+        raise ValueError("metadata_keys must contain non-empty string field names.")
+    if len(set(normalized)) != len(normalized):
+        raise ValueError("metadata_keys must not contain duplicate field names.")
+    return normalized
+
+
 def _build_datasets_and_profiles(
     export_path: str | Path,
     *,
@@ -417,8 +462,10 @@ def _build_datasets_and_profiles(
     transforms: Mapping[str, Callable[..., Any]] | Callable[..., Any] | None = None,
     task_profiles: Mapping[str, Callable[..., Any]] | None = None,
     return_metadata: bool = False,
+    metadata_keys: Sequence[str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, str | None]]:
-
+    selected_metadata_keys = _normalize_metadata_keys(metadata_keys)
+    return_metadata = return_metadata or bool(selected_metadata_keys)
     custom_profiles = dict(task_profiles or {})
     normalized_task = task.strip().lower().replace("-", "_")
     if normalized_task not in custom_profiles:
@@ -448,6 +495,7 @@ def _build_datasets_and_profiles(
             selected_dataset,
             transform=transform,
             return_metadata=return_metadata,
+            metadata_keys=selected_metadata_keys,
         )
         built_profiles[split] = profile
     return built, built_profiles
@@ -461,8 +509,13 @@ def build_datasets(
     transforms: Mapping[str, Callable[..., Any]] | Callable[..., Any] | None = None,
     task_profiles: Mapping[str, Callable[..., Any]] | None = None,
     return_metadata: bool = False,
+    metadata_keys: Sequence[str] | None = None,
 ) -> dict[str, Any]:
-    """Build split-aware native Hugging Face datasets with on-access PyTorch transforms."""
+    """Build split-aware native Hugging Face datasets with on-access PyTorch transforms.
+
+    For built-in profiles, non-empty metadata_keys enable metadata return regardless
+    of return_metadata. Custom profile builders control their own output structure.
+    """
 
     built, _ = _build_datasets_and_profiles(
         export_path,
@@ -471,6 +524,7 @@ def build_datasets(
         transforms=transforms,
         task_profiles=task_profiles,
         return_metadata=return_metadata,
+        metadata_keys=metadata_keys,
     )
     return built
 
@@ -483,6 +537,7 @@ def build_dataloaders(
     transforms: Mapping[str, Callable[..., Any]] | Callable[..., Any] | None = None,
     task_profiles: Mapping[str, Callable[..., Any]] | None = None,
     return_metadata: bool = False,
+    metadata_keys: Sequence[str] | None = None,
     batch_size: int = 32,
     num_workers: int = 0,
     pin_memory: bool = False,
@@ -495,7 +550,11 @@ def build_dataloaders(
     per_split_dataloader_kwargs: Mapping[str, Mapping[str, Any]] | None = None,
     seed: int = 0,
 ) -> dict[str, Any]:
-    """Build split-aware PyTorch DataLoaders over a Mindtrace dataset export."""
+    """Build split-aware PyTorch DataLoaders over a Mindtrace dataset export.
+
+    For built-in profiles, non-empty metadata_keys enable metadata return regardless
+    of return_metadata. Custom profile builders control their own output structure.
+    """
 
     if batch_size <= 0:
         raise ValueError("batch_size must be greater than zero")
@@ -513,6 +572,7 @@ def build_dataloaders(
         transforms=transforms,
         task_profiles=task_profiles,
         return_metadata=return_metadata,
+        metadata_keys=metadata_keys,
     )
     _, torch, DataLoader, _ = _require_huggingface_dataloader_dependencies()
     shuffled = {"train"} if shuffle_splits is None else set(shuffle_splits)
