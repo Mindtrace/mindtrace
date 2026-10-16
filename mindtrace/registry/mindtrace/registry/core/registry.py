@@ -990,37 +990,28 @@ class Registry(Mindtrace):
         if not self._cached:
             return self._core.delete(name, version)
 
-        result = self._remote.delete(name, version)
-
-        # Delete from cache (best effort)
         try:
-            names_list = name if isinstance(name, list) else [name]
-            versions_list = version if isinstance(version, list) else [version] * len(names_list)
-            removed_cache_entries: List[tuple[str, str]] = []
-
-            for n, v in zip(names_list, versions_list):
-                if isinstance(result, BatchResult) and (n, v or "all") not in result.succeeded:
-                    continue
-                try:
-                    if v is None:
-                        for ver in self._cache.list_versions(n):
-                            try:
-                                self._cache.delete(n, ver)
-                                removed_cache_entries.append((n, ver))
-                            except Exception:
-                                pass
-                    else:
-                        resolved_v = v if v != "latest" else self._cache._latest(n)
-                        if resolved_v and self._cache.has_object(n, resolved_v):
-                            self._cache.delete(n, resolved_v)
-                            removed_cache_entries.append((n, resolved_v))
-                except Exception:
-                    pass
-            self._remove_cache_lru_entries(removed_cache_entries)
-        except Exception as e:
-            self.logger.warning(f"Error deleting from cache: {e}")
-
-        return result
+            return self._remote.delete(name, version)
+        finally:
+            # A failed remote delete must not leave a potentially stale local copy.
+            try:
+                names_list = name if isinstance(name, list) else [name]
+                versions_list = version if isinstance(version, list) else [version] * len(names_list)
+                removed_cache_entries: List[tuple[str, str]] = []
+                for n, v in zip(names_list, versions_list):
+                    try:
+                        if v is None:
+                            self._invalidate_object_cache(n)
+                        else:
+                            resolved_v = v if v != "latest" else self._cache._latest(n)
+                            if resolved_v and self._cache.has_object(n, resolved_v):
+                                self._cache.delete(n, resolved_v)
+                                removed_cache_entries.append((n, resolved_v))
+                    except Exception as error:
+                        self.logger.warning(f"Error deleting cached {n}: {error}")
+                self._remove_cache_lru_entries(removed_cache_entries)
+            except Exception as error:
+                self.logger.warning(f"Error deleting from cache: {error}")
 
     def clear(self, clear_registry_metadata: bool = False) -> None:
         """Remove all objects from the registry.
@@ -1037,7 +1028,7 @@ class Registry(Mindtrace):
             self._core.clear(clear_registry_metadata)
 
     def _invalidate_object_cache(self, name: str) -> None:
-        """Best-effort object-level invalidation after a committed write."""
+        """Best-effort invalidation of all locally stored versions of an object."""
         if not self._cached:
             return
         try:

@@ -107,7 +107,7 @@ def test_invalid_version_errors_are_not_relabelled_missing(make_registry, operat
             registry.delete("keep", "latest")
         else:
             del registry["keep@latest"]
-    assert _snapshot(registry) == before
+    assert _snapshot(registry)[0] == before[0]
 
 
 def test_delete_uses_authoritative_state_not_stale_version_listing(make_registry):
@@ -118,7 +118,7 @@ def test_delete_uses_authoritative_state_not_stale_version_listing(make_registry
     before = _snapshot(registry)
     with pytest.raises(RegistryObjectNotFound):
         registry.delete("item")
-    assert _snapshot(registry) == before
+    assert _snapshot(registry)[0] == before[0]
 
 
 def test_all_version_delete_refreshes_cached_empty_listing(make_registry):
@@ -182,7 +182,7 @@ def test_operational_failures_are_preserved(tmp_path, monkeypatch, stage, operat
     assert _snapshot(registry) == before
 
 
-def test_failed_batch_remote_items_do_not_evict_cache(cached_mock_registry, monkeypatch):
+def test_failed_batch_remote_items_evict_only_targeted_cache(cached_mock_registry, monkeypatch):
     registry = cached_mock_registry
     for name in ("stale", "failed", "good", "keep"):
         registry.save(name, name, version="1")
@@ -203,9 +203,9 @@ def test_failed_batch_remote_items_do_not_evict_cache(cached_mock_registry, monk
     assert result.succeeded == [("good", "1")]
     assert result.errors[("stale", "1")]["error"] == "RegistryObjectNotFound"
     assert result.errors[("failed", "1")]["error"] == "PermissionError"
-    for name in ("stale", "failed", "keep"):
-        assert registry._cache.load(name, "1") == name
-    assert not registry._cache.has_object("good", "1")
+    assert registry._cache.load("keep", "1") == "keep"
+    for name in ("stale", "failed", "good"):
+        assert not registry._cache.has_object(name, "1")
 
 
 def test_store_delegates_missing_delete_policy(tmp_path):
@@ -265,3 +265,37 @@ def test_missing_backend_response_is_not_success_or_absence(tmp_path, monkeypatc
     with pytest.raises(RuntimeError, match="Backend returned no"):
         registry.delete("item")
     assert _snapshot(registry) == before
+
+
+@pytest.mark.parametrize("batch", [False, True])
+@pytest.mark.parametrize("version", [None, "1"])
+def test_missing_remote_delete_evicts_stale_cache(cached_mock_registry, batch, version):
+    registry = cached_mock_registry
+    registry.save("item", 1, version="1")
+    registry.save("keep", 2, version="1")
+    registry._remote.delete("item", "1")
+    # All-version invalidation must ignore a memoized negative version listing.
+    registry._cache._versions_cache["item"] = ([], float("inf"))
+    if batch:
+        result = registry.delete(["item"], version)
+        assert result.failure_count == 1
+    else:
+        with pytest.raises(RegistryObjectNotFound):
+            registry.delete("item", version)
+    assert not registry._cache.has_object("item", "1")
+    with pytest.raises(RegistryObjectNotFound):
+        registry.load("item", "1")
+    assert registry._cache.load("keep", "1") == 2
+
+
+def test_cache_cleanup_failure_preserves_remote_delete_error(cached_mock_registry, monkeypatch):
+    registry = cached_mock_registry
+    registry.save("item", 1, version="1")
+    error = PermissionError("remote delete denied")
+    monkeypatch.setattr(registry._remote, "delete", Mock(side_effect=error))
+    cleanup = Mock(side_effect=RuntimeError("cache unavailable"))
+    monkeypatch.setattr(registry._cache, "delete", cleanup)
+    with pytest.raises(PermissionError) as caught:
+        registry.delete("item", "1")
+    assert caught.value is error
+    cleanup.assert_called_once()

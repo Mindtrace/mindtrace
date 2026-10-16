@@ -4674,12 +4674,13 @@ class TestRegistryFacadeCoverage:
         registry = _make_cached_facade_registry(temp_registry_dir)
         registry.logger = Mock()
         registry._remote.delete = Mock(return_value=None)
-        registry._cache.list_versions = Mock(return_value=["1.0.0", "2.0.0"])
-        registry._cache.delete = Mock(side_effect=[RuntimeError("skip"), None])
+        registry._cache.backend.list_versions = Mock(return_value={"test:obj": ["1.0.0", "2.0.0"]})
+        registry._cache.delete = Mock(side_effect=RuntimeError("cache unavailable"))
 
         registry.delete("test:obj", None)
 
-        assert registry._cache.delete.call_args_list == [(("test:obj", "1.0.0"),), (("test:obj", "2.0.0"),)]
+        registry._cache.delete.assert_called_once_with(["test:obj", "test:obj"], ["1.0.0", "2.0.0"])
+        registry.logger.warning.assert_called()
 
         registry._remote.delete.reset_mock()
         registry._remote.delete.return_value = None
