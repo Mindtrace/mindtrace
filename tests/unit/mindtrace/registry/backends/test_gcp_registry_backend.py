@@ -1511,7 +1511,7 @@ def test_gcp_commit_direct_upload_metadata_write_error(backend, monkeypatch):
     assert r.is_error
 
 
-class TestGCPRegistryBackendBugHunt:
+class TestObjectDiscovery:
     def test_list_objects_preserves_slash_in_object_names(self, backend, sample_metadata):
         """B2: listing must return `models/resnet`, not a Path.stem-truncated `resnet`."""
         backend.save_metadata("models/resnet", "1.0.0", sample_metadata)
