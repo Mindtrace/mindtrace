@@ -289,7 +289,10 @@ The same class/string contract applies to serialization hints and materializer r
 
 Reopening a registry preserves custom materializer registrations. Default registrations
 fill missing entries without replacing existing mappings. Known legacy ZenML class-name
-aliases remain supported through the existing alias map.
+aliases remain supported through the existing alias map. Existing registries also retain
+stored default selections; changes to class-level defaults only fill absent mappings.
+Separating defaults from explicit registrations is tracked in
+[the default-refresh issue](https://github.com/Mindtrace/mindtrace/issues/602).
 
 Built-in materializers cover scalars, container types, `bytes`, `pydantic.BaseModel`,
 `pathlib.Path`, numpy arrays, PIL images, PyTorch modules/dataloaders, and HuggingFace
