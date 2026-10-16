@@ -2,648 +2,257 @@
 [![License](https://img.shields.io/pypi/l/mindtrace-registry)](https://github.com/mindtrace/mindtrace/blob/main/mindtrace/registry/LICENSE)
 [![Downloads](https://static.pepy.tech/badge/mindtrace-registry)](https://pepy.tech/projects/mindtrace-registry)
 
-# Registry Module
+# Registry
 
-The Registry module provides a distributed, versioned object storage system with support for multiple backends. It enables storing, versioning, and retrieving objects with automatic serialization and lock-free concurrency for objects. 
+Store Python objects with automatic serialization, optional versioning, and local,
+S3-compatible, or Google Cloud Storage backends. `Store` combines multiple registries
+behind named mounts.
 
-## Features
-
-- **Multi-Backend Support**: Local filesystem, S3-compatible (MinIO, AWS S3) and Google Cloud Storage
-- **Lock-Free Concurrency**: UUID-based MVCC ensures safe concurrent reads and writes without distributed locks
-- **Versioning**: Automatic version management with semantic versioning support
-- **Caching**: Local cache for remote backends with configurable staleness checks
-- **Materializers**: Pluggable serialization system for different object types
-- **Batch Operations**: All backend operations support batch mode for efficient bulk access
-- **Dict-Like Interface**: `registry["name"] = obj`, `obj = registry["name"]`, `del registry["name"]`
-
-## Quick Start
+## Quick start
 
 ```python
 from mindtrace.registry import Registry
 
-# Create a registry (uses local backend by default)
-registry = Registry()
+registry = Registry("artifacts", version_objects=True)
+version = registry.save("models/demo", {"score": 0.9})
+assert registry.load("models/demo", version) == {"score": 0.9}
 
-# Save objects
-registry.save("my:model", trained_model)
-registry.save("my:data", dataset, version="1.0.0")
-
-# Load objects
-model = registry.load("my:model")
-data = registry.load("my:data", version="1.0.0")
-
-# Dict-like access
-registry["my:config"] = config_dict
-config = registry["my:config"]
-
-# Check existence
-exists = registry.has_object("my:model", "1.0.0")  # -> bool
-
-# Get metadata
-info = registry.info("my:model", "1.0.0")  # -> dict
-
-# List objects and versions
+registry["config"] = {"threshold": 0.8}
+config = registry["config"]
+info = registry.info("models/demo", version)
 print(registry.list_objects())
-print(registry.list_versions("my:model"))
+print(registry.list_versions("models/demo"))
 ```
 
-## Object names and relative inputs
+`Registry()` uses a local backend. New registries are unversioned and immutable by
+default; choose `version_objects=True` for automatic versions, or `mutable=True`
+when overwriting is required. Settings and materializer registrations persist when
+a registry is reopened. Unreadable or corrupt metadata raises an error instead of
+resetting the registry.
 
-Object names must be non-empty, must not contain the reserved `@` separator,
-and must be relative paths without a `..` component. For example, `item`,
-`nested/item`, `namespace:object`, and `model..backup` are valid names;
-`../item`, `nested/../item`, and absolute paths are invalid. Store applies
-these rules to the object name after parsing the mount and version.
+## Backends
 
-Slash-delimited names retain their full identity: `models/resnet` and
-`archive/resnet` are distinct objects. Object listing includes nested names,
-and version discovery, latest loading, and automatic version increments work
-for them when versioning is enabled. New registries default to unversioned
-mode, where ordinary save/load uses a fixed internal version instead.
-Deleting `models/resnet` removes only that object's versions, not a separately
-saved `models/resnet/child`; `clear()` includes all nested objects. Nested
-discovery uses the existing storage layout without relocating saved artifacts.
-
-The same relative-path rule applies to local direct-upload `upload_id` values
-and to `Registry.materialize_from_bytes(relative_path=...)`. Validation uses
-the host platform's path syntax and does not silently normalize invalid inputs.
-Single-object calls raise `ValueError`; batch operations report the invalid
-item's error while allowing valid items to proceed. Local-backend operations
-returning `OpResults` preserve errors per item; its queries returning booleans
-or version lists raise `ValueError` for invalid names.
-
-These are input-syntax checks, not a filesystem security boundary. Storage
-directories and symlinks remain operator-managed. Registry roots, source paths,
-output directories, and backend-generated `staged_target.path` values are not
-relative-name inputs and may be absolute.
-
-## Backend Configuration
-
-### Local Backend
-
-The local backend stores objects on the filesystem and is the default option.
+### Local filesystem
 
 ```python
-from mindtrace.registry import Registry, LocalRegistryBackend
+from mindtrace.registry import LocalRegistryBackend, Registry
 
-# Default local registry
-registry = Registry()
-
-# Custom local registry
-local_backend = LocalRegistryBackend(uri="/path/to/registry")
-registry = Registry(backend=local_backend)
+registry = Registry(backend=LocalRegistryBackend(uri="artifacts"))
 ```
 
-For local registries, a missing `registry_metadata.json` permits normal
-initialization. Malformed JSON raises `json.JSONDecodeError`; permission and
-other I/O failures propagate unchanged. A failed metadata read stops
-`Registry(...)` initialization without rewriting the metadata file. Reopening
-a healthy registry retains its persisted settings and stored objects.
-
-### S3-Compatible Backend (MinIO, AWS S3)
-
-The S3 backend provides distributed storage for any S3-compatible service.
+### S3-compatible storage
 
 ```python
+import os
 from mindtrace.registry import Registry, S3RegistryBackend
 
-# S3-compatible registry
-s3_backend = S3RegistryBackend(
+backend = S3RegistryBackend(
     endpoint="localhost:9000",
-    access_key="minioadmin",
-    secret_key="minioadmin",
+    access_key=os.environ["S3_ACCESS_KEY"],
+    secret_key=os.environ["S3_SECRET_KEY"],
     bucket="my-registry",
-    secure=False,
+    secure=False,  # Use TLS for remote services.
 )
-registry = Registry(backend=s3_backend)
+registry = Registry(backend=backend)
 ```
 
-### GCP Backend
-
-The GCP backend uses Google Cloud Storage for distributed object storage.
+### Google Cloud Storage
 
 ```python
-from mindtrace.registry import Registry, GCPRegistryBackend
+from mindtrace.registry import GCPRegistryBackend, Registry
 
-gcp_backend = GCPRegistryBackend(
+backend = GCPRegistryBackend(
     uri="gs://my-registry-bucket",
     project_id="my-project",
     bucket_name="my-registry-bucket",
     credentials_path="/path/to/service-account.json",
 )
-registry = Registry(backend=gcp_backend)
+registry = Registry(backend=backend)
 ```
 
-## Concurrency Model
+Local object operations use file locks. Cloud backends write each artifact to a
+unique UUID directory and publish it through metadata: immutable versions use
+conditional creation, while mutable versions use the last committed metadata.
+Materializer registration uses a lock for registry-level metadata updates.
 
-Cloud backends (GCP, S3) use **lock-free MVCC** (Multi-Version Concurrency Control):
+## Names and paths
 
-- Each push writes artifacts to a unique UUID folder: `objects/{name}/{version}/{uuid}/`
-- Metadata write is the atomic "commit point" — it references the active UUID
-- For immutable registries: first-write-wins via conditional creation (`generation_match=0` on GCS, `IfNoneMatch='*'` on S3)
-- For mutable registries: last metadata write wins; orphaned UUID folders are cleaned up by the janitor
+Names use `/` for nesting, for example `models/resnet`. They must be non-empty,
+relative, and contain neither `@`, backslashes, nor a `..` path component.
+`models/resnet` and `archive/resnet` remain distinct in listings and deletion.
+Logical names such as `namespace:object` are valid independently of the host OS;
+local storage and caching also require names compatible with the native filesystem.
 
-Locks are only used for `register_materializer`, which performs a read-modify-write on registry metadata.
+Local upload IDs and `materialize_from_bytes(relative_path=...)` must be relative
+native paths without parent traversal. Registry roots and output directories may
+be absolute. These syntax checks do not replace operator management of storage
+directories and symlinks.
 
-## Caching
-
-When using a remote backend, the `Registry` maintains a local cache (enabled by default):
-
-```python
-# Caching is on by default for remote backends
-registry = Registry(backend=gcp_backend, use_cache=True)
-
-# Keep at most 1024 concrete object versions in the local cache by default.
-# Set cache_max_entries=None to disable automatic LRU pruning.
-registry = Registry(
-    backend=gcp_backend,
-    use_cache=True,
-    cache_max_entries=1024,
-)
-
-# Control verification level on load
-obj = registry.load("my:model", verify="none")       # Trust cache, fastest
-obj = registry.load("my:model", verify="integrity")   # Verify hash (default)
-obj = registry.load("my:model", verify="full")         # Hash + staleness check
-
-# Clear cache manually
-registry.clear_cache()
-```
-
-A single-object cached read resolves its version before checking the cache and uses
-that same concrete version for remote loading and cache publication. If a newer version
-appears during a `None`/`"latest"` read, it does not replace the selected version mid-read.
-If the selected remote version disappears before it can be loaded, the read fails rather
-than switching versions. Existing version-list caching/freshness rules still apply;
-this does not provide snapshot isolation for concurrent overwrites of the same version.
-
-For batch loads returning file or directory `Path` objects, `output_dir` applies to
-both cache hits and remote misses. Results are placed beneath that directory using
-the existing per-object/version layout, including mixed cached/remote batches.
-
-Cached batch loads also accept a materializer returning `None` as a successful
-value. Check `BatchResult.succeeded` and `.errors` to distinguish that value from
-a failed item's `None` placeholder. A valid cached `None` does not trigger a
-remote artifact load unless the existing verification checks require a refresh.
-
-After `download()` imports an object into a cached remote Registry, cached versions
-of that **destination object** are invalidated. Registry-to-registry `update()` does
-the same after each successful import. Other objects remain cached. This is
-object-level invalidation, so other cached versions of the imported object are also
-evicted. The import does not warm the cache; the next load fetches from the backend
-and uses the normal cache-fill path, including with `verify="none"`.
-
-Imports that fail before committing leave the cache untouched. A committed write
-that raises `RegistryCleanupRequired` still invalidates the cache and propagates
-the exception. Cache deletion is best-effort: failures are logged and may leave
-stale entries, without changing the import outcome. This does not add synchronization
-with concurrent readers/writers or change the freshness policy for external writes.
-
-Successful `commit_direct_upload()` calls use the same object-level invalidation:
-all cached versions of the uploaded object are evicted, while unrelated objects
-remain cached. Failed or skipped commits leave the cache untouched. Successful
-commits do not warm the cache or add remote requests for invalidation. Local cache
-failures are logged without changing the successful commit's returned version.
-
-**Verification levels** (`VerifyLevel`):
-- `"none"`: Trust cache completely. Fastest.
-- `"integrity"`: Verify loaded artifacts match the hash in metadata. Default.
-- `"full"`: Integrity check + compare cache hash against remote. Detects stale cache entries.
-
-**LRU pruning**: remote registry caches retain at most `cache_max_entries`
-concrete object versions, defaulting to `1024`. Cache hits update the cached
-object metadata file timestamp with `os.utime(...)`, so recency is visible across
-processes sharing the same cache directory. Cache maintenance is amortized: when
-cache writes push the cache above `cache_max_entries`, least-recently-used
-entries are removed down to `cache_max_entries - cache_prune_buffer`. The default
-prune buffer is `min(max(cache_max_entries // 4, 1), 1024)`. Set
-`cache_max_entries=None` to keep the cache unbounded.
-
-## Version Management
-
-```python
-# Versioned registry (auto-increments versions)
-registry = Registry(version_objects=True)
-registry.save("model", v1)                    # version = "1"
-registry.save("model", v2)                    # version = "2"
-registry.save("model", v3, version="2.1")     # version = "2.1"
-
-# Load specific or latest version
-model = registry.load("model", version="2.1")
-latest = registry.load("model", version="latest")
-
-# Unversioned registry (single version per name, default)
-registry = Registry(version_objects=False)
-```
-
-## Conflict Handling
-
-Control behavior when saving to an existing version (`OnConflict`):
-
-```python
-# Skip (default): raises RegistryVersionConflict for single ops
-registry.save("model", obj, version="1.0.0", on_conflict="skip")
-
-# Overwrite: replaces existing version (requires mutable=True)
-registry = Registry(mutable=True)
-registry.save("model", obj, version="1.0.0", on_conflict="overwrite")
-```
-
-## Custom Materializers
-
-A materializer is any class that exposes a `uri` attribute, a `save(data)` method, and a
-`load(data_type)` method. The contract is published as the runtime-checkable
-`mindtrace.registry.Materializer` Protocol — your class does **not** need to inherit from
-anything in mindtrace to be recognized. For convenience, you can inherit from
-`BaseMaterializer` (minimal) or `Archiver` (adds Mindtrace logging).
-
-```python
-from typing import Any, Type
-
-from mindtrace.registry import BaseMaterializer, Registry
-
-
-class MyMaterializer(BaseMaterializer):
-    def save(self, data: Any) -> None:
-        ...  # write to self.uri
-
-    def load(self, data_type: Type[Any]) -> Any:
-        ...  # read from self.uri
-
-
-registry = Registry()
-
-# Register a materializer for a custom class (by type or by fully-qualified string).
-registry.register_materializer("my_module.MyClass", "my_module.MyMaterializer")
-
-# Save with an explicit materializer override.
-registry.save("custom:obj", my_object, materializer=MyMaterializer)
-```
-
-`Registry.save()` and `Store.save()` accept a materializer class or its fully qualified
-class-name string (for example, `"my_module.MyMaterializer"`). `None` keeps automatic
-selection. Materializer instances are **not supported**: they raise `TypeError` for
-single saves, or produce per-item errors for batch saves. The registry constructs its
-own materializer with the appropriate artifact URI; it does not reuse instance state.
-The same class/string contract applies to serialization hints and materializer registration.
-
-Reopening a registry preserves custom materializer registrations. Default registrations
-fill missing entries without replacing existing mappings. Known legacy ZenML class-name
-aliases remain supported through the existing alias map. Existing registries also retain
-stored default selections; changes to class-level defaults only fill absent mappings.
-Separating defaults from explicit registrations is tracked in
-[the default-refresh issue](https://github.com/Mindtrace/mindtrace/issues/602).
-
-Built-in materializers cover scalars, container types, `bytes`, `pydantic.BaseModel`,
-`pathlib.Path`, numpy arrays, PIL images, PyTorch modules/dataloaders, and HuggingFace
-datasets. ML framework archivers for HuggingFace, ONNX, Ultralytics and timm models live
-in `mindtrace.models.archivers`.
-
-## Metadata and Information
-
-```python
-# Get info for a specific object version
-info = registry.info("my:model", "1.0.0")
-
-# Get info for all versions of an object
-info = registry.info("my:model")
-
-# Get info for all objects
-info = registry.info()
-
-# Check existence
-exists = registry.has_object("my:model", "1.0.0")  # -> bool
-```
-
-## Error Handling
-
-```python
-from mindtrace.registry.core.exceptions import (
-    RegistryObjectNotFound,
-    RegistryVersionConflict,
-)
-
-try:
-    model = registry.load("nonexistent:model")
-except RegistryObjectNotFound as e:
-    print(f"Object not found: {e}")
-
-try:
-    registry.save("model", obj, version="1.0.0")  # already exists
-except RegistryVersionConflict as e:
-    print(f"Version conflict: {e}")
-```
-
-## Batch Operations
-
-The `Registry` facade provides clean single-object methods. For batch operations, pass lists:
-
-```python
-# Batch save
-result = registry.save(
-    ["model:a", "model:b"],
-    [obj_a, obj_b],
-    version=["1.0.0", "1.0.0"],
-)
-# result is a BatchResult with .results, .errors, .succeeded, .failed
-
-# Batch load
-result = registry.load(["model:a", "model:b"], version=["1.0.0", "1.0.0"])
-```
-
-### Batch-save identity rule
-
-Within one batch save, each resolved `(name, version)` identity in a target registry
-must be unique. If any identity is duplicated, the entire call raises
-`ValueError` **before materialization or any saves**, including saves of otherwise
-valid items. This applies regardless of `on_conflict`; inputs are not silently
-discarded using first-wins or last-wins behavior.
-
-- If a name occurs more than once, every occurrence must supply an explicit
-  version, and those versions must be distinct after normalization. If any
-  occurrence omits its version or supplies `None`, the entire batch must raise
-  `ValueError` before materialization or any saves, including unrelated items.
-- Versions are compared after normalization: with three version digits, `1` and
-  `1.0.0` identify the same version.
-- Automatic versioning remains available for names that occur only once. Do not
-  assign automatic versions to any occurrence of a repeated name: batch write
-  order is not guaranteed and must not decide which value becomes `latest`.
-- In unversioned mode, repeated names target the same effective version and are
-  therefore rejected, even if different version strings were supplied.
-- Store batches apply the same check after resolving their target registries and
-  names; qualified and default-mount references to the same target must not evade it.
-  Explicit versions in Store keys (such as `archive/item@2`) count; a non-`None`
-  `version` argument takes precedence over the version embedded in a key.
-
-For a repeated name in a versioned registry:
-
-| Supplied versions | Result |
-| --- | --- |
-| `["1.0.0", "2.0.0"]` | Allowed |
-| `["1", "1.0.0"]` (three version digits) | Reject entire batch; no saves |
-| `[None, "2.0.0"]` or `["1.0.0", None]` | Reject entire batch; no saves |
-| Both versions omitted or `None` | Reject entire batch; no saves |
-
-`on_conflict` still governs conflicts with already stored versions. Once a batch
-passes preflight, later materializer or backend failures remain per-item outcomes;
-this rule does not make the batch transactional or promise rollback of successful
-items. Existing backend concurrency checks remain in force: planning versions
-within a batch is not a distributed version reservation.
-
-All list arguments must have the same length; mismatches are rejected before
-materialization or saves, including in unversioned mode. A shared `metadata` or
-`init_params` dictionary is copied independently for every item. Per-item
-dictionaries are also independently copied, so saving does not mutate caller
-data or share mutable nested values between items. The meaning of `init_params`
-is unchanged: parameters are persisted for materialization on load.
-
-## Dict-Like API
-
-The `Registry` also supports simple dict-like access for common operations:
+## Versions and conflicts
 
 ```python
 from mindtrace.registry import Registry
 
-registry = Registry()
+registry = Registry("versions", version_objects=True, mutable=True)
+assert registry.save("model", 1) == "1.0.0"
+assert registry.save("model", 2) == "1.0.1"
+registry.save("model", 3, version="2.1")  # Normalized to 2.1.0.
+assert registry.resolve_version("model") == "2.1.0"
+assert registry.load("model", "latest") == 3
 
-# Save
-registry["my:config"] = {"threshold": 0.8}
-
-# Load
-config = registry["my:config"]
-print(config)
-
-# Delete
-del registry["my:config"]
+registry.save("model", 4, version="2.1", on_conflict="overwrite")
+del registry["model@1"]  # Deletes only 1.0.0.
 ```
 
-This is convenient for unversioned or latest-version style access when you want a compact interface.
+`version_digits` controls normalization (default: three components). Unversioned
+registries use one fixed version per name. `resolve_version(name, version)` resolves
+`None`/`"latest"` through discovery; an explicit version is normalized without an
+existence check.
 
-### Read errors and defaults
+`on_conflict="skip"` raises `RegistryVersionConflict` for a conflicting single save.
+`on_conflict="overwrite"` requires `mutable=True`. When omitted, the policy is
+`"overwrite"` for mutable registries and `"skip"` otherwise.
+`delete(name)` removes all versions; an explicit version removes only that version.
+Missing targets raise `RegistryObjectNotFound`; invalid versions, including
+`"latest"` for deletion, raise `ValueError`.
 
-Defaults are for reported absence, not for an operation that reports a read error:
-
-| Operation | Reported missing object | Operational read error |
-| --- | --- | --- |
-| `load(name, version)` | `RegistryObjectNotFound` | Propagates |
-| `registry[key]` | `KeyError` | Propagates |
-| `get(key, default)` | Returns the default | Propagates |
-| `setdefault(key, default)` | Saves/returns a non-`None` default | Propagates without saving a replacement |
-
-For example, a decoder failure or a detected artifact hash mismatch must not become
-`"Object not found"` or cause `setdefault()` to replace an existing artifact. A
-`KeyError` from malformed metadata or materializer code is also an operational
-error, not evidence of absence. Invalid explicit versions rejected by `load()`
-retain `ValueError` through `registry[key]`, `get()`, and `setdefault()`.
-
-Single loads preserve exceptions already supplied in failed metadata-fetch results.
-If a backend supplies only an operational error type/message, a descriptive
-`RuntimeError` is raised; an explicitly reported missing object remains
-`RegistryObjectNotFound`. Batch loads retain per-item errors in `BatchResult`.
-
-`pop()` retains its existing version selection and existence check. Once it proceeds
-to loading and deletion, errors from either operation propagate even if a default
-was supplied. A default is not a fallback for failed deletion.
-
-These rules add no existence preflights, metadata requests, or integrity passes.
-Cache-aware reads retain their existing cache/fallback behavior. They do not promise
-corruption recovery, universal detection, atomicity, or rollback, and do not change
-membership/backend-boolean classification or existing empty metadata-response
-handling. Existing `None`-default and unversioned-version semantics are unchanged.
-
-### Explicit-version deletion
-
-Explicit-version deletion uses the same version normalization as saving and
-loading: with the default three components, `del registry["item@1"]` deletes
-only `item@1.0.0`, including its local cache entry when caching is enabled.
-Normalization respects the configured `version_digits` in both versioned and
-unversioned registries. Other versions remain intact, and `@latest` is not
-supported for deletion.
-
-### Missing targets and deletion errors
-
-`registry.delete("name")` and `del registry["name"]` share the same deletion
-contract: a missing name raises `RegistryObjectNotFound`. An explicit missing
-version also raises that exception, in both versioned and unversioned registries.
-An invalid explicit version, including `latest`, raises `ValueError`. Dictionary
-deletion does not translate these or operational failures into `KeyError`.
-
-For batches, `registry.delete(["present", "missing"])` returns a `BatchResult`:
-the present item is deleted, while the missing item appears in `failed` and
-`errors` with error type `RegistryObjectNotFound`. Results retain input order;
-successful entries have result `True`, failed entries have result `None`.
-Keys use the requested `(name, version)` or `(name, "all")` for an omitted version.
-Use `delete([...])` to inspect outcomes: `del registry[[...]]` delegates to the
-same operation, but Python discards the result of a `del` statement.
-
-Deletion checks the backend rather than trusting cached objects or version
-listings. Successful remote deletions clean up their local cache entries;
-failed batch items do not evict theirs. Low-level backend cleanup remains
-idempotent. Batch deletion is not transactional and does not promise rollback
-or an atomic distributed existence check and deletion. Retrieval/get/pop
-exception policies are unchanged.
-
-## Backend Comparison
-
-| Feature | Local | S3 / MinIO | GCP |
-|---------|-------|------------|-----|
-| **Storage** | Filesystem | S3-compatible | Google Cloud Storage |
-| **Concurrency** | File locks | Lock-free MVCC | Lock-free MVCC |
-| **Caching** | N/A | Local cache | Local cache |
-| **Batch Ops** | Sequential | Parallel (ThreadPoolExecutor) | Parallel (ThreadPoolExecutor) |
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Permission Errors**: Verify credentials and bucket access
-2. **Network Issues**: Check connectivity to remote backends
-
-### Debug Logging
+## Batch operations
 
 ```python
-import logging
-logging.basicConfig(level=logging.DEBUG)
+result = registry.save(["a", "a"], [10, 20], version=["1.0.0", "1.0.1"])
+assert result.results == ["1.0.0", "1.0.1"]
 
-registry = Registry()
-# Operations will now show detailed logs
+loaded = registry.load(["a", "missing"], version="1.0.0")
+assert loaded.results == [10, None]
+assert loaded.failed == [("missing", "1.0.0")]
 ```
 
-## Store (Multi-Registry Facade)
+- Repeated names require distinct, explicit versions in **both Registry and Store**.
+  Equivalent versions such as `1` and `1.0.0`, or any omitted version for a repeated
+  name, reject the entire save before writing. Repeated names are invalid in
+  unversioned mode. Store applies this rule after resolving mount aliases.
+- All list arguments must have matching lengths. Shared `metadata` and `init_params`
+  dictionaries are copied independently for each item; load parameters remain
+  persisted in `init_params`.
+- After validation, failures are reported per item in `BatchResult`; successful
+  items are not rolled back. Inspect `.succeeded`, `.failed`, and `.errors`:
+  a `None` value in `.results` can also be a successful loaded value.
 
-The `Store` class composes multiple `Registry` instances behind a single API. Where a `Registry` maps to exactly one backend, a `Store` lets you read and write across multiple physical stores with deterministic routing.
+## Errors and mapping access
 
-### Mounts
+`RegistryObjectNotFound` subclasses `KeyError`, so either exception can catch a
+missing-object error. Permission, transport, decoding, integrity, and validation
+errors are not treated as absence.
 
-A Store organises registries as named **mounts**. Every Store always has a `temp` mount (backed by a fresh temporary directory) and a configurable `default_mount` that controls where unqualified writes go.
+| Operation | Missing object | Operational error |
+| --- | --- | --- |
+| `load(name, version)` or `registry[key]` | `RegistryObjectNotFound` | Propagates |
+| `get(key, default)` | Returns default | Propagates |
+| `setdefault(key, default)` | Saves/returns a non-`None` default | Propagates without writing |
+| `pop(key, default)` | Returns default | Read/delete errors propagate |
+| `delete(name, version)` | `RegistryObjectNotFound` | Propagates |
+
+Low-level `backend.delete()` reports missing targets as failed `OpResult` entries;
+public batch operations report them in `BatchResult`.
+
+## Caching
+
+Remote registries use a local cache by default. Disable it with `use_cache=False`,
+or set `cache_max_entries` (default `1024`; `None` disables the limit). Least-recently
+used entries are pruned in batches; `cache_prune_buffer` controls the pruning margin.
+Use `registry.clear_cache()` to clear it explicitly.
+
+| Load option | Checks |
+| --- | --- |
+| `verify="none"` | Trust cached artifacts |
+| `verify="integrity"` (default) | Verify the artifact hash |
+| `verify="full"` | Verify integrity and compare with remote metadata |
+
+Each cached read uses one concrete version, even if a newer version appears during
+the read. Version discovery may remain stale for `versions_cache_ttl`; this is not
+snapshot isolation for overwrites of the same version. `output_dir` applies to
+both cached and remote file/directory results, including batch loads.
+
+Successful imports (`download`, registry-to-registry `update`) and direct-upload
+commits evict cached versions of the destination object, leaving unrelated objects
+cached. Deletion evicts its targeted cache entries **even if remote deletion fails**.
+Cache cleanup is best-effort and does not replace the remote operation's outcome.
+
+## Custom materializers
+
+Materializers expose `uri`, `save(data)`, and `load(data_type)`. They need not inherit
+from Mindtrace; `BaseMaterializer` provides a minimal base class. Define custom
+classes in an importable module so another process can load saved objects.
+
+```python
+# text_materializer.py
+from pathlib import Path
+from mindtrace.registry import BaseMaterializer
+
+
+class TextMaterializer(BaseMaterializer):
+    def save(self, data):
+        Path(self.uri, "text.txt").write_text(data)
+
+    def load(self, data_type):
+        return Path(self.uri, "text.txt").read_text()
+```
+
+```python
+from text_materializer import TextMaterializer
+
+registry.register_materializer(str, TextMaterializer)
+registry.save("message", "hello")
+assert registry.load("message") == "hello"
+```
+
+Registration and `save(materializer=...)` accept a class or its fully qualified
+class-name string, **not an instance**. Omit the argument for automatic selection.
+Built-ins cover scalars, containers, bytes, paths, Pydantic models, and supported
+NumPy, PIL, PyTorch, and HuggingFace types. Model archivers live in `mindtrace.models`.
+
+Reopening preserves stored registrations, including stored defaults. Changes to
+class-level defaults only fill missing entries; distinguishing stored defaults
+from explicit choices is a [tracked limitation](https://github.com/Mindtrace/mindtrace/issues/602).
+
+## Store: multiple registries
 
 ```python
 from mindtrace.registry import Registry, Store
 
-# A bare Store — just the temp mount
 store = Store()
-
-# Add named mounts
-store.add_mount("models", Registry(backend=gcp_backend))
-store.add_mount("datasets", Registry(backend=s3_backend), read_only=True)
-
-# Change the default write target
+store.add_mount(Registry("models", version_objects=True), name="models")
+store.add_mount(Registry("archive", version_objects=True), name="archive", read_only=True)
 store.set_default_mount("models")
+
+store.save("demo", {"score": 0.9})  # Writes to the default mount.
+assert store.load("models/demo@1") == {"score": 0.9}
+store.move("models/demo", target="temp/demo")
 ```
 
-### Key Format
+- Qualified keys (`mount/name@version`) select a mount. Unqualified writes use
+  `default_mount`; unqualified reads discover the unique owner or raise
+  `RegistryObjectNotFound` / `StoreAmbiguousObjectError`.
+- Read-only mounts reject saves, deletes, and direct-upload creation, commit, and
+  cleanup with `PermissionError`. Reads, upload inspection, and download URLs
+  remain available. The restriction applies through Store, not independent use
+  of the underlying Registry.
+- `create_direct_download_url(key, version=...)` follows read routing and returns
+  `None` when the backend does not support signing. An explicit `version` overrides
+  the key's version. Batch `create_direct_download_urls(mount, ...)` targets one
+  mount; an empty mount means the default.
+- `move()` resolves one source mount/version, saves the destination, then deletes
+  that source version. Read-only sources are rejected before copying. A deletion
+  failure can leave both copies; moves are not transactional.
+- The built-in `temp` mount cannot be removed. Removing the default mount makes
+  `temp` the default again.
 
-Keys can be **qualified** (routed to a specific mount) or **unqualified** (routed automatically):
+## Development
 
-```python
-# Qualified — targets the "models" mount explicitly
-store.save("models/my_model", obj)
-model = store.load("models/my_model@1.0.0")
-
-# Unqualified — writes go to default_mount, reads discover across all mounts
-store.save("my_model", obj)          # -> saves to default_mount
-model = store.load("my_model")       # -> searches all mounts
-```
-
-### Read and Write Routing
-
-- **Writes**: Qualified writes target the specified mount. Unqualified writes go to `default_mount`.
-- **Reads**: Qualified reads target the specified mount. Unqualified reads discover across all mounts — if the object exists in exactly one mount it loads; if found in multiple mounts a `StoreAmbiguousObjectError` is raised.
-
-Mounts marked `read_only=True` reject saves, deletes, and direct-upload target creation,
-commit, and cleanup with `PermissionError` before delegating to the mounted Registry.
-This applies to both explicitly selected and default mounts; writes do not fall back to
-another writable mount. Object reads, upload inspection, and download URL creation remain
-available. The flag governs operations through this Store, not independent use of the
-underlying Registry or previously issued upload URLs.
-
-### Download URL Routing
-
-`create_direct_download_url()` follows read routing, including on read-only mounts:
-
-```python
-# Direct mount selection; no cross-mount discovery.
-url = store.create_direct_download_url("datasets/archive@1.0.0")
-
-# Discover the unique mount containing this object/version.
-url = store.create_direct_download_url("archive", version="1.0.0")
-```
-
-Unqualified requests use the existing cross-mount existence checks: no match raises
-`RegistryObjectNotFound`, and multiple matches raise `StoreAmbiguousObjectError`.
-Use a qualified key to avoid those checks. An explicit non-`None` `version` argument,
-including `"latest"`, overrides the version in the key. URL options are forwarded to
-the selected Registry; a backend without presigning support still returns `None`.
-
-The batch `create_direct_download_urls(mount, names, versions, ...)` API remains
-single-mount: an empty mount selects `default_mount`, without discovery. Uploads
-and other writes retain explicit/default write routing.
-
-### Moving Between Mounts
-
-```python
-# Move the latest version to the built-in temporary mount.
-store.move("models/my_model", target="temp/my_model")
-```
-
-`move()` resolves the source mount and concrete version before copying, then deletes
-that same source version only after the destination save succeeds. Unqualified sources
-use read discovery; destinations use explicit/default write routing. An explicit
-non-`latest` `source_version` overrides a version embedded in the source key; otherwise
-the embedded version or latest is selected. The return value is the destination version.
-
-A read-only source is rejected before loading or writing the destination. A newer source
-version published during copying is not deleted, and failed source reads or destination
-writes leave the source intact. Deletion errors propagate; the destination may remain.
-This is not a transaction: no rollback, same-physical-target/alias guarantees, or protection
-against concurrent overwrites of the same mutable source version is provided.
-
-### Default Mount Behaviour
-
-- `default_mount` always points to a configured mount (initially `temp`).
-- Removing the current default mount resets it back to `temp`.
-- The `temp` mount cannot be removed.
-
-### Store Errors
-
-In addition to the standard Registry exceptions, Store introduces:
-
-- `StoreLocationNotFound` — unknown mount
-- `StoreKeyFormatError` — invalid key format
-- `StoreAmbiguousObjectError` — unqualified load matched multiple mounts
-- `PermissionError` — write to a read-only mount
-
-## Examples
-
-See these examples and related docs in the repo for more end-to-end reference:
-
-- [Registry quick-start and backend examples](README.md)
-- [Store multi-registry facade section](README.md#store-multi-registry-facade)
-
-## Testing
-
-If you are working in the full Mindtrace repo, run tests for this module specifically:
+From a checkout with development dependencies installed:
 
 ```bash
-# Run the registry test suite
-ds test: registry
-
-# Run only unit tests for registry
-ds test: --unit registry
+ds test: registry --unit
 ```
 
-If you need a fresh checkout first:
-
-```bash
-git clone https://github.com/Mindtrace/mindtrace.git && cd mindtrace
-uv sync --dev --all-extras
-```
-
-## Practical Notes and Caveats
-
-- Remote backends typically benefit from cache usage, but cache verification level affects correctness/performance trade-offs.
-- Versioned and unversioned registries behave differently; choose the mode that matches your object lifecycle.
-- Overwrite behavior depends on registry mutability and conflict policy.
-- Batch operations are convenient, but partial failures should be handled explicitly through the returned batch result.
-- The dict-like API is compact, but explicit `save()` / `load()` calls are often clearer when versioning behavior matters.
-- `Store` reads with unqualified keys can become ambiguous if the same object exists in multiple mounts.
+Enable diagnostic logging with `logging.basicConfig(level=logging.DEBUG)`.
