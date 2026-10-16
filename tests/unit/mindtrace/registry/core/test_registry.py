@@ -5308,3 +5308,32 @@ class TestRegistryBugHunt:
 
         loaded = registry.load("d")
         assert loaded == {"a": 1}
+
+
+class TestVersionResolution:
+    @pytest.mark.parametrize("version", [None, "latest"])
+    def test_resolves_latest(self, tmp_path, version):
+        registry = Registry(tmp_path / "registry", version_objects=True)
+        registry.save("item", 1, version="1")
+        registry.save("item", 2, version="2")
+        assert registry.resolve_version("item", version) == "2.0.0"
+
+    def test_explicit_version_does_not_fetch_metadata(self, tmp_path, monkeypatch):
+        registry = Registry(tmp_path / "registry", version_objects=True)
+        fetch = Mock(side_effect=AssertionError("unexpected metadata fetch"))
+        monkeypatch.setattr(registry.backend, "fetch_metadata", fetch)
+        assert registry.resolve_version("missing", "1") == "1.0.0"
+        fetch.assert_not_called()
+
+    def test_missing_and_invalid_inputs(self, tmp_path):
+        registry = Registry(tmp_path / "registry", version_objects=True)
+        with pytest.raises(RegistryObjectNotFound):
+            registry.resolve_version("missing")
+        with pytest.raises(ValueError):
+            registry.resolve_version("item", "invalid")
+        with pytest.raises(ValueError):
+            registry.resolve_version("../item", "1")
+
+    def test_unversioned_resolution_uses_fixed_version(self, tmp_path):
+        registry = Registry(tmp_path / "registry", version_objects=False)
+        assert registry.resolve_version("item") == "1.0.0"

@@ -738,6 +738,24 @@ class Registry(Mindtrace):
         self._invalidate_object_cache(name)
         return result.version
 
+    def resolve_version(self, name: str, version: str | None = "latest") -> str:
+        """Resolve the concrete version used by a read operation.
+
+        Args:
+            name: Object name.
+            version: Explicit version, or None/"latest" for the newest version.
+
+        Returns:
+            Normalized explicit version, the discovered latest version, or the
+            fixed version in unversioned mode. Explicit versions are not checked
+            for existence.
+
+        Raises:
+            RegistryObjectNotFound: If latest is requested but no version exists.
+            ValueError: If the name or explicit version syntax is invalid.
+        """
+        return self._core._resolve_load_version(name, version)
+
     @overload
     def load(
         self,

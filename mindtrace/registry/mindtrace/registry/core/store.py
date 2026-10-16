@@ -690,7 +690,7 @@ class Store(Mindtrace):
         resolved_mount = mount or self._resolve_load_location(name, resolved_source_version)
         source_key = self.build_key(resolved_mount, name)
         _, source_registry, _, _ = self._writable_mount(source_key)
-        resolved_source_version = source_registry._core._resolve_load_version(name, resolved_source_version)
+        resolved_source_version = source_registry.resolve_version(name, resolved_source_version)
         saved = self.copy(
             source_key, target=target, source_version=resolved_source_version, target_version=target_version
         )
