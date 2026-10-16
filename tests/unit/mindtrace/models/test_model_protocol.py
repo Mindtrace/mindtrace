@@ -16,11 +16,44 @@ from torch import Tensor, nn
 import mindtrace.models as models_module
 from mindtrace.models import (
     ClassificationPostprocessor,
+    EmbeddingModel,
     HuggingFaceImageProcessor,
+    Model,
     TorchModel,
 )
 
 _MODEL_PROTOCOL_SAMPLE = Path(__file__).resolve().parents[4] / "samples" / "models" / "09_model_protocol.py"
+
+
+class _EmbeddingOnlyModel:
+    def embed(self, inputs: tuple[int, ...], **params: Any) -> tuple[float, ...]:
+        scale = float(params.get("scale", 1.0))
+        return tuple(value * scale for value in inputs)
+
+
+class _PredictingEmbeddingModel:
+    def predict(self, inputs: str, **params: Any) -> str:
+        return f"prediction:{inputs}:{params.get('suffix', '')}"
+
+    def embed(self, inputs: str, **params: Any) -> list[float]:
+        offset = float(params.get("offset", 0.0))
+        return [float(len(inputs)) + offset]
+
+
+def test_embedding_model_is_available_from_public_models_namespace() -> None:
+    model: EmbeddingModel[tuple[int, ...], tuple[float, ...]] = _EmbeddingOnlyModel()
+
+    assert models_module.EmbeddingModel is EmbeddingModel
+    assert model.embed((1, 2), scale=0.5) == (0.5, 1.0)
+
+
+def test_concrete_model_can_support_prediction_and_embedding_protocols() -> None:
+    implementation = _PredictingEmbeddingModel()
+    prediction_model: Model[str, str] = implementation
+    embedding_model: EmbeddingModel[str, list[float]] = implementation
+
+    assert prediction_model.predict("weld", suffix="ok") == "prediction:weld:ok"
+    assert embedding_model.embed("weld", offset=1.0) == [5.0]
 
 
 class _ImageSizeProcessor:
