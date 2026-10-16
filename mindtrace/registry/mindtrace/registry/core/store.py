@@ -261,6 +261,15 @@ class Store(Mindtrace):
         self.cache_update_location(name, mount)
         return mount
 
+    def _writable_mount(self, key: str) -> tuple[str, Registry, str, str | None]:
+        """Resolve an explicit/default write target and reject read-only mounts."""
+        mount, name, version = self.parse_key(key)
+        mount = mount or self.default_mount
+        store_mount = self.get_mount(mount)
+        if store_mount.read_only:
+            raise PermissionError(f"Mount '{mount}' is read-only")
+        return mount, store_mount.registry, name, version
+
     def _single_save(
         self,
         key: str,
@@ -272,15 +281,10 @@ class Store(Mindtrace):
         metadata: Dict[str, Any] | None = None,
         on_conflict: str | None = None,
     ) -> str | None:
-        mount, name, key_version = self.parse_key(key)
-        if mount is None:
-            mount = self.default_mount
-        store_mount = self.get_mount(mount)
-        if store_mount.read_only:
-            raise PermissionError(f"Mount '{mount}' is read-only")
+        mount, registry, name, key_version = self._writable_mount(key)
 
         resolved_version = version if version is not None else key_version
-        out = store_mount.registry.save(
+        out = registry.save(
             name,
             obj,
             materializer=materializer,
@@ -399,12 +403,7 @@ class Store(Mindtrace):
         Raises:
             PermissionError: If the selected mount is read-only.
         """
-        mount, object_name, _ = self.parse_key(key)
-        resolved_mount = mount or self.default_mount
-        store_mount = self.get_mount(resolved_mount)
-        if store_mount.read_only:
-            raise PermissionError(f"Mount '{resolved_mount}' is read-only")
-        registry = store_mount.registry
+        resolved_mount, registry, object_name, _ = self._writable_mount(key)
         target = registry.create_direct_upload_target(
             upload_id or hashlib.sha1(key.encode()).hexdigest(),
             content_type=content_type,
@@ -477,12 +476,7 @@ class Store(Mindtrace):
         Raises:
             PermissionError: If the selected mount is read-only.
         """
-        mount, _, _ = self.parse_key(key)
-        resolved_mount = mount or self.default_mount
-        store_mount = self.get_mount(resolved_mount)
-        if store_mount.read_only:
-            raise PermissionError(f"Mount '{resolved_mount}' is read-only")
-        registry = store_mount.registry
+        _, registry, _, _ = self._writable_mount(key)
         return registry.cleanup_direct_upload_target(staged_target)
 
     def commit_direct_upload(
@@ -499,12 +493,7 @@ class Store(Mindtrace):
         Raises:
             PermissionError: If the selected mount is read-only.
         """
-        mount, object_name, key_version = self.parse_key(key)
-        resolved_mount = mount or self.default_mount
-        store_mount = self.get_mount(resolved_mount)
-        if store_mount.read_only:
-            raise PermissionError(f"Mount '{resolved_mount}' is read-only")
-        registry = store_mount.registry
+        resolved_mount, registry, object_name, key_version = self._writable_mount(key)
         resolved_version = registry.commit_direct_upload(
             object_name,
             staged_target=staged_target,
@@ -578,13 +567,8 @@ class Store(Mindtrace):
         return result
 
     def _single_delete(self, key: str, version: str | None = None) -> None:
-        mount, name, key_version = self.parse_key(key)
-        if mount is None:
-            mount = self.default_mount
-        store_mount = self.get_mount(mount)
-        if store_mount.read_only:
-            raise PermissionError(f"Mount '{mount}' is read-only")
-        store_mount.registry.delete(name, version if version is not None else key_version)
+        mount, registry, name, key_version = self._writable_mount(key)
+        registry.delete(name, version if version is not None else key_version)
         self.cache_evict_name(name)
 
     def delete(self, name: str | List[str], version: str | None | List[str | None] = None) -> None | BatchResult:
@@ -704,12 +688,9 @@ class Store(Mindtrace):
             source_version if source_version not in (None, "latest") else (key_version or source_version)
         )
         resolved_mount = mount or self._resolve_load_location(name, resolved_source_version)
-        source_mount = self.get_mount(resolved_mount)
-        if source_mount.read_only:
-            raise PermissionError(f"Mount '{resolved_mount}' is read-only")
-
-        resolved_source_version = source_mount.registry._core._resolve_load_version(name, resolved_source_version)
         source_key = self.build_key(resolved_mount, name)
+        _, source_registry, _, _ = self._writable_mount(source_key)
+        resolved_source_version = source_registry._core._resolve_load_version(name, resolved_source_version)
         saved = self.copy(
             source_key, target=target, source_version=resolved_source_version, target_version=target_version
         )
