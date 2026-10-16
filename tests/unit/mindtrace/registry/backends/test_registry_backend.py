@@ -143,3 +143,42 @@ def test_validate_object_name_invalid(concrete_backend):
     for name in invalid_names:
         with pytest.raises(ValueError, match="cannot contain '@'"):
             concrete_backend.validate_object_name(name)
+
+
+class TestPortableObjectNames:
+    @pytest.mark.parametrize("name", ["x:model", "namespace:object", "nested/model", "model..backup"])
+    def test_logical_name_acceptance_is_not_host_dependent(self, concrete_backend, monkeypatch, name):
+        from pathlib import PureWindowsPath
+
+        from mindtrace.registry.core import _paths
+
+        monkeypatch.setattr(_paths, "PurePath", PureWindowsPath)
+        concrete_backend.validate_object_name(name)
+
+    @pytest.mark.parametrize("name", ["../model", "/model", "nested/../model", "nested\\model"])
+    def test_nonportable_path_syntax_is_rejected(self, concrete_backend, name):
+        with pytest.raises(ValueError):
+            concrete_backend.validate_object_name(name)
+
+    def test_windows_remote_name_roundtrip_without_local_cache(self, cached_mock_registry, monkeypatch):
+        from pathlib import PureWindowsPath
+
+        from mindtrace.registry import Registry
+        from mindtrace.registry.core import _paths
+
+        monkeypatch.setattr(_paths, "PurePath", PureWindowsPath)
+        registry = Registry(backend=cached_mock_registry.backend, version_objects=True, use_cache=False)
+        registry.save("x:model", 42, version="1")
+        assert registry.load("x:model", "1") == 42
+        registry.delete("x:model", "1")
+
+    def test_local_drive_relative_name_still_rejected(self, tmp_path, monkeypatch):
+        from pathlib import PureWindowsPath
+
+        from mindtrace.registry import LocalRegistryBackend
+        from mindtrace.registry.core import _paths
+
+        backend = LocalRegistryBackend(tmp_path / "registry")
+        monkeypatch.setattr(_paths, "PurePath", PureWindowsPath)
+        with pytest.raises(ValueError):
+            backend.validate_object_name("x:model")

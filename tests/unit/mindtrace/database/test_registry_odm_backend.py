@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field
 
 from mindtrace.database import DocumentNotFoundError, RegistryMindtraceODM
 from mindtrace.registry import Registry, RegistryBackend
+from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.registry.core.types import OnConflict
 
 
@@ -271,11 +273,40 @@ class TestRegistryMindtraceODM:
         """Test deleting a document that doesn't exist."""
         test_id = "nonexistent-id"
 
-        # Mock the registry to raise KeyError for nonexistent document
-        registry_odm.registry.__delitem__.side_effect = KeyError(test_id)
+        error = RegistryObjectNotFound(test_id)
+        registry_odm.registry.__delitem__.side_effect = error
 
-        with pytest.raises(DocumentNotFoundError):
+        with pytest.raises(DocumentNotFoundError) as caught:
             registry_odm.delete(test_id)
+        assert caught.value.__cause__ is error
+
+    @pytest.mark.parametrize("previously_present", [False, True], ids=["missing", "repeated-delete"])
+    def test_delete_missing_document_with_real_registry(self, tmp_path, previously_present):
+        """Keep the Database exception contract when using the real local Registry."""
+        odm = RegistryMindtraceODM(backend=LocalRegistryBackend(uri=tmp_path / "registry"))
+        unrelated = odm.insert(create_test_user(name="Unrelated"))
+        test_id = "nonexistent-id"
+        if previously_present:
+            document = odm.insert(create_test_user())
+            test_id = document.id
+            assert odm.get(test_id).name == "John"
+            odm.delete(test_id)
+
+        with pytest.raises(DocumentNotFoundError, match=test_id) as caught:
+            odm.delete(test_id)
+        assert isinstance(caught.value.__cause__, RegistryObjectNotFound)
+        assert odm.get(unrelated.id).name == "Unrelated"
+
+    @pytest.mark.parametrize("error_type", [KeyError, PermissionError, ValueError])
+    def test_delete_propagates_operational_errors(self, registry_odm, error_type):
+        """Only Registry's explicit missing-object exception becomes document absence."""
+        error = error_type("delete failed")
+        registry_odm.registry.__delitem__.side_effect = error
+
+        with pytest.raises(error_type) as caught:
+            registry_odm.delete("existing-id")
+        assert caught.value is error
+        registry_odm.registry.__delitem__.assert_called_once_with("existing-id")
 
     def test_all_documents(self, registry_odm):
         """Test retrieving all documents."""
@@ -387,8 +418,8 @@ class TestRegistryMindtraceODM:
         with pytest.raises(DocumentNotFoundError):
             registry_odm.get("nonexistent")
 
-        # Test delete with KeyError (converted to DocumentNotFoundError)
-        registry_odm.registry.__delitem__.side_effect = KeyError("test")
+        # Deletion reports absence with RegistryObjectNotFound, unlike retrieval.
+        registry_odm.registry.__delitem__.side_effect = RegistryObjectNotFound("test")
         with pytest.raises(DocumentNotFoundError):
             registry_odm.delete("nonexistent")
 

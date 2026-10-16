@@ -17,7 +17,7 @@ from mindtrace.registry.backends.local_registry_backend import LocalRegistryBack
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core._registry_core import _RegistryCore
 from mindtrace.registry.core.base_materializer import Materializer
-from mindtrace.registry.core.exceptions import RegistryObjectNotFound
+from mindtrace.registry.core.exceptions import RegistryCleanupRequired, RegistryObjectNotFound
 from mindtrace.registry.core.mount import (
     AmbientAuth,
     GCSMountConfig,
@@ -272,8 +272,8 @@ class Registry(Mindtrace):
         return Mount.from_registry(self)
 
     @classmethod
-    def register_default_materializer(cls, object_class: str | type, materializer_class: str):
-        """Register a default materializer at the class level."""
+    def register_default_materializer(cls, object_class: str | type, materializer_class: str | type):
+        """Register a class-level default by class or fully qualified string, never by instance."""
         _RegistryCore.register_default_materializer(object_class, materializer_class)
 
     @classmethod
@@ -484,7 +484,7 @@ class Registry(Mindtrace):
         name: str | List[str],
         obj: Any | List[Any],
         *,
-        materializer: Type[Materializer] | None = None,
+        materializer: Type[Materializer] | str | None = None,
         version: str | None | List[str | None] = None,
         init_params: Dict[str, Any] | List[Dict[str, Any]] | None = None,
         metadata: Dict[str, Any] | List[Dict[str, Any]] | None = None,
@@ -498,15 +498,25 @@ class Registry(Mindtrace):
         Args:
             name: Name(s) of the object(s). Single string or list.
             obj: Object(s) to save.
-            materializer: Materializer to use. If ``None``, uses the default.
-            version: Version(s). If ``None``, auto-increments.
-            init_params: Additional parameters for the materializer(s).
-            metadata: Additional metadata to store with the object(s).
+            materializer: Class or fully qualified class-name string. ``None`` selects automatically.
+                Instances are rejected with TypeError (reported per item for batch saves).
+            version: Version(s). ``None`` auto-increments only for names occurring once in
+                a batch. Repeated names require distinct explicit versions after normalization;
+                unversioned registries reject repeated names.
+            init_params: Additional parameters for the materializer(s). Shared dictionaries
+                are broadcast using independent copies; per-item dictionaries are also copied.
+            metadata: Additional metadata, with the same batch broadcasting/copying behavior.
             on_conflict: Behavior when version already exists (``"skip"`` or ``"overwrite"``).
 
         Returns:
             Single item: Resolved version string.
             Batch (list): ``BatchResult`` with results, errors, and status.
+
+        Raises:
+            ValueError: If batch list lengths differ, a repeated name lacks an explicit
+                version, or normalized identities collide. The entire call is rejected
+                before materialization or any saves, regardless of ``on_conflict``.
+                Later runtime failures remain per-item outcomes, without rollback.
         """
         if not self._cached:
             return self._core.save(
@@ -573,7 +583,7 @@ class Registry(Mindtrace):
         self,
         obj: Any,
         *,
-        materializer: Type[Materializer] | None = None,
+        materializer: Type[Materializer] | str | None = None,
     ) -> Dict[str, str]:
         """Return ``class`` and ``materializer`` strings for embedding in external metadata (e.g. datalake assets)."""
         return self._core.serialization_hints_for_object(obj, materializer=materializer)
@@ -694,7 +704,7 @@ class Registry(Mindtrace):
         metadata: Dict[str, Any] | None = None,
         on_conflict: str | None = None,
     ) -> str:
-        """Commit a previously uploaded bytes artifact into canonical registry storage."""
+        """Commit uploaded bytes, then invalidate this object's cached versions (best effort)."""
         target_core = self._remote if self._cached else self._core
         backend = target_core.backend
 
@@ -725,9 +735,26 @@ class Registry(Mindtrace):
             raise RuntimeError(f"Object {name}@{resolved_version} already exists.")
 
         target_core._invalidate_versions_cache(name)
-        if self._cached:
-            self.clear_cache()
+        self._invalidate_object_cache(name)
         return result.version
+
+    def resolve_version(self, name: str, version: str | None = "latest") -> str:
+        """Resolve the concrete version used by a read operation.
+
+        Args:
+            name: Object name.
+            version: Explicit version, or None/"latest" for the newest version.
+
+        Returns:
+            Normalized explicit version, the discovered latest version, or the
+            fixed version in unversioned mode. Explicit versions are not checked
+            for existence.
+
+        Raises:
+            RegistryObjectNotFound: If latest is requested but no version exists.
+            ValueError: If the name or explicit version syntax is invalid.
+        """
+        return self._core._resolve_load_version(name, version)
 
     @overload
     def load(
@@ -796,13 +823,13 @@ class Registry(Mindtrace):
         verify: str = VerifyLevel.FULL,
         **kwargs,
     ) -> Any:
-        """Load a single object with cache-first pattern."""
-        resolved_v = version if version and version != "latest" else self._remote._latest(name)
+        """Load a single object using one concrete version for cache and remote."""
+        resolved_v = self._remote._resolve_load_version(name, version)
         check_staleness = verify == VerifyLevel.FULL
 
         # Try cache first
         try:
-            if resolved_v and self._cache.has_object(name, resolved_v):
+            if self._cache.has_object(name, resolved_v):
                 if not check_staleness or not self._is_cache_stale(name, resolved_v):
                     try:
                         obj = self._cache.load(name, resolved_v, output_dir=output_dir, verify=verify, **kwargs)
@@ -819,20 +846,18 @@ class Registry(Mindtrace):
             pass  # Any cache error — fall through to remote
 
         # Load from remote
-        obj = self._remote.load(name, version, output_dir=output_dir, verify=verify, **kwargs)
+        obj = self._remote.load(name, resolved_v, output_dir=output_dir, verify=verify, **kwargs)
 
         # Update cache (best effort)
-        cache_v = resolved_v or (version if version and version != "latest" else self._remote._latest(name))
-        if cache_v:
-            try:
-                cache_entries = [(name, cache_v)]
-                new_cache_entries = self._count_new_cache_entries(cache_entries)
-                self._cache.save(name, obj, version=cache_v, on_conflict=OnConflict.OVERWRITE)
-                self._touch_cache_entry(name, cache_v)
-                self._note_cache_entries_added(new_cache_entries)
-                self._maybe_prune_cache_lru()
-            except Exception as e:
-                self.logger.warning(f"Error caching {name}: {e}")
+        try:
+            cache_entries = [(name, resolved_v)]
+            new_cache_entries = self._count_new_cache_entries(cache_entries)
+            self._cache.save(name, obj, version=resolved_v, on_conflict=OnConflict.OVERWRITE)
+            self._touch_cache_entry(name, resolved_v)
+            self._note_cache_entries_added(new_cache_entries)
+            self._maybe_prune_cache_lru()
+        except Exception as e:
+            self.logger.warning(f"Error caching {name}: {e}")
 
         return obj
 
@@ -856,6 +881,7 @@ class Registry(Mindtrace):
         # Resolve versions from remote (authoritative source)
         resolved: List[tuple[str, str] | None] = []
         objects: List[Any | None] = [None] * n
+        loaded = [False] * n  # A successful materializer may return None.
         errors: Dict[tuple[str, str], dict] = {}
 
         for name, ver in zip(names, versions_list):
@@ -874,24 +900,27 @@ class Registry(Mindtrace):
             cache_result = self._cache.load(
                 [resolved[i][0] for i in pending],
                 [resolved[i][1] for i in pending],
+                output_dir=output_dir,
                 verify=verify,
                 **kwargs,
             )
+            cache_succeeded = set(cache_result.succeeded)
             for i, obj in zip(pending, cache_result.results):
                 objects[i] = obj
+                loaded[i] = resolved[i] in cache_succeeded
 
         # Step 2: Check staleness for cache hits
         if check_staleness:
-            cached = [i for i in pending if objects[i] is not None]
+            cached = [i for i in pending if loaded[i]]
             for i in self._find_stale_indices(resolved, cached):
-                objects[i] = None  # add to misses list
+                loaded[i] = False  # add to misses list
 
-        for i in [i for i in pending if objects[i] is not None]:
+        for i in [i for i in pending if loaded[i]]:
             cache_name, cache_version = resolved[i]
             self._touch_cache_entry(cache_name, cache_version)
 
         # Step 3: Remote load for misses
-        misses = [i for i in pending if objects[i] is None]
+        misses = [i for i in pending if not loaded[i]]
         if misses:
             remote_result = self._remote.load(
                 [resolved[i][0] for i in misses],
@@ -902,13 +931,17 @@ class Registry(Mindtrace):
             )
 
             to_cache = []
+            remote_succeeded = set(remote_result.succeeded)
             for i, obj in zip(misses, remote_result.results):
                 name_ver = resolved[i]
-                if obj is not None:
-                    objects[i] = obj
-                    to_cache.append((name_ver[0], name_ver[1], obj))
-                elif name_ver in remote_result.errors:
+                if name_ver in remote_result.errors:
                     errors[name_ver] = remote_result.errors[name_ver]
+                elif name_ver in remote_succeeded:
+                    objects[i] = obj
+                    loaded[i] = True
+                    # Keep existing cache-fill eligibility separate from read success.
+                    if obj is not None:
+                        to_cache.append((name_ver[0], name_ver[1], obj))
 
             if to_cache:
                 try:
@@ -938,7 +971,7 @@ class Registry(Mindtrace):
             elif item in errors:
                 result.results.append(None)
                 result.failed.append(item)
-            elif objects[i] is not None:
+            elif loaded[i]:
                 result.results.append(objects[i])
                 result.succeeded.append(item)
             else:
@@ -966,39 +999,37 @@ class Registry(Mindtrace):
         Returns:
             Single item: ``None``.
             Batch (list): ``BatchResult`` with results, errors, and status.
+                Missing targets are failed entries with error ``RegistryObjectNotFound``.
+
+        Raises:
+            RegistryObjectNotFound: If a single name or explicit version does not exist.
+            ValueError: If a single explicit version is invalid or ``latest``.
         """
         if not self._cached:
             return self._core.delete(name, version)
 
-        result = self._remote.delete(name, version)
-
-        # Delete from cache (best effort)
         try:
-            names_list = name if isinstance(name, list) else [name]
-            versions_list = version if isinstance(version, list) else [version] * len(names_list)
-            removed_cache_entries: List[tuple[str, str]] = []
-
-            for n, v in zip(names_list, versions_list):
-                try:
-                    if v is None:
-                        for ver in self._cache.list_versions(n):
-                            try:
-                                self._cache.delete(n, ver)
-                                removed_cache_entries.append((n, ver))
-                            except Exception:
-                                pass
-                    else:
-                        resolved_v = v if v != "latest" else self._cache._latest(n)
-                        if resolved_v and self._cache.has_object(n, resolved_v):
-                            self._cache.delete(n, resolved_v)
-                            removed_cache_entries.append((n, resolved_v))
-                except Exception:
-                    pass
-            self._remove_cache_lru_entries(removed_cache_entries)
-        except Exception as e:
-            self.logger.warning(f"Error deleting from cache: {e}")
-
-        return result
+            return self._remote.delete(name, version)
+        finally:
+            # A failed remote delete must not leave a potentially stale local copy.
+            try:
+                names_list = name if isinstance(name, list) else [name]
+                versions_list = version if isinstance(version, list) else [version] * len(names_list)
+                removed_cache_entries: List[tuple[str, str]] = []
+                for n, v in zip(names_list, versions_list):
+                    try:
+                        if v is None:
+                            self._invalidate_object_cache(n)
+                        else:
+                            resolved_v = v if v != "latest" else self._cache._latest(n)
+                            if resolved_v and self._cache.has_object(n, resolved_v):
+                                self._cache.delete(n, resolved_v)
+                                removed_cache_entries.append((n, resolved_v))
+                    except Exception as error:
+                        self.logger.warning(f"Error deleting cached {n}: {error}")
+                self._remove_cache_lru_entries(removed_cache_entries)
+            except Exception as error:
+                self.logger.warning(f"Error deleting from cache: {error}")
 
     def clear(self, clear_registry_metadata: bool = False) -> None:
         """Remove all objects from the registry.
@@ -1014,6 +1045,21 @@ class Registry(Mindtrace):
         else:
             self._core.clear(clear_registry_metadata)
 
+    def _invalidate_object_cache(self, name: str) -> None:
+        """Best-effort invalidation of all locally stored versions of an object."""
+        if not self._cached:
+            return
+        try:
+            # Read the local backend directly: version-list memoization may be stale.
+            versions = self._cache.backend.list_versions(name).get(name, [])
+            if versions:
+                result = self._cache.delete([name] * len(versions), versions)
+                self._remove_cache_lru_entries(result.succeeded)
+                if result.errors:
+                    self.logger.warning(f"Error invalidating cache for {name}: {result.errors}")
+        except Exception as error:
+            self.logger.warning(f"Error invalidating cache for {name}: {error}")
+
     def download(
         self,
         source_registry,
@@ -1021,15 +1067,25 @@ class Registry(Mindtrace):
         version: str = "latest",
         target_name: str | None = None,
         target_version: str | None = None,
-    ) -> str:
+    ) -> None:
         """Download an object from another registry into this one.
 
-        Accepts both ``Registry`` and ``_RegistryCore`` as the source.
+        Accepts both ``Registry`` and ``_RegistryCore`` as the source. After a
+        committed import, invalidates cached versions of the destination object
+        (best effort); unrelated objects are retained. Does not warm the cache.
         """
         source = source_registry._core if isinstance(source_registry, Registry) else source_registry
-        return self._core.download(
-            source, name, version=version, target_name=target_name, target_version=target_version
-        )
+        destination_name = name if target_name is None else target_name
+        try:
+            result = self._core.download(
+                source, name, version=version, target_name=target_name, target_version=target_version
+            )
+        except RegistryCleanupRequired:
+            # The write committed even though backend cleanup still needs attention.
+            self._invalidate_object_cache(destination_name)
+            raise
+        self._invalidate_object_cache(destination_name)
+        return result
 
     # ─────────────────────────────────────────────────────────────────────────
     # Dict-like interface — must be explicit (dunders bypass __getattr__,
@@ -1037,16 +1093,17 @@ class Registry(Mindtrace):
     # instead of the facade's cache-aware versions)
     # ─────────────────────────────────────────────────────────────────────────
 
-    def __getitem__(self, key: str | list[str]) -> Any:
+    def _load_key(self, key: str | list[str]) -> Any:
+        """Load mapping keys through the cache-aware path without reclassifying errors."""
         names, versions, is_batch = self._core._parse_key_input(key)
         if is_batch:
             versions = [v if v is not None else "latest" for v in versions]
             return self.load(name=names, version=versions)
         name, version = names[0], versions[0]
-        try:
-            return self.load(name, version if version else "latest")
-        except (ValueError, RegistryObjectNotFound) as e:
-            raise KeyError(f"Object not found: {key}") from e
+        return self.load(name, version if version else "latest")
+
+    def __getitem__(self, key: str | list[str]) -> Any:
+        return self._load_key(key)
 
     def __setitem__(self, key: str | list[str], value: Any) -> None:
         names, versions, is_batch = self._core._parse_key_input(key)
@@ -1056,23 +1113,14 @@ class Registry(Mindtrace):
         name, version = names[0], versions[0]
         self.save(name, value, version=version)
 
-    def __delitem__(self, key: str | list[str]) -> None:
+    def __delitem__(self, key: str | list[str]) -> None | BatchResult:
+        """Delegate to delete, preserving its exception types and batch results.
+
+        Python's del statement discards the result; use delete([...]) to inspect
+        per-item outcomes. Single missing targets raise RegistryObjectNotFound.
+        """
         names, versions, is_batch = self._core._parse_key_input(key)
-        if is_batch:
-            self.delete(name=names, version=versions)
-            return
-        try:
-            name, version = names[0], versions[0]
-            if version is None:
-                if not self._core.list_versions(name):
-                    raise RegistryObjectNotFound(f"Object {name} does not exist")
-            else:
-                exists = self._core.backend.has_object([name], [version])
-                if not exists.get((name, version), False):
-                    raise RegistryObjectNotFound(f"Object {name}@{version} does not exist")
-            self.delete(name, version)
-        except (ValueError, RegistryObjectNotFound) as e:
-            raise KeyError(f"Object not found: {key}") from e
+        return self.delete(name=names if is_batch else names[0], version=versions if is_batch else versions[0])
 
     def __contains__(self, key: str | list[str]) -> bool:
         if isinstance(key, list):
@@ -1086,9 +1134,10 @@ class Registry(Mindtrace):
         return self._core.__str__(color=color, latest_only=latest_only)
 
     def get(self, key: str, default: Any = None) -> Any:
+        """Return the default only for reported absence; other read errors propagate."""
         try:
-            return self[key]
-        except KeyError:
+            return self._load_key(key)
+        except RegistryObjectNotFound:
             return default
 
     def keys(self) -> List[str]:
@@ -1101,32 +1150,29 @@ class Registry(Mindtrace):
         return [(name, self[name]) for name in self.keys()]
 
     def pop(self, key: str, default: Any = None) -> Any:
-        try:
-            name, version = self._core._parse_key(key)
+        """Remove the selected version; never turn a load/delete failure into a default."""
+        name, version = self._core._parse_key(key)
+        if version is None:
+            version = self._core._latest(name)
             if version is None:
-                version = self._core._latest(name)
-                if version is None:
-                    if default is not None:
-                        return default
-                    raise KeyError(f"Object {name} does not exist")
-
-            if not self._core.has_object(name, version):
                 if default is not None:
                     return default
-                raise KeyError(f"Object {name} version {version} does not exist")
+                raise KeyError(f"Object {name} does not exist")
 
-            value = self.load(name=name, version=version)
-            self.delete(name=name, version=version)
-            return value
-        except KeyError:
+        if not self._core.has_object(name, version):
             if default is not None:
                 return default
-            raise
+            raise KeyError(f"Object {name} version {version} does not exist")
+
+        value = self.load(name=name, version=version)
+        self.delete(name=name, version=version)
+        return value
 
     def setdefault(self, key: str, default: Any = None) -> Any:
+        """Save the default only for reported absence, never after an operational read error."""
         try:
-            return self[key]
-        except KeyError:
+            return self._load_key(key)
+        except RegistryObjectNotFound:
             if default is not None:
                 self[key] = default
             return default
@@ -1140,7 +1186,7 @@ class Registry(Mindtrace):
                         raise ValueError(f"Object {name} version {version} already exists in registry.")
             for name in core.list_objects():
                 for version in core.list_versions(name):
-                    self._core.download(core, name, version=version)
+                    self.download(core, name, version=version)
         else:
             for key, value in mapping.items():
                 self[key] = value

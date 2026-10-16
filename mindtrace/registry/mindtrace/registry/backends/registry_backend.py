@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
 
 from mindtrace.core import MindtraceABC
+from mindtrace.registry.core._paths import validate_object_path
 from mindtrace.registry.core.types import OnConflict, OpResult, OpResults
 
 # Type aliases for cleaner signatures
@@ -266,7 +267,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure
+            - OpResult.failed() on failure, including RegistryObjectNotFound for absent objects
         """
         pass
 
@@ -480,6 +481,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
                 raise ValueError("Object names cannot be empty.")
             elif "@" in n:
                 raise ValueError(f"Object name '{n}' cannot contain '@'.")
+            validate_object_path(n)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Internal Locking (protected, not part of public API)
