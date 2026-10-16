@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from mindtrace.registry import Registry, S3RegistryBackend
-from tests.unit.mindtrace.registry.backends.test_s3_registry_backend import MockS3Handler
+from tests.utils.registry_storage import MockGCSHandler, MockS3Handler
 
 
 @pytest.fixture
@@ -32,8 +32,7 @@ def sample_metadata():
 
 
 @pytest.fixture
-def cached_mock_registry(monkeypatch, tmp_path):
-    monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.S3StorageHandler", MockS3Handler)
+def cached_mock_registry(mock_s3_handler, tmp_path):
     backend = S3RegistryBackend(
         uri=tmp_path / "remote",
         endpoint="example.invalid",
@@ -43,3 +42,33 @@ def cached_mock_registry(monkeypatch, tmp_path):
         secure=False,
     )
     return Registry(backend=backend, version_objects=True, mutable=True, use_cache=True)
+
+
+@pytest.fixture
+def mock_s3_handler(monkeypatch):
+    """Create a mock S3 storage handler."""
+    monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.S3StorageHandler", MockS3Handler)
+    return MockS3Handler()
+
+
+@pytest.fixture
+def mock_gcs_handler(monkeypatch):
+    """Create a mock GCS storage handler."""
+    monkeypatch.setattr("mindtrace.registry.backends.gcp_registry_backend.GCSStorageHandler", MockGCSHandler)
+    return MockGCSHandler()
+
+
+@pytest.fixture(params=["parent", "absolute", "embedded_parent"])
+def invalid_relative_path(request, tmp_path):
+    """Include traversal that stays inside the root: syntax must still be rejected."""
+    if request.param == "parent":
+        return "../item"
+    if request.param == "absolute":
+        return str(tmp_path / "absolute-item")
+    return "nested/../item"
+
+
+@pytest.fixture(params=["item", "nested/item", "model..backup", "namespace:object"])
+def valid_relative_path(request):
+    """Nested names and literal dots are valid; only a '..' component is rejected."""
+    return request.param

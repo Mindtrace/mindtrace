@@ -6,7 +6,6 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
-from mindtrace.core import Config
 from mindtrace.registry import Registry
 from mindtrace.registry.core._registry_core import (
     _LEGACY_MATERIALIZER_ALIASES,
@@ -15,33 +14,7 @@ from mindtrace.registry.core._registry_core import (
 )
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.registry.core.types import BatchResult, OpResult, OpResults
-
-
-@pytest.fixture
-def temp_registry_dir():
-    """Create a temporary directory for registry storage."""
-    with TemporaryDirectory() as temp_dir:
-        yield temp_dir
-
-
-@pytest.fixture
-def test_config():
-    """Create a test configuration."""
-    return Config()
-
-
-def _make_op_results(*results: OpResult) -> OpResults:
-    """Helper to create OpResults from OpResult objects."""
-    op_results = OpResults()
-    for r in results:
-        op_results.add(r)
-    return op_results
-
-
-@pytest.fixture
-def registry(temp_registry_dir):
-    """Create a Registry instance with a temporary directory."""
-    return Registry(backend=temp_registry_dir, version_objects=True)
+from tests.utils.registry_helpers import _make_op_results
 
 
 class TestVersioning:

@@ -10,16 +10,13 @@ from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-from typing import Any, Type
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 import yaml
-from pydantic import BaseModel
 
 from mindtrace.core import Config, compute_dir_hash
 from mindtrace.registry import (
-    BaseMaterializer,
     BuiltInMaterializer,
     CloudpickleMaterializer,
     GCPRegistryBackend,
@@ -51,90 +48,21 @@ from mindtrace.registry.core.types import (
     OpResults,
     VerifyLevel,
 )
-from tests.registry_test_helpers import (
+from tests.utils.registry_helpers import (
     FailingLoadMaterializer,
+    ForeignIntMaterializer,
     RejectNegativeMaterializer,
+    RelativePathBytesMaterializer,
     RevisionedIntMaterializer,
+    StringHolder,
+    StringHolderMaterializer,
+    _make_op_results,
+    _PydanticSample,
+    _replicas,
+    _stored_files,
     materializer_path,
 )
-from tests.unit.mindtrace.registry.backends.test_gcp_registry_backend import MockGCSHandler
-from tests.unit.mindtrace.registry.backends.test_s3_registry_backend import MockS3Handler
-
-
-@pytest.fixture
-def temp_registry_dir():
-    """Create a temporary directory for registry storage."""
-    with TemporaryDirectory() as temp_dir:
-        yield temp_dir
-
-
-@pytest.fixture
-def test_bytes():
-    """Create test bytes."""
-    return b"test bytes"
-
-
-@pytest.fixture
-def test_config():
-    """Create a test configuration."""
-    return Config()
-
-
-@pytest.fixture
-def test_basic_types():
-    """Create test basic types."""
-    return {"str": "test", "int": 42, "float": 3.14, "bool": True}
-
-
-@pytest.fixture
-def test_container_types():
-    """Create test container types."""
-    return {"list": [1, 2, 3], "dict": {"a": 1, "b": 2}, "tuple": (1, 2, 3), "set": {1, 2, 3}}
-
-
-@pytest.fixture
-def test_path():
-    """Create a test path."""
-    with TemporaryDirectory() as temp_dir:
-        test_file = Path(temp_dir) / "test.txt"
-        test_file.write_text("test content")
-        yield test_file
-
-
-@pytest.fixture
-def concrete_backend():
-    """Create a concrete backend instance."""
-    with TemporaryDirectory() as temp_dir:
-        yield LocalRegistryBackend(uri=Path(temp_dir))
-
-
-@pytest.fixture
-def mutable_registry():
-    """Create a versioned mutable registry (auto-increments on save, allows overwrites with explicit version)."""
-    with TemporaryDirectory() as temp_dir:
-        yield Registry(backend=temp_dir, version_objects=True, mutable=True)
-
-
-@pytest.fixture
-def non_versioned_immutable_registry():
-    """Create a non-versioned immutable registry (write-once, raises on conflict)."""
-    with TemporaryDirectory() as temp_dir:
-        yield Registry(backend=temp_dir, version_objects=False, mutable=False)
-
-
-@pytest.fixture
-def non_versioned_registry():
-    """Create a registry with versioning disabled and mutable=True for overwrites."""
-    with TemporaryDirectory() as temp_dir:
-        yield Registry(backend=temp_dir, version_objects=False, mutable=True)
-
-
-def _make_op_results(*results: OpResult) -> OpResults:
-    """Helper to create OpResults from OpResult objects."""
-    op_results = OpResults()
-    for r in results:
-        op_results.add(r)
-    return op_results
+from tests.utils.registry_storage import MockGCSHandler, MockS3Handler
 
 
 class _BadLenList(list):
@@ -149,113 +77,6 @@ REGISTRY_BYTES_META = {
     "metadata": {},
     "_files": ["data.txt"],
 }
-
-
-class _SerializerMeta(type):
-    """Distinguish a materializer's class from its metaclass."""
-
-
-@pytest.fixture(params=["local", "cached-s3", "cached-gcp"])
-def deletion_backend(request, monkeypatch, tmp_path):
-    """Use real backends and cache code, with remote transport mocked in memory."""
-    if request.param == "local":
-        return LocalRegistryBackend(uri=tmp_path / "registry")
-    if request.param == "cached-s3":
-        monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.S3StorageHandler", MockS3Handler)
-        return S3RegistryBackend(
-            uri=tmp_path / "remote",
-            endpoint="example.invalid",
-            access_key="test",
-            secret_key="test",
-            bucket="delete-version-tests",
-            prefix="tenant/registry",
-        )
-    monkeypatch.setattr("mindtrace.registry.backends.gcp_registry_backend.GCSStorageHandler", MockGCSHandler)
-    return GCPRegistryBackend(
-        uri=tmp_path / "remote",
-        project_id="test-project",
-        bucket_name="delete-version-tests",
-        credentials_path=str(tmp_path / "unused-credentials.json"),
-        prefix="tenant/registry",
-    )
-
-
-def _stored_files(backend):
-    """Read actual payload/metadata bytes without using discovery or has_object."""
-    if isinstance(backend, LocalRegistryBackend):
-        return {
-            path.relative_to(backend.uri).as_posix(): path.read_bytes()
-            for path in backend.uri.rglob("*")
-            if path.is_file()
-        }
-    handler = backend.storage if isinstance(backend, S3RegistryBackend) else backend.gcs
-    return dict(handler._objects)
-
-
-@pytest.fixture(params=["local", "s3", "cached-s3", "gcp", "cached-gcp"])
-def make_registry(request, monkeypatch, tmp_path):
-    """Construct real Registry/backends, mocking only remote storage transport."""
-    kind = request.param
-
-    def make(versioned=True):
-        backend = tmp_path / "registry"
-        if kind.endswith("s3"):
-            monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.S3StorageHandler", MockS3Handler)
-            backend = S3RegistryBackend(
-                uri=tmp_path / "remote",
-                endpoint="example.invalid",
-                access_key="test",
-                secret_key="test",
-                bucket="missing-delete",
-                prefix="tenant/registry",
-            )
-        elif kind.endswith("gcp"):
-            monkeypatch.setattr("mindtrace.registry.backends.gcp_registry_backend.GCSStorageHandler", MockGCSHandler)
-            backend = GCPRegistryBackend(
-                uri=tmp_path / "remote",
-                project_id="test",
-                bucket_name="missing-delete",
-                credentials_path=str(tmp_path / "unused.json"),
-                prefix="tenant/registry",
-            )
-        return Registry(backend=backend, version_objects=versioned, use_cache=kind.startswith("cached"))
-
-    return make
-
-
-@pytest.fixture(params=["local", "s3", "s3-prefixed", "gcp", "gcp-prefixed"])
-def nested_backend(request, monkeypatch, tmp_path):
-    """Exercise real backend code with in-memory remote storage adapters."""
-    kind = request.param
-    prefix = "tenant/registry" if kind.endswith("-prefixed") else ""
-    if kind == "local":
-        return LocalRegistryBackend(uri=tmp_path / "registry")
-    if kind.startswith("s3"):
-        monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.S3StorageHandler", MockS3Handler)
-        return S3RegistryBackend(
-            uri=tmp_path / "remote",
-            endpoint="example.invalid",
-            access_key="test",
-            secret_key="test",
-            bucket="nested-name-tests",
-            prefix=prefix,
-        )
-    monkeypatch.setattr("mindtrace.registry.backends.gcp_registry_backend.GCSStorageHandler", MockGCSHandler)
-    return GCPRegistryBackend(
-        uri=tmp_path / "remote",
-        project_id="test-project",
-        bucket_name="nested-name-tests",
-        credentials_path=str(tmp_path / "unused-credentials.json"),
-        prefix=prefix,
-    )
-
-
-def _nested_stored_files(backend):
-    """Inspect physical storage without relying on the discovery methods under test."""
-    if isinstance(backend, LocalRegistryBackend):
-        return {p.relative_to(backend.uri).as_posix(): p.read_bytes() for p in backend.uri.rglob("*") if p.is_file()}
-    handler = backend.storage if isinstance(backend, S3RegistryBackend) else backend.gcs
-    return dict(handler._objects)
 
 
 def _version_files(backend, files, name, version):
@@ -277,68 +98,12 @@ def _read(target, operation, key="item@1.0.0"):
     return getattr(target, operation)(key, "fallback")
 
 
-class StringHolder:
-    """Plain class round-tripped through the registry by a foreign materializer."""
-
-    def __init__(self, value: str):
-        self.value = value
-
-
-class _PydanticSample(BaseModel):
-    """Module-scope pydantic subclass so ``Registry.load`` can re-import its class."""
-
-    x: int
-    y: str
-
-
-@pytest.fixture(params=["item", "nested/item", "model..backup", "namespace:object"])
-def valid_relative_path(request):
-    """Nested names and literal dots are valid; only a '..' component is rejected."""
-    return request.param
-
-
-@pytest.fixture(params=["parent", "absolute", "embedded_parent"])
-def invalid_relative_path(request, tmp_path):
-    """Include traversal that stays inside the root: syntax must still be rejected."""
-    if request.param == "parent":
-        return "../item"
-    if request.param == "absolute":
-        return str(tmp_path / "absolute-item")
-    return "nested/../item"
-
-
-class RelativePathBytesMaterializer(BaseMaterializer):
-    """Read the requested layout without requiring the default data.txt filename."""
-
-    def load(self, data_type, *, filename):
-        return Path(self.uri, filename).read_bytes()
-
-
-@pytest.fixture
-def registry(temp_registry_dir):
-    """Create a Registry instance with a temporary directory."""
-    return Registry(backend=temp_registry_dir, version_objects=True)
-
-
 def _make_cached_facade_registry(temp_registry_dir: str) -> Registry:
     mock_backend = Mock(spec=RegistryBackend)
     mock_backend.uri = Path(temp_registry_dir) / "remote"
     mock_backend.registered_materializers = Mock(return_value={})
     mock_backend.fetch_registry_metadata = Mock(return_value={})
     return Registry(backend=mock_backend, version_objects=True)
-
-
-class ForeignIntMaterializer(metaclass=_SerializerMeta):
-    """An importable materializer that does not inherit any Mindtrace base."""
-
-    def __init__(self, uri: str):
-        self.uri = uri
-
-    def save(self, data: int) -> None:
-        Path(self.uri, "number.txt").write_text(str(data))
-
-    def load(self, data_type: type) -> int:
-        return int(Path(self.uri, "number.txt").read_text())
 
 
 def _assert_exact_version_removed(backend, before, name, version):
@@ -353,23 +118,6 @@ def _assert_exact_version_removed(backend, before, name, version):
     assert any(key.startswith(payload_prefix) for key in before)
     expected = {key: value for key, value in before.items() if key != metadata and not key.startswith(payload_prefix)}
     assert _stored_files(backend) == expected
-
-
-class StringHolderMaterializer:
-    """A materializer for StringHolder that does NOT inherit BaseMaterializer."""
-
-    def __init__(self, uri: str, **_: Any):
-        self.uri = uri
-
-    def save(self, data: StringHolder) -> None:
-        Path(self.uri).mkdir(parents=True, exist_ok=True)
-        with open(os.path.join(self.uri, "data.json"), "w") as f:
-            json.dump({"value": data.value}, f)
-
-    def load(self, data_type: Type[Any]) -> StringHolder:
-        with open(os.path.join(self.uri, "data.json")) as f:
-            payload = json.load(f)
-        return StringHolder(value=payload["value"])
 
 
 def _rewrite_registry_metadata(registry, name: str, version: str, **updates):
@@ -845,57 +593,11 @@ class TestVersionResolution:
         assert registry.resolve_version("item") == "1.0.0"
 
 
-@pytest.fixture(params=["local", "cached", "store"])
-def save_target(request, tmp_path):
-    """Exercise local, cache-aware remote, and Store save entry points."""
-    if request.param == "cached":
-        registry = request.getfixturevalue("cached_mock_registry")
-    else:
-        registry = Registry(tmp_path / "registry", version_objects=True)
-    target = Store(mounts={"local": registry}, default_mount="local") if request.param == "store" else registry
-    return target, registry
-
-
-def _replicas(registry):
-    return [registry.backend, registry._cache.backend] if registry._cached else [registry.backend]
-
-
 def _snapshot(registry):
     backends = [registry.backend]
     if registry._cached:
         backends.append(registry._cache.backend)
     return [_stored_files(backend) for backend in backends]
-
-
-@pytest.fixture(params=["core", "registry", "cached"])
-def reader(request, tmp_path):
-    if request.param == "cached":
-        registry = request.getfixturevalue("cached_mock_registry")
-    else:
-        registry = Registry(backend=tmp_path / "registry", version_objects=True, mutable=True)
-    return registry, registry._core if request.param == "core" else registry
-
-
-@pytest.fixture(params=["core", "registry", "cached", "store"])
-def batch_target(request, tmp_path):
-    if request.param == "cached":
-        registry = request.getfixturevalue("cached_mock_registry")
-    else:
-        registry = Registry(backend=tmp_path / "registry", version_objects=True, mutable=True)
-    target = registry
-    if request.param == "core":
-        target = registry._core
-    elif request.param == "store":
-        target = Store({"archive": registry}, default_mount="archive")
-    return target, registry
-
-
-@pytest.fixture(params=["registry", "store"])
-def public_registry(request, tmp_path):
-    registry = Registry(backend=tmp_path / "registry", version_objects=True)
-    if request.param == "store":
-        return Store(mounts={"local": registry}, default_mount="local")
-    return registry
 
 
 class TestConfiguration:
@@ -6147,16 +5849,14 @@ class TestNestedNames:
         survivors = ["models/resnet/child", "models/resnet2", "archive/resnet"]
         for value, other in enumerate(survivors, start=10):
             registry.save(other, value, version="1.0.0")
-        before = _nested_stored_files(nested_backend)
+        before = _stored_files(nested_backend)
         removed = _version_files(nested_backend, before, name, "1.0.0")
         if versioned and delete_all:
             removed |= _version_files(nested_backend, before, name, "1.0.1")
 
         registry.delete(name, None if delete_all else "1.0.0")
 
-        assert _nested_stored_files(nested_backend) == {
-            key: value for key, value in before.items() if key not in removed
-        }
+        assert _stored_files(nested_backend) == {key: value for key, value in before.items() if key not in removed}
         for value, other in enumerate(survivors, start=10):
             assert registry.load(other, "1.0.0") == value
         expected_versions = ["1.0.1"] if versioned and not delete_all else []
@@ -6168,20 +5868,20 @@ class TestNestedNames:
     @pytest.mark.parametrize("versioned", [False, True])
     def test_clear_includes_nested_names_and_removes_metadata(self, nested_backend, versioned):
         registry = Registry(backend=nested_backend, version_objects=versioned, use_cache=False)
-        empty_registry_files = _nested_stored_files(nested_backend)
+        empty_registry_files = _stored_files(nested_backend)
         for name in ["models/resnet", "models/resnet/child", "archive/resnet", "flat"]:
             registry.save(name, 1, version="1.0.0")
             if versioned:
                 registry.save(name, 2, version="2.0.0")
         registry.clear()
-        assert _nested_stored_files(nested_backend) == empty_registry_files
+        assert _stored_files(nested_backend) == empty_registry_files
         assert registry.list_objects() == []
 
     @pytest.mark.parametrize("versioned", [False, True])
     def test_reopen_preserves_existing_nested_storage_layout(self, nested_backend, versioned):
         registry = Registry(backend=nested_backend, version_objects=versioned, use_cache=False)
         registry.save("models/resnet", 1, version="1.0.0")
-        before = _nested_stored_files(nested_backend)
+        before = _stored_files(nested_backend)
         metadata_key = "_meta_models/resnet@1.0.0.yaml"
         if not isinstance(nested_backend, LocalRegistryBackend):
             root = f"{nested_backend._prefix}/" if nested_backend._prefix else ""
@@ -6194,7 +5894,7 @@ class TestNestedNames:
         assert reopened.list_objects() == ["models/resnet"]
         assert reopened.list_versions("models/resnet") == ["1.0.0"]
         assert reopened.load("models/resnet") == 1
-        assert _nested_stored_files(nested_backend) == before
+        assert _stored_files(nested_backend) == before
 
     @pytest.mark.parametrize("kind", ["s3", "gcp"])
     def test_cached_remote_nested_name_round_trip(self, kind, monkeypatch, tmp_path):
@@ -6612,7 +6312,7 @@ class TestMaterializerDispatch:
         reg = Registry(tmp_path / "reg", version_objects=False, mutable=True)
         reg.register_materializer(
             StringHolder,
-            f"{__name__}.StringHolderMaterializer",
+            materializer_path(StringHolderMaterializer),
         )
         obj = StringHolder("hello")
         reg.save("holder", obj)

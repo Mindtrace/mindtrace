@@ -13,7 +13,7 @@ import pytest
 
 from mindtrace.registry import Registry
 from mindtrace.registry.core.types import VerifyLevel
-from tests.registry_test_helpers import assert_latest_snapshot_coherent
+from tests.utils.registry_helpers import assert_latest_snapshot_coherent
 
 pytestmark = [pytest.mark.integration, pytest.mark.registry]
 

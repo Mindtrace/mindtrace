@@ -2,11 +2,15 @@
 
 import itertools
 import json
+import os
 from pathlib import Path
+from typing import Any, Type
 
-from mindtrace.registry import Registry
+from pydantic import BaseModel
+
+from mindtrace.registry import LocalRegistryBackend, Registry, S3RegistryBackend
 from mindtrace.registry.core.base_materializer import BaseMaterializer
-from mindtrace.registry.core.types import VerifyLevel
+from mindtrace.registry.core.types import OpResult, OpResults, VerifyLevel
 
 
 class RevisionedIntMaterializer(BaseMaterializer):
@@ -94,3 +98,82 @@ def assert_latest_snapshot_coherent(reader, monkeypatch):
             f"Cache bytes were stored under the wrong concrete version: {version}"
         )
     assert reader.load("race", "1.0.0", verify=VerifyLevel.NONE) == 1
+
+
+def _stored_files(backend):
+    """Read actual payload/metadata bytes without using discovery or has_object."""
+    if isinstance(backend, LocalRegistryBackend):
+        return {
+            path.relative_to(backend.uri).as_posix(): path.read_bytes()
+            for path in backend.uri.rglob("*")
+            if path.is_file()
+        }
+    handler = backend.storage if isinstance(backend, S3RegistryBackend) else backend.gcs
+    return dict(handler._objects)
+
+
+def _replicas(registry):
+    return [registry.backend, registry._cache.backend] if registry._cached else [registry.backend]
+
+
+def _make_op_results(*results: OpResult) -> OpResults:
+    """Helper to create OpResults from OpResult objects."""
+    op_results = OpResults()
+    for r in results:
+        op_results.add(r)
+    return op_results
+
+
+class _SerializerMeta(type):
+    """Distinguish a materializer's class from its metaclass."""
+
+
+class ForeignIntMaterializer(metaclass=_SerializerMeta):
+    """An importable materializer that does not inherit any Mindtrace base."""
+
+    def __init__(self, uri: str):
+        self.uri = uri
+
+    def save(self, data: int) -> None:
+        Path(self.uri, "number.txt").write_text(str(data))
+
+    def load(self, data_type: type) -> int:
+        return int(Path(self.uri, "number.txt").read_text())
+
+
+class StringHolder:
+    """Plain class round-tripped through the registry by a foreign materializer."""
+
+    def __init__(self, value: str):
+        self.value = value
+
+
+class StringHolderMaterializer:
+    """A materializer for StringHolder that does NOT inherit BaseMaterializer."""
+
+    def __init__(self, uri: str, **_: Any):
+        self.uri = uri
+
+    def save(self, data: StringHolder) -> None:
+        Path(self.uri).mkdir(parents=True, exist_ok=True)
+        with open(os.path.join(self.uri, "data.json"), "w") as f:
+            json.dump({"value": data.value}, f)
+
+    def load(self, data_type: Type[Any]) -> StringHolder:
+        with open(os.path.join(self.uri, "data.json")) as f:
+            payload = json.load(f)
+        return StringHolder(value=payload["value"])
+
+
+class _PydanticSample(BaseModel):
+    """Module-scope pydantic subclass so ``Registry.load`` can re-import its class."""
+
+    x: int
+    y: str
+
+
+class RelativePathBytesMaterializer(BaseMaterializer):
+    """Read the requested layout without requiring the default data.txt filename."""
+
+    def load(self, data_type, *, filename):
+        return Path(self.uri, filename).read_bytes()

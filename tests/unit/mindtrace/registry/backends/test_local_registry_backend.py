@@ -50,16 +50,6 @@ BYTES_DIRECT_METADATA_LOCAL = {
 }
 
 
-@pytest.fixture(params=["parent", "absolute", "embedded_parent"])
-def invalid_relative_path(request, tmp_path):
-    """Include traversal that stays inside the root: syntax must still be rejected."""
-    if request.param == "parent":
-        return "../item"
-    if request.param == "absolute":
-        return str(tmp_path / "absolute-item")
-    return "nested/../item"
-
-
 @pytest.fixture
 def backend(temp_dir):
     """Create a LocalRegistryBackend instance with a temporary directory.

@@ -14,20 +14,8 @@ from mindtrace.registry.core.exceptions import (
     StoreLocationNotFound,
 )
 from mindtrace.registry.core.mount import LocalMountConfig, Mount
-from tests.registry_test_helpers import RevisionedIntMaterializer
-from tests.unit.mindtrace.registry.backends.test_s3_registry_backend import MockS3Handler
-from tests.unit.mindtrace.registry.core.test_registry import _replicas, _stored_files
-
-
-@pytest.fixture(params=["local", "cached"])
-def move_store(request, tmp_path):
-    source = (
-        request.getfixturevalue("cached_mock_registry")
-        if request.param == "cached"
-        else Registry(backend=tmp_path / "source", version_objects=True, mutable=True)
-    )
-    destination = Registry(backend=tmp_path / "destination", version_objects=True, mutable=True)
-    return Store(mounts={"src": source, "dst": destination}, default_mount="dst")
+from tests.utils.registry_helpers import RevisionedIntMaterializer, _replicas, _stored_files
+from tests.utils.registry_storage import MockS3Handler
 
 
 def _assert_exact_version_removed(backend, before, name, version):
@@ -48,50 +36,6 @@ def _assert_exact_version_removed(backend, before, name, version):
     }
     actual = {key: value for key, value in _stored_files(backend).items() if not key.startswith(staging)}
     assert actual == expected
-
-
-@pytest.fixture
-def store(tmp_path):
-    return Store(
-        mounts={
-            "a": Registry(backend=tmp_path / "a", version_objects=True, mutable=True),
-            "b": Registry(backend=tmp_path / "b", version_objects=True, mutable=True),
-        },
-        default_mount="a",
-    )
-
-
-@pytest.fixture
-def basic_store():
-    with TemporaryDirectory() as d1, TemporaryDirectory() as d2:
-        store = Store.from_mounts(
-            [
-                Mount(name="a", backend="local", config=LocalMountConfig(uri=d1), is_default=True),
-                Mount(name="b", backend="local", config=LocalMountConfig(uri=d2)),
-            ]
-        )
-        yield store
-
-
-@pytest.fixture
-def versioned_store():
-    with TemporaryDirectory() as d1, TemporaryDirectory() as d2:
-        store = Store(
-            mounts={
-                "a": Registry(backend=Path(d1), version_objects=True, mutable=True),
-                "b": Registry(backend=Path(d2), version_objects=True, mutable=True),
-            },
-            default_mount="a",
-        )
-        yield store
-
-
-@pytest.fixture
-def download_store(tmp_path, cached_mock_registry):
-    local = Registry(backend=tmp_path / "local", version_objects=True)
-    store = Store(mounts={"local": local}, default_mount="local")
-    store.add_mount(cached_mock_registry, name="remote", read_only=True)
-    return store
 
 
 class TestMountRouting:
