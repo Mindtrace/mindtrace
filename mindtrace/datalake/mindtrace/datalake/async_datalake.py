@@ -2516,6 +2516,7 @@ class AsyncDatalake(Mindtrace):
             self,
             resolved_dataset_version,
             split_map=split_map,
+            include_media=include_media,
         )
         return export_dataset_to_format(
             exportable_dataset,
