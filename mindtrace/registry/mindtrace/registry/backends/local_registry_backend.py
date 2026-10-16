@@ -75,6 +75,12 @@ class LocalRegistryBackend(RegistryBackend):
         """The resolved metadata file path for the backend."""
         return self._metadata_path
 
+    def validate_object_name(self, name: NameArg) -> None:
+        """Check logical names and native path syntax before local filesystem use."""
+        super().validate_object_name(name)
+        for value in self._to_list(name):
+            validate_relative_path(value, parameter="Object name")
+
     # ─────────────────────────────────────────────────────────────────────────
     # Path Helpers
     # ─────────────────────────────────────────────────────────────────────────

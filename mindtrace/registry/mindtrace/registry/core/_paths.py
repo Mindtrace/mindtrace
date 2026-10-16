@@ -1,6 +1,6 @@
 """Lexical validation for inputs used as relative filesystem paths."""
 
-from pathlib import PurePath
+from pathlib import PurePath, PurePosixPath
 
 
 def validate_relative_path(value: str, *, parameter: str) -> None:
@@ -19,3 +19,13 @@ def validate_relative_path(value: str, *, parameter: str) -> None:
     path = PurePath(value)
     if path.anchor or ".." in path.parts:
         raise ValueError(f"{parameter} must be a relative path without '..' components: {value!r}")
+
+
+def validate_object_path(value: str) -> None:
+    """Validate slash-delimited logical names independently of the client's OS.
+
+    Native filesystem constraints are checked separately by local backends.
+    """
+    path = PurePosixPath(value)
+    if "\\" in value or path.anchor or ".." in path.parts:
+        raise ValueError(f"Object name must be a relative slash-delimited path without '..' components: {value!r}")
