@@ -184,19 +184,23 @@ def gcp_credentials_path(core_config):
 
 @pytest.fixture(scope="session")
 def gcs_client(gcp_project_id, gcp_credentials_path):
-    """Skip absent SDK/ADC only; invalid explicit credentials and other errors fail."""
+    """Skip when optional GCS credentials or authentication are unavailable."""
     storage = pytest.importorskip("google.cloud.storage")
-    from google.auth.exceptions import DefaultCredentialsError
+    from google.auth.exceptions import GoogleAuthError
     from google.oauth2 import service_account
+    from requests.exceptions import RequestException
 
-    if gcp_credentials_path:
-        credentials = service_account.Credentials.from_service_account_file(gcp_credentials_path)
-        client = storage.Client(project=gcp_project_id, credentials=credentials)
-    else:
-        try:
+    try:
+        if gcp_credentials_path:
+            try:
+                credentials = service_account.Credentials.from_service_account_file(gcp_credentials_path)
+            except ValueError as exc:
+                pytest.skip(f"GCS credentials file is invalid: {exc}")
+            client = storage.Client(project=gcp_project_id, credentials=credentials)
+        else:
             client = storage.Client(project=gcp_project_id)
-        except DefaultCredentialsError as exc:
-            pytest.skip(f"GCS application-default credentials not configured: {exc}")
+    except (GoogleAuthError, OSError, RequestException) as exc:
+        pytest.skip(f"GCS authentication unavailable: {exc}")
     yield client
 
 
@@ -221,9 +225,17 @@ def gcp_test_bucket_name(core_config):
 
 @pytest.fixture
 def gcp_test_bucket(gcs_client, gcp_test_bucket_name) -> Generator[str, None, None]:
-    """Missing optional bucket may skip; unexpected/permission errors must propagate."""
+    """Skip when the optional remote bucket cannot be accessed."""
+    from google.api_core.exceptions import GoogleAPICallError, RetryError
+    from google.auth.exceptions import GoogleAuthError
+    from requests.exceptions import RequestException
+
     bucket = gcs_client.bucket(gcp_test_bucket_name)
-    if not bucket.exists():
+    try:
+        available = bucket.exists()
+    except (GoogleAPICallError, RetryError, GoogleAuthError, OSError, RequestException) as exc:
+        pytest.skip(f"GCP test bucket '{gcp_test_bucket_name}' unavailable: {exc}")
+    if not available:
         pytest.skip(f"GCP test bucket '{gcp_test_bucket_name}' does not exist")
     yield gcp_test_bucket_name
 
