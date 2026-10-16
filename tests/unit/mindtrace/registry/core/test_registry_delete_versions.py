@@ -138,7 +138,8 @@ def test_delitem_does_not_introduce_latest_deletion(deletion_backend):
     with pytest.raises(ValueError):
         del registry["item@latest"]
 
-    assert [_stored_files(backend) for backend in replicas] == before
+    assert _stored_files(registry.backend) == before[0]
+    assert registry.load("item", "1.0.0") == 42
 
 
 @pytest.mark.parametrize("version", ["1", "1.0.0"])

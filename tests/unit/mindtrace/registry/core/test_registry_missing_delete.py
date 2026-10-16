@@ -131,12 +131,12 @@ def test_all_version_delete_refreshes_cached_empty_listing(make_registry):
     assert not registry.has_object("item", "1")
 
 
-def test_backend_cleanup_remains_idempotent(make_registry):
+def test_backend_reports_missing_targets(make_registry):
     registry = make_registry()
     before = _snapshot(registry)
     for _ in range(2):
         result = registry.backend.delete(["missing"], ["1.0.0"])
-        assert result[("missing", "1.0.0")].ok
+        assert isinstance(result[("missing", "1.0.0")].exception, RegistryObjectNotFound)
     assert _snapshot(registry) == before
 
 
@@ -159,8 +159,9 @@ def test_core_and_facade_delitem_return_batch_result(tmp_path, facade):
 @pytest.mark.parametrize("stage", ["fetch_metadata", "delete"])
 @pytest.mark.parametrize("operation", ["delete", "delitem", "batch"])
 @pytest.mark.parametrize("raised", [False, True], ids=["per-item-result", "raised-by-backend"])
-def test_operational_failures_are_preserved(tmp_path, monkeypatch, stage, operation, raised):
-    registry = Registry(backend=tmp_path / "registry", version_objects=True)
+def test_operational_failures_are_preserved(tmp_path, cached_mock_registry, monkeypatch, stage, operation, raised):
+    backend = cached_mock_registry.backend if stage == "fetch_metadata" else tmp_path / "registry"
+    registry = Registry(backend=backend, version_objects=True, use_cache=False)
     registry.save("item", 7, version="1")
     error = PermissionError("storage access denied")
     failure = OpResults()
@@ -222,8 +223,9 @@ def test_store_delegates_missing_delete_policy(tmp_path):
 
 
 @pytest.mark.parametrize("stage", ["list_versions", "fetch_metadata"])
-def test_batch_lookup_error_does_not_block_independent_deletion(tmp_path, monkeypatch, stage):
-    registry = Registry(backend=tmp_path / "registry", version_objects=True)
+def test_batch_lookup_error_does_not_block_independent_deletion(tmp_path, cached_mock_registry, monkeypatch, stage):
+    backend = cached_mock_registry.backend if stage == "fetch_metadata" else tmp_path / "registry"
+    registry = Registry(backend=backend, version_objects=True, use_cache=False)
     for name in ("blocked", "good"):
         registry.save(name, name, version="1")
     original = getattr(registry.backend, stage)
@@ -243,22 +245,23 @@ def test_batch_lookup_error_does_not_block_independent_deletion(tmp_path, monkey
     assert result.errors[("blocked", "all")]["error"] == "PermissionError"
     monkeypatch.setattr(registry.backend, stage, original)
     assert registry.load("blocked", "1") == "blocked"
-    assert (registry.backend.uri / "blocked" / "1.0.0" / "data.json").is_file()
-    assert not (registry.backend.uri / "good" / "1.0.0").exists()
+    assert registry.has_object("blocked", "1")
+    assert not registry.has_object("good", "1")
 
 
 def test_serialized_missing_metadata_error_uses_registry_exception(tmp_path, monkeypatch):
     registry = Registry(backend=tmp_path / "registry")
     result = OpResults()
     result.add(OpResult.failed("missing", "1.0.0", error_type="RegistryObjectNotFound", message="absent"))
-    monkeypatch.setattr(registry.backend, "fetch_metadata", Mock(return_value=result))
+    monkeypatch.setattr(registry.backend, "delete", Mock(return_value=result))
     with pytest.raises(RegistryObjectNotFound, match="absent"):
         registry.delete("missing")
 
 
 @pytest.mark.parametrize("stage", ["fetch_metadata", "delete"])
-def test_missing_backend_response_is_not_success_or_absence(tmp_path, monkeypatch, stage):
-    registry = Registry(backend=tmp_path / "registry")
+def test_missing_backend_response_is_not_success_or_absence(tmp_path, cached_mock_registry, monkeypatch, stage):
+    backend = cached_mock_registry.backend if stage == "fetch_metadata" else tmp_path / "registry"
+    registry = Registry(backend=backend, use_cache=False)
     registry.save("item", 7)
     before = _snapshot(registry)
     monkeypatch.setattr(registry.backend, stage, Mock(return_value=OpResults()))
@@ -299,3 +302,16 @@ def test_cache_cleanup_failure_preserves_remote_delete_error(cached_mock_registr
         registry.delete("item", "1")
     assert caught.value is error
     cleanup.assert_called_once()
+
+
+def test_delete_reads_metadata_only_once_per_remote_target(make_registry, monkeypatch):
+    registry = make_registry()
+    for version in ["1", "2", "3"]:
+        registry.save("item", 1, version=version)
+    fetch = Mock(wraps=registry.backend.fetch_metadata)
+    monkeypatch.setattr(registry.backend, "fetch_metadata", fetch)
+    registry.delete("item")
+    if isinstance(registry.backend, (S3RegistryBackend, GCPRegistryBackend)):
+        fetch.assert_called_once_with(["item"] * 3, ["1.0.0", "2.0.0", "3.0.0"])
+    else:
+        fetch.assert_not_called()

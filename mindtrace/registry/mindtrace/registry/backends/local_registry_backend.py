@@ -675,6 +675,7 @@ class LocalRegistryBackend(RegistryBackend):
                 with self._internal_lock(f"{obj_name}@{obj_version}"):
                     target = self._full_path(self._object_key(obj_name, obj_version))
                     meta_path = self._object_metadata_path(obj_name, obj_version)
+                    metadata_exists = meta_path.exists()
                     # Delete directory
                     self.logger.debug(f"Deleting directory: {target}")
                     if target.exists():
@@ -682,7 +683,7 @@ class LocalRegistryBackend(RegistryBackend):
 
                     # Delete metadata
                     self.logger.debug(f"Deleting metadata file: {meta_path}")
-                    if meta_path.exists():
+                    if metadata_exists:
                         meta_path.unlink()
 
                     # Cleanup parent if empty (race-safe under concurrent deletes).
@@ -699,6 +700,8 @@ class LocalRegistryBackend(RegistryBackend):
                         # Parent already removed by a concurrent delete; this is fine.
                         pass
 
+                if not metadata_exists:
+                    raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found")
                 results.add(OpResult.success(obj_name, obj_version))
             except Exception as e:
                 results.add(OpResult.failed(obj_name, obj_version, e))

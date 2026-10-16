@@ -1050,7 +1050,9 @@ class GCPRegistryBackend(RegistryBackend):
             # Step 1: Extract UUID from metadata (caller fetches metadata in delete())
             # If no metadata, object doesn't exist - nothing to delete
             if not metadata:
-                return OpResult.success(obj_name, obj_version)  # Idempotent delete
+                return OpResult.failed(
+                    obj_name, obj_version, RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found")
+                )
 
             uuid_str = metadata.get("_storage", {}).get("uuid")
             if not uuid_str:
@@ -1107,7 +1109,7 @@ class GCPRegistryBackend(RegistryBackend):
 
         This backend method returns ``OpResults`` for both single-item and batch
         calls. Per-item delete outcomes are reported via ``OpResult`` entries,
-        and missing objects are treated as successful idempotent deletes.
+        and missing objects are reported as failed RegistryObjectNotFound results.
 
         Args:
             name: Name of the object(s).
@@ -1143,10 +1145,12 @@ class GCPRegistryBackend(RegistryBackend):
 
         def delete_one(args: Tuple[str, str]) -> OpResult:
             obj_name, obj_version = args
-            # Get metadata for this object (may be None if not found)
             meta_result = metadata_results.get((obj_name, obj_version))
-            obj_metadata = meta_result.metadata if meta_result and meta_result.ok else None
-            return self._delete_single_object(obj_name, obj_version, file_workers, metadata=obj_metadata)
+            if meta_result is None:
+                return OpResult.failed(obj_name, obj_version, RuntimeError("Backend returned no metadata result"))
+            if not meta_result.ok:
+                return meta_result
+            return self._delete_single_object(obj_name, obj_version, file_workers, metadata=meta_result.metadata)
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
             for result in executor.map(delete_one, delete_tasks):

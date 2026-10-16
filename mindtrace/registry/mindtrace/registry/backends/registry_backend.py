@@ -267,7 +267,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         Returns:
             OpResults with OpResult for each (name, version):
             - OpResult.success() on success
-            - OpResult.failed() on failure
+            - OpResult.failed() on failure, including RegistryObjectNotFound for absent objects
         """
         pass
 

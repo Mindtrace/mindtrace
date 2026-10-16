@@ -946,50 +946,25 @@ class _RegistryCore(Mindtrace):
             raise RegistryObjectNotFound(f"Object {name} does not exist")
         return versions
 
-    def _delete_verified_objects(self, targets: List[Tuple[str, str]]) -> OpResults:
-        """Check authoritative metadata before invoking idempotent backend cleanup.
-
-        Backend result errors retain their original exception/type. A shared lookup
-        or deletion failure applies to all targets in that call, not to unrelated
-        inputs already rejected during resolution. This is not an atomic reservation.
-        """
+    def _delete_objects(self, targets: List[Tuple[str, str]]) -> OpResults:
+        """Delete resolved targets and preserve the backend's per-item outcomes."""
         targets = list(dict.fromkeys(targets))
         results = OpResults()
         if not targets:
             return results
         try:
-            metadata = self.backend.fetch_metadata([n for n, _ in targets], [v for _, v in targets])
+            deleted = self.backend.delete([n for n, _ in targets], [v for _, v in targets], acquire_lock=self.mutable)
         except Exception as error:
             for name, version in targets:
                 results.add(OpResult.failed(name, version, error))
             return results
-
-        eligible = []
         for name, version in targets:
-            entry = metadata.get((name, version))
-            if entry is None:
-                results.add(OpResult.failed(name, version, RuntimeError("Backend returned no metadata result")))
-            elif not entry.ok:
-                results.add(entry)
-            else:
-                eligible.append((name, version))
-
-        if eligible:
-            try:
-                deleted = self.backend.delete(
-                    [n for n, _ in eligible], [v for _, v in eligible], acquire_lock=self.mutable
-                )
-            except Exception as error:
-                for name, version in eligible:
-                    results.add(OpResult.failed(name, version, error))
-            else:
-                for name, version in eligible:
-                    entry = deleted.get((name, version))
-                    results.add(
-                        entry
-                        if entry is not None
-                        else OpResult.failed(name, version, RuntimeError("Backend returned no deletion result"))
-                    )
+            entry = deleted.get((name, version))
+            results.add(
+                entry
+                if entry is not None
+                else OpResult.failed(name, version, RuntimeError("Backend returned no deletion result"))
+            )
         return results
 
     def _delete_single(
@@ -999,7 +974,7 @@ class _RegistryCore(Mindtrace):
     ) -> None:
         """Delete a single object from the registry. Raises on error."""
         versions_to_delete = self._resolve_delete_versions(name, version)
-        delete_results = self._delete_verified_objects([(name, v) for v in versions_to_delete])
+        delete_results = self._delete_objects([(name, v) for v in versions_to_delete])
 
         # For single object delete, raise on any error
         for del_result in delete_results:
@@ -1042,7 +1017,7 @@ class _RegistryCore(Mindtrace):
 
         # Batch delete - backend returns results without raising
         if items_to_delete:
-            for op_result in self._delete_verified_objects(items_to_delete):
+            for op_result in self._delete_objects(items_to_delete):
                 if op_result.is_error:
                     for original_key in resolved_to_original[(op_result.name, op_result.version)]:
                         result.errors[original_key] = {

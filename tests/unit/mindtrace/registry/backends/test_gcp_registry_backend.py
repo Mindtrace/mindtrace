@@ -1223,7 +1223,7 @@ def test_pull_fallback_listing_branches(backend, sample_object_dir, sample_metad
 
 def test_delete_single_object_edge_cases(backend, monkeypatch):
     result = backend._delete_single_object("missing:object", "1.0.0", metadata=None)
-    assert result.ok
+    assert result.error == "RegistryObjectNotFound"
 
     monkeypatch.setattr(backend, "_create_commit_plan", lambda *args, **kwargs: False)
     result = backend._delete_single_object("test:missing-uuid", "1.0.0", metadata={"_files": ["a.bin"]})
