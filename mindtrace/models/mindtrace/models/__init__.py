@@ -35,6 +35,8 @@ from mindtrace.models.architectures.backbones import (
 from mindtrace.models.inference import (
     ClassificationPostprocessor,
     HuggingFaceImageProcessor,
+    TorchEmbeddingModel,
+    TorchInferencePipeline,
     TorchModel,
 )
 from mindtrace.models.protocols import EmbeddingModel, Model
@@ -124,6 +126,8 @@ __all__ = [
     # runnable models
     "EmbeddingModel",
     "Model",
+    "TorchEmbeddingModel",
+    "TorchInferencePipeline",
     "TorchModel",
     "HuggingFaceImageProcessor",
     "ClassificationPostprocessor",

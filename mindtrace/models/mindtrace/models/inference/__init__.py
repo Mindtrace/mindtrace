@@ -2,10 +2,12 @@
 
 from mindtrace.models.inference.postprocessors import ClassificationPostprocessor
 from mindtrace.models.inference.processors import HuggingFaceImageProcessor
-from mindtrace.models.inference.torch import TorchModel
+from mindtrace.models.inference.torch import TorchEmbeddingModel, TorchInferencePipeline, TorchModel
 
 __all__ = [
     "ClassificationPostprocessor",
     "HuggingFaceImageProcessor",
+    "TorchEmbeddingModel",
+    "TorchInferencePipeline",
     "TorchModel",
 ]

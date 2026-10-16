@@ -19,6 +19,8 @@ from mindtrace.models import (
     EmbeddingModel,
     HuggingFaceImageProcessor,
     Model,
+    TorchEmbeddingModel,
+    TorchInferencePipeline,
     TorchModel,
 )
 
@@ -122,6 +124,194 @@ def _build_test_model() -> TorchModel[Any, dict[str, Any]]:
         processor=_ImageSizeProcessor(),
         postprocessor=_PassthroughPostprocessor(),
     )
+
+
+def _build_test_embedding_model() -> TorchEmbeddingModel[Any, dict[str, Any]]:
+    return TorchEmbeddingModel(
+        network=_RecordingNetwork(),
+        processor=_ImageSizeProcessor(),
+        postprocessor=_PassthroughPostprocessor(),
+    )
+
+
+def test_torch_inference_pipeline_is_available_from_public_models_namespace() -> None:
+    pipeline = TorchInferencePipeline(
+        network=_RecordingNetwork(),
+        processor=_ImageSizeProcessor(),
+    )
+
+    assert models_module.TorchInferencePipeline is TorchInferencePipeline
+    assert pipeline.network is not None
+
+
+def test_prediction_and_embedding_models_can_share_one_runtime_pipeline() -> None:
+    class TaggedPostprocessor:
+        def __init__(self, capability: str) -> None:
+            self.capability = capability
+
+        def __call__(self, outputs: Tensor, **params: Any) -> dict[str, Any]:
+            return {
+                "capability": self.capability,
+                "outputs": outputs.cpu().tolist(),
+                "params": params,
+            }
+
+    network = _RecordingNetwork()
+    processor = _ImageSizeProcessor()
+    pipeline = TorchInferencePipeline(network=network, processor=processor)
+    prediction_model = TorchModel(
+        pipeline=pipeline,
+        postprocessor=TaggedPostprocessor("prediction"),
+    )
+    embedding_model = TorchEmbeddingModel(
+        pipeline=pipeline,
+        postprocessor=TaggedPostprocessor("embedding"),
+    )
+
+    prediction = prediction_model.predict(Image.new("RGB", (4, 6)), threshold=0.5)
+    embedding = embedding_model.embed(Image.new("RGB", (4, 6)), normalize=True)
+
+    assert prediction_model.pipeline is embedding_model.pipeline is pipeline
+    assert prediction_model.network is embedding_model.network is network
+    assert prediction_model.processor is embedding_model.processor is processor
+    assert prediction == {
+        "capability": "prediction",
+        "outputs": [[5.0, 5.0]],
+        "params": {"threshold": 0.5},
+    }
+    assert embedding == {
+        "capability": "embedding",
+        "outputs": [[5.0, 5.0]],
+        "params": {"normalize": True},
+    }
+    assert not hasattr(prediction_model, "embed")
+    assert not hasattr(embedding_model, "predict")
+
+
+def test_direct_torch_model_construction_exposes_its_created_pipeline() -> None:
+    network = _RecordingNetwork()
+    processor = _ImageSizeProcessor()
+    model = TorchModel(
+        network=network,
+        processor=processor,
+        postprocessor=_PassthroughPostprocessor(),
+    )
+
+    assert isinstance(model.pipeline, TorchInferencePipeline)
+    assert model.network is network
+    assert model.processor is processor
+
+
+def test_shared_pipeline_cannot_be_combined_with_pipeline_components() -> None:
+    pipeline = TorchInferencePipeline(
+        network=_RecordingNetwork(),
+        processor=_ImageSizeProcessor(),
+    )
+
+    with pytest.raises(ValueError, match="pipeline cannot be combined"):
+        TorchModel(
+            network=_RecordingNetwork(),
+            processor=_ImageSizeProcessor(),
+            postprocessor=_PassthroughPostprocessor(),
+            pipeline=pipeline,
+        )
+
+
+def test_torch_embedding_model_is_available_from_public_models_namespace() -> None:
+    model = _build_test_embedding_model()
+    embedding_model: EmbeddingModel[Any, dict[str, Any]] = model
+
+    assert models_module.TorchEmbeddingModel is TorchEmbeddingModel
+    assert embedding_model is model
+    assert not hasattr(model, "predict")
+
+
+def test_embedding_forward_delegates_to_wrapped_network() -> None:
+    model = _build_test_embedding_model()
+    inputs = torch.tensor([[2.0, 3.0]])
+
+    outputs = model(inputs)
+
+    assert torch.equal(outputs, torch.tensor([[3.0, 2.0]]))
+
+
+def test_embed_composes_processor_network_and_postprocessor() -> None:
+    model = _build_test_embedding_model()
+    model.train()
+    image = Image.new("RGB", (4, 6))
+
+    result = model.embed(image, normalize=True)
+
+    assert result == {
+        "outputs": [[5.0, 5.0]],
+        "params": {"normalize": True},
+    }
+    assert model.network.training_during_forward is False
+    assert model.network.grad_enabled_during_forward is False
+    assert model.training is True
+    assert model.network.training is True
+
+
+def test_embed_runs_the_complete_pipeline_in_eval_and_inference_mode() -> None:
+    processor = _RecordingProcessor()
+    postprocessor = _RecordingParameterizedPostprocessor()
+    model = TorchEmbeddingModel(
+        network=_RecordingNetwork(),
+        processor=processor,
+        postprocessor=postprocessor,
+    )
+    model.train()
+
+    result = model.embed(torch.ones((1, 2)))
+
+    assert result.shape == (1, 2)
+    assert processor.training_during_call is False
+    assert processor.grad_enabled_during_call is False
+    assert processor.inference_mode_during_call is True
+    assert model.network.training_during_forward is False
+    assert model.network.grad_enabled_during_forward is False
+    assert model.network.inference_mode_during_forward is True
+    assert postprocessor.training_during_call is False
+    assert postprocessor.grad_enabled_during_call is False
+    assert postprocessor.inference_mode_during_call is True
+    assert model.training is True
+    assert processor.training is True
+    assert model.network.training is True
+    assert postprocessor.training is True
+
+
+def test_embed_restores_training_state_after_inference_error() -> None:
+    class RaisingNetwork(nn.Module):
+        def forward(self, inputs: Tensor) -> Tensor:
+            raise RuntimeError("embedding failed")
+
+    model = TorchEmbeddingModel(
+        network=RaisingNetwork(),
+        processor=lambda inputs: inputs,
+        postprocessor=_PassthroughPostprocessor(),
+    )
+    model.train()
+
+    with pytest.raises(RuntimeError, match="embedding failed"):
+        model.embed(torch.ones((1, 2)))
+
+    assert model.training is True
+    assert model.network.training is True
+
+
+def test_embed_rejects_non_tensor_processor_output() -> None:
+    class InvalidProcessor:
+        def __call__(self, inputs: Any) -> list[Any]:
+            return [inputs]
+
+    model = TorchEmbeddingModel(
+        network=nn.Identity(),
+        processor=InvalidProcessor(),
+        postprocessor=_PassthroughPostprocessor(),
+    )
+
+    with pytest.raises(TypeError, match="processor must return torch.Tensor"):
+        model.embed(Image.new("RGB", (1, 1)))
 
 
 def test_forward_delegates_to_wrapped_network() -> None:
@@ -363,11 +553,17 @@ def test_hugging_face_processor_rejects_integer_tensor() -> None:
         processor(torch.ones((1, 3, 8, 8), dtype=torch.uint8))
 
 
+@pytest.mark.parametrize(
+    ("processor_kwargs", "expected_use_fast"),
+    [({}, True), ({"use_fast": False}, False)],
+)
 def test_hugging_face_processor_lazily_processes_single_and_multiple_pil_images(
     monkeypatch: pytest.MonkeyPatch,
+    processor_kwargs: dict[str, bool],
+    expected_use_fast: bool,
 ) -> None:
     pixel_values = torch.ones((2, 3, 8, 8))
-    factory_calls: list[tuple[str, str | None]] = []
+    factory_calls: list[tuple[str, str | None, bool]] = []
     processor_calls: list[tuple[list[Image.Image], str]] = []
 
     class FakeProcessor:
@@ -377,8 +573,14 @@ def test_hugging_face_processor_lazily_processes_single_and_multiple_pil_images(
 
     class FakeAutoImageProcessor:
         @classmethod
-        def from_pretrained(cls, model_id: str, *, cache_dir: str | None = None) -> FakeProcessor:
-            factory_calls.append((model_id, cache_dir))
+        def from_pretrained(
+            cls,
+            model_id: str,
+            *,
+            cache_dir: str | None = None,
+            use_fast: bool,
+        ) -> FakeProcessor:
+            factory_calls.append((model_id, cache_dir, use_fast))
             return FakeProcessor()
 
     monkeypatch.setitem(
@@ -386,13 +588,17 @@ def test_hugging_face_processor_lazily_processes_single_and_multiple_pil_images(
         "transformers",
         SimpleNamespace(AutoImageProcessor=FakeAutoImageProcessor),
     )
-    processor = HuggingFaceImageProcessor("example/model", cache_dir="/tmp/model-cache")
+    processor = HuggingFaceImageProcessor(
+        "example/model",
+        cache_dir="/tmp/model-cache",
+        **processor_kwargs,
+    )
     first_image = Image.new("RGB", (8, 8))
     second_image = Image.new("RGB", (8, 8))
 
     assert processor(first_image) is pixel_values
     assert processor([first_image, second_image]) is pixel_values
-    assert factory_calls == [("example/model", "/tmp/model-cache")]
+    assert factory_calls == [("example/model", "/tmp/model-cache", expected_use_fast)]
     assert processor_calls == [
         ([first_image], "pt"),
         ([first_image, second_image], "pt"),
