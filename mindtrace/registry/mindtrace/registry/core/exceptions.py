@@ -13,7 +13,7 @@ class LockAcquisitionError(Exception):
     pass
 
 
-class RegistryObjectNotFound(Exception):
+class RegistryObjectNotFound(KeyError):
     """Exception raised when an object is not found in the registry."""
 
     pass

@@ -198,3 +198,18 @@ def test_invalid_read_version_is_valueerror_without_backend_io(reader, monkeypat
         monkeypatch.setattr(registry.backend, method, Mock(side_effect=AssertionError(f"Unexpected {method}")))
     with pytest.raises(ValueError):
         _read(target, operation, key="item@invalid")
+
+
+@pytest.mark.parametrize("operation", ["load", "delete", "getitem", "delitem"])
+def test_missing_object_is_also_a_key_error(reader, operation):
+    _, target = reader
+    with pytest.raises(KeyError) as caught:
+        if operation == "load":
+            target.load("missing", "1")
+        elif operation == "delete":
+            target.delete("missing", "1")
+        elif operation == "getitem":
+            target["missing@1"]
+        else:
+            del target["missing@1"]
+    assert isinstance(caught.value, RegistryObjectNotFound)

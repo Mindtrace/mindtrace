@@ -1085,12 +1085,7 @@ class Registry(Mindtrace):
         return self.load(name, version if version else "latest")
 
     def __getitem__(self, key: str | list[str]) -> Any:
-        if isinstance(key, list):
-            return self._load_key(key)
-        try:
-            return self._load_key(key)
-        except RegistryObjectNotFound as e:
-            raise KeyError(f"Object not found: {key}") from e
+        return self._load_key(key)
 
     def __setitem__(self, key: str | list[str], value: Any) -> None:
         names, versions, is_batch = self._core._parse_key_input(key)

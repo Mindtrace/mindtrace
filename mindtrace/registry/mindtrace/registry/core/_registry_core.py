@@ -1620,12 +1620,7 @@ class _RegistryCore(Mindtrace):
             ValueError: If the version is invalid or integrity verification fails.
                 Other operational errors propagate unchanged.
         """
-        if isinstance(key, list):
-            return self._load_key(key)
-        try:
-            return self._load_key(key)
-        except RegistryObjectNotFound as e:
-            raise KeyError(f"Object not found: {key}") from e
+        return self._load_key(key)
 
     def __setitem__(self, key: str | list[str], value: Any) -> None:
         """Save object(s) to the registry using dictionary-like syntax.

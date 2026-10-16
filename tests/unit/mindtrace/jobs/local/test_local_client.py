@@ -212,8 +212,9 @@ class TestLocalClient:
         client = temp_local_client
         msg = SampleMessage(data="test")
 
-        with pytest.raises(KeyError, match="Object not found: nonexistent-queue"):
+        with pytest.raises(KeyError, match="nonexistent-queue") as caught:
             client.publish("nonexistent-queue", msg)
+        assert isinstance(caught.value, RegistryObjectNotFound)
 
     def test_priority_queue_with_priority(self, temp_local_client):
         """Test publishing to priority queue with priority parameter."""
@@ -254,8 +255,9 @@ class TestLocalClient:
     def test_count_nonexistent_queue(self, temp_local_client):
         """Test counting messages in a queue that doesn't exist."""
         client = temp_local_client
-        with pytest.raises(KeyError, match="Object not found: nonexistent-queue"):
+        with pytest.raises(KeyError, match="nonexistent-queue") as caught:
             client.count_queue_messages("nonexistent-queue")
+        assert isinstance(caught.value, RegistryObjectNotFound)
 
     def test_move_to_dlq(self, temp_local_client):
         """Test move_to_dlq method (currently a pass statement)."""
