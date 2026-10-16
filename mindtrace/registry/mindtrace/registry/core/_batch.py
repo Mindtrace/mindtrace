@@ -2,13 +2,9 @@
 
 from collections import defaultdict
 from copy import deepcopy
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from mindtrace.registry.core.mount import GCSMountConfig, LocalMountConfig, S3MountConfig
 from mindtrace.registry.core.types import Version
-
-if TYPE_CHECKING:
-    from mindtrace.registry.core.registry import Registry
 
 
 def normalize_save_batch(
@@ -60,20 +56,3 @@ def validate_save_batch(
                     f"Duplicate batch identity '{name}@{normalized}' at inputs {seen[normalized]} and {index}"
                 )
             seen[normalized] = index
-
-
-def registry_save_target(registry: "Registry") -> tuple:
-    """Identify the configured storage target, ignoring mount aliases and credentials."""
-    try:
-        config = registry.mount.config
-    except TypeError:
-        # Custom backends have no standard location descriptor; aliases of the
-        # same backend instance still share an identity.
-        return (id(registry.backend),)
-    if isinstance(config, LocalMountConfig):
-        return ("local", str(config.uri))
-    if isinstance(config, S3MountConfig):
-        return ("s3", config.endpoint, config.secure, config.bucket, config.prefix or "")
-    if isinstance(config, GCSMountConfig):
-        return ("gcs", config.bucket_name, config.prefix or "")
-    return (id(registry.backend),)

@@ -54,16 +54,23 @@ def test_invalid_repeated_names_reject_before_any_save(batch_target, monkeypatch
     assert {name: registry.info(name, "1") for name in ("item", "keep")} == before
 
 
-@pytest.mark.parametrize("versions", [["1", "2"], ["2", "1"]])
-def test_repeated_names_with_distinct_explicit_versions_round_trip(batch_target, versions):
+@pytest.mark.parametrize(
+    "versions, expected, latest",
+    [
+        (["1", "2"], ["1.0.0", "2.0.0"], 20),
+        (["2", "1"], ["2.0.0", "1.0.0"], 10),
+        (["1.0.0", "1.0.1"], ["1.0.0", "1.0.1"], 20),
+    ],
+)
+def test_repeated_names_with_distinct_explicit_versions_round_trip(batch_target, versions, expected, latest):
     target, registry = batch_target
     result = target.save(["item", "item"], [10, 20], version=versions)
-    assert result.results == [f"{v}.0.0" for v in versions]
+    assert result.results == expected
     assert result.success_count == 2
     assert result.errors == {}
     for version, value in zip(versions, [10, 20]):
         assert registry.load("item", version) == value
-    assert registry.load("item", "latest") == (20 if versions[1] == "2" else 10)
+    assert registry.load("item", "latest") == latest
 
 
 @pytest.mark.parametrize("objects", [[-1, 2], [2, -1]])
