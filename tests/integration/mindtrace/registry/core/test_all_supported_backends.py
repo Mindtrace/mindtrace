@@ -81,27 +81,20 @@ def s3_bucket_name(backend_type):
 
 @pytest.fixture
 def gcp_backend_instance(gcp_test_bucket, gcp_test_prefix, gcp_project_id, gcp_credentials_path, gcs_client):
-    """Create a function-scoped GCP backend with unique prefix for test isolation."""
+    """Unexpected backend construction/cleanup failures fail, not skip."""
+    backend_instance = GCPRegistryBackend(
+        uri=f"gs://{gcp_test_bucket}/{gcp_test_prefix}",
+        project_id=gcp_project_id,
+        bucket_name=gcp_test_bucket,
+        credentials_path=gcp_credentials_path,
+        prefix=gcp_test_prefix,
+    )
     try:
-        backend_instance = GCPRegistryBackend(
-            uri=f"gs://{gcp_test_bucket}/{gcp_test_prefix}",
-            project_id=gcp_project_id,
-            bucket_name=gcp_test_bucket,
-            credentials_path=gcp_credentials_path,
-            prefix=gcp_test_prefix,
-        )
         yield backend_instance
-
-        # Cleanup: delete all objects with our test prefix
-        try:
-            bucket = gcs_client.bucket(gcp_test_bucket)
-            blobs = list(bucket.list_blobs(prefix=gcp_test_prefix))
-            for blob in blobs:
-                blob.delete()
-        except Exception:
-            pass  # Best effort cleanup
-    except Exception as e:
-        pytest.skip(f"GCP backend creation failed: {e}")
+    finally:
+        bucket = gcs_client.bucket(gcp_test_bucket)
+        for blob in bucket.list_blobs(prefix=gcp_test_prefix):
+            blob.delete()
 
 
 @pytest.fixture
@@ -547,9 +540,13 @@ def test_dict_like_interface_error_handling(registry, test_config):
     with pytest.raises(KeyError):
         _ = registry["nonexistent"]
 
-    # Test KeyError for non-existent version
+    # A valid but absent version remains a missing-key error.
     registry["test:error"] = test_config
     with pytest.raises(KeyError):
+        _ = registry["test:error@9.9.9"]
+
+    # Invalid version syntax is not object absence.
+    with pytest.raises(ValueError):
         _ = registry["test:error@nonexistent"]
 
     # Test ValueError for invalid version format
@@ -914,13 +911,11 @@ def test_delete_all_versions(registry):
 
 
 def test_delete_nonexistent_raises(registry):
-    """Test that deleting nonexistent object raises error when version is None.
-    Note: Deleting with a specific version is idempotent (succeeds even if not found).
-    """
+    """Missing Registry targets raise for explicit versions and whole-object deletion."""
     from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 
-    # Deleting with specific version is idempotent - no error
-    registry.delete("test:nonexistent", version="1.0.0")  # Should not raise
+    with pytest.raises(RegistryObjectNotFound):
+        registry.delete("test:nonexistent", version="1.0.0")
 
     # Deleting with version=None raises because object has no versions
     with pytest.raises(RegistryObjectNotFound):

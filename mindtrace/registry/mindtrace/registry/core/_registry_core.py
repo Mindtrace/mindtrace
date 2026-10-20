@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Tuple, Type
 from mindtrace.core import Mindtrace, compute_dir_hash, first_not_none, ifnone, instantiate_target
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
+from mindtrace.registry.core._batch import normalize_save_batch, validate_save_batch
+from mindtrace.registry.core._paths import validate_relative_path
 from mindtrace.registry.core.base_materializer import Materializer
 from mindtrace.registry.core.exceptions import (
     RegistryCleanupRequired,
@@ -20,6 +22,8 @@ from mindtrace.registry.core.types import (
     VERSION_PENDING,
     BatchResult,
     OnConflict,
+    OpResult,
+    OpResults,
     VerifyLevel,
     Version,
 )
@@ -52,6 +56,17 @@ def _resolve_materializer_string(s: str | None) -> str | None:
     if s is None:
         return None
     return _LEGACY_MATERIALIZER_ALIASES.get(s, s)
+
+
+def _materializer_class_path(materializer: Type[Materializer] | str) -> str:
+    """Return a class's import path, rejecting instances and resolving known aliases."""
+    if isinstance(materializer, type):
+        return f"{materializer.__module__}.{materializer.__name__}"
+    if isinstance(materializer, str):
+        return _resolve_materializer_string(materializer) or materializer
+    raise TypeError(
+        "materializer must be a class or fully qualified class-name string; materializer instances are not supported"
+    )
 
 
 def _version_sort_key(v: str, digits: int) -> tuple[int, ...]:
@@ -140,13 +155,17 @@ class _RegistryCore(Mindtrace):
         self._warm_materializer_cache()
 
     @classmethod
-    def register_default_materializer(cls, object_class: str | type, materializer_class: str):
+    def register_default_materializer(cls, object_class: str | type, materializer_class: str | type):
         """Register a default materializer at the class level.
 
         Args:
             object_class: Object class (str or type) to register the materializer for.
-            materializer_class: Materializer class string to register.
+            materializer_class: Materializer class or fully qualified class-name string, not an instance.
+
+        Raises:
+            TypeError: If materializer_class is not a class or string.
         """
+        materializer_class = _materializer_class_path(materializer_class)
         if isinstance(object_class, type):
             object_class = f"{object_class.__module__}.{object_class.__name__}"
         with cls._materializer_lock:
@@ -246,8 +265,9 @@ class _RegistryCore(Mindtrace):
 
         Raises:
             RegistryObjectNotFound: If object has no versions (when resolving None/"latest").
-            ValueError: If explicit version format is invalid.
+            ValueError: If the object name or explicit version format is invalid.
         """
+        self.backend.validate_object_name(name)
         if not self.version_objects:
             return str(Version("1", digits=self.version_digits))
 
@@ -259,7 +279,7 @@ class _RegistryCore(Mindtrace):
 
         return self._validate_version(version)
 
-    def _find_materializer(self, obj: Any, provided_materializer: Type[Materializer] | None = None) -> str:
+    def _find_materializer(self, obj: Any, provided_materializer: Type[Materializer] | str | None = None) -> str:
         """Find the appropriate materializer for an object.
 
         The order of precedence for determining the materializer is:
@@ -270,14 +290,18 @@ class _RegistryCore(Mindtrace):
 
         Args:
             obj: Object to find materializer for.
-            provided_materializer: Materializer provided as argument. If None, will be inferred.
+            provided_materializer: Class or fully qualified class-name string. None selects automatically.
+                Materializer instances are not supported.
 
         Returns:
             Materializer class string.
 
         Raises:
+            TypeError: If provided_materializer is not a class, string, or None.
             ValueError: If no materializer is found for the object.
         """
+        if provided_materializer is not None:
+            return _materializer_class_path(provided_materializer)
         object_class = f"{type(obj).__module__}.{type(obj).__name__}"
 
         # Get all base classes recursively
@@ -291,7 +315,6 @@ class _RegistryCore(Mindtrace):
         # Try to find a materializer in order of precedence
         materializer = first_not_none(
             (
-                provided_materializer,
                 self.registered_materializer(object_class),
                 *[
                     self.registered_materializer(f"{base.__module__}.{base.__name__}")
@@ -304,10 +327,7 @@ class _RegistryCore(Mindtrace):
         if materializer is None:
             raise ValueError(f"No materializer found for object of type {type(obj)}.")
 
-        # Convert to string if needed
-        if isinstance(materializer, str):
-            return materializer
-        return f"{type(materializer).__module__}.{type(materializer).__name__}"
+        return _materializer_class_path(materializer)
 
     def _build_file_manifest(self, local_path: str | Path) -> List[str]:
         """Build a file manifest from a local directory.
@@ -329,6 +349,7 @@ class _RegistryCore(Mindtrace):
 
     def _resolve_save_version(self, name: str, version: str | None) -> str:
         """Resolve a concrete version string for a write path."""
+        self.backend.validate_object_name(name)
         if not self.version_objects:
             return str(Version("1", digits=self.version_digits))
         if version is None:
@@ -353,7 +374,7 @@ class _RegistryCore(Mindtrace):
         name: str | List[str],
         obj: Any | List[Any],
         *,
-        materializer: Type[Materializer] | None = None,
+        materializer: Type[Materializer] | str | None = None,
         version: str | None | List[str | None] = None,
         init_params: Dict[str, Any] | List[Dict[str, Any]] | None = None,
         metadata: Dict[str, Any] | List[Dict[str, Any]] | None = None,
@@ -364,10 +385,14 @@ class _RegistryCore(Mindtrace):
         Args:
             name: Name(s) of the object(s). Single string or list.
             obj: Object(s) to save.
-            materializer: Materializer to use. If None, uses the default for each object type.
-            version: Version(s). If None, auto-increments. In non-versioned mode, always "1".
-            init_params: Additional parameters for the materializer(s).
-            metadata: Additional metadata to store with the object(s).
+            materializer: Class or fully qualified class-name string. None uses automatic selection
+                for each object type. Materializer instances are not supported.
+            version: Version(s). None auto-increments only for names occurring once in a batch.
+                Repeated names require distinct explicit versions. In non-versioned mode,
+                always "1", so repeated names are rejected.
+            init_params: Additional parameters for the materializer(s). A shared dictionary
+                is independently copied for every batch item, as is each per-item dictionary.
+            metadata: Additional metadata, with the same batch broadcasting/copying behavior.
             on_conflict: Behavior when version already exists.
                 If None (default): inferred from mutable setting.
                     - mutable=True: defaults to "overwrite"
@@ -381,6 +406,10 @@ class _RegistryCore(Mindtrace):
             Batch (list): BatchResult containing results (versions), errors, and status.
 
         Raises:
+            ValueError: If batch list lengths differ, a repeated name lacks an explicit
+                version, or normalized identities collide. Rejects the entire call before
+                materialization or saves, regardless of on_conflict.
+            TypeError: If materializer is an instance or another unsupported value (single item only).
             ValueError: If no materializer is found for any object (single item only).
             ValueError: If version string is invalid (single item only).
             ValueError: If on_conflict="overwrite" and mutable=False.
@@ -410,13 +439,14 @@ class _RegistryCore(Mindtrace):
         self,
         name: str,
         obj: Any,
-        materializer: Type[Materializer] | None = None,
+        materializer: Type[Materializer] | str | None = None,
         version: str | None = None,
         init_params: Dict[str, Any] | None = None,
         metadata: Dict[str, Any] | None = None,
         on_conflict: str = OnConflict.SKIP,
     ) -> str | None:
         """Save a single object to the registry. Raises on conflict."""
+        self.backend.validate_object_name(name)
         # In non-versioned mode, always use "1"
         if not self.version_objects:
             version = "1"
@@ -428,11 +458,11 @@ class _RegistryCore(Mindtrace):
 
         # Validate version
         validated_version = self._validate_version(version)
+        materializer_class = self._find_materializer(obj, materializer)
         with TemporaryDirectory(dir=self._artifact_store_path) as base_temp_dir:
             object_class = f"{type(obj).__module__}.{type(obj).__name__}"
-            materializer_class = self._find_materializer(obj, materializer)
 
-            temp_dir = Path(base_temp_dir) / f"{name.replace(':', '_')}"
+            temp_dir = Path(base_temp_dir) / "0"
             temp_dir.mkdir(parents=True, exist_ok=True)
 
             mat_instance = instantiate_target(materializer_class, uri=str(temp_dir))
@@ -478,25 +508,21 @@ class _RegistryCore(Mindtrace):
         self,
         names: List[str],
         objs: Any | List[Any],
-        materializer: Type[Materializer] | None = None,
+        materializer: Type[Materializer] | str | None = None,
         versions: str | None | List[str | None] = None,
         init_params: Dict[str, Any] | List[Dict[str, Any]] | None = None,
         metadata: Dict[str, Any] | List[Dict[str, Any]] | None = None,
         on_conflict: str = OnConflict.SKIP,
     ) -> BatchResult:
         """Save multiple objects to the registry. Returns BatchResult with skipped items on conflict."""
-        # Normalize inputs to lists
-        objs_list = objs if isinstance(objs, list) else [objs] * len(names)
-        versions_list = (
-            ["1"] * len(names)
-            if not self.version_objects
-            else (versions if isinstance(versions, list) else [versions] * len(names))
+        objs_list, versions_list, init_params_list, metadata_list = normalize_save_batch(
+            names, objs, versions, init_params, metadata
         )
-        init_params_list = init_params if isinstance(init_params, list) else [None] * len(names)
-        metadata_list = metadata if isinstance(metadata, list) else [None] * len(names)
-
-        if not (len(names) == len(objs_list) == len(versions_list) == len(init_params_list) == len(metadata_list)):
-            raise ValueError("All list inputs must have the same length")
+        validate_save_batch(
+            names, versions_list, version_objects=self.version_objects, version_digits=self.version_digits
+        )
+        if not self.version_objects:
+            versions_list = ["1"] * len(names)
 
         result = BatchResult()
         prep_errors: Dict[Tuple[str, str], Dict[str, str]] = {}
@@ -509,6 +535,7 @@ class _RegistryCore(Mindtrace):
                 zip(names, objs_list, versions_list, init_params_list, metadata_list)
             ):
                 try:
+                    self.backend.validate_object_name(name)
                     # Resolve version: None -> auto-increment, else validate
                     if version is None:
                         resolved_version = self._next_version(name)
@@ -516,10 +543,10 @@ class _RegistryCore(Mindtrace):
                         raise ValueError("Cannot save with version='latest'. Use version=None for auto-increment.")
                     else:
                         resolved_version = self._validate_version(version)
-                    temp_dir = Path(base_temp_dir) / f"{idx}_{name.replace(':', '_')}"
+                    materializer_class = self._find_materializer(obj, materializer)
+                    temp_dir = Path(base_temp_dir) / str(idx)
                     temp_dir.mkdir(parents=True, exist_ok=True)
 
-                    materializer_class = self._find_materializer(obj, materializer)
                     mat_instance = instantiate_target(materializer_class, uri=str(temp_dir))
                     mat_instance.save(obj)
 
@@ -615,7 +642,7 @@ class _RegistryCore(Mindtrace):
     def serialization_hints_for_object(
         self,
         obj: Any,
-        materializer: Type[Materializer] | None = None,
+        materializer: Type[Materializer] | str | None = None,
     ) -> Dict[str, str]:
         """Return ``class`` and ``materializer`` strings for embedding in external metadata (e.g. datalake assets)."""
         return {
@@ -634,6 +661,7 @@ class _RegistryCore(Mindtrace):
         **kwargs: Any,
     ) -> Any:
         """Write *raw* to *relative_path* under a staged directory and run the materializer."""
+        validate_relative_path(relative_path, parameter="relative_path")
         materializer = _resolve_materializer_string(materializer)
         with TemporaryDirectory(dir=self._artifact_store_path) as base:
             temp_dir = Path(base) / "staged"
@@ -696,13 +724,21 @@ class _RegistryCore(Mindtrace):
         # Fetch metadata (single item)
         fetch_results = self.backend.fetch_metadata([name], [v])
         result = fetch_results.first()
-        if not result or not result.ok:
+        if result is None:
             raise RegistryObjectNotFound(f"Object {name}@{v} not found.")
+        if not result.ok:
+            if result.exception is not None:
+                raise result.exception
+            if result.error == "RegistryObjectNotFound":
+                raise RegistryObjectNotFound(result.message or f"Object {name}@{v} not found.")
+            raise RuntimeError(
+                f"Failed to fetch metadata for {name}@{v}: {result.error or ERROR_UNKNOWN}: {result.message or ''}"
+            )
         metadata = result.metadata
 
         # Pull and materialize
         with TemporaryDirectory(dir=self._artifact_store_path) as base_temp_dir:
-            temp_dir = Path(base_temp_dir) / f"{name}_{v}".replace(":", "_")
+            temp_dir = Path(base_temp_dir) / "0"
             temp_dir.mkdir(parents=True, exist_ok=True)
 
             pull_results = self.backend.pull([name], [v], [temp_dir], acquire_lock=self.mutable, metadata=[metadata])
@@ -791,8 +827,8 @@ class _RegistryCore(Mindtrace):
         with TemporaryDirectory(dir=self._artifact_store_path) as base_temp_dir:
             temp_dirs = {}
             paths = []
-            for n, v in items_to_pull:
-                temp_dir = Path(base_temp_dir) / f"{n}_{v}".replace(":", "_")
+            for index, (n, v) in enumerate(items_to_pull):
+                temp_dir = Path(base_temp_dir) / str(index)
                 temp_dir.mkdir(parents=True, exist_ok=True)
                 temp_dirs[(n, v)] = temp_dir
                 paths.append(temp_dir)
@@ -887,14 +923,49 @@ class _RegistryCore(Mindtrace):
         Returns:
             Single item: None (raises on error).
             Batch (list): BatchResult containing results, errors, and status for each item.
+                Missing targets are failed entries with error ``RegistryObjectNotFound``;
+                independent valid items are still deleted.
 
         Raises:
-            RegistryObjectNotFound: If object doesn't exist (single item only).
+            RegistryObjectNotFound: If the name or explicit version doesn't exist (single item only).
             ValueError: If version is "latest" or has invalid format (single item only).
         """
         if isinstance(name, list):
             return self._delete_batch(name, version)
         return self._delete_single(name, version)
+
+    def _resolve_delete_versions(self, name: str, version: str | None) -> List[str]:
+        """Resolve deletion targets without trusting cached version discovery."""
+        self.backend.validate_object_name(name)
+        if version is not None:
+            return [self._validate_version(version)]
+        if not self.version_objects:
+            return [str(Version("1", digits=self.version_digits))]
+        versions = self.backend.list_versions(name).get(name, [])
+        if not versions:
+            raise RegistryObjectNotFound(f"Object {name} does not exist")
+        return versions
+
+    def _delete_objects(self, targets: List[Tuple[str, str]]) -> OpResults:
+        """Delete resolved targets and preserve the backend's per-item outcomes."""
+        targets = list(dict.fromkeys(targets))
+        results = OpResults()
+        if not targets:
+            return results
+        try:
+            deleted = self.backend.delete([n for n, _ in targets], [v for _, v in targets], acquire_lock=self.mutable)
+        except Exception as error:
+            for name, version in targets:
+                results.add(OpResult.failed(name, version, error))
+            return results
+        for name, version in targets:
+            entry = deleted.get((name, version))
+            results.add(
+                entry
+                if entry is not None
+                else OpResult.failed(name, version, RuntimeError("Backend returned no deletion result"))
+            )
+        return results
 
     def _delete_single(
         self,
@@ -902,31 +973,16 @@ class _RegistryCore(Mindtrace):
         version: str | None = None,
     ) -> None:
         """Delete a single object from the registry. Raises on error."""
-        if version is None:
-            # Delete all versions
-            if not self.version_objects:
-                versions_to_delete = [str(Version("1", digits=self.version_digits))]
-            else:
-                versions_to_delete = self.list_versions(name)
-                if not versions_to_delete:
-                    raise RegistryObjectNotFound(f"Object {name} does not exist")
-        else:
-            # Explicit version only — validate format, pass directly
-            validated = self._validate_version(version)
-            versions_to_delete = [validated]
-
-        # Delete and check for errors
-        delete_results = self.backend.delete(
-            [name] * len(versions_to_delete),
-            versions_to_delete,
-            acquire_lock=self.mutable,
-        )
+        versions_to_delete = self._resolve_delete_versions(name, version)
+        delete_results = self._delete_objects([(name, v) for v in versions_to_delete])
 
         # For single object delete, raise on any error
         for del_result in delete_results:
             if del_result.is_error:
                 if del_result.exception:
                     raise del_result.exception
+                if del_result.error == "RegistryObjectNotFound":
+                    raise RegistryObjectNotFound(del_result.message or f"Object {name}@{del_result.version} not found")
                 # Fallback when exception not preserved (e.g., remote backends)
                 raise RuntimeError(f"Failed to delete {name}@{del_result.version}: {del_result.message}")
 
@@ -946,54 +1002,28 @@ class _RegistryCore(Mindtrace):
 
         result = BatchResult()
         items_to_delete: List[Tuple[str, str]] = []
-        resolved_to_original: Dict[Tuple[str, str], Tuple[str, str]] = {}
+        resolved_to_original: Dict[Tuple[str, str], List[Tuple[str, str]]] = {}
 
         for n, v in zip(names, versions_list):
             original_key = (n, v or "all")
-
-            if v is None:
-                # Delete all versions
-                all_versions = (
-                    [str(Version("1", digits=self.version_digits))]
-                    if not self.version_objects
-                    else self.list_versions(n)
-                )
-                if not all_versions:
-                    result.errors[original_key] = {
-                        "error": "RegistryObjectNotFound",
-                        "message": f"Object {n} does not exist",
-                    }
-                else:
-                    for ver in all_versions:
-                        items_to_delete.append((n, ver))
-                        resolved_to_original[(n, ver)] = original_key
-            else:
-                # Explicit version only — validate format, pass directly
-                try:
-                    validated = self._validate_version(v)
-                    items_to_delete.append((n, validated))
-                    resolved_to_original[(n, validated)] = original_key
-                except ValueError as e:
-                    result.errors[original_key] = {
-                        "error": type(e).__name__,
-                        "message": str(e),
-                    }
+            try:
+                concrete_versions = self._resolve_delete_versions(n, v)
+            except Exception as e:
+                result.errors[original_key] = {"error": type(e).__name__, "message": str(e)}
+                continue
+            for concrete in concrete_versions:
+                items_to_delete.append((n, concrete))
+                resolved_to_original.setdefault((n, concrete), []).append(original_key)
 
         # Batch delete - backend returns results without raising
         if items_to_delete:
-            for op_result in self.backend.delete(
-                [n for n, _ in items_to_delete],
-                [v for _, v in items_to_delete],
-                acquire_lock=self.mutable,
-            ):
+            for op_result in self._delete_objects(items_to_delete):
                 if op_result.is_error:
-                    original_key = resolved_to_original.get(
-                        (op_result.name, op_result.version), (op_result.name, op_result.version)
-                    )
-                    result.errors[original_key] = {
-                        "error": op_result.error or ERROR_UNKNOWN,
-                        "message": op_result.message or "",
-                    }
+                    for original_key in resolved_to_original[(op_result.name, op_result.version)]:
+                        result.errors[original_key] = {
+                            "error": op_result.error or ERROR_UNKNOWN,
+                            "message": op_result.message or "",
+                        }
 
         # Build result lists
         for n, v in zip(names, versions_list):
@@ -1034,6 +1064,8 @@ class _RegistryCore(Mindtrace):
             registry.info("model", "1.0.0")  # Specific version
             registry.info("model", "latest")  # Latest version
         """
+        if name is not None:
+            self.backend.validate_object_name(name)
         # Build list of (name, version) to fetch
         if name is None:
             # All objects, all versions
@@ -1085,6 +1117,7 @@ class _RegistryCore(Mindtrace):
         Returns:
             True if the object exists, False otherwise.
         """
+        self.backend.validate_object_name(name)
         try:
             resolved_version = self._resolve_load_version(name, version)
         except (RegistryObjectNotFound, ValueError):
@@ -1097,12 +1130,14 @@ class _RegistryCore(Mindtrace):
 
         Args:
             object_class: Object class to register the materializer for.
-            materializer_class: Materializer class to register.
+            materializer_class: Materializer class or fully qualified class-name string, not an instance.
+
+        Raises:
+            TypeError: If materializer_class is not a class or string.
         """
+        materializer_class = _materializer_class_path(materializer_class)
         if isinstance(object_class, type):
             object_class = f"{object_class.__module__}.{object_class.__name__}"
-        if isinstance(materializer_class, type):
-            materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
 
         # Backend handles any necessary locking internally
         self.backend.register_materializer(object_class, materializer_class)
@@ -1164,6 +1199,7 @@ class _RegistryCore(Mindtrace):
         Returns:
             List of version strings
         """
+        self.backend.validate_object_name(object_name)
         # Check cache first
         with self._versions_cache_lock:
             if object_name in self._versions_cache:
@@ -1466,17 +1502,12 @@ class _RegistryCore(Mindtrace):
         default_materializers = self.get_default_materializers()
         existing_materializers = self.backend.registered_materializers()
 
-        # Filter materializers that need to be registered. Treat any stored
-        # legacy zenml string as equivalent to its in-house replacement so we
-        # also override stale registrations from previous registry versions.
+        # Fill missing registrations without replacing custom mappings. Known
+        # legacy aliases are resolved on lookup, not rewritten on every reopen.
         materializers_to_register = {}
         for object_class, materializer_class in default_materializers.items():
-            # Ensure materializer_class is a string for JSON serialization
-            if isinstance(materializer_class, type):
-                materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
-            existing = _resolve_materializer_string(existing_materializers.get(object_class))
-            if override_preexisting_materializers or existing is None or existing != materializer_class:
-                materializers_to_register[object_class] = materializer_class
+            if override_preexisting_materializers or object_class not in existing_materializers:
+                materializers_to_register[object_class] = _materializer_class_path(materializer_class)
 
         if materializers_to_register:
             # Register all materializers using unified API with lists
@@ -1536,7 +1567,17 @@ class _RegistryCore(Mindtrace):
             name, version = self._parse_key(parsed_key)
             names.append(name)
             versions.append(version)
+        if not is_batch:
+            # Reject invalid input before mapping methods translate lookup errors
+            # into KeyError/defaults. Batch methods validate each item separately.
+            self.backend.validate_object_name(names[0])
         return names, versions, is_batch
+
+    def _load_key(self, key: str | list[str]) -> Any:
+        """Load a mapping key without translating operational errors into absence."""
+        names, versions, is_batch = self._parse_key_input(key)
+        versions = [v or "latest" for v in versions]
+        return self.load(name=names if is_batch else names[0], version=versions if is_batch else versions[0])
 
     def __getitem__(self, key: str | list[str]) -> Any:
         """Get object(s) from the registry using dictionary-like syntax.
@@ -1551,15 +1592,10 @@ class _RegistryCore(Mindtrace):
 
         Raises:
             KeyError: If the object doesn't exist (single key only).
+            ValueError: If the version is invalid or integrity verification fails.
+                Other operational errors propagate unchanged.
         """
-        names, versions, is_batch = self._parse_key_input(key)
-        versions = [v or "latest" for v in versions]
-        if is_batch:
-            return self.load(name=names, version=versions)
-        try:
-            return self.load(name=names[0], version=versions[0])
-        except (ValueError, RegistryObjectNotFound) as e:
-            raise KeyError(f"Object not found: {key}") from e
+        return self._load_key(key)
 
     def __setitem__(self, key: str | list[str], value: Any) -> None:
         """Save object(s) to the registry using dictionary-like syntax.
@@ -1580,24 +1616,22 @@ class _RegistryCore(Mindtrace):
             version=versions if is_batch else versions[0],
         )
 
-    def __delitem__(self, key: str | list[str]) -> None:
+    def __delitem__(self, key: str | list[str]) -> None | BatchResult:
         """Delete object(s) from the registry using dictionary-like syntax.
 
         Args:
             key: The object name(s), optionally including version (e.g. "name@version").
                 Can be a single string or a list of strings for batch deletion.
 
+        Returns:
+            The same result as delete; Python's del statement discards it.
+
         Raises:
-            KeyError: If the object doesn't exist (single key only).
+            RegistryObjectNotFound: If the name/version doesn't exist (single key only).
+            ValueError: If an explicit version is invalid or "latest" (single key only).
         """
         names, versions, is_batch = self._parse_key_input(key)
-        if is_batch:
-            self.delete(name=names, version=versions)
-            return
-        try:
-            self.delete(name=names[0], version=versions[0])
-        except (ValueError, RegistryObjectNotFound) as e:
-            raise KeyError(f"Object not found: {key}") from e
+        return self.delete(name=names if is_batch else names[0], version=versions if is_batch else versions[0])
 
     def __contains__(self, key: str) -> bool:
         """Check if an object exists in the registry using dictionary-like syntax.
@@ -1623,10 +1657,12 @@ class _RegistryCore(Mindtrace):
 
         Returns:
             The loaded object if it exists, otherwise the default value.
+
+        Operational and validation errors propagate; no extra existence check is made.
         """
         try:
-            return self[key]
-        except KeyError:
+            return self._load_key(key)
+        except RegistryObjectNotFound:
             return default
 
     def keys(self) -> List[str]:
@@ -1703,30 +1739,25 @@ class _RegistryCore(Mindtrace):
 
         Raises:
             KeyError: If the object doesn't exist and no default is provided.
+                Operational errors from loading or deletion propagate even with a default.
         """
-        try:
-            name, version = self._parse_key(key)
+        name, version = self._parse_key(key)
+        if version is None:
+            version = self._latest(name)
             if version is None:
-                version = self._latest(name)
-                if version is None:
-                    if default is not None:
-                        return default
-                    raise KeyError(f"Object {name} does not exist")
-
-            # Check existence first
-            if not self.has_object(name, version):
                 if default is not None:
                     return default
-                raise KeyError(f"Object {name} version {version} does not exist")
+                raise KeyError(f"Object {name} does not exist")
 
-            # Load and delete (backend handles locking internally)
-            value = self.load(name=name, version=version)
-            self.delete(name=name, version=version)
-            return value
-        except KeyError:
+        # Retain the existing existence check, without interpreting later errors as absence.
+        if not self.has_object(name, version):
             if default is not None:
                 return default
-            raise
+            raise KeyError(f"Object {name} version {version} does not exist")
+
+        value = self.load(name=name, version=version)
+        self.delete(name=name, version=version)
+        return value
 
     def setdefault(self, key: str, default: Any = None) -> Any:
         """Get an object from the registry, setting it to default if it doesn't exist.
@@ -1737,10 +1768,12 @@ class _RegistryCore(Mindtrace):
 
         Returns:
             The object if it exists, otherwise the default value.
+
+        A reported read error propagates without saving the default.
         """
         try:
-            return self[key]
-        except KeyError:
+            return self._load_key(key)
+        except RegistryObjectNotFound:
             if default is not None:
                 # Backend handles locking internally during save
                 self[key] = default

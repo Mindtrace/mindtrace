@@ -15,17 +15,14 @@ from mindtrace.registry import GCPRegistryBackend, Registry
 
 @pytest.fixture
 def gcp_backend(gcp_test_bucket, gcp_test_prefix, gcp_project_id, gcp_credentials_path):
-    """Create a GCPRegistryBackend instance with test isolation via prefix."""
-    try:
-        return GCPRegistryBackend(
-            uri=f"gs://{gcp_test_bucket}/{gcp_test_prefix}",
-            project_id=gcp_project_id,
-            bucket_name=gcp_test_bucket,
-            credentials_path=gcp_credentials_path,
-            prefix=gcp_test_prefix,
-        )
-    except Exception as e:
-        pytest.skip(f"GCP backend creation failed: {e}")
+    """Configured prerequisites do not make implementation errors skippable."""
+    return GCPRegistryBackend(
+        uri=f"gs://{gcp_test_bucket}/{gcp_test_prefix}",
+        project_id=gcp_project_id,
+        bucket_name=gcp_test_bucket,
+        credentials_path=gcp_credentials_path,
+        prefix=gcp_test_prefix,
+    )
 
 
 @pytest.fixture
