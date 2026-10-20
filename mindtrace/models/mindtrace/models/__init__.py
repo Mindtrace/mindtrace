@@ -57,7 +57,6 @@ from mindtrace.models.tracking import (
 # -- Training ----------------------------------------------------------------
 from mindtrace.models.training import (
     Callback,
-    DatalakeDataset,
     EarlyStopping,
     LRMonitor,
     ModelCheckpoint,
@@ -65,7 +64,6 @@ from mindtrace.models.training import (
     ProgressLogger,
     Trainer,
     UnfreezeSchedule,
-    build_datalake_loader,
     build_optimizer,
     build_scheduler,
 )
@@ -145,9 +143,6 @@ __all__ = [
     "OptunaCallback",
     "build_optimizer",
     "build_scheduler",
-    # training — datalake bridge
-    "DatalakeDataset",
-    "build_datalake_loader",
     # training — losses
     "FocalLoss",
     "LabelSmoothingCrossEntropy",
