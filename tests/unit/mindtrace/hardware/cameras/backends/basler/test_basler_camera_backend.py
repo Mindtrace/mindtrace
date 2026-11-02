@@ -80,6 +80,9 @@ class MockPylonCamera:
         self.grabbing = False
         self.exposure_time = 10000.0
         self.gain = 1.0
+        self.gamma = 1.0
+        self.gamma_enable = False
+        self.gamma_selector = "sRGB"
         self.width = 1920
         self.height = 1080
         self.pixel_format = "BGR8"
@@ -104,6 +107,11 @@ class MockPylonCamera:
             self.exposure_time, min_val=100.0, max_val=1000000.0, camera_attr="exposure_time", camera_obj=self
         )
         self._gain_param = MockParameter(self.gain, min_val=0.0, max_val=20.0, camera_attr="gain", camera_obj=self)
+        self._gamma_param = MockParameter(self.gamma, min_val=0.25, max_val=2.0, camera_attr="gamma", camera_obj=self)
+        self._gamma_enable_param = MockParameter(False, camera_attr="gamma_enable", camera_obj=self)
+        self._gamma_selector_param = MockEnumParameter(
+            "sRGB", ["User", "sRGB"], camera_attr="gamma_selector", camera_obj=self
+        )
         self._width_param = MockParameter(self.width, min_val=32, max_val=1920, camera_attr="width", camera_obj=self)
         self._height_param = MockParameter(self.height, min_val=32, max_val=1080, camera_attr="height", camera_obj=self)
         self._pixel_format_param = MockEnumParameter(
@@ -205,6 +213,18 @@ class MockPylonCamera:
     @property
     def Gain(self):
         return self._gain_param
+
+    @property
+    def Gamma(self):
+        return self._gamma_param
+
+    @property
+    def GammaEnable(self):
+        return self._gamma_enable_param
+
+    @property
+    def GammaSelector(self):
+        return self._gamma_selector_param
 
     @property
     def Width(self):
@@ -350,6 +370,18 @@ class MockEnumParameter:
     def GetEntries(self):
         """Get available entries for enumeration parameters."""
         return self.valid_values
+
+
+class MockPylonCameraWithoutGamma(MockPylonCamera):
+    """Mock pylon camera for a model that does not expose a Gamma node.
+
+    Accessing the node raises, which is what pypylon does for a feature the
+    device does not implement.
+    """
+
+    @property
+    def Gamma(self):
+        raise MockGenICamError("Node 'Gamma' is not available")
 
 
 class MockGrabResult:
@@ -787,6 +819,105 @@ class TestBaslerCameraBackendConfiguration:
 
         gain_range = await basler_camera.get_gain_range()
         assert gain_range == [0.0, 20.0]  # Range from our mock
+
+    @pytest.mark.asyncio
+    async def test_set_gamma_success(self, basler_camera):
+        """Test setting gamma."""
+        await basler_camera.initialize()
+
+        await basler_camera.set_gamma(0.5)
+        assert basler_camera.camera.gamma == 0.5
+
+    @pytest.mark.asyncio
+    async def test_set_gamma_enables_user_gamma(self, basler_camera):
+        """Test that setting gamma selects and enables user gamma first."""
+        await basler_camera.initialize()
+
+        await basler_camera.set_gamma(1.8)
+        assert basler_camera.camera.gamma_selector == "User"
+        assert basler_camera.camera.gamma_enable is True
+
+    @pytest.mark.asyncio
+    async def test_set_gamma_out_of_range(self, basler_camera):
+        """Test setting gamma out of range."""
+        await basler_camera.initialize()
+
+        with pytest.raises(CameraConfigurationError, match="Gamma.*outside valid range"):
+            await basler_camera.set_gamma(10.0)  # Way too high
+
+    @pytest.mark.asyncio
+    async def test_get_gamma(self, basler_camera):
+        """Test getting gamma."""
+        basler_camera.initialized = True
+        basler_camera.camera = MockPylonCamera()
+        basler_camera.camera.gamma = 0.8
+
+        gamma = await basler_camera.get_gamma()
+        assert gamma == 0.8
+
+    @pytest.mark.asyncio
+    async def test_get_gamma_range(self, basler_camera):
+        """Test getting gamma range."""
+        basler_camera.initialized = True
+        basler_camera.camera = MockPylonCamera()
+
+        gamma_range = await basler_camera.get_gamma_range()
+        assert gamma_range == [0.25, 2.0]  # Range from our mock
+
+    @pytest.mark.asyncio
+    async def test_get_gamma_range_prepares_gated_gamma(self, basler_camera, monkeypatch):
+        """Gamma range is available after enabling user gamma on gated models."""
+        import mindtrace.hardware.cameras.backends.basler.basler_camera_backend as mod
+
+        basler_camera.initialized = True
+        basler_camera.camera = MockPylonCamera()
+
+        def ro_until_prepared():
+            if basler_camera.camera.gamma_selector == "User" and basler_camera.camera.gamma_enable:
+                return mod.genicam.RW
+            return mod.genicam.RO
+
+        monkeypatch.setattr(
+            basler_camera.camera._gamma_param,
+            "GetAccessMode",
+            ro_until_prepared,
+        )
+
+        gamma_range = await basler_camera.get_gamma_range()
+        assert gamma_range == [0.25, 2.0]
+        assert basler_camera.camera.gamma_selector == "User"
+        assert basler_camera.camera.gamma_enable is True
+
+    @pytest.mark.asyncio
+    async def test_get_gamma_without_node_returns_none(self, basler_camera):
+        """Test that a camera without a Gamma node reports no gamma value."""
+        basler_camera.initialized = True
+        basler_camera.camera = MockPylonCameraWithoutGamma()
+
+        assert await basler_camera.get_gamma() is None
+        assert await basler_camera.get_gamma_range() is None
+
+    @pytest.mark.asyncio
+    async def test_set_gamma_verification_failure(self, basler_camera):
+        """Test readback mismatch after set raises HardwareOperationError like gain/exposure."""
+        await basler_camera.initialize()
+
+        def bad_get_value():
+            return 999.0
+
+        basler_camera.camera._gamma_param.GetValue = bad_get_value  # type: ignore[method-assign]
+
+        with pytest.raises(HardwareOperationError, match="verification failed"):
+            await basler_camera.set_gamma(1.0)
+
+    @pytest.mark.asyncio
+    async def test_set_gamma_without_node_raises(self, basler_camera):
+        """Test that setting gamma on a camera without a Gamma node fails loudly."""
+        basler_camera.initialized = True
+        basler_camera.camera = MockPylonCameraWithoutGamma()
+
+        with pytest.raises(CameraConfigurationError, match="[Gg]amma"):
+            await basler_camera.set_gamma(1.5)
 
 
 class TestBaslerCameraBackendTriggerMode:

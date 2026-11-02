@@ -164,8 +164,9 @@ class Camera(Mindtrace):
         """Configure multiple camera settings with per-key apply reporting.
 
         Args:
-            **settings: Canonical configuration keys (see ``CONFIGURABLE_KEYS``).
-                Legacy aliases (``exposure``, ``triggermode``, etc.) are normalized.
+            **settings: Canonical configuration keys (see ``CONFIGURABLE_KEYS``),
+                including ``gamma``. Legacy aliases (``exposure``, ``triggermode``,
+                etc.) are normalized.
 
         Returns:
             A ``ConfigurationApplyResult``. Check ``result.success`` rather than
@@ -237,6 +238,37 @@ class Camera(Mindtrace):
             A tuple of (min_gain, max_gain).
         """
         return self._submit(self._backend.get_gain_range())
+
+    def set_gamma(self, gamma: Union[int, float]):
+        """Set the camera gamma correction value.
+
+        Args:
+            gamma: Gamma value to apply (1.0 is a linear response).
+
+        Raises:
+            CameraConfigurationError: If gamma setting fails.
+        """
+        self._submit(self._backend.set_gamma(gamma))
+
+    def get_gamma(self) -> Optional[float]:
+        """Get the current camera gamma.
+
+        Returns:
+            The current gamma as a float, or ``None`` when gamma is not supported.
+        """
+        return self._submit(self._backend.get_gamma())
+
+    def get_gamma_range(self) -> Optional[Tuple[float, float]]:
+        """Get the valid gamma range.
+
+        Returns:
+            A tuple of (min_gamma, max_gamma), or ``None`` when gamma is not
+            supported on this camera.
+        """
+        range_list = self._submit(self._backend.get_gamma_range())
+        if range_list is None:
+            return None
+        return range_list[0], range_list[1]
 
     def set_roi(self, x: int, y: int, width: int, height: int):
         """Set the Region of Interest (ROI).
