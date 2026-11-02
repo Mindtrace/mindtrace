@@ -56,6 +56,9 @@ class FakeModel(Model):
 
         response = self._responses.pop(0)
         index = 0
+        if response.thinking:
+            yield PartEndEvent(index=index, part=TextPart(content=response.thinking), part_kind="thinking")
+            index += 1
         if response.text:
             yield PartEndEvent(index=index, part=TextPart(content=response.text), part_kind="text")
             index += 1

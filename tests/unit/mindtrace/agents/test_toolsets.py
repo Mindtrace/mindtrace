@@ -423,6 +423,22 @@ class TestMCPToolsetConstructors:
         ts = MCPToolset.from_http("http://localhost/")
         assert ts._prefix is None
 
+    def test_max_retries_none_by_default(self):
+        ts = MCPToolset.from_http("http://localhost/")
+        assert ts._max_retries is None
+
+    def test_max_retries_stored(self):
+        ts = MCPToolset.from_http("http://localhost/", max_retries=3)
+        assert ts._max_retries == 3
+
+    def test_from_sse_stores_max_retries(self):
+        ts = MCPToolset.from_sse("http://localhost:9000/sse", max_retries=2)
+        assert ts._max_retries == 2
+
+    def test_from_stdio_stores_max_retries(self):
+        ts = MCPToolset.from_stdio(["npx", "some-server"], max_retries=2)
+        assert ts._max_retries == 2
+
 
 class TestMCPToolsetGetTools:
     """Tests for MCPToolset.get_tools() with mocked fastmcp Client."""
@@ -468,6 +484,32 @@ class TestMCPToolsetGetTools:
         with patch.dict("sys.modules", {"fastmcp": None}):
             with pytest.raises(ImportError, match="fastmcp"):
                 await ts.get_tools(_ctx())
+
+    async def test_get_tools_propagates_configured_max_retries(self):
+        mcp_tools = [self._make_mcp_tool("search"), self._make_mcp_tool("summarise")]
+        mock_client = AsyncMock()
+        mock_client.list_tools = AsyncMock(return_value=mcp_tools)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("fastmcp.Client", return_value=mock_client):
+            ts = MCPToolset.from_http("http://localhost/", max_retries=3)
+            tools = await ts.get_tools(_ctx())
+
+        assert all(tool.max_retries == 3 for tool in tools.values())
+
+    async def test_get_tools_defaults_max_retries_to_none(self):
+        mcp_tools = [self._make_mcp_tool("search")]
+        mock_client = AsyncMock()
+        mock_client.list_tools = AsyncMock(return_value=mcp_tools)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("fastmcp.Client", return_value=mock_client):
+            ts = MCPToolset.from_http("http://localhost/")
+            tools = await ts.get_tools(_ctx())
+
+        assert tools["search"].max_retries is None
 
     async def test_get_tools_stores_name_map(self):
         mcp_tools = [self._make_mcp_tool("do_thing")]
@@ -528,7 +570,25 @@ class TestMCPToolsetCallTool:
         with patch("fastmcp.Client", return_value=mock_client):
             result = await ts.call_tool("search", {"q": "test"}, _ctx(), _make_toolset_tool("search"))
 
-        assert result == str({"answer": 42})
+        # JSON-encoded, not str()'d — structure must survive for callers
+        # that want to parse the result back out.
+        assert result == '{"answer": 42}'
+
+    async def test_call_tool_still_returns_valid_json_for_non_json_serializable_data(self):
+        import json
+
+        ts = await self._setup_ts_with_tool("search")
+        call_result = self._mock_result(data={1, 2, 3})  # a set isn't natively JSON-serializable
+
+        mock_client = AsyncMock()
+        mock_client.call_tool = AsyncMock(return_value=call_result)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("fastmcp.Client", return_value=mock_client):
+            result = await ts.call_tool("search", {}, _ctx(), _make_toolset_tool("search"))
+
+        assert json.loads(result) == str({1, 2, 3})
 
     async def test_call_tool_joins_content_parts(self):
         ts = await self._setup_ts_with_tool("search")

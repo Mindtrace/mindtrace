@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from .._run_context import RunContext
+from .._serialization import stringify_tool_result
 from ..tools import ToolAgentDepsT, ToolDefinition
 from ._toolset import AbstractToolset, ToolsetTool
 
@@ -34,6 +35,10 @@ class MCPToolset(AbstractToolset[ToolAgentDepsT]):
     Avoid name collisions when combining multiple services::
 
         MCPToolset.from_http(url, prefix="fs")   # exposes "fs__read_file", "fs__list_dir"
+
+    Retry a failed remote call before it's surfaced as an error::
+
+        MCPToolset.from_http(url, max_retries=2)   # every tool from this server gets 2 attempts
     """
 
     def __init__(
@@ -41,9 +46,11 @@ class MCPToolset(AbstractToolset[ToolAgentDepsT]):
         transport_factory: Callable[[], Any],
         *,
         prefix: str | None = None,
+        max_retries: int | None = None,
     ) -> None:
         self._transport_factory = transport_factory
         self._prefix = prefix
+        self._max_retries = max_retries
         # Populated by get_tools(); maps exposed name → original MCP tool name.
         self._name_map: dict[str, str] = {}
 
@@ -52,12 +59,12 @@ class MCPToolset(AbstractToolset[ToolAgentDepsT]):
     # ------------------------------------------------------------------
 
     @classmethod
-    def from_http(cls, url: str, *, prefix: str | None = None) -> MCPToolset:
+    def from_http(cls, url: str, *, prefix: str | None = None, max_retries: int | None = None) -> MCPToolset:
         """Connect via HTTP (streamable-http) transport — the default for Mindtrace services."""
-        return cls(lambda: url, prefix=prefix)
+        return cls(lambda: url, prefix=prefix, max_retries=max_retries)
 
     @classmethod
-    def from_sse(cls, url: str, *, prefix: str | None = None) -> MCPToolset:
+    def from_sse(cls, url: str, *, prefix: str | None = None, max_retries: int | None = None) -> MCPToolset:
         """Connect via SSE transport (legacy MCP HTTP)."""
 
         def _make():
@@ -69,7 +76,7 @@ class MCPToolset(AbstractToolset[ToolAgentDepsT]):
                 )
             return SSETransport(url)
 
-        return cls(_make, prefix=prefix)
+        return cls(_make, prefix=prefix, max_retries=max_retries)
 
     @classmethod
     def from_stdio(
@@ -78,6 +85,7 @@ class MCPToolset(AbstractToolset[ToolAgentDepsT]):
         *,
         env: dict[str, str] | None = None,
         prefix: str | None = None,
+        max_retries: int | None = None,
     ) -> MCPToolset:
         """Connect via stdio transport — for local subprocess MCP servers (e.g. npx)."""
 
@@ -90,7 +98,7 @@ class MCPToolset(AbstractToolset[ToolAgentDepsT]):
                 )
             return StdioTransport(command, env=env)
 
-        return cls(_make, prefix=prefix)
+        return cls(_make, prefix=prefix, max_retries=max_retries)
 
     # ------------------------------------------------------------------
     # AbstractToolset interface
@@ -117,7 +125,7 @@ class MCPToolset(AbstractToolset[ToolAgentDepsT]):
                     description=mcp_tool.description,
                     parameters_json_schema=mcp_tool.inputSchema or {},
                 ),
-                max_retries=None,
+                max_retries=self._max_retries,
             )
         return tools
 
@@ -138,9 +146,12 @@ class MCPToolset(AbstractToolset[ToolAgentDepsT]):
             result = await client.call_tool(mcp_name, arguments=tool_args)
 
         # call_tool() returns CallToolResult; .content is list[ContentBlock]
-        # structured responses (dataclass/dict) are in .data — prefer that when present
+        # structured responses (dataclass/dict) are in .data — prefer that when present.
+        # JSON-encode rather than str() so structure survives for callers that want
+        # to parse the result back out (plain str() on a dict produces Python repr
+        # syntax — single-quoted, not valid JSON).
         if result.data is not None:
-            return str(result.data)
+            return stringify_tool_result(result.data)
         return "\n".join(part.text if hasattr(part, "text") else str(part) for part in result.content)
 
 
