@@ -1220,7 +1220,7 @@ def test_presign_endpoint_uses_separate_signing_client(mock_boto3):
 
     handler = S3StorageHandler(
         "bucket",
-        endpoint="internal-minio:9000",
+        endpoint="internal-s3:9000",
         access_key="a",
         secret_key="s",
         secure=False,

@@ -163,10 +163,9 @@ Requires the `peft` extra. Wraps the backbone with low-rank adapters for paramet
 from mindtrace.models.architectures.backbones import LoRAConfig
 from mindtrace.models import build_model
 
-lora = LoRAConfig(r=8, lora_alpha=16, lora_dropout=0.1, target_modules="qv")
+lora = LoRAConfig(r=8, lora_alpha=16, lora_dropout=0.1)
 model = build_model("dino_v3_small", "linear", num_classes=3, lora_config=lora)
 model.backbone.print_trainable_parameters()
-# "trainable params: 294,912 / 21,986,688 (1.34%)"
 ```
 
 See [Architectures Documentation](mindtrace/models/architectures/README.md) for details.
@@ -180,7 +179,6 @@ See [Architectures Documentation](mindtrace/models/architectures/README.md) for 
 | `Trainer` | Yes | Yes | Yes | Yes |
 | `build_optimizer` | -- | -- | -- | -- |
 | `build_scheduler` | -- | -- | -- | -- |
-| `DatalakeDataset` | -- | -- | -- | -- |
 
 ### Basic Usage
 
@@ -508,8 +506,6 @@ from mindtrace.models import (
     OptunaCallback,                 # Optuna hyperparameter search integration
     build_optimizer,                # Factory: "adamw" -> AdamW with param groups
     build_scheduler,                # Factory: "cosine_warmup" -> scheduler
-    DatalakeDataset,                # torch Dataset backed by Datalake query
-    build_datalake_loader,          # Factory: Datalake query -> DataLoader
 
     # -- Losses --
     FocalLoss,                      # Class-imbalanced classification

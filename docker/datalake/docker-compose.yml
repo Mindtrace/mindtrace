@@ -23,7 +23,7 @@ services:
     volumes:
       - datalake_minio_data:/data
 
-  minio-setup:
+  bucket-setup:
     image: rustfs/rc:v0.1.36
     depends_on:
       - minio
@@ -38,15 +38,15 @@ services:
         until /usr/bin/rc alias set local http://minio:9000 "$${RUSTFS_ACCESS_KEY}" "$${RUSTFS_SECRET_KEY}"; do
           sleep 1
         done
-        /usr/bin/rc mb --ignore-existing local/"$${MINDTRACE_DATALAKE__S3_BUCKET}"
-        touch /tmp/minio-setup-done
+        /usr/bin/rc bucket create --ignore-existing local/"$${MINDTRACE_DATALAKE__S3_BUCKET}"
+        touch /tmp/bucket-setup-done
         exec tail -f /dev/null
     environment:
       RUSTFS_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       RUSTFS_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       MINDTRACE_DATALAKE__S3_BUCKET: ${MINDTRACE_DATALAKE__S3_BUCKET:-datalake}
     healthcheck:
-      test: ["CMD-SHELL", "test -f /tmp/minio-setup-done"]
+      test: ["CMD-SHELL", "test -f /tmp/bucket-setup-done"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -61,7 +61,7 @@ services:
         condition: service_started
       minio:
         condition: service_started
-      minio-setup:
+      bucket-setup:
         condition: service_healthy
     restart: unless-stopped
     environment:

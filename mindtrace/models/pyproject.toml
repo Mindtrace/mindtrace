@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-models"
-version = "0.16.0"
+version = "0.17.0"
 description = "Models for Mindtrace"
 license = "Apache-2.0"
 authors = [
@@ -12,9 +12,9 @@ classifiers = [
 ]
 dependencies = [
     "dill>=0.4.0",
-    "mindtrace-core>=0.16.0",
-    "mindtrace-registry>=0.16.0",
-    "mindtrace-services>=0.16.0",
+    "mindtrace-core>=0.17.0",
+    "mindtrace-registry>=0.17.0",
+    "mindtrace-services>=0.17.0",
     "numpy>=2.3.1",
     "pydantic>=2.0",
     "torch>=2.0",
@@ -29,6 +29,7 @@ wandb  = ["wandb>=0.16"]
 
 # Training extras
 train = ["torchvision>=0.15", "optuna>=4.8.0"]
+dataloaders = ["datasets>=2.19.0", "torchvision>=0.15.0"]
 
 # Architecture extras
 timm         = ["timm>=0.9"]
@@ -36,10 +37,11 @@ transformers = ["transformers>=4.35"]
 
 # Model format extras
 onnx = ["onnxruntime>=1.16", "onnx>=1.14"]
-peft = ["peft>=0.6"]
+peft = ["peft>=0.8"]
 
 # Install everything
 all = [
+    "datasets>=2.19.0",
     "mlflow>=2.0",
     "wandb>=0.16",
     "torchvision>=0.15",
@@ -48,7 +50,7 @@ all = [
     "transformers>=4.35",
     "onnxruntime>=1.16",
     "onnx>=1.14",
-    "peft>=0.6",
+    "peft>=0.8",
 ]
 
 [project.urls]

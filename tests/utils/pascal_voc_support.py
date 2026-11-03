@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 from PIL import Image
 
+from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake.importers import pascal_voc
 
 VOC_XML = """
@@ -49,6 +50,8 @@ def build_tiny_voc_fixture(
 
     if include_segmentation:
         (voc_root / "SegmentationClass").mkdir(parents=True, exist_ok=True)
+        (voc_root / "ImageSets" / "Segmentation").mkdir(parents=True, exist_ok=True)
+        (voc_root / "ImageSets" / "Segmentation" / f"{split}.txt").write_text(f"{image_id}\n")
         seg = Image.new("P", (2, 2))
         seg.putpalette([0] * (256 * 3))
         seg.putdata([0, pascal_voc.VOC_CLASS_TO_ID["person"], 0, 255])
@@ -75,7 +78,7 @@ def make_import_datalake_mock() -> MagicMock:
     """Create a mock datalake configured for a full Pascal VOC import."""
 
     datalake = MagicMock()
-    datalake.get_dataset_version.side_effect = RuntimeError("missing")
+    datalake.get_dataset_version.side_effect = DocumentNotFoundError("missing")
     datalake.get_annotation_schema_by_name_version.side_effect = RuntimeError("missing")
 
     schema_ids = iter(("schema_cls", "schema_det", "schema_seg"))
@@ -84,10 +87,12 @@ def make_import_datalake_mock() -> MagicMock:
     asset_ids = iter(("image_asset", "mask_asset"))
     datalake.create_asset_from_object.side_effect = lambda **_: SimpleNamespace(asset_id=next(asset_ids))
 
-    datalake.create_datum.return_value = SimpleNamespace(datum_id="datum_1")
+    datum_ids = iter(("datum_1", "region_datum_1"))
+    datalake.create_datum.side_effect = lambda **_: SimpleNamespace(datum_id=next(datum_ids))
 
-    annotation_set_ids = iter(("set_cls", "set_det", "set_seg"))
+    annotation_set_ids = iter(("set_cls", "set_det", "set_region", "set_seg"))
     datalake.create_annotation_set.side_effect = lambda **_: SimpleNamespace(annotation_set_id=next(annotation_set_ids))
 
-    datalake.create_dataset_version.return_value = SimpleNamespace(dataset_version_id="dataset_version_1")
+    version_ids = iter(f"dataset_version_{index}" for index in range(1, 6))
+    datalake.create_dataset_version.side_effect = lambda **_: SimpleNamespace(dataset_version_id=next(version_ids))
     return datalake

@@ -1,6 +1,6 @@
 """Integration tests for S3RegistryBackend.
 
-Uses MinIO as the S3-compatible backend for testing.
+Runs against the S3-compatible store from the integration test stack.
 """
 
 import uuid
@@ -8,11 +8,12 @@ from pathlib import Path
 
 from mindtrace.core import CoreConfig
 from mindtrace.registry import S3RegistryBackend
+from tests.integration.s3_utils import bucket_exists, delete_bucket, list_keys
 
 
 def test_init(s3_backend, s3_test_bucket, s3_client):
     """Test backend initialization."""
-    assert s3_client.bucket_exists(s3_test_bucket)
+    assert bucket_exists(s3_client, s3_test_bucket)
 
 
 def test_push_and_pull(s3_backend, sample_object_dir, s3_client, s3_test_bucket):
@@ -24,9 +25,8 @@ def test_push_and_pull(s3_backend, sample_object_dir, s3_client, s3_test_bucket)
 
     # Verify the object was pushed to S3 (UUID folder contains 2 files)
     # With MVCC, path is: objects/test:object/1.0.0/{uuid}/file1.txt
-    objects = list(s3_client.list_objects(s3_test_bucket, prefix="objects/test:object/1.0.0/", recursive=True))
+    files = list_keys(s3_client, s3_test_bucket, prefix="objects/test:object/1.0.0/")
     # Should have 2 files in the UUID folder
-    files = [obj for obj in objects if not obj.is_dir]
     assert len(files) == 2
 
     # Download to a new location - use fetch_metadata to get _storage.uuid
@@ -51,7 +51,7 @@ def test_save_and_fetch_metadata(s3_backend, sample_metadata, s3_client, s3_test
     assert result.first().ok
 
     # Verify metadata exists in S3
-    objects = list(s3_client.list_objects(s3_test_bucket, prefix="_meta_test%3Aobject@1.0.0.json"))
+    objects = list_keys(s3_client, s3_test_bucket, prefix="_meta_test%3Aobject@1.0.0.json")
     assert len(objects) == 1
 
     # Fetch metadata and verify contents
@@ -68,7 +68,7 @@ def test_save_and_fetch_metadata(s3_backend, sample_metadata, s3_client, s3_test
     assert result.first().ok
 
     # Verify metadata is deleted
-    objects = list(s3_client.list_objects(s3_test_bucket, prefix="_meta_test%3Aobject@1.0.0.json"))
+    objects = list_keys(s3_client, s3_test_bucket, prefix="_meta_test%3Aobject@1.0.0.json")
     assert len(objects) == 0
 
 
@@ -82,7 +82,7 @@ def test_delete_metadata(s3_backend, sample_metadata, s3_client, s3_test_bucket)
     assert result.first().ok
 
     # Verify metadata is deleted from S3
-    objects = list(s3_client.list_objects(s3_test_bucket, prefix="_meta_test%3Aobject@1.0.0.json"))
+    objects = list_keys(s3_client, s3_test_bucket, prefix="_meta_test%3Aobject@1.0.0.json")
     assert len(objects) == 0
 
 
@@ -137,10 +137,10 @@ def test_list_versions_uses_metadata_prefix(s3_backend, sample_metadata, s3_clie
     assert "2.0.0" in versions
 
     # Verify the metadata files were created with the correct prefix format
-    objects = list(s3_client.list_objects(s3_test_bucket, prefix=expected_prefix))
+    objects = list_keys(s3_client, s3_test_bucket, prefix=expected_prefix)
     assert len(objects) == 2
-    assert any(obj.object_name == f"{expected_prefix}1.0.0.json" for obj in objects)
-    assert any(obj.object_name == f"{expected_prefix}2.0.0.json" for obj in objects)
+    assert f"{expected_prefix}1.0.0.json" in objects
+    assert f"{expected_prefix}2.0.0.json" in objects
 
 
 def test_has_object(s3_backend, sample_metadata, s3_client, s3_test_bucket):
@@ -170,7 +170,7 @@ def test_delete_object(s3_backend, sample_object_dir, s3_client, s3_test_bucket)
     assert result.first().ok
 
     # Verify object is deleted from S3
-    objects = list(s3_client.list_objects(s3_test_bucket, prefix="objects/test:object/1.0.0/"))
+    objects = list_keys(s3_client, s3_test_bucket, prefix="objects/test:object/1.0.0/")
     assert len(objects) == 0
 
 
@@ -240,7 +240,7 @@ def test_init_with_default_uri(s3_client, s3_test_bucket, s3_config):
     # Verify the URI is set to the S3 bucket path
     expected_uri = Path(f"s3:/{s3_test_bucket}")
     assert backend.uri == expected_uri
-    assert s3_client.bucket_exists(s3_test_bucket)
+    assert bucket_exists(s3_client, s3_test_bucket)
 
 
 def test_init_creates_bucket(s3_client, s3_config):
@@ -249,7 +249,7 @@ def test_init_creates_bucket(s3_client, s3_config):
     bucket_name = f"test-bucket-{uuid.uuid4()}"
 
     # Verify bucket doesn't exist
-    assert not s3_client.bucket_exists(bucket_name)
+    assert not bucket_exists(s3_client, bucket_name)
 
     # Create backend with the new bucket name
     _ = S3RegistryBackend(
@@ -262,12 +262,10 @@ def test_init_creates_bucket(s3_client, s3_config):
     )
 
     # Verify the bucket was created
-    assert s3_client.bucket_exists(bucket_name)
+    assert bucket_exists(s3_client, bucket_name)
 
     # Cleanup - remove all objects first, then the bucket
-    for obj in s3_client.list_objects(bucket_name, recursive=True):
-        s3_client.remove_object(bucket_name, obj.object_name)
-    s3_client.remove_bucket(bucket_name)
+    delete_bucket(s3_client, bucket_name)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

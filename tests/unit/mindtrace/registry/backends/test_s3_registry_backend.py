@@ -56,12 +56,12 @@ class MockBatchResult:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Mock Minio Storage Handler
+# Mock S3 Storage Handler
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class MockMinioHandler:
-    """Mock Minio storage handler that supports batch operations."""
+class MockS3Handler:
+    """Mock S3 storage handler that supports batch operations."""
 
     def __init__(self, *args, **kwargs):
         self.bucket_name = kwargs.get("bucket_name", "test-bucket")
@@ -246,14 +246,14 @@ class MockMinioHandler:
 
 
 @pytest.fixture
-def mock_minio_handler(monkeypatch):
+def mock_s3_handler(monkeypatch):
     """Create a mock S3 storage handler."""
-    monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.S3StorageHandler", MockMinioHandler)
-    return MockMinioHandler()
+    monkeypatch.setattr("mindtrace.registry.backends.s3_registry_backend.S3StorageHandler", MockS3Handler)
+    return MockS3Handler()
 
 
 @pytest.fixture
-def backend(mock_minio_handler, tmp_path):
+def backend(mock_s3_handler, tmp_path):
     """Create a backend with mocked S3 storage."""
     return S3RegistryBackend(
         uri=str(tmp_path / "s3_cache"),
@@ -1058,7 +1058,7 @@ def test_batch_push_rejects_single_dict_metadata(backend, sample_object_dir, sam
     assert results.all_ok
 
 
-def test_config_and_path_helper_edge_cases(mock_minio_handler, tmp_path, backend, monkeypatch):
+def test_config_and_path_helper_edge_cases(mock_s3_handler, tmp_path, backend, monkeypatch):
     prefixed_backend = S3RegistryBackend(
         uri=str(tmp_path / "prefixed"),
         endpoint="localhost:9000",
@@ -1253,7 +1253,7 @@ def test_push_single_object_helper_edge_cases(backend, sample_object_dir, sample
         backend, "fetch_metadata", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("fetch failed"))
     )
     monkeypatch.setattr(
-        backend.storage, "upload_batch", MockMinioHandler.upload_batch.__get__(backend.storage, type(backend.storage))
+        backend.storage, "upload_batch", MockS3Handler.upload_batch.__get__(backend.storage, type(backend.storage))
     )
     result = backend._push_single_object("test:overwrite", "1.0.0", sample_object_dir, sample_metadata, "overwrite")
     assert result.ok

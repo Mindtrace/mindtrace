@@ -3,7 +3,7 @@ import multiprocessing as mp
 import random
 import time
 
-from mindtrace.registry import MinioRegistryBackend, Registry
+from mindtrace.registry import Registry, S3RegistryBackend
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 
 
 def create_registry():
-    """Create a new Registry instance with MinIO backend."""
-    backend = MinioRegistryBackend(
+    """Create a new Registry instance with an S3 backend."""
+    backend = S3RegistryBackend(
         endpoint="localhost:19000",
         access_key="minioadmin",
         secret_key="minioadmin",

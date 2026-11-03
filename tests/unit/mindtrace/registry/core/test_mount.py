@@ -217,7 +217,7 @@ def test_registry_from_s3_mount_builds_s3_backend(monkeypatch):
         config=S3MountConfig(
             bucket="datasets",
             prefix="mindtrace/",
-            endpoint="minio.local:9000",
+            endpoint="s3.local:9000",
             secure=False,
         ),
         auth=S3AccessKeyAuth(access_key="abc", secret_key="xyz"),
@@ -229,7 +229,7 @@ def test_registry_from_s3_mount_builds_s3_backend(monkeypatch):
     assert isinstance(registry.backend, DummyS3Backend)
     assert captured["bucket"] == "datasets"
     assert captured["prefix"] == "mindtrace/"
-    assert captured["endpoint"] == "minio.local:9000"
+    assert captured["endpoint"] == "s3.local:9000"
     assert captured["secure"] is False
     assert captured["access_key"] == "abc"
     assert captured["secret_key"] == "xyz"
@@ -293,7 +293,7 @@ def test_mount_from_registry_s3_best_effort(monkeypatch):
         (),
         {
             "bucket_name": "datasets",
-            "endpoint": "minio.local:9000",
+            "endpoint": "s3.local:9000",
             "secure": False,
             # Split-horizon presign config: distinct browser-facing endpoint.
             "presign_endpoint": "localhost:19000",
@@ -328,9 +328,9 @@ def test_mount_from_registry_s3_collapses_default_presign_endpoint(monkeypatch):
         (),
         {
             "bucket_name": "datasets",
-            "endpoint": "minio.local:9000",
+            "endpoint": "s3.local:9000",
             "secure": False,
-            "presign_endpoint": "minio.local:9000",  # == endpoint -> no split horizon
+            "presign_endpoint": "s3.local:9000",  # == endpoint -> no split horizon
             "presign_secure": None,
         },
     )()

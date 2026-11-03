@@ -1,6 +1,6 @@
 services:
 
-  minio:
+  rustfs:
     image: rustfs/rustfs:1.0.0
     ports:
       - "9000:9000"  # API
@@ -13,7 +13,7 @@ services:
       RUSTFS_ACCESS_KEY: minioadmin
       RUSTFS_SECRET_KEY: minioadmin
     volumes:
-      - minio_data:/data
+      - rustfs_data:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
       interval: 30s
@@ -80,6 +80,6 @@ services:
       retries: 3
 
 volumes:
-  minio_data:
+  rustfs_data:
   mongodb_test_data:
   redis_test_data: 

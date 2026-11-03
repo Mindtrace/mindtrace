@@ -10,9 +10,9 @@ fi
 # Start docker containers
 $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml up -d
 
-# Wait for MinIO to be healthy
+# Wait for the S3 store (RustFS) to be healthy
 echo "Waiting for docker containers to be ready..."
-until curl -s http://localhost:19000/minio/health/live > /dev/null; do
+until curl -s http://localhost:19000/health > /dev/null; do
     sleep 1
 done
 
