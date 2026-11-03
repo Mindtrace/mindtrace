@@ -184,7 +184,7 @@ print("\n[8] ONNX export (requires torch.onnx)...")
 try:
     onnx_path = Path(tempfile.mkdtemp()) / "beans_resnet18.onnx"
     dummy_input = torch.randn(1, 3, IMG_SIZE, IMG_SIZE)
-    model.eval()
+    model.cpu().eval()
     torch.onnx.export(
         model,
         dummy_input,
@@ -192,7 +192,7 @@ try:
         input_names=["pixel_values"],
         output_names=["logits"],
         dynamic_axes={"pixel_values": {0: "batch"}, "logits": {0: "batch"}},
-        opset_version=17,
+        opset_version=18,
     )
     print(f"  exported to: {onnx_path}")
     print("  OnnxModelService usage (not executed here — requires a running service):")
