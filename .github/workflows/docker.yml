@@ -1,0 +1,40 @@
+name: Docker
+
+on:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - .github/workflows/docker.yml
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    uses: docker/github-builder/.github/workflows/build.yml@v1
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    with:
+      context: .
+      output: image
+      push: ${{ github.event_name != 'pull_request' }}
+      platforms: linux/amd64,linux/arm64
+      meta-images: ghcr.io/mindtrace/mindtrace
+      meta-tags: |
+        type=match,pattern=v(.*),group=1
+        type=ref,event=pr
+      meta-flavor: latest=false
+      set-meta-labels: true
+      set-meta-annotations: true
+      sbom: true
+    secrets:
+      registry-auths: |
+        - registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
