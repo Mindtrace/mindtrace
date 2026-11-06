@@ -895,31 +895,35 @@ class Registry(Mindtrace):
 
         pending = [i for i in range(n) if resolved[i] is not None]
 
-        # Step 1: Batch cache load
-        if pending:
+        # Check freshness before materializing cached paths into output_dir.
+        cache_candidates = pending
+        if check_staleness and pending:
+            present = self._cache.backend.has_object(
+                [resolved[i][0] for i in pending], [resolved[i][1] for i in pending]
+            )
+            cached = [i for i in pending if present.get(resolved[i], False)]
+            stale = self._find_stale_indices(resolved, cached)
+            cache_candidates = [i for i in cached if i not in stale]
+
+        # Load only eligible cache entries; stale entries go directly to remote.
+        if cache_candidates:
             cache_result = self._cache.load(
-                [resolved[i][0] for i in pending],
-                [resolved[i][1] for i in pending],
+                [resolved[i][0] for i in cache_candidates],
+                [resolved[i][1] for i in cache_candidates],
                 output_dir=output_dir,
                 verify=verify,
                 **kwargs,
             )
             cache_succeeded = set(cache_result.succeeded)
-            for i, obj in zip(pending, cache_result.results):
+            for i, obj in zip(cache_candidates, cache_result.results):
                 objects[i] = obj
                 loaded[i] = resolved[i] in cache_succeeded
-
-        # Step 2: Check staleness for cache hits
-        if check_staleness:
-            cached = [i for i in pending if loaded[i]]
-            for i in self._find_stale_indices(resolved, cached):
-                loaded[i] = False  # add to misses list
 
         for i in [i for i in pending if loaded[i]]:
             cache_name, cache_version = resolved[i]
             self._touch_cache_entry(cache_name, cache_version)
 
-        # Step 3: Remote load for misses
+        # Remote load for misses
         misses = [i for i in pending if not loaded[i]]
         if misses:
             remote_result = self._remote.load(
