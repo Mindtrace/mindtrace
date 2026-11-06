@@ -4734,6 +4734,37 @@ class TestCachedNoneResults:
 
 
 class TestCachedOutputDirectory:
+    def test_full_verification_refreshes_stale_directory_before_output(self, cached_mock_registry, tmp_path):
+        registry = cached_mock_registry
+        source = tmp_path / "source"
+        (source / "sub").mkdir(parents=True)
+        (source / "sub" / "a.txt").write_text("old", encoding="utf-8")
+        (source / "removed.txt").write_text("obsolete", encoding="utf-8")
+        registry._remote.save("dir", source, version="1.0.0")
+
+        # Prime identical stored bytes, avoiding timestamp-dependent gzip reserialization.
+        metadata = registry._remote.info("dir", "1.0.0")
+        artifact_dir = tmp_path / "cache-prime"
+        assert registry.backend.pull("dir", "1.0.0", artifact_dir, metadata=metadata).all_ok
+        assert registry._cache.backend.push("dir", "1.0.0", artifact_dir, metadata=metadata).all_ok
+        assert not registry._is_cache_stale("dir", "1.0.0")
+
+        (source / "sub" / "a.txt").write_text("new", encoding="utf-8")
+        (source / "removed.txt").unlink()
+        registry._remote.save("dir", source, version="1.0.0", on_conflict="overwrite")
+        assert registry._is_cache_stale("dir", "1.0.0")
+
+        output = tmp_path / "output"
+        result = registry.load(["dir"], "1.0.0", output_dir=str(output), verify="full")
+        assert result.succeeded == [("dir", "1.0.0")]
+        assert not result.errors
+        path = result.results[0]
+        assert path.resolve().is_relative_to(output.resolve())
+        contents = {
+            str(file.relative_to(path)): file.read_text(encoding="utf-8") for file in path.rglob("*") if file.is_file()
+        }
+        assert contents == {"sub/a.txt": "new"}
+
     @pytest.mark.parametrize("warm_count", [0, 1, 2])
     def test_cached_batch_output_directory(self, cached_mock_registry, tmp_path, warm_count):
         registry = cached_mock_registry
@@ -4833,6 +4864,28 @@ class TestCachedOutputDirectory:
 
 
 class TestCachedVersionIdentity:
+    def test_repeated_batch_keys_fill_cache_without_dropping_other_items(self, cached_mock_registry, monkeypatch):
+        registry = cached_mock_registry
+        registry._remote.save(["a", "a", "b"], [1, 2, 3], version=["1.0.0", "1.0.1", "1.0.0"])
+        names = ["a", "a", "a", "b"]
+        versions = ["1.0.0", "1.0.0", "1.0.1", "1.0.0"]
+        identities = list(zip(names, versions))
+        assert not any(registry._cache.has_object(name, version) for name, version in identities)
+
+        result = registry.load(names, versions)
+        assert result.results == [1, 1, 2, 3]
+        assert result.succeeded == identities
+        assert not result.errors
+        assert all(registry._cache.has_object(name, version) for name, version in identities)
+
+        remote_load = Mock(wraps=registry._remote.load)
+        monkeypatch.setattr(registry._remote, "load", remote_load)
+        again = registry.load(names, versions, verify="none")
+        assert again.results == result.results
+        assert again.succeeded == identities
+        assert not again.errors
+        remote_load.assert_not_called()
+
     @pytest.mark.parametrize("version", [None, "latest"])
     def test_cached_read_pins_version_before_remote_load(self, cached_mock_registry, monkeypatch, version):
         reader = cached_mock_registry
@@ -6360,6 +6413,25 @@ class TestMaterializerDispatch:
 
 
 class TestInputValidation:
+    @pytest.mark.parametrize("cached", [False, True])
+    @pytest.mark.parametrize("operation", ["has_object", "contains"])
+    def test_membership_rejects_invalid_versions(self, cached_mock_registry, tmp_path, cached, operation):
+        registry = cached_mock_registry if cached else Registry(backend=tmp_path / "local", version_objects=True)
+        registry.save("present", 1, version="1.0.0")
+
+        def contains(name, version):
+            if operation == "has_object":
+                return registry.has_object(name, version)
+            return f"{name}@{version}" in registry
+
+        assert contains("present", "1.0.0") is True
+        assert contains("missing", "1.0.0") is False
+        assert contains("missing", "latest") is False
+        with pytest.raises(ValueError):
+            contains("nested/../item", "1.0.0")
+        with pytest.raises(ValueError, match="Invalid version"):
+            contains("present", "bad")
+
     def test_valid_object_names_round_trip(self, tmp_path, valid_relative_path):
         registry = Registry(backend=tmp_path / "registry", version_objects=True)
         registry.save(valid_relative_path, b"payload", version="1.0.0")
