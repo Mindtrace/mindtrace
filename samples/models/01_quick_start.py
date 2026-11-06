@@ -184,7 +184,7 @@ print("\n[8] ONNX export (requires torch.onnx)...")
 try:
     onnx_path = Path(tempfile.mkdtemp()) / "beans_resnet18.onnx"
     dummy_input = torch.randn(1, 3, IMG_SIZE, IMG_SIZE)
-    model.eval()
+    model.cpu().eval()
     torch.onnx.export(
         model,
         dummy_input,
