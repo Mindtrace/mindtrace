@@ -54,7 +54,9 @@ class RedisConnection(BrokerConnectionBase):
         self._local_lock = threading.Lock()  # Thread lock for local state modifications
         self._shutdown_event = threading.Event()  # Event to signal shutdown to background thread
         self._pubsub = None  # Store pubsub instance for proper cleanup
+        self._listener_connection: redis.Redis | None = None
         self._event_thread = None  # Store thread reference for cleanup
+        self._event_listener_error: BaseException | None = None
         self._load_queue_metadata()  # Load previously declared queues from metadata.
         self._start_event_listener()  # Start a background thread to listen for queue events.
 
@@ -105,8 +107,15 @@ class RedisConnection(BrokerConnectionBase):
                 try:
                     self._pubsub.close()
                 except Exception as e:
-                    self.logger.error(f"Error closing pubsub connection: {str(e)}")
+                    self.logger.debug(f"Pubsub connection was already closed during shutdown: {str(e)}")
                 self._pubsub = None
+
+            if self._listener_connection is not None:
+                try:
+                    self._listener_connection.close()
+                except Exception as e:
+                    self.logger.debug(f"Event listener connection was already closed during shutdown: {str(e)}")
+                self._listener_connection = None
 
         # Wait for the background thread to finish (with timeout)
         if self._event_thread is not None and self._event_thread.is_alive():
@@ -135,12 +144,39 @@ class RedisConnection(BrokerConnectionBase):
         self._event_thread = threading.Thread(target=self._subscribe_to_events, daemon=True)
         self._event_thread.start()
 
-    def _subscribe_to_events(self):
-        try:
-            self._pubsub = self.connection.pubsub()
-            self._pubsub.subscribe(self.EVENTS_CHANNEL)
+    @property
+    def event_listener_error(self) -> BaseException | None:
+        """Return the unexpected exception that stopped the event listener, if any."""
 
-            for message in self._pubsub.listen():
+        with self._local_lock:
+            return self._event_listener_error
+
+    def _subscribe_to_events(self):
+        listener_connection = None
+        pubsub = None
+        try:
+            if self._shutdown_event.is_set():
+                return
+
+            listener_params = {
+                "host": self.host,
+                "port": self.port,
+                "db": self.db,
+                "socket_timeout": None,
+                "socket_connect_timeout": self.socket_connect_timeout,
+            }
+            if self.password:
+                listener_params["password"] = self.password
+            listener_connection = redis.Redis(**listener_params)
+            pubsub = listener_connection.pubsub()
+            with self._local_lock:
+                if self._shutdown_event.is_set():
+                    return
+                self._listener_connection = listener_connection
+                self._pubsub = pubsub
+            pubsub.subscribe(self.EVENTS_CHANNEL)
+
+            for message in pubsub.listen():
                 if self._shutdown_event.is_set():
                     break
                 if message["type"] != "message":
@@ -183,15 +219,26 @@ class RedisConnection(BrokerConnectionBase):
                 except Exception:
                     pass
         except Exception as e:
-            self.logger.error(f"Event listener thread exception: {str(e)}")
+            if not self._shutdown_event.is_set():
+                with self._local_lock:
+                    self._event_listener_error = e
+                self.logger.error(f"Event listener thread exception: {str(e)}")
         finally:
             with self._local_lock:
-                if self._pubsub is not None:
-                    try:
-                        self._pubsub.close()
-                    except Exception:
-                        pass
+                if self._pubsub is pubsub:
                     self._pubsub = None
+                if self._listener_connection is listener_connection:
+                    self._listener_connection = None
+            if pubsub is not None:
+                try:
+                    pubsub.close()
+                except Exception:
+                    pass
+            if listener_connection is not None:
+                try:
+                    listener_connection.close()
+                except Exception:
+                    pass
 
     def _load_queue_metadata(self):
         """Load all declared queues from the centralized metadata hash."""
