@@ -346,6 +346,7 @@ The package supports three backend families.
 ### Local backend
 
 `LocalClient` is the simplest backend and a good default for local development or single-process workflows.
+Its `delete_queue()` succeeds if the queue is already absent; other storage errors propagate.
 
 ```python
 from mindtrace.jobs import LocalClient, Orchestrator

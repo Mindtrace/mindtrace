@@ -212,8 +212,9 @@ class TestLocalClient:
         client = temp_local_client
         msg = SampleMessage(data="test")
 
-        with pytest.raises(KeyError, match="Object not found: nonexistent-queue"):
+        with pytest.raises(KeyError, match="nonexistent-queue") as caught:
             client.publish("nonexistent-queue", msg)
+        assert isinstance(caught.value, RegistryObjectNotFound)
 
     def test_priority_queue_with_priority(self, temp_local_client):
         """Test publishing to priority queue with priority parameter."""
@@ -254,8 +255,9 @@ class TestLocalClient:
     def test_count_nonexistent_queue(self, temp_local_client):
         """Test counting messages in a queue that doesn't exist."""
         client = temp_local_client
-        with pytest.raises(KeyError, match="Object not found: nonexistent-queue"):
+        with pytest.raises(KeyError, match="nonexistent-queue") as caught:
             client.count_queue_messages("nonexistent-queue")
+        assert isinstance(caught.value, RegistryObjectNotFound)
 
     def test_move_to_dlq(self, temp_local_client):
         """Test move_to_dlq method (currently a pass statement)."""
@@ -290,6 +292,26 @@ class TestLocalClient:
         # Delete is idempotent - it succeeds even if the queue doesn't exist
         result = client.delete_queue("does-not-exist")
         assert result["status"] == "success"
+
+    def test_delete_queue_twice(self, temp_local_client):
+        client = temp_local_client
+        client.declare_queue("delete-twice")
+
+        first = client.delete_queue("delete-twice")
+        assert first["status"] == "success"
+        assert client.delete_queue("delete-twice") == first
+
+    @pytest.mark.parametrize("error_type", [PermissionError, OSError, KeyError])
+    def test_delete_queue_preserves_operational_errors(self, temp_local_client, monkeypatch, error_type):
+        client = temp_local_client
+        error = error_type("queue storage failure")
+        delete = MagicMock(side_effect=error)
+        monkeypatch.setattr(client.queues, "delete", delete)
+
+        with pytest.raises(error_type) as exc:
+            client.delete_queue("item")
+        assert exc.value is error
+        delete.assert_called_once_with("item")
 
     def test_receive_empty_does_not_log_warning(self, temp_local_client):
         client = temp_local_client
