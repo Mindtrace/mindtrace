@@ -92,6 +92,65 @@ def test_huggingface_export_raises_helpful_error_when_dependency_missing(monkeyp
         )
 
 
+@pytest.mark.parametrize(
+    "path_options",
+    [
+        {"task": "classification", "classification_source": "bbox_crops"},
+        {"task": "classification", "classification_type": "multi_label"},
+        {"task": "detection"},
+        {"task": "object_detection"},
+        {"task": "semantic_segmentation"},
+        {"task": "semantic-segmentation"},
+        {"task": "instance_segmentation"},
+        {"task": "instance-segmentation"},
+        {"task": "segmentation"},
+        {},
+    ],
+)
+@pytest.mark.parametrize(
+    ("option_name", "option_value"),
+    [
+        ("annotation_attributes", {"field": "target"}),
+        ("class_names", ["healthy"]),
+        ("classification_class_names", ["healthy"]),
+        ("metadata_keys", {"subject_id": "string"}),
+        ("metadata_keys", {}),
+        ("metadata_keys", None),
+    ],
+)
+@pytest.mark.parametrize("path_from_metadata", [False, True])
+def test_huggingface_export_rejects_unsupported_options_before_preparing_destination(
+    tmp_path: Path, monkeypatch, path_options, option_name, option_value, path_from_metadata
+):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+
+    monkeypatch.setattr(huggingface_exporter.importlib, "import_module", lambda name: _fake_datasets_module())
+    prepare = Mock()
+    monkeypatch.setattr(huggingface_exporter, "prepare_export_destination", prepare)
+    metadata = {}
+    options = dict(path_options)
+    if path_from_metadata:
+        metadata = dict(options)
+        if "task" in metadata:
+            metadata["task_type"] = metadata.pop("task")
+        options = {}
+    options[option_name] = option_value
+
+    with pytest.raises(ValueError) as error:
+        export_dataset_as_huggingface(
+            ExportableDataset(name="unsupported", metadata=metadata),
+            destination=tmp_path / "hf",
+            overwrite=True,
+            options=options,
+        )
+
+    assert option_name in str(error.value)
+    assert "require task='classification'" in str(error.value)
+    assert "classification_type='single_label'" in str(error.value)
+    assert "classification_source='annotations'" in str(error.value)
+    prepare.assert_not_called()
+
+
 def test_huggingface_export_writes_media_for_default_split(tmp_path: Path, monkeypatch):
     from mindtrace.datalake.exporters import huggingface as huggingface_exporter
 
@@ -115,7 +174,8 @@ def test_huggingface_export_writes_media_for_default_split(tmp_path: Path, monke
     assert payload[0]["image_path"] == "media/default/asset_img.png"
 
 
-def test_huggingface_classification_export_writes_typed_split_dataset(tmp_path: Path, monkeypatch):
+@pytest.mark.parametrize("options", [None, {}, {"annotation_attributes": {}, "metadata_keys": {}}])
+def test_huggingface_classification_export_writes_typed_split_dataset(tmp_path: Path, monkeypatch, options):
     from mindtrace.datalake.exporters import huggingface as huggingface_exporter
     from mindtrace.datalake.types import AnnotationRecord
 
@@ -149,10 +209,16 @@ def test_huggingface_classification_export_writes_typed_split_dataset(tmp_path: 
         ],
     )
 
-    result = export_dataset_as_huggingface(dataset, destination=tmp_path / "flowers-hf")
+    result = export_dataset_as_huggingface(dataset, destination=tmp_path / "flowers-hf", options=options)
     payload = json.loads((tmp_path / "flowers-hf" / "dataset_dict.json").read_text())
 
-    assert result.files_written == ["."]
+    assert result.files_written == ["mindtrace_metadata.json", "."]
+    assert json.loads((tmp_path / "flowers-hf" / "mindtrace_metadata.json").read_text()) == {
+        "schema_version": 2,
+        "task": "classification",
+        "annotation_attributes": {},
+        "metadata_keys": {},
+    }
     assert payload["train"][0]["asset_id"] == "asset_img"
     assert payload["train"][0]["label"] == 1
     assert payload["train"][0]["label_name"] == "hard-leaved pocket orchid"
@@ -213,8 +279,181 @@ def test_huggingface_classification_export_rejects_label_name_mismatch(tmp_path:
         ],
     )
 
-    with pytest.raises(ValueError, match="maps to 'pink primrose'"):
+    with pytest.raises(ValueError, match="not present in class_names"):
         export_dataset_as_huggingface(dataset, destination=tmp_path / "invalid-label-hf")
+
+
+def test_huggingface_classification_export_selects_idless_annotation_and_metadata_keys(
+    tmp_path: Path,
+    monkeypatch,
+):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+    from mindtrace.datalake.types import AnnotationRecord
+
+    monkeypatch.setattr(
+        huggingface_exporter.importlib,
+        "import_module",
+        lambda name: _fake_datasets_module(),
+    )
+    dataset = ExportableDataset(
+        name="multi-field-classification",
+        metadata={"task_type": "classification"},
+        items=[
+            ExportableItem(
+                assets={"image": sample_asset()},
+                primary_role="image",
+                split="train",
+                metadata={"subject_id": "subject-1", "group_id": "group-1"},
+                payloads={"image": png_bytes()},
+                annotations=[
+                    AnnotationRecord(
+                        annotation_id="defect-type",
+                        kind="classification",
+                        label="defective",
+                        attributes={"field": "defect_type"},
+                        source={"type": "human", "name": "pytest"},
+                    ),
+                    AnnotationRecord(
+                        annotation_id="binary-health",
+                        kind="classification",
+                        label="defective",
+                        attributes={"field": "healthy_defective"},
+                        source={"type": "human", "name": "pytest"},
+                    ),
+                ],
+            )
+        ],
+    )
+
+    result = export_dataset_as_huggingface(
+        dataset,
+        destination=tmp_path / "selected-hf",
+        options={
+            "task": "classification",
+            "annotation_attributes": {"field": "defect_type"},
+            "class_names": ["healthy", "defective"],
+            "metadata_keys": {"subject_id": "string", "group_id": "string"},
+        },
+    )
+
+    payload = json.loads((tmp_path / "selected-hf" / "dataset_dict.json").read_text())
+    artifact_metadata = json.loads((tmp_path / "selected-hf" / "mindtrace_metadata.json").read_text())
+
+    assert result.files_written == ["mindtrace_metadata.json", "."]
+    assert payload["train"][0]["label"] == 1
+    assert payload["train"][0]["source_annotation_id"] == "defect-type"
+    assert payload["train"][0]["subject_id"] == "subject-1"
+    assert payload["train"][0]["group_id"] == "group-1"
+    assert artifact_metadata == {
+        "schema_version": 2,
+        "task": "classification",
+        "annotation_attributes": {"field": "defect_type"},
+        "metadata_keys": {"subject_id": "string", "group_id": "string"},
+    }
+
+
+@pytest.mark.parametrize(
+    ("selected_annotations", "expected_count"),
+    [([], 0), (["first", "second"], 2)],
+)
+def test_huggingface_classification_export_requires_one_selected_annotation(
+    tmp_path: Path,
+    monkeypatch,
+    selected_annotations: list[str],
+    expected_count: int,
+):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+    from mindtrace.datalake.types import AnnotationRecord
+
+    monkeypatch.setattr(
+        huggingface_exporter.importlib,
+        "import_module",
+        lambda name: _fake_datasets_module(),
+    )
+    annotations = [
+        AnnotationRecord(
+            annotation_id=annotation_id,
+            kind="classification",
+            label="healthy",
+            attributes={"field": "target"},
+            source={"type": "human", "name": "pytest"},
+        )
+        for annotation_id in selected_annotations
+    ]
+    dataset = ExportableDataset(
+        name="selected-classification",
+        metadata={"task_type": "classification"},
+        items=[
+            ExportableItem(
+                assets={"image": sample_asset()},
+                primary_role="image",
+                payloads={"image": png_bytes()},
+                annotations=annotations,
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match=rf"matching attributes .* has {expected_count}"):
+        export_dataset_as_huggingface(
+            dataset,
+            destination=tmp_path / f"selected-{expected_count}",
+            options={
+                "task": "classification",
+                "annotation_attributes": {"field": "target"},
+                "class_names": ["healthy"],
+            },
+        )
+
+
+@pytest.mark.parametrize(
+    ("metadata", "expected_error"),
+    [({}, "is missing it"), ({"subject_id": 123}, "must match dtype 'string'")],
+)
+def test_huggingface_classification_export_validates_required_metadata_keys(
+    tmp_path: Path,
+    monkeypatch,
+    metadata: dict,
+    expected_error: str,
+):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+    from mindtrace.datalake.types import AnnotationRecord
+
+    monkeypatch.setattr(
+        huggingface_exporter.importlib,
+        "import_module",
+        lambda name: _fake_datasets_module(),
+    )
+    dataset = ExportableDataset(
+        name="metadata-validation",
+        metadata={"task_type": "classification"},
+        items=[
+            ExportableItem(
+                assets={"image": sample_asset()},
+                primary_role="image",
+                metadata=metadata,
+                payloads={"image": png_bytes()},
+                annotations=[
+                    AnnotationRecord(
+                        annotation_id="classification-1",
+                        kind="classification",
+                        label="healthy",
+                        source={"type": "human", "name": "pytest"},
+                    )
+                ],
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match=expected_error):
+        export_dataset_as_huggingface(
+            dataset,
+            destination=tmp_path / "invalid-metadata",
+            options={
+                "task": "classification",
+                "class_names": ["healthy"],
+                "metadata_keys": {"subject_id": "string"},
+            },
+        )
 
 
 def test_huggingface_multi_label_classification_export_writes_multi_hot_targets(tmp_path: Path, monkeypatch):

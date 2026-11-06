@@ -167,7 +167,24 @@ training-facing `(images, targets)` batch structure below:
 - Instance segmentation: target mappings containing `boxes`, `labels`, `masks`, `area`, and `iscrowd`.
 
 Pass `return_metadata=True` to include a separate `metadata` mapping in dataset samples and a third metadata
-column in DataLoader batches.
+column in DataLoader batches. By default that mapping contains `asset_id`. Pass `metadata_keys=(...)` to add typed
+top-level fields that were selected during export. For built-in profiles, non-empty `metadata_keys` automatically
+enable metadata return, even when `return_metadata=False`. Empty or omitted keys leave the flag in control.
+Custom task-profile builders continue to control their own output structure.
+
+```python
+datasets = build_datasets(
+    export_root / "selected-classification",
+    metadata_keys=("subject_id", "group_id"),
+)
+loaders = build_dataloaders(
+    export_root / "selected-classification",
+    metadata_keys=("subject_id", "group_id"),
+)
+```
+
+Requested keys must exist in the saved Hugging Face schema. They are read directly from the typed fields without
+reparsing `metadata_json`.
 
 Detection and instance targets follow torchvision conventions. The detection adapter is source-dataset-generic but
 expects the canonical Mindtrace HF detection schema: embedded image media, absolute pixel-space `xywh` boxes, and
