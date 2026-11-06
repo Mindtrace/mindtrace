@@ -934,7 +934,7 @@ class Registry(Mindtrace):
                 **kwargs,
             )
 
-            to_cache = []
+            to_cache: Dict[tuple[str, str], Any] = {}
             remote_succeeded = set(remote_result.succeeded)
             for i, obj in zip(misses, remote_result.results):
                 name_ver = resolved[i]
@@ -945,19 +945,19 @@ class Registry(Mindtrace):
                     loaded[i] = True
                     # Keep existing cache-fill eligibility separate from read success.
                     if obj is not None:
-                        to_cache.append((name_ver[0], name_ver[1], obj))
+                        to_cache.setdefault(name_ver, obj)
 
             if to_cache:
                 try:
-                    cache_entries = [(t[0], t[1]) for t in to_cache]
+                    cache_entries = list(to_cache)
                     new_cache_entries = self._count_new_cache_entries(cache_entries)
                     self._cache.save(
-                        [t[0] for t in to_cache],
-                        [t[2] for t in to_cache],
-                        version=[t[1] for t in to_cache],
+                        [name for name, _ in cache_entries],
+                        list(to_cache.values()),
+                        version=[version for _, version in cache_entries],
                         on_conflict=OnConflict.OVERWRITE,
                     )
-                    for cache_name, cache_version, _ in to_cache:
+                    for cache_name, cache_version in cache_entries:
                         self._touch_cache_entry(cache_name, cache_version)
                     self._note_cache_entries_added(new_cache_entries)
                     self._maybe_prune_cache_lru()
