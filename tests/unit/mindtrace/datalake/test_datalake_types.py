@@ -1,3 +1,4 @@
+from mindtrace.datalake import DatasetCard
 from mindtrace.datalake.types import (
     AnnotationLabelDefinition,
     AnnotationRecord,
@@ -77,6 +78,21 @@ def test_main_type_str_methods_are_readable():
     assert str(dataset_version) == "DatasetVersion(dataset=demo, version=0.1.0, datums=1)"
     assert str(resolved_datum) == f"ResolvedDatum(datum_id={datum.datum_id}, assets=1, annotation_sets=1)"
     assert str(resolved_dataset) == "ResolvedDatasetVersion(dataset=demo, version=0.1.0, datums=1)"
+
+
+def test_dataset_version_accepts_optional_card():
+    without_card = DatasetVersion(dataset_name="demo", version="0.1.0")
+    with_card = DatasetVersion(
+        dataset_name="demo",
+        version="0.2.0",
+        card={"summary": "Demo dataset", "task": "classification", "splits": {"train": {"count": 5}}},
+    )
+
+    assert without_card.card is None
+    assert isinstance(with_card.card, DatasetCard)
+    assert with_card.card.summary == "Demo dataset"
+    assert with_card.card.task == "classification"
+    assert with_card.card.splits["train"].count == 5
 
 
 def test_annotation_schema_and_label_definition_defaults():

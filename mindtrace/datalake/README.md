@@ -116,7 +116,50 @@ The datalake is evolving from earlier internal versions toward a fuller **V3** c
 - **StorageRef**, **Asset**
 - **Annotation** schema/set/record model
 - **Datum**, **DatasetVersion**
+- **DatasetCard** (optional structured documentation attached to a dataset version)
 - **DatasetBuilder** (helper for constructing new versions — not the same as a persisted version record)
+
+### Dataset cards
+
+`DatasetVersion.description` is the short summary stored with a version for listings and quick display.
+`DatasetVersion.metadata` remains the place for lightweight operational metadata and query keys.
+`DatasetVersion.card` is an optional, standalone `DatasetCard` for richer human-facing documentation that should
+travel with the immutable dataset version. `DatasetCard.summary` makes the card meaningful when serialized or
+displayed independently; it may intentionally duplicate `DatasetVersion.description`.
+
+```python
+from mindtrace.datalake import DatasetCard, DatasetProvenance, DatasetStatistic, SplitInfo
+
+card = DatasetCard(
+    summary="Binary image classification dataset.",
+    task="classification",
+    modalities=["image"],
+    provenance=DatasetProvenance(
+        creation_method="Reviewed image importer",
+        included_subsets=["production"],
+        excluded_subsets=["repeated observations"],
+        split_strategy="Deterministic stratification by class",
+        split_seed=42,
+        split_key="source_path",
+    ),
+    splits={
+        "train": SplitInfo(count=1200, percentage=85.7),
+        "val": SplitInfo(count=200, percentage=14.3),
+    },
+    summary_statistics=[DatasetStatistic(name="total_items", value=1400, unit="items")],
+    evaluation_notes=["Evaluate rare classes separately"],
+    intended_uses=["Train and validate image classifiers"],
+    limitations=["Small validation split"],
+    markdown="## Notes\n\nImported from the reviewed production subset.",
+)
+
+datalake.create_dataset_version(
+    dataset_name="demo-images",
+    version="1.0.0",
+    manifest=datum_ids,
+    card=card,
+)
+```
 
 ### Entity relationships (conceptual)
 

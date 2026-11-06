@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
+from mindtrace.datalake import DatasetCard
 from mindtrace.datalake.sync import (
     DatasetSyncManager,
     _apply_mount_map_to_storage_ref,
@@ -101,6 +102,7 @@ def sync_objects():
         version="1.0.0",
         manifest=[datum.datum_id],
         metadata={"dataset": True},
+        card=DatasetCard(task="classification", splits={"train": {"count": 1}}),
     )
     return SimpleNamespace(
         storage_ref=storage_ref,
@@ -463,6 +465,7 @@ class TestDatasetSyncManager:
         inserted_dataset_version = target_datalake.dataset_version_database.insert.await_args.args[0]
         assert inserted_dataset_version.metadata["origin"]["entity_id"] == "dataset_version_1"
         assert inserted_dataset_version.metadata["origin"]["dataset_name"] == "demo"
+        assert inserted_dataset_version.card == sync_objects.dataset_version.card
 
     @pytest.mark.asyncio
     async def test_commit_import_transfers_payloads_with_bounded_concurrency(

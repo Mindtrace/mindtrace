@@ -19,6 +19,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from mindtrace.core import Mindtrace, as_utc, utcnow
 from mindtrace.database import MongoMindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
+from mindtrace.datalake.card import DatasetCard
 from mindtrace.datalake.pagination_types import (
     CursorEnvelope,
     CursorPage,
@@ -2293,6 +2294,7 @@ class AsyncDatalake(Mindtrace):
         description: str | None = None,
         source_dataset_version_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        card: DatasetCard | dict[str, Any] | None = None,
         created_by: str | None = None,
     ) -> DatasetVersion:
         existing = await self.dataset_version_database.find({"dataset_name": dataset_name, "version": version})
@@ -2302,6 +2304,7 @@ class AsyncDatalake(Mindtrace):
             raise ValueError("Dataset version manifest must not contain duplicate datum ids")
         for datum_id in manifest:
             await self.get_datum(datum_id)
+        card_obj = DatasetCard.model_validate(card) if isinstance(card, dict) else card
         dataset_version = self._build_document(
             DatasetVersion,
             dataset_name=dataset_name,
@@ -2310,6 +2313,7 @@ class AsyncDatalake(Mindtrace):
             manifest=manifest,
             source_dataset_version_id=source_dataset_version_id,
             metadata=metadata or {},
+            card=card_obj,
             created_by=created_by,
         )
         return await self.dataset_version_database.insert(dataset_version)
