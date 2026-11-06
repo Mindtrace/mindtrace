@@ -1116,11 +1116,13 @@ class _RegistryCore(Mindtrace):
 
         Returns:
             True if the object exists, False otherwise.
+
+        Raises:
+            ValueError: If the name or version is invalid.
         """
-        self.backend.validate_object_name(name)
         try:
             resolved_version = self._resolve_load_version(name, version)
-        except (RegistryObjectNotFound, ValueError):
+        except RegistryObjectNotFound:
             return False
         result = self.backend.has_object(name, resolved_version)
         return result.get((name, resolved_version), False)

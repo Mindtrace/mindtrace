@@ -151,6 +151,10 @@ errors are not treated as absence.
 | `setdefault(key, default)` | Saves/returns a non-`None` default | Propagates without writing |
 | `pop(key, default)` | Returns default | Read/delete errors propagate |
 | `delete(name, version)` | `RegistryObjectNotFound` | Propagates |
+| `has_object(name, version)` or `key in registry` | `False` | Propagates |
+
+Membership checks raise `ValueError` for invalid names or versions; only a valid
+query for an absent object returns `False`.
 
 Low-level `backend.delete()` reports missing targets as failed `OpResult` entries;
 public batch operations report them in `BatchResult`.
