@@ -1,8 +1,9 @@
 FROM ubuntu:24.04
 
 # First line is what the image needs; second is for whoever shells into it.
+# libgl1 and libglib2.0-0 are required by opencv-python.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl git python3.12 \
+        ca-certificates curl git libgl1 libglib2.0-0 python3.12 \
         htop less procps tree wget \
     && rm -rf /var/lib/apt/lists/*
 
@@ -21,6 +22,7 @@ ENV PATH=/venv/bin:$PATH \
 # those writes are discarded.
 # The cache mount keeps uv's downloads out of the image and reuses them across builds.
 # It is a separate filesystem, so files are copied rather than hardlinked.
+# opencv-python and opencv-python-headless both install into cv2/, so install only one.
 RUN --mount=type=bind,target=/src,rw \
     --mount=type=cache,target=/root/.cache/uv \
     uv sync \
@@ -30,6 +32,7 @@ RUN --mount=type=bind,target=/src,rw \
         --all-extras \
         --no-dev \
         --locked \
+        --no-install-package opencv-python-headless \
         --no-editable \
         --compile-bytecode \
         --no-python-downloads \

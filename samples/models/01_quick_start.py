@@ -192,7 +192,7 @@ try:
         input_names=["pixel_values"],
         output_names=["logits"],
         dynamic_axes={"pixel_values": {0: "batch"}, "logits": {0: "batch"}},
-        opset_version=18,
+        opset_version=17,
     )
     print(f"  exported to: {onnx_path}")
     print("  OnnxModelService usage (not executed here — requires a running service):")
