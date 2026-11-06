@@ -3540,7 +3540,7 @@ wheels = [
 
 [[package]]
 name = "mindtrace"
-version = "0.17.1"
+version = "0.17.2.dev0"
 source = { editable = "." }
 dependencies = [
     { name = "mindtrace-agents" },
@@ -3724,7 +3724,7 @@ docs = [
 
 [[package]]
 name = "mindtrace-agents"
-version = "0.17.1"
+version = "0.17.2.dev0"
 source = { editable = "mindtrace/agents" }
 dependencies = [
     { name = "mindtrace-core" },
@@ -3780,7 +3780,7 @@ provides-extras = ["openai", "anthropic", "gemini", "ollama", "all-providers", "
 
 [[package]]
 name = "mindtrace-apps"
-version = "0.17.1"
+version = "0.17.2.dev0"
 source = { editable = "mindtrace/apps" }
 dependencies = [
     { name = "mindtrace-automation" },
@@ -3813,7 +3813,7 @@ requires-dist = [
 
 [[package]]
 name = "mindtrace-automation"
-version = "0.17.1"
+version = "0.17.2.dev0"
 source = { editable = "mindtrace/automation" }
 dependencies = [
     { name = "label-studio-sdk" },
@@ -3840,7 +3840,7 @@ requires-dist = [
 
 [[package]]
 name = "mindtrace-cluster"
-version = "0.17.1"
+version = "0.17.2.dev0"
 source = { editable = "mindtrace/cluster" }
 dependencies = [
     { name = "docker" },
@@ -3865,7 +3865,7 @@ requires-dist = [
 
 [[package]]
 name = "mindtrace-core"
-version = "0.17.1"
+version = "0.17.2.dev0"
 source = { editable = "mindtrace/core" }
 dependencies = [
     { name = "argon2-cffi" },
@@ -3894,7 +3894,7 @@ requires-dist = [
 
 [[package]]
 name = "mindtrace-database"
-version = "0.17.1"
+version = "0.17.2.dev0"
 source = { editable = "mindtrace/database" }
 dependencies = [
     { name = "beanie" },
@@ -3921,7 +3921,7 @@ requires-dist = [
 
 [[package]]
 name = "mindtrace-datalake"
-version = "0.17.1"
+version = "0.17.2.dev0"
 source = { editable = "mindtrace/datalake" }
 dependencies = [
     { name = "mindtrace-core" },
@@ -3963,7 +3963,7 @@ provides-extras = ["import-flowers102", "export-huggingface", "export-all"]
 
 [[package]]
 name = "mindtrace-hardware"
-version = "0.17.1"
+version = "0.17.2.dev0"
 source = { editable = "mindtrace/hardware" }
 dependencies = [
     { name = "aiomqtt" },
@@ -4062,7 +4062,7 @@ provides-extras = ["cameras-basler", "cameras-genicam", "cameras-daheng", "camer
 
 [[package]]
 name = "mindtrace-jobs"
-version = "0.17.1"
+version = "0.17.2.dev0"
 source = { editable = "mindtrace/jobs" }
 dependencies = [
     { name = "mindtrace-core" },
@@ -4083,7 +4083,7 @@ requires-dist = [
 
 [[package]]
 name = "mindtrace-models"
-version = "0.17.1"
+version = "0.17.2.dev0"
 source = { editable = "mindtrace/models" }
 dependencies = [
     { name = "dill" },
@@ -4179,7 +4179,7 @@ provides-extras = ["mlflow", "wandb", "train", "dataloaders", "timm", "transform
 
 [[package]]
 name = "mindtrace-registry"
-version = "0.17.1"
+version = "0.17.2.dev0"
 source = { editable = "mindtrace/registry" }
 dependencies = [
     { name = "cloudpickle" },
@@ -4200,7 +4200,7 @@ requires-dist = [
 
 [[package]]
 name = "mindtrace-services"
-version = "0.17.1"
+version = "0.17.2.dev0"
 source = { editable = "mindtrace/services" }
 dependencies = [
     { name = "aiohttp" },
@@ -4235,7 +4235,7 @@ requires-dist = [
 
 [[package]]
 name = "mindtrace-storage"
-version = "0.17.1"
+version = "0.17.2.dev0"
 source = { editable = "mindtrace/storage" }
 dependencies = [
     { name = "boto3" },
@@ -4252,7 +4252,7 @@ requires-dist = [
 
 [[package]]
 name = "mindtrace-ui"
-version = "0.17.1"
+version = "0.17.2.dev0"
 source = { editable = "mindtrace/ui" }
 dependencies = [
     { name = "mindtrace-core" },
