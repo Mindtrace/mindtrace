@@ -169,6 +169,7 @@ class Store(Mindtrace):
                 "version_objects": mount.registry.version_objects,
                 "mutable": mount.registry.mutable,
                 "version_digits": mount.registry.version_digits,
+                "version_scheme": mount.registry.version_scheme.value,
             }
             for name, mount in self._mounts.items()
         }

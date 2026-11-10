@@ -165,6 +165,22 @@ latest = registry.load("model", version="latest")
 registry = Registry(version_objects=False)
 ```
 
+### Exact version names
+
+By default versions are parsed into integers, so `"2.05"` is stored as `"2.5.0"`.
+Use `version_scheme="exact"` to keep version strings as given:
+
+```python
+registry = Registry(backend, version_objects=True, version_scheme="exact")
+registry.save("model", obj, version="2.05")    # stored as "2.05"
+registry.save("model", obj, version="2.5")     # a separate version
+registry.list_versions("model")                # ["2.05", "2.5"], natural sort
+registry.save("model", obj)                    # ValueError: a version is required
+```
+
+Versions may contain letters, digits, `.`, `-` and `_`. The scheme is stored with the
+registry and can only be chosen when the registry is created.
+
 ## Conflict Handling
 
 Control behavior when saving to an existing version (`OnConflict`):

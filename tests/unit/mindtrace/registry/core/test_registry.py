@@ -2823,6 +2823,21 @@ def test_cache_initialization_remote_backend(temp_registry_dir):
     assert registry._cache_max_entries == 1024
 
 
+def test_cached_remote_registry_keeps_exact_versions(temp_registry_dir):
+    # A real local backend that Registry treats as remote, so the local cache is used
+    local = LocalRegistryBackend(uri=Path(temp_registry_dir) / "remote")
+    remote = Mock(spec=RegistryBackend, wraps=local)
+    remote.uri = local.uri
+
+    registry = Registry(backend=remote, version_objects=True, version_scheme="exact")
+    registry.save("model", "a", version="2.05")
+    registry.save("model", "b", version="2.5")
+
+    assert registry.load("model", "2.05") == "a"
+    assert registry.load("model", "2.5") == "b"
+    assert registry.list_versions("model") == ["2.05", "2.5"]
+
+
 def _patch_registry_time_sequence(*values: float):
     """Callable for patching ``registry.time.time`` without exhausting mocks.
 
