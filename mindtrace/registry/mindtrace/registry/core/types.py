@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Tuple
@@ -86,9 +87,58 @@ class Version:
         return self.normalized
 
 
+_EXACT_VERSION_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+_DIGIT_RUNS = re.compile(r"(\d+)")
+
+
+def validate_exact_version(value: str) -> str:
+    """Return ``value`` unchanged if it is a valid exact version.
+
+    Args:
+        value: Version string.
+
+    Returns:
+        The same string.
+
+    Raises:
+        ValueError: If ``value`` doesn't start with a letter or digit, or contains
+            characters other than letters, digits, ``.``, ``-`` and ``_``.
+    """
+    if not _EXACT_VERSION_PATTERN.fullmatch(value):
+        raise ValueError(
+            f"Invalid version string '{value}'. Exact versions must start with a letter or digit and "
+            "contain only letters, digits, '.', '-' and '_'."
+        )
+    return value
+
+
+def exact_version_sort_key(value: str) -> tuple:
+    """Natural sort key: digit runs compare as numbers, ties fall back to the raw string.
+
+    Args:
+        value: Version string.
+
+    Returns:
+        A sort key.
+    """
+    parts = tuple((0, int(run)) if run.isdigit() else (1, run) for run in _DIGIT_RUNS.split(value) if run)
+    return parts, value
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Enums
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+class VersionScheme(str, Enum):
+    """How a registry treats version strings.
+
+    - NUMERIC: Parse into integers padded to ``version_digits`` (``"1.2"`` -> ``"1.2.0"``). Default.
+    - EXACT: Keep the string as given. No auto-increment.
+    """
+
+    NUMERIC = "numeric"
+    EXACT = "exact"
 
 
 class OnConflict(str, Enum):
