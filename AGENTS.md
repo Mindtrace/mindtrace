@@ -96,6 +96,10 @@ Tests should live in:
 
 If fixing a bug, add a regression test that fails without the fix.
 
+Test-file basenames must be unique across the entire test suite to avoid pytest
+import collisions. Use module-qualified names when necessary, such as
+`test_registry_exceptions.py`, while retaining the corresponding module directory.
+
 ### 4) Update Docs or Samples When Behavior Changes
 
 If user-facing behavior changes:
