@@ -245,7 +245,7 @@ def test_huggingface_classification_export_writes_typed_split_dataset(tmp_path: 
     assert result.files_written == ["mindtrace_metadata.json", "."]
     assert json.loads((tmp_path / "flowers-hf" / "mindtrace_metadata.json").read_text()) == {
         "schema_version": 2,
-        "task": "classification",
+        "profile": "classification",
         "annotation_attributes": {},
         "metadata_keys": {},
     }
@@ -376,7 +376,7 @@ def test_huggingface_classification_export_selects_idless_annotation_and_metadat
     assert payload["train"][0]["group_id"] == "group-1"
     assert artifact_metadata == {
         "schema_version": 2,
-        "task": "classification",
+        "profile": "classification",
         "annotation_attributes": {"field": "defect_type"},
         "metadata_keys": {"subject_id": "string", "group_id": "string"},
     }

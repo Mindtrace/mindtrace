@@ -370,7 +370,7 @@ def _export_single_label_classification_dataset(
         rows_by_split.setdefault(split_name, []).append(row)
 
     artifact_metadata = {
-        "task": "classification",
+        "profile": "classification",
         "annotation_attributes": selected_attributes,
         "metadata_keys": selected_metadata_keys,
     }

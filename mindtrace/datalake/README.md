@@ -438,7 +438,7 @@ names are stored in `dataset.features["label"].names`; their positions define th
 not duplicate that mapping. The `class_names` export option still controls this order.
 
 Single-label classification exports from annotations always write this sidecar, even when no exporter options
-are supplied. It contains `schema_version: 2`, `task: "classification"`, and the resolved `annotation_attributes`
+are supplied. It contains `schema_version: 2`, `profile: "classification"`, and the resolved `annotation_attributes`
 and `metadata_keys` mappings (empty when unused). Dataset rows and features are unchanged when the options are
 omitted; only the sidecar and its entry in `files_written` are added. Other export paths retain their existing
 metadata behaviour. Older artifacts without a sidecar remain readable; `read_export_metadata()` returns `{}`

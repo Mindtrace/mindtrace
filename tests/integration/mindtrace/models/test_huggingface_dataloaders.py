@@ -127,7 +127,7 @@ def test_selected_classification_metadata_keys_round_trip_to_dataset_samples(tmp
     assert dataset.features["subject_id"].dtype == "string"
     assert dataset.features["label"].names == ["healthy", "defective"]
     assert read_export_metadata(export_path) == {
-        "task": "classification",
+        "profile": "classification",
         "annotation_attributes": {"field": "target"},
         "metadata_keys": {"subject_id": "string", "group_id": "string"},
     }
