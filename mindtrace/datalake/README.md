@@ -396,17 +396,15 @@ with Datalake.create(
 The exports embed media for relocation, preserve ordered class mappings and source lineage, and normalize task
 records into stable HF schemas.
 
-For a DatasetVersion with multiple logical classification annotations, select one field by its exact annotation
-attributes. When the selected annotations do not have label IDs, provide an explicit class order. Required top-level
-row metadata can be copied into typed fields in the same export pass.
+For single-label classification exports from annotations, use:
 
-The exporter options `annotation_attributes`, `class_names` (or `classification_class_names`), and `metadata_keys`
-are supported only for `task="classification"`, `classification_type="single_label"`, and
-`classification_source="annotations"`. The latter two default to these values unless overridden by dataset metadata.
-Supplying any of these option keys on bbox-crop, multi-label, detection, segmentation, or generic export paths raises
-`ValueError` before the destination is prepared, even if the option value is empty or `None`. Other typed paths
-continue to obtain class names from dataset metadata; they do not project custom metadata columns. Loader
-`metadata_keys` requests require columns already present in the saved artifact.
+- `annotation_attributes` to select exactly one classification annotation per image by attribute match.
+- `class_names` (or `classification_class_names`) to provide an ordered label list, required when selected
+  annotations have no label IDs.
+- `metadata_keys` to copy required top-level Datum metadata into typed Hugging Face columns.
+
+These options require `task="classification"`, `classification_type="single_label"`, and
+`classification_source="annotations"`; other export paths reject them.
 
 For example:
 
@@ -429,25 +427,14 @@ datalake.export_dataset_version_to_format(
 )
 ```
 
-The attribute mapping is matched exactly against classification records, and every item must have exactly one
-match. Metadata keys refer to required, top-level Datum metadata; the key name is preserved in the Hugging Face
-artifact. Supported scalar dtypes are `string`, `bool`, signed and unsigned integer widths from 8 through 64 bits,
-and `float16`, `float32`, and `float64`. The resolved selector and metadata-key types are recorded in
-`mindtrace_metadata.json` and available through `read_export_metadata(export_path)`. The ordered classification
-names are stored in `dataset.features["label"].names`; their positions define the label IDs, so the sidecar does
-not duplicate that mapping. The `class_names` export option still controls this order.
+Supported metadata dtypes are `string`, `bool`, signed and unsigned integers from 8 through 64 bits,
+and `float16`, `float32`, and `float64`. Requested values must be present, non-null, and fit their declared type;
+floats are not truncated into integers and booleans are not accepted as numbers. Errors identify the asset,
+metadata key, and requested dtype. Invalid option configuration is rejected before overwriting an existing export.
 
-Single-label classification exports from annotations always write this sidecar, even when no exporter options
-are supplied. It contains `schema_version: 2`, `profile: "classification"`, and the resolved `annotation_attributes`
-and `metadata_keys` mappings (empty when unused). Dataset rows and features are unchanged when the options are
-omitted; only the sidecar and its entry in `files_written` are added. Other export paths retain their existing
-metadata behaviour. Older artifacts without a sidecar remain readable; `read_export_metadata()` returns `{}`
-for them.
-
-Requested metadata values are validated against the declared Arrow type while each row is prepared. Integer
-values must fit the declared signed/unsigned width; floats are not truncated into integers and booleans are not
-accepted as numbers. Conversion errors identify the source asset, metadata key, and requested dtype. Missing or
-null requested values remain errors.
+Class names and label IDs are available from `dataset.features["label"].names`. Classification exports also write
+`mindtrace_metadata.json` with `schema_version: 2`, `profile: "classification"`, the annotation selector, and the
+selected metadata-key types. Use `read_export_metadata(export_path)` to read it; a missing sidecar returns `{}`.
 
 #### Consume the exported artifacts
 

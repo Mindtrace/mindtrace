@@ -166,11 +166,9 @@ training-facing `(images, targets)` batch structure below:
 - Semantic segmentation: `LongTensor[H, W]` targets.
 - Instance segmentation: target mappings containing `boxes`, `labels`, `masks`, `area`, and `iscrowd`.
 
-Pass `return_metadata=True` to include a separate `metadata` mapping in dataset samples and a third metadata
-column in DataLoader batches. By default that mapping contains `asset_id`. Pass `metadata_keys=(...)` to add typed
-top-level fields that were selected during export. For built-in profiles, non-empty `metadata_keys` automatically
-enable metadata return, even when `return_metadata=False`. Empty or omitted keys leave the flag in control.
-Custom task-profile builders continue to control their own output structure.
+Pass `return_metadata=True` to include `asset_id` in a sample's `metadata` mapping and return metadata as the
+third element of each DataLoader batch. To include additional exported columns, pass `metadata_keys=(...)`;
+non-empty keys enable metadata return automatically. Custom task-profile builders define their own output.
 
 ```python
 datasets = build_datasets(

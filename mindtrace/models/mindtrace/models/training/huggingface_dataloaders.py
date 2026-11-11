@@ -513,8 +513,8 @@ def build_datasets(
 ) -> dict[str, Any]:
     """Build split-aware native Hugging Face datasets with on-access PyTorch transforms.
 
-    For built-in profiles, non-empty metadata_keys enable metadata return regardless
-    of return_metadata. Custom profile builders control their own output structure.
+    Non-empty metadata_keys enable metadata return for built-in profiles.
+    Custom profile builders define their own output.
     """
 
     built, _ = _build_datasets_and_profiles(
@@ -552,8 +552,7 @@ def build_dataloaders(
 ) -> dict[str, Any]:
     """Build split-aware PyTorch DataLoaders over a Mindtrace dataset export.
 
-    For built-in profiles, non-empty metadata_keys enable metadata return regardless
-    of return_metadata. Custom profile builders control their own output structure.
+    See build_datasets for metadata-return options.
     """
 
     if batch_size <= 0:
