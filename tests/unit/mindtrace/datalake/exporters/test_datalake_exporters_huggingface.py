@@ -151,6 +151,36 @@ def test_huggingface_export_rejects_unsupported_options_before_preparing_destina
     prepare.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "invalid_options",
+    [
+        {"annotation_attributes": ["target"]},
+        {"metadata_keys": {"subject_id": "str"}},
+        {"class_names": "healthy"},
+        {"class_names": ["healthy", "healthy"]},
+        {"metadata_keys": {"asset_id": "string"}},
+    ],
+)
+def test_invalid_classification_options_preserve_existing_export(tmp_path, monkeypatch, invalid_options):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+
+    monkeypatch.setattr(huggingface_exporter.importlib, "import_module", lambda name: _fake_datasets_module())
+    destination = tmp_path / "existing-export"
+    destination.mkdir()
+    artifact = destination / "dataset.arrow"
+    original = b"previous export must survive invalid configuration"
+    artifact.write_bytes(original)
+    dataset = ExportableDataset(
+        name="classification", metadata={"task_type": "classification", "class_names": ["healthy"]}
+    )
+
+    with pytest.raises(ValueError):
+        export_dataset_as_huggingface(dataset, destination=destination, overwrite=True, options=invalid_options)
+
+    assert artifact.read_bytes() == original
+    assert sorted(path.name for path in destination.iterdir()) == ["dataset.arrow"]
+
+
 def test_huggingface_export_writes_media_for_default_split(tmp_path: Path, monkeypatch):
     from mindtrace.datalake.exporters import huggingface as huggingface_exporter
 

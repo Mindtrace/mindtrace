@@ -331,17 +331,12 @@ def _export_single_label_classification_dataset(
     *,
     destination: Path,
     include_media: bool,
-    options: Mapping[str, Any] | None = None,
+    selected_attributes: Mapping[str, Any],
+    selected_metadata_keys: Mapping[str, str],
+    class_names: list[str],
+    features: Any,
 ) -> ExportResult:
-    selected_attributes = _annotation_attributes(options)
-    selected_metadata_keys = _metadata_keys(options)
-    class_names = _classification_class_names(
-        dataset,
-        options=options,
-        annotation_attributes=selected_attributes,
-    )
     class_ids = {name: label_id for label_id, name in enumerate(class_names)}
-    features = _single_label_classification_features(datasets_module, class_names, selected_metadata_keys)
     rows_by_split: dict[str, list[dict[str, Any]]] = {}
 
     for item in dataset.items:
@@ -816,7 +811,9 @@ def export_dataset_as_huggingface(
         "classification_source", "annotations"
     )
     selected_options = sorted(
-        {"annotation_attributes", "class_names", "classification_class_names", "metadata_keys"}.intersection(options or {})
+        {"annotation_attributes", "class_names", "classification_class_names", "metadata_keys"}.intersection(
+            options or {}
+        )
     )
     if selected_options and not (
         requested_task == "classification"
@@ -829,6 +826,17 @@ def export_dataset_as_huggingface(
             f"received task={requested_task!r}, classification_type={classification_type!r}, "
             f"classification_source={classification_source!r}."
         )
+
+    # Validate classification configuration before overwrite can remove an existing export.
+    if (
+        requested_task == "classification"
+        and classification_type == "single_label"
+        and classification_source == "annotations"
+    ):
+        selected_attributes = _annotation_attributes(options)
+        selected_metadata_keys = _metadata_keys(options)
+        class_names = _classification_class_names(dataset, options=options, annotation_attributes=selected_attributes)
+        features = _single_label_classification_features(datasets_module, class_names, selected_metadata_keys)
 
     destination_path = prepare_export_destination(destination, overwrite=overwrite)
     if requested_task == "classification":
@@ -849,7 +857,10 @@ def export_dataset_as_huggingface(
                 dataset,
                 destination=destination_path,
                 include_media=include_media,
-                options=options,
+                selected_attributes=selected_attributes,
+                selected_metadata_keys=selected_metadata_keys,
+                class_names=class_names,
+                features=features,
             )
         if classification_type == "multi_label":
             if classification_source != "annotations":
