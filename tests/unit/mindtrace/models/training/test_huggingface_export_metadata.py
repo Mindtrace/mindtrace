@@ -1,8 +1,9 @@
 import json
 
-import datasets
 import pytest
 from PIL import Image
+
+datasets = pytest.importorskip("datasets", reason="datasets not installed")
 
 from mindtrace.models.training import build_datasets, read_export_metadata
 
