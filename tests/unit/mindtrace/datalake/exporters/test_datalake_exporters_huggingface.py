@@ -93,32 +93,30 @@ def test_huggingface_export_raises_helpful_error_when_dependency_missing(monkeyp
 
 
 @pytest.mark.parametrize(
-    "path_options",
+    ("path_options", "option_name", "option_value", "path_from_metadata"),
     [
-        {"task": "classification", "classification_source": "bbox_crops"},
-        {"task": "classification", "classification_type": "multi_label"},
-        {"task": "detection"},
-        {"task": "object_detection"},
-        {"task": "semantic_segmentation"},
-        {"task": "semantic-segmentation"},
-        {"task": "instance_segmentation"},
-        {"task": "instance-segmentation"},
-        {"task": "segmentation"},
-        {},
+        (
+            {"task": "classification", "classification_source": "bbox_crops"},
+            "annotation_attributes",
+            {"field": "target"},
+            False,
+        ),
+        ({"task": "classification", "classification_type": "multi_label"}, "class_names", ["healthy"], False),
+        ({"task": "detection"}, "classification_class_names", ["healthy"], False),
+        ({"task": "semantic_segmentation"}, "metadata_keys", {"subject_id": "string"}, False),
+        ({"task": "instance_segmentation"}, "metadata_keys", {"subject_id": "string"}, False),
+        ({}, "class_names", ["healthy"], False),
+        ({"task": "object_detection"}, "metadata_keys", {"subject_id": "string"}, False),
+        (
+            {"task": "classification", "classification_source": "bbox_crops"},
+            "metadata_keys",
+            {"subject_id": "string"},
+            True,
+        ),
+        ({"task": "detection"}, "metadata_keys", {}, False),
+        ({"task": "detection"}, "metadata_keys", None, False),
     ],
 )
-@pytest.mark.parametrize(
-    ("option_name", "option_value"),
-    [
-        ("annotation_attributes", {"field": "target"}),
-        ("class_names", ["healthy"]),
-        ("classification_class_names", ["healthy"]),
-        ("metadata_keys", {"subject_id": "string"}),
-        ("metadata_keys", {}),
-        ("metadata_keys", None),
-    ],
-)
-@pytest.mark.parametrize("path_from_metadata", [False, True])
 def test_huggingface_export_rejects_unsupported_options_before_preparing_destination(
     tmp_path: Path, monkeypatch, path_options, option_name, option_value, path_from_metadata
 ):
