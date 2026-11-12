@@ -113,6 +113,7 @@ bench_results, exec_rows = runner.run_registered_benches(
     ["registry.stress.write_ceiling"],
     profile="stress",
     run_id="dev-run-1",
+    parameters={},  # optional workload overrides merged over the selected profile
     resources={},  # optional: e.g. mongo_uri, minio_endpoint from your environment
 )
 for row in bench_results:
@@ -128,12 +129,14 @@ Tier 1 smoke suites verify local wiring and one end-to-end operation:
 - **`database.smoke.mongo_crud`** — Mongo ODM insert/get/update/find/delete.
 - **`registry.smoke.local_crud`** — local Registry save/load/delete.
 - **`datalake.smoke.local_object`** — local Datalake put/get/head object with Mongo metadata initialization.
+- **`jobs.smoke.round_trip`** — isolated Local publish/consume round trips for one second.
 
 Tier 2 stress suites are designed for overhead comparisons across layers and parameter sweeps such as concurrency, object size, backend, and local-vs-remote Mongo:
 
 - **Database**: **`database.stress.mongo_insert_ceiling`**, **`database.stress.mongo_read_ceiling`**, **`database.stress.mongo_update_ceiling`**.
 - **Registry**: **`registry.stress.write_ceiling`**, **`registry.stress.read_ceiling`**, **`registry.stress.mixed_rw`**, **`registry.stress.version_churn`**.
 - **Datalake**: **`datalake.stress.payload_write_ceiling`**, **`datalake.stress.payload_read_ceiling`**, **`datalake.stress.payload_mixed_rw`**, **`datalake.stress.mongo_insert_ceiling`**, **`datalake.stress.create_asset_from_object`**, **`datalake.stress.collection_item`**, **`datalake.stress.retention`**.
+- **Jobs**: configurable Local, Redis, and RabbitMQ round-trip, publication, consumption, and pipeline workloads. RabbitMQ consumption can compare iterative `consume(1)`, steady `basic_get`, and broker-pushed `basic_consume` modes under one stable suite ID.
 
 Tier 3, intentionally left for a follow-on PR, should cover broader package areas and operational scenarios such as hardware packages, replication, large import sessions, and long-haul soak runs.
 
@@ -148,6 +151,7 @@ Each first-party wheel that ships benchmarks exposes **`mindtrace.<pkg>.testing`
 database = "mindtrace.database.testing:register_benchmark_suites"
 registry = "mindtrace.registry.testing:register_benchmark_suites"
 datalake = "mindtrace.datalake.testing:register_benchmark_suites"
+jobs = "mindtrace.jobs.testing:register_benchmark_suites"
 ```
 
 ---
@@ -298,6 +302,7 @@ bench_results, exec_rows = runner.run_registered_benches(
     ["example.echo.loop_throughput"],
     profile="smoke",
     run_id="2026-03-09Tbench-local",
+    parameters={"iter_chunk": 100},
     resources={},  # e.g. merge API base URLs / DB URIs from your config here
 )
 
@@ -328,7 +333,7 @@ Ship a custom CLI only when you need application-specific resource loading, auth
 
 ### Resources and configuration
 
-Pass secrets and service endpoints via your normal config layer; at bench time merge them into **`runner.run_registered_benches(..., resources={...})`** so **`build_bench_suite_config`** can unify Mindtrace defaults with overrides. Document which **`resources`** keys your suites consume.
+Pass workload choices through **`runner.run_registered_benches(..., parameters={...})`** and secrets or service endpoints through **`resources={...}`**. **`build_bench_suite_config`** merges both over the selected profile defaults while keeping workload and environment configuration separate. Document which parameter/resource keys your suites consume.
 
 ### Recommended tagging
 
