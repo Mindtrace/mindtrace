@@ -3455,17 +3455,18 @@ def test_data_vault_export_dataset_writes_split_aware_coco(tmp_path: Path):
 
 
 class _FakeHfDataset:
-    def __init__(self, rows):
+    def __init__(self, rows, features=None):
         self.rows = rows
+        self.features = features
 
     @classmethod
-    def from_list(cls, rows):
-        return cls(rows)
+    def from_list(cls, rows, features=None):
+        return cls(rows, features=features)
 
     @classmethod
     def from_generator(cls, generator, features=None):
         rows = generator() if callable(generator) else generator
-        return cls(list(rows))
+        return cls(list(rows), features=features)
 
     def save_to_disk(self, path: str):
         target = Path(path)

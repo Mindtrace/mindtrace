@@ -41,7 +41,7 @@ class ClusterManager(Gateway):
     def __init__(self, minio_endpoint=None, **kwargs):
         """
         Args:
-            minio_endpoint: str | None: the location of the minio server to use for the registry.
+            minio_endpoint: str | None: the location of the S3-compatible server to use for the registry.
                 If None, use MINDTRACE_CLUSTER.MINIO_HOST and MINDTRACE_CLUSTER.MINIO_PORT
         """
         super().__init__(**kwargs)
@@ -88,7 +88,7 @@ class ClusterManager(Gateway):
             )
             self.worker_status_database.initialize_sync()
             self.worker_registry_uri = self.config["MINDTRACE_CLUSTER"]["MINIO_REGISTRY_URI"]
-            # Derive Minio host/port from either explicit endpoint override or cluster config.
+            # Derive S3 host/port from either explicit endpoint override or cluster config.
             if minio_endpoint is not None:
                 parsed_minio = urllib.parse.urlparse(minio_endpoint)
                 if parsed_minio.hostname:
@@ -728,7 +728,7 @@ class ClusterManager(Gateway):
 
     def register_node(self, payload: dict):
         """
-        Register a node to the cluster. This returns the Minio parameters for the node to be used in the Worker registry.
+        Register a node to the cluster. This returns the S3 parameters for the node to be used in the Worker registry.
 
         Args:
             node_id (str): The id of the node.
@@ -816,7 +816,7 @@ class Node(Service):
         self.cluster_url = cluster_url
         if cluster_url is not None:
             # Connect to the cluster and register this node. The response contains
-            # Minio and RabbitMQ configuration details (keys, ports, etc.). The
+            # S3 and RabbitMQ configuration details (keys, ports, etc.). The
             # externally reachable host is inferred from the cluster_url rather than
             # trusting the cluster manager to know its own hostname.
             self.cluster_cm = ClusterManager.connect(cluster_url)
@@ -824,7 +824,7 @@ class Node(Service):
             parsed_cluster_url = urllib.parse.urlparse(cluster_url)
             cluster_host = parsed_cluster_url.hostname or "localhost"
 
-            # Use the Minio port provided by the cluster, but always pair it with the
+            # Use the S3 port provided by the cluster, but always pair it with the
             # host derived from cluster_url so that nodes work correctly in dockerised
             # environments where the cluster's own hostname may not be externally
             # reachable.

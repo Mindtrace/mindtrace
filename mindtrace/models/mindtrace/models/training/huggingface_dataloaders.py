@@ -60,28 +60,43 @@ def _object_feature_fields(dataset: Any) -> Mapping[str, Any]:
     return {}
 
 
-def _artifact_metadata(dataset: Any, export_path: str | Path) -> Mapping[str, Any]:
-    info_metadata = getattr(getattr(dataset, "info", None), "metadata", None)
-    if isinstance(info_metadata, Mapping) and isinstance(info_metadata.get("mindtrace"), Mapping):
-        return info_metadata["mindtrace"]
+def read_export_metadata(export_path: str | Path) -> dict[str, Any]:
+    """Read artifact-level semantics without modifying Hugging Face DatasetInfo.
+
+    The sidecar stores task semantics not captured by image Features, including
+    semantic class names, background IDs, and ignore IDs.
+
+    Args:
+        export_path: Directory containing a saved Hugging Face export.
+
+    Returns:
+        Metadata fields without the schema envelope, or an empty dict when the
+        sidecar is absent. Both legacy nested v1 and flat v2 files are supported.
+
+    Raises:
+        ValueError: The sidecar is malformed or its schema version is unsupported.
+        OSError: The sidecar cannot be read for a reason other than absence.
+    """
     metadata_path = Path(export_path) / "mindtrace_metadata.json"
-    if metadata_path.is_file():
-        payload = json.loads(metadata_path.read_text(encoding="utf-8"))
-        metadata = payload.get("mindtrace", {})
-        if isinstance(metadata, Mapping):
-            return metadata
-    return {}
-
-
-def _attach_artifact_metadata(dataset: Any, export_path: str | Path) -> None:
-    metadata = _artifact_metadata(dataset, export_path)
-    info = getattr(dataset, "info", None)
-    if not metadata or info is None:
-        return
-    info_metadata = getattr(info, "metadata", None)
-    merged = dict(info_metadata) if isinstance(info_metadata, Mapping) else {}
-    merged["mindtrace"] = dict(metadata)
-    info.metadata = merged
+    try:
+        content = metadata_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid export metadata JSON in {metadata_path}.") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"Export metadata in {metadata_path} must be a JSON object.")
+    version = payload.get("schema_version")
+    if type(version) is not int or version not in (1, 2):
+        raise ValueError(f"Unsupported export metadata schema_version {version!r} in {metadata_path}.")
+    if version == 1:
+        metadata = payload.get("mindtrace")
+        if not isinstance(metadata, dict):
+            raise ValueError(f"Legacy export metadata in {metadata_path} requires a 'mindtrace' object.")
+        return metadata
+    return {key: value for key, value in payload.items() if key != "schema_version"}
 
 
 def _xywh_to_xyxy(bbox: Sequence[float]) -> list[float]:
@@ -426,7 +441,7 @@ def _infer_segmentation_profile(dataset: Any) -> str:
     )
 
 
-def _normalize_metadata_keys(metadata_keys: Sequence[str] | None, *, return_metadata: bool) -> tuple[str, ...]:
+def _normalize_metadata_keys(metadata_keys: Sequence[str] | None) -> tuple[str, ...]:
     if metadata_keys is None:
         return ()
     if isinstance(metadata_keys, (str, bytes)) or not isinstance(metadata_keys, Sequence):
@@ -436,8 +451,6 @@ def _normalize_metadata_keys(metadata_keys: Sequence[str] | None, *, return_meta
         raise ValueError("metadata_keys must contain non-empty string field names.")
     if len(set(normalized)) != len(normalized):
         raise ValueError("metadata_keys must not contain duplicate field names.")
-    if normalized and not return_metadata:
-        raise ValueError("metadata_keys requires return_metadata=True.")
     return normalized
 
 
@@ -451,7 +464,8 @@ def _build_datasets_and_profiles(
     return_metadata: bool = False,
     metadata_keys: Sequence[str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, str | None]]:
-    selected_metadata_keys = _normalize_metadata_keys(metadata_keys, return_metadata=return_metadata)
+    selected_metadata_keys = _normalize_metadata_keys(metadata_keys)
+    return_metadata = return_metadata or bool(selected_metadata_keys)
     custom_profiles = dict(task_profiles or {})
     normalized_task = task.strip().lower().replace("-", "_")
     if normalized_task not in custom_profiles:
@@ -471,7 +485,6 @@ def _build_datasets_and_profiles(
         transform = _transform_for_split(transforms, split)
         profile = normalized_task
         selected_dataset = _select_split(payload, split)
-        _attach_artifact_metadata(selected_dataset, export_path)
         if profile in custom_profiles:
             built[split] = custom_profiles[profile](selected_dataset, split=split, transform=transform)
             built_profiles[split] = None
@@ -498,7 +511,11 @@ def build_datasets(
     return_metadata: bool = False,
     metadata_keys: Sequence[str] | None = None,
 ) -> dict[str, Any]:
-    """Build split-aware native Hugging Face datasets with on-access PyTorch transforms."""
+    """Build split-aware native Hugging Face datasets with on-access PyTorch transforms.
+
+    Non-empty metadata_keys enable metadata return for built-in profiles.
+    Custom profile builders define their own output.
+    """
 
     built, _ = _build_datasets_and_profiles(
         export_path,
@@ -533,7 +550,10 @@ def build_dataloaders(
     per_split_dataloader_kwargs: Mapping[str, Mapping[str, Any]] | None = None,
     seed: int = 0,
 ) -> dict[str, Any]:
-    """Build split-aware PyTorch DataLoaders over a Mindtrace dataset export."""
+    """Build split-aware PyTorch DataLoaders over a Mindtrace dataset export.
+
+    See build_datasets for metadata-return options.
+    """
 
     if batch_size <= 0:
         raise ValueError("batch_size must be greater than zero")
@@ -596,4 +616,5 @@ def build_dataloaders(
 __all__ = [
     "build_datasets",
     "build_dataloaders",
+    "read_export_metadata",
 ]

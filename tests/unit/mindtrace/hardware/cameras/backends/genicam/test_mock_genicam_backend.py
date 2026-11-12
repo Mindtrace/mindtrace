@@ -1,7 +1,6 @@
 """Focused tests for MockGenICamCameraBackend behavior."""
 
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import numpy as np
 import pytest
@@ -87,17 +86,6 @@ class TestInitialization:
         assert camera_object == {"type": "mock_genicam", "name": "MOCK_KEYENCE_001"}
         assert device_info["serial_number"] == cam.serial_number
         assert device_info["vendor"] == "KEYENCE"
-
-    @pytest.mark.asyncio
-    async def test_initialize_imports_existing_config_file(self, tmp_path):
-        config_path = tmp_path / "camera.json"
-        config_path.write_text("{}")
-        cam = make_camera("MOCK_KEYENCE_001", camera_config=str(config_path))
-        cam.import_config = AsyncMock()
-
-        await cam.initialize()
-
-        cam.import_config.assert_awaited_once_with(str(config_path))
 
 
 class TestExposureAndTrigger:
@@ -441,85 +429,3 @@ class TestGainRoiTimeoutAndConfig:
         await cam.set_capture_timeout(250)
 
         assert await cam.get_capture_timeout() == 250
-
-    @pytest.mark.asyncio
-    async def test_import_config_missing_file_raises(self, tmp_path):
-        cam = make_camera("MOCK_KEYENCE_001")
-        with pytest.raises(CameraConfigurationError, match="Configuration file not found"):
-            await cam.import_config(str(tmp_path / "missing.json"))
-
-    @pytest.mark.asyncio
-    async def test_import_config_updates_camera_settings(self, tmp_path):
-        config_path = tmp_path / "camera.json"
-        config_path.write_text(
-            json.dumps(
-                {
-                    "exposure_time": 1200,
-                    "gain": 3.0,
-                    "trigger_mode": "trigger",
-                    "roi": {"x": 1, "y": 2, "width": 4, "height": 3},
-                    "image_enhancement": True,
-                }
-            )
-        )
-        cam = make_camera("MOCK_KEYENCE_001")
-        await cam.initialize()
-
-        await cam.import_config(str(config_path))
-
-        assert cam.exposure_time == 1200.0
-        assert cam.gain == 3.0
-        assert cam.triggermode == "trigger"
-        assert cam.roi == {"x": 1, "y": 2, "width": 4, "height": 3}
-        assert cam.img_quality_enhancement is True
-
-    @pytest.mark.asyncio
-    async def test_import_config_wraps_invalid_json(self, tmp_path):
-        config_path = tmp_path / "invalid.json"
-        config_path.write_text("{invalid json")
-        cam = make_camera("MOCK_KEYENCE_001")
-        await cam.initialize()
-
-        with pytest.raises(CameraConfigurationError, match="Failed to import configuration"):
-            await cam.import_config(str(config_path))
-
-    @pytest.mark.asyncio
-    async def test_export_config_requires_initialization(self, tmp_path):
-        cam = make_camera("MOCK_KEYENCE_001")
-        with pytest.raises(CameraConnectionError):
-            await cam.export_config(str(tmp_path / "camera.json"))
-
-    @pytest.mark.asyncio
-    async def test_export_config_writes_expected_json(self, tmp_path):
-        config_path = tmp_path / "nested" / "camera.json"
-        cam = make_camera("MOCK_KEYENCE_001", vendor="KEYENCE")
-        await cam.initialize()
-        await cam.set_gain(4.0)
-        await cam.set_exposure(1500)
-        await cam.set_triggermode("trigger")
-        await cam.set_ROI(1, 1, 4, 4)
-
-        with patch(
-            "mindtrace.hardware.cameras.backends.genicam.mock_genicam_camera_backend.time.time", return_value=123.0
-        ):
-            await cam.export_config(str(config_path))
-
-        config_data = json.loads(config_path.read_text())
-        assert config_data["camera_type"] == "mock_genicam"
-        assert config_data["camera_name"] == "MOCK_KEYENCE_001"
-        assert config_data["vendor"] == "KEYENCE"
-        assert config_data["timestamp"] == 123.0
-        assert config_data["exposure_time"] == 1500.0
-        assert config_data["gain"] == 4.0
-        assert config_data["trigger_mode"] == "trigger"
-        assert config_data["roi"] == {"x": 1, "y": 1, "width": 4, "height": 4}
-
-    @pytest.mark.asyncio
-    async def test_export_config_wraps_write_errors(self, tmp_path):
-        config_path = tmp_path / "camera.json"
-        cam = make_camera("MOCK_KEYENCE_001")
-        await cam.initialize()
-
-        with patch("builtins.open", side_effect=OSError("disk full")):
-            with pytest.raises(CameraConfigurationError, match="Failed to export configuration"):
-                await cam.export_config(str(config_path))

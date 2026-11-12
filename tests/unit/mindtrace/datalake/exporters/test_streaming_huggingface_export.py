@@ -167,7 +167,12 @@ async def test_streaming_classification_export_pages_rows_and_reports_progress(t
     assert [row["asset_id"] for row in payload["train"]] == ["asset-1"]
     assert [row["asset_id"] for row in payload["test"]] == ["asset-2"]
     assert payload["test"][0]["label"] == 1
-    assert metadata["mindtrace"]["class_names"] == ["healthy", "porosity"]
+    assert metadata == {
+        "schema_version": 2,
+        "profile": "classification",
+        "annotation_attributes": {"field": "defect_type"},
+        "metadata_keys": {"serialnumber": "string", "weldid": "string"},
+    }
     assert [event.stage for event in progress] == [
         "staging",
         "staging",

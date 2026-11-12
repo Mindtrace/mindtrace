@@ -1,7 +1,9 @@
 from pathlib import Path
 
-from datasets import load_from_disk
+import pytest
 from PIL import Image
+
+datasets = pytest.importorskip("datasets", reason="datasets not installed")
 
 from mindtrace.datalake import Datalake
 from mindtrace.datalake.importers.penn_fudan import PennFudanImportConfig, import_penn_fudan
@@ -44,7 +46,7 @@ def test_penn_fudan_import_and_huggingface_export_preserve_instance_geometry_and
         include_media=False,
         exporter_options={"task": "instance_segmentation"},
     )
-    exported = load_from_disk(str(destination))["train"]
+    exported = datasets.load_from_disk(str(destination))["train"]
 
     assert exported[0]["image"] is None
     assert exported[0]["objects"]["mask"] == [None, None]
@@ -60,7 +62,7 @@ def test_penn_fudan_import_and_huggingface_export_preserve_instance_geometry_and
         include_media=True,
         exporter_options={"task": "instance_segmentation"},
     )
-    exported_with_media = load_from_disk(str(media_destination))["train"]
+    exported_with_media = datasets.load_from_disk(str(media_destination))["train"]
 
     assert exported_with_media[0]["image"].size == (3, 2)
     assert [mask.size for mask in exported_with_media[0]["objects"]["mask"]] == [(3, 2), (3, 2)]

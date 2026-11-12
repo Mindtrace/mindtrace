@@ -1,13 +1,15 @@
 from io import BytesIO
 from pathlib import Path
 
-import datasets
+import pytest
 from PIL import Image
+
+datasets = pytest.importorskip("datasets", reason="datasets not installed")
 
 from mindtrace.datalake.exporters.huggingface import export_dataset_as_huggingface
 from mindtrace.datalake.exporters.types import ExportableDataset, ExportableItem
 from mindtrace.datalake.types import AnnotationRecord, Asset, StorageRef
-from mindtrace.models.training import build_datasets
+from mindtrace.models.training import build_datasets, read_export_metadata
 
 
 def _png_bytes() -> bytes:
@@ -24,7 +26,7 @@ def test_voc_difficult_is_preserved_and_projected_to_torchvision_ignore_channel(
             "objects": datasets.Sequence(
                 {
                     "bbox": datasets.Sequence(datasets.Value("float32"), length=4),
-                    "category": datasets.ClassLabel(names=["person"]),
+                    "category": datasets.ClassLabel(names=["background", "person"]),
                     "area": datasets.Value("float32"),
                     "difficult": datasets.Value("bool"),
                 }
@@ -38,7 +40,7 @@ def test_voc_difficult_is_preserved_and_projected_to_torchvision_ignore_channel(
                 "image": {"bytes": _png_bytes(), "path": "voc-image-1.png"},
                 "objects": {
                     "bbox": [[0.0, 0.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0]],
-                    "category": [0, 0],
+                    "category": [1, 1],
                     "area": [1.0, 1.0],
                     "difficult": [True, False],
                 },
@@ -125,4 +127,11 @@ def test_selected_classification_metadata_keys_round_trip_to_dataset_samples(tmp
         "group_id": "group-1",
     }
     assert dataset.features["subject_id"].dtype == "string"
-    assert dataset.info.metadata["mindtrace"]["label_to_id"] == {"healthy": 0, "defective": 1}
+    assert dataset.features["label"].names == ["healthy", "defective"]
+    assert read_export_metadata(export_path) == {
+        "profile": "classification",
+        "annotation_attributes": {"field": "target"},
+        "metadata_keys": {"subject_id": "string", "group_id": "string"},
+    }
+    selected = dataset.select([0])
+    assert selected[0]["target"].item() == 1

@@ -22,6 +22,7 @@ from mindtrace.hardware.services.cameras.schemas.config_schemas import (
     ConfigureCameraSchema,
     ExportCameraConfigSchema,
     GetCameraConfigurationSchema,
+    GetSavedCameraConfigurationSchema,
     ImportCameraConfigSchema,
     ResetCameraConfigSchema,
 )
@@ -95,6 +96,7 @@ ALL_SCHEMAS = {
     "configure_camera": ConfigureCameraSchema,
     "configure_cameras_batch": ConfigureCamerasBatchSchema,
     "get_camera_configuration": GetCameraConfigurationSchema,
+    "get_saved_camera_configuration": GetSavedCameraConfigurationSchema,
     "import_camera_config": ImportCameraConfigSchema,
     "export_camera_config": ExportCameraConfigSchema,
     "reset_camera_config": ResetCameraConfigSchema,
@@ -156,6 +158,7 @@ __all__ = [
     "ConfigureCameraSchema",
     "ConfigureCamerasBatchSchema",
     "GetCameraConfigurationSchema",
+    "GetSavedCameraConfigurationSchema",
     "ImportCameraConfigSchema",
     "ExportCameraConfigSchema",
     "ResetCameraConfigSchema",

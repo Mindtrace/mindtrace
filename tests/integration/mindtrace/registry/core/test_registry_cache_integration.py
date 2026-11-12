@@ -1,8 +1,8 @@
-"""Integration tests for Registry local cache with a real non-local backend (S3/MinIO).
+"""Integration tests for Registry local cache with a real non-local backend (S3).
 
 Exercises LRU pruning (metadata mtime ordering), ``verify=full`` staleness, batch load
 with partial cache misses, explicit cache clearing, and lightweight concurrent reads.
-Skips when MinIO is unavailable (see ``tests/integration/conftest.py``).
+Skips when the S3 store is unavailable (see ``tests/integration/conftest.py``).
 """
 
 from __future__ import annotations

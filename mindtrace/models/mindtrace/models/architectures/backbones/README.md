@@ -185,18 +185,13 @@ lora_cfg = LoRAConfig(
     r=8,                      # LoRA rank
     lora_alpha=16,            # scaling = alpha / r
     lora_dropout=0.1,
-    target_modules="qv",      # "qv" | "qkv" | "qkv_proj" | "mlp" | "all" | list[str]
+    target_modules="all-linear",  # or a list of module names, matched by peft
     bias="none",              # "none" | "all" | "lora_only"
 )
-
-# Resolve which module names will be targeted for a given checkpoint
-targets = lora_cfg.get_target_modules("facebook/dinov2-base")
-# ["query", "value"]
 
 # Apply via HuggingFaceDINOBackbone
 bb = HuggingFaceDINOBackbone("facebook/dinov2-base", lora_config=lora_cfg)
 bb.print_trainable_parameters()
-# "trainable params: 294,912 / 21,986,688 (1.34%)"
 
 # Or apply via build_model
 from mindtrace.models.architectures import build_model

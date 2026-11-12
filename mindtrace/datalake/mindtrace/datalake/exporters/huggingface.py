@@ -8,6 +8,7 @@ import shutil
 import tempfile
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
+from numbers import Integral
 from pathlib import Path
 from typing import Any, Callable
 
@@ -83,19 +84,13 @@ def _annotation_matches_attributes(annotation: Any, attributes: Mapping[str, Any
     )
 
 
-def _metadata_value_matches_dtype(value: Any, dtype: str) -> bool:
-    if dtype == "string":
-        return isinstance(value, str)
-    if dtype == "bool":
-        return isinstance(value, bool)
-    if dtype in _INTEGER_DTYPES:
-        return isinstance(value, int) and not isinstance(value, bool)
-    if dtype in _FLOAT_DTYPES:
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
-    return False
-
-
 def _project_metadata_keys(item: Any, metadata_keys: Mapping[str, str]) -> dict[str, Any]:
+    if not metadata_keys:
+        return {}
+
+    import pyarrow as pa
+    from datasets import Value
+
     projected: dict[str, Any] = {}
     for key, dtype in metadata_keys.items():
         if key not in item.metadata or item.metadata[key] is None:
@@ -103,12 +98,19 @@ def _project_metadata_keys(item: Any, metadata_keys: Mapping[str, str]) -> dict[
                 f"Hugging Face export requires row metadata key {key!r}; asset {item.asset.asset_id!r} is missing it."
             )
         value = item.metadata[key]
-        if not _metadata_value_matches_dtype(value, dtype):
+        try:
+            # Preserve strict integer semantics instead of allowing Arrow to truncate floats.
+            if dtype in _INTEGER_DTYPES and (isinstance(value, bool) or not isinstance(value, Integral)):
+                raise TypeError("Integer metadata requires an integer value, not a boolean or float.")
+            if dtype in _FLOAT_DTYPES and isinstance(value, bool):
+                raise TypeError("Floating metadata does not accept boolean values.")
+            scalar = pa.scalar(value, type=Value(dtype).pa_type)
+        except (pa.ArrowException, TypeError, ValueError, OverflowError) as exc:
             raise ValueError(
                 f"Hugging Face export metadata key {key!r} on asset {item.asset.asset_id!r} "
-                f"must match dtype {dtype!r}; found {type(value).__name__}."
-            )
-        projected[key] = value
+                f"must match dtype {dtype!r}; found {type(value).__name__}: {exc}"
+            ) from exc
+        projected[key] = scalar.as_py()
     return projected
 
 
@@ -144,16 +146,25 @@ def _classification_class_names(
     return [labels_by_id[label_id] for label_id in expected_ids]
 
 
+def _object_class_names(class_names: list[str]) -> list[str]:
+    """Reserve category zero for background in torchvision-compatible object targets."""
+    if len(set(class_names)) != len(class_names):
+        raise ValueError("Object class names must be unique.")
+    if "background" in class_names and class_names[0] != "background":
+        raise ValueError("Object class names must place background at index 0.")
+    return class_names if class_names[0] == "background" else ["background", *class_names]
+
+
 def _detection_class_names(dataset: ExportableDataset) -> list[str]:
     configured = _configured_class_names(dataset, "detection")
     if configured:
-        return configured
+        return _object_class_names(configured)
     labels = {
         annotation.label for item in dataset.items for annotation in item.annotations if annotation.kind == "bbox"
     }
     if not labels:
         raise ValueError("Detection export requires bbox annotations or dataset metadata detection_class_names.")
-    return sorted(labels)
+    return _object_class_names(sorted(labels))
 
 
 def _classification_annotation(item: Any, annotation_attributes: Mapping[str, Any] | None = None) -> Any:
@@ -344,8 +355,7 @@ def _save_huggingface_rows(
 ) -> ExportResult:
     """Build, save, and summarize a split-aware Hugging Face artifact."""
     dataset_payload = {
-        split: datasets_module.Dataset.from_generator(lambda rows=rows: iter(rows), features=features)
-        for split, rows in rows_by_split.items()
+        split: datasets_module.Dataset.from_list(rows, features=features) for split, rows in rows_by_split.items()
     }
     if len(dataset_payload) == 1 and "default" in dataset_payload:
         hf_dataset = dataset_payload["default"]
@@ -358,7 +368,7 @@ def _save_huggingface_rows(
             write_export_file(
                 destination,
                 "mindtrace_metadata.json",
-                json.dumps({"schema_version": 1, "mindtrace": artifact_metadata}, sort_keys=True).encode("utf-8"),
+                json.dumps({**artifact_metadata, "schema_version": 2}, sort_keys=True).encode("utf-8"),
             )
         )
     return ExportResult(
@@ -378,17 +388,12 @@ def _export_single_label_classification_dataset(
     *,
     destination: Path,
     include_media: bool,
-    options: Mapping[str, Any] | None = None,
+    selected_attributes: Mapping[str, Any],
+    selected_metadata_keys: Mapping[str, str],
+    class_names: list[str],
+    features: Any,
 ) -> ExportResult:
-    selected_attributes = _annotation_attributes(options)
-    selected_metadata_keys = _metadata_keys(options)
-    class_names = _classification_class_names(
-        dataset,
-        options=options,
-        annotation_attributes=selected_attributes,
-    )
     class_ids = {name: label_id for label_id, name in enumerate(class_names)}
-    features = _single_label_classification_features(datasets_module, class_names, selected_metadata_keys)
     rows_by_split: dict[str, list[dict[str, Any]]] = {}
 
     for item in dataset.items:
@@ -402,21 +407,11 @@ def _export_single_label_classification_dataset(
         )
         rows_by_split.setdefault(split_name, []).append(row)
 
-    requested_provenance = bool(
-        selected_attributes
-        or selected_metadata_keys
-        or (options or {}).get("class_names")
-        or (options or {}).get("classification_class_names")
-    )
-    artifact_metadata = None
-    if requested_provenance:
-        artifact_metadata = {
-            "task": "classification",
-            "annotation_attributes": selected_attributes,
-            "class_names": class_names,
-            "label_to_id": class_ids,
-            "metadata_keys": selected_metadata_keys,
-        }
+    artifact_metadata = {
+        "profile": "classification",
+        "annotation_attributes": selected_attributes,
+        "metadata_keys": selected_metadata_keys,
+    }
 
     return _save_huggingface_rows(
         datasets_module,
@@ -520,7 +515,7 @@ def _export_bbox_crop_classification_dataset(
     destination: Path,
     include_media: bool,
 ) -> ExportResult:
-    class_names = _detection_class_names(dataset)
+    class_names = _detection_class_names(dataset)[1:]
     class_ids = {name: index for index, name in enumerate(class_names)}
     features = _single_label_classification_features(datasets_module, class_names)
     rows_by_split: dict[str, list[dict[str, Any]]] = {}
@@ -576,7 +571,7 @@ def _export_detection_dataset(
     include_media: bool,
 ) -> ExportResult:
     class_names = _detection_class_names(dataset)
-    class_ids = {name: index for index, name in enumerate(class_names)}
+    class_ids = {name: index for index, name in enumerate(class_names) if index > 0}
     features = _detection_features(datasets_module, class_names)
     rows_by_split: dict[str, list[dict[str, Any]]] = {}
     annotation_count = 0
@@ -771,7 +766,8 @@ def _export_instance_segmentation_dataset(
     class_names = _configured_class_names(dataset, "instance_segmentation")
     if not class_names:
         raise ValueError("Instance segmentation export requires dataset metadata instance_segmentation_class_names.")
-    class_ids = {name: index for index, name in enumerate(class_names)}
+    class_names = _object_class_names(class_names)
+    class_ids = {name: index for index, name in enumerate(class_names) if index > 0}
     features = _instance_segmentation_features(datasets_module, class_names)
     rows_by_split: dict[str, list[dict[str, Any]]] = {}
     annotation_count = 0
@@ -1059,14 +1055,10 @@ async def export_dataset_version_as_huggingface_streaming(
             "mindtrace_metadata.json",
             json.dumps(
                 {
-                    "schema_version": 1,
-                    "mindtrace": {
-                        "task": "classification",
-                        "annotation_attributes": selected_attributes,
-                        "class_names": class_names,
-                        "label_to_id": class_ids,
-                        "metadata_keys": selected_metadata_keys,
-                    },
+                    "schema_version": 2,
+                    "profile": "classification",
+                    "annotation_attributes": selected_attributes,
+                    "metadata_keys": selected_metadata_keys,
                 },
                 sort_keys=True,
             ).encode("utf-8"),
@@ -1103,15 +1095,43 @@ def export_dataset_as_huggingface(
             "Install mindtrace-datalake[export-huggingface]."
         ) from exc
 
-    destination_path = prepare_export_destination(destination, overwrite=overwrite)
     requested_task = (options or {}).get("task") or dataset.metadata.get("task_type")
+    classification_type = (options or {}).get("classification_type") or dataset.metadata.get(
+        "classification_type", "single_label"
+    )
+    classification_source = (options or {}).get("classification_source") or dataset.metadata.get(
+        "classification_source", "annotations"
+    )
+    selected_options = sorted(
+        {"annotation_attributes", "class_names", "classification_class_names", "metadata_keys"}.intersection(
+            options or {}
+        )
+    )
+    if selected_options and not (
+        requested_task == "classification"
+        and classification_type == "single_label"
+        and classification_source == "annotations"
+    ):
+        raise ValueError(
+            f"Hugging Face exporter options {selected_options} require task='classification', "
+            "classification_type='single_label', and classification_source='annotations'; "
+            f"received task={requested_task!r}, classification_type={classification_type!r}, "
+            f"classification_source={classification_source!r}."
+        )
+
+    # Validate classification configuration before overwrite can remove an existing export.
+    if (
+        requested_task == "classification"
+        and classification_type == "single_label"
+        and classification_source == "annotations"
+    ):
+        selected_attributes = _annotation_attributes(options)
+        selected_metadata_keys = _metadata_keys(options)
+        class_names = _classification_class_names(dataset, options=options, annotation_attributes=selected_attributes)
+        features = _single_label_classification_features(datasets_module, class_names, selected_metadata_keys)
+
+    destination_path = prepare_export_destination(destination, overwrite=overwrite)
     if requested_task == "classification":
-        classification_type = (options or {}).get("classification_type") or dataset.metadata.get(
-            "classification_type", "single_label"
-        )
-        classification_source = (options or {}).get("classification_source") or dataset.metadata.get(
-            "classification_source", "annotations"
-        )
         if classification_source not in {"annotations", "bbox_crops"}:
             raise ValueError(
                 "Hugging Face classification export requires classification_source='annotations' or 'bbox_crops'."
@@ -1129,7 +1149,10 @@ def export_dataset_as_huggingface(
                 dataset,
                 destination=destination_path,
                 include_media=include_media,
-                options=options,
+                selected_attributes=selected_attributes,
+                selected_metadata_keys=selected_metadata_keys,
+                class_names=class_names,
+                features=features,
             )
         if classification_type == "multi_label":
             if classification_source != "annotations":

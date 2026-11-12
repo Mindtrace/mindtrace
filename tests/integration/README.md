@@ -1,11 +1,11 @@
 # Integration Tests
 
-This directory contains integration tests for the mindtrace registry system, including tests for all supported backends (Local, MinIO, and GCP).
+This directory contains integration tests for the mindtrace registry system, including tests for all supported backends (Local, S3, and GCP).
 
 ## Test Structure
 
 - `mindtrace/storage/` - Tests for storage handlers (GCS)
-- `mindtrace/registry/backend/` - Tests for registry backends (Local, MinIO, GCP)
+- `mindtrace/registry/backend/` - Tests for registry backends (Local, S3, GCP)
 - `mindtrace/registry/core/` - Tests for registry core functionality
 
 ## Prerequisites
@@ -13,15 +13,19 @@ This directory contains integration tests for the mindtrace registry system, inc
 ### For Local Backend Tests
 No additional setup required.
 
-### For MinIO Backend Tests
-1. Start a MinIO server:
+### For S3 Backend Tests
+1. Start an S3-compatible server (RustFS):
    ```bash
-   docker run --rm --name minio \
-     -p 9000:9000 \
-     -p 9001:9001 \
-     -e MINIO_ROOT_USER=minioadmin \
-     -e MINIO_ROOT_PASSWORD=minioadmin \
-     minio/minio server /data --console-address ":9001"
+   docker run --rm --name rustfs \
+      -p 9000:9000 \
+      -p 9001:9001 \
+      -e RUSTFS_VOLUMES=/data \
+      -e RUSTFS_ADDRESS=0.0.0.0:9000 \
+      -e RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001 \
+      -e RUSTFS_CONSOLE_ENABLE=true \
+      -e RUSTFS_ACCESS_KEY=minioadmin \
+      -e RUSTFS_SECRET_KEY=minioadmin \
+      rustfs/rustfs:1.0.0
    ```
 
 2. Set environment variables:
@@ -63,8 +67,8 @@ pytest
 # Local backend only
 pytest -m "not integration"
 
-# MinIO backend only
-pytest -m "minio"
+# Tests with "s3" in their name (most S3-backed tests)
+pytest -k "s3"
 
 # GCP backend only
 pytest -m "gcp"
@@ -102,7 +106,7 @@ pytest -v --tb=long
 
 ### Registry Backend Tests (`mindtrace/registry/backend/`)
 - **Local Backend**: Filesystem-based storage
-- **MinIO Backend**: S3-compatible distributed storage
+- **S3 Backend**: S3-compatible distributed storage
 - **GCP Backend**: Google Cloud Storage distributed storage
 
 Each backend test suite includes:
@@ -154,10 +158,10 @@ Environment variables override config.ini defaults:
 - `GCP_PROJECT_ID`: Google Cloud project ID (default: mindtrace-test)
 - `GOOGLE_APPLICATION_CREDENTIALS`: Path to service account key (optional)
 
-#### MinIO Tests
-- `MINDTRACE_MINIO__MINIO_ENDPOINT`: MinIO server endpoint
-- `MINDTRACE_MINIO__MINIO_ACCESS_KEY`: MinIO access key
-- `MINDTRACE_MINIO__MINIO_SECRET_KEY`: MinIO secret key
+#### S3 Tests
+- `MINDTRACE_MINIO__MINIO_ENDPOINT`: S3 server endpoint
+- `MINDTRACE_MINIO__MINIO_ACCESS_KEY`: S3 access key
+- `MINDTRACE_MINIO__MINIO_SECRET_KEY`: S3 secret key
 - `MINIO_SECURE`: Use HTTPS (0 or 1)
 
 ## Troubleshooting
@@ -171,13 +175,16 @@ gcloud auth list
 gcloud auth application-default login
 ```
 
-### MinIO Connection Issues
+### S3 Connection Issues
 ```bash
-# Check MinIO is running
-curl http://localhost:9000/minio/health/live
+# Test-stack host API (scripts/docker_up.sh / tests/docker-compose.yml)
+curl http://localhost:19000/health
 
-# Check MinIO logs
-docker logs minio
+# Standalone RustFS on product ports
+curl http://localhost:9000/health
+
+# Check RustFS logs (test stack)
+docker compose -f tests/docker-compose.yml logs rustfs
 ```
 
 ### Test Cleanup Issues
@@ -186,8 +193,13 @@ The tests automatically clean up resources, but if cleanup fails:
 # Clean up GCS buckets manually
 gsutil -m rm -r gs://mindtrace-test-*
 
-# Clean up MinIO buckets manually
-mc rm -r --force minio/mindtrace-test-*
+# Clean up S3 buckets manually, using the RustFS `rc` client
+rc alias set test http://localhost:19000 minioadmin minioadmin
+rc ls test
+rc bucket remove --force test/<bucket-name>
+
+# Or reset the whole test stack, including its volumes
+docker compose -f tests/docker-compose.yml down --volumes
 ```
 
 ## Performance Testing
@@ -211,7 +223,7 @@ pytest -k "concurrent" -v
 ## Continuous Integration
 
 These tests are designed to run in CI environments with:
-- Docker for MinIO server
+- Docker for the RustFS (S3-compatible) server
 - Google Cloud credentials for GCP tests
 - Proper cleanup after test completion
 

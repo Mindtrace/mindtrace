@@ -212,7 +212,7 @@ class CameraManagerConnectionManager(ConnectionManager):
         return response["data"]
 
     # Configuration Operations
-    async def configure_camera(self, camera: str, properties: Dict[str, Any]) -> bool:
+    async def configure_camera(self, camera: str, properties: Dict[str, Any]) -> Dict[str, Any]:
         """Configure camera parameters.
 
         Args:
@@ -220,7 +220,7 @@ class CameraManagerConnectionManager(ConnectionManager):
             properties: Configuration properties
 
         Returns:
-            True if successful
+            Configuration apply result with applied/total counts, failures, and skipped keys.
         """
         request = CameraConfigureRequest(camera=camera, properties=properties)
         response = await self.post("/cameras/configure", request.model_dump())
@@ -233,7 +233,8 @@ class CameraManagerConnectionManager(ConnectionManager):
             configurations: Dictionary mapping camera names to their configurations
 
         Returns:
-            Batch operation results
+            Batch configure result with successful/failed camera lists and per-camera
+            apply details (applied, total, failures, skipped, success).
         """
         request = CameraConfigureBatchRequest(configurations=configurations)
         response = await self.post("/cameras/configure/batch", request.model_dump())
@@ -249,7 +250,20 @@ class CameraManagerConnectionManager(ConnectionManager):
             Current camera configuration
         """
         request = CameraQueryRequest(camera=camera)
-        response = await self.post("/cameras/configuration", request.model_dump())
+        response = await self.post("/cameras/config/get", request.model_dump())
+        return response["data"]
+
+    async def get_saved_camera_configuration(self, camera: str) -> Optional[Dict[str, Any]]:
+        """Get persisted camera configuration from disk.
+
+        Args:
+            camera: Camera name to query
+
+        Returns:
+            Saved camera configuration, or ``None`` when no saved file exists
+        """
+        request = CameraQueryRequest(camera=camera)
+        response = await self.post("/cameras/config/saved/get", request.model_dump())
         return response["data"]
 
     async def import_camera_config(self, camera: str, config_path: Optional[str] = None) -> Dict[str, Any]:

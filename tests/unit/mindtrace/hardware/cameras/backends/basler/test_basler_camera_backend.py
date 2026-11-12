@@ -1,8 +1,4 @@
 import asyncio
-import builtins
-import json
-import os
-import tempfile
 import time
 from unittest.mock import MagicMock, Mock, patch
 
@@ -131,6 +127,22 @@ class MockPylonCamera:
         )
         self._offset_x_param = MockParameter(0, min_val=0, max_val=1920, camera_attr="offset_x", camera_obj=self)
         self._offset_y_param = MockParameter(0, min_val=0, max_val=1080, camera_attr="offset_y", camera_obj=self)
+        self.packet_size = 1500
+        self.inter_packet_delay = 0
+        self.bandwidth_limit_mode = "Off"
+        self.bandwidth_limit_bps = 0
+        self._packet_size_param = MockParameter(
+            1500, min_val=220, max_val=16000, camera_attr="packet_size", camera_obj=self
+        )
+        self._inter_packet_delay_param = MockParameter(
+            0, min_val=0, max_val=65535, camera_attr="inter_packet_delay", camera_obj=self
+        )
+        self._bandwidth_limit_mode_param = MockEnumParameter(
+            "Off", ["Off", "On"], camera_attr="bandwidth_limit_mode", camera_obj=self
+        )
+        self._bandwidth_limit_param = MockParameter(
+            0, min_val=0, max_val=125000000, camera_attr="bandwidth_limit_bps", camera_obj=self
+        )
 
     def Attach(self, device_info):
         self.device_info = device_info
@@ -237,6 +249,22 @@ class MockPylonCamera:
     @property
     def OffsetY(self):
         return self._offset_y_param
+
+    @property
+    def GevSCPSPacketSize(self):
+        return self._packet_size_param
+
+    @property
+    def GevSCPD(self):
+        return self._inter_packet_delay_param
+
+    @property
+    def DeviceLinkThroughputLimitMode(self):
+        return self._bandwidth_limit_mode_param
+
+    @property
+    def DeviceLinkThroughputLimit(self):
+        return self._bandwidth_limit_param
 
 
 class MockParameter:
@@ -460,21 +488,6 @@ async def basler_camera(mock_pypylon):
         await camera.close()
 
 
-@pytest.fixture
-def temp_config_file():
-    """Create a temporary configuration file."""
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".pfs", delete=False) as f:
-        f.write('{"camera_type": "basler", "exposure_time": 10000, "gain": 1.0}\n')
-        temp_path = f.name
-    try:
-        yield temp_path
-    finally:
-        try:
-            os.unlink(temp_path)
-        except Exception:
-            pass
-
-
 class TestBaslerCameraBackendInitialization:
     """Test camera initialization and configuration."""
 
@@ -610,14 +623,6 @@ class TestBaslerCameraBackendConnection:
 
         with pytest.raises(CameraConnectionError, match="Failed to open camera"):
             await basler_camera.initialize()
-
-    @pytest.mark.asyncio
-    async def test_initialize_with_config_file(self, basler_camera, temp_config_file):
-        """Test initialization with configuration file."""
-        basler_camera.camera_config_path = temp_config_file
-
-        success, cam_obj, remote_obj = await basler_camera.initialize()
-        assert success is True
 
     @pytest.mark.asyncio
     async def test_check_connection_success(self, basler_camera):
@@ -1274,60 +1279,6 @@ class TestBaslerCameraBackendImageEnhancement:
         assert enhanced_image.dtype == test_image.dtype
 
 
-class TestBaslerCameraBackendConfigurationFiles:
-    """Test configuration file import/export."""
-
-    @pytest.mark.asyncio
-    async def test_export_config_success(self, basler_camera, tmp_path):
-        """Test exporting camera configuration."""
-        await basler_camera.initialize()
-        config_path = tmp_path / "test_config.json"
-
-        await basler_camera.export_config(str(config_path))
-        assert config_path.exists()
-
-        # Verify config content
-        with open(config_path, "r") as f:
-            config = json.load(f)
-
-        assert config["camera_type"] == "basler"
-        assert config["camera_name"] == basler_camera.camera_name
-        assert "exposure_time" in config
-        assert "gain" in config
-        assert "trigger_mode" in config
-
-    @pytest.mark.asyncio
-    async def test_import_config_success(self, basler_camera, tmp_path):
-        """Test importing camera configuration."""
-        await basler_camera.initialize()
-
-        # Create test config
-        config_data = {
-            "camera_type": "basler",
-            "camera_name": "test_camera",
-            "exposure_time": 25000,
-            "gain": 3.5,
-            "trigger_mode": "continuous",
-            "pixel_format": "RGB8",
-            "image_enhancement": False,
-            "roi": {"x": 0, "y": 0, "width": 1600, "height": 1200},
-        }
-
-        config_path = tmp_path / "test_config.json"
-        with open(config_path, "w") as f:
-            json.dump(config_data, f)
-
-        await basler_camera.import_config(str(config_path))
-
-    @pytest.mark.asyncio
-    async def test_import_config_file_not_found(self, basler_camera):
-        """Test importing non-existent configuration file."""
-        await basler_camera.initialize()
-
-        with pytest.raises(CameraConfigurationError, match="Configuration file not found"):
-            await basler_camera.import_config("nonexistent_config.json")
-
-
 class TestBaslerCameraBackendCleanup:
     """Test camera cleanup and resource management."""
 
@@ -1576,134 +1527,6 @@ class TestBaslerCameraBackendConcurrentOperations:
 
         # Final state should be consistent
         assert isinstance(basler_camera.camera.IsGrabbing(), bool)
-
-
-class TestBaslerCameraBackendConfigurationEdgeCases:
-    """Test configuration edge cases and advanced scenarios."""
-
-    @pytest.mark.asyncio
-    async def test_import_config_with_invalid_white_balance(self, basler_camera, tmp_path):
-        """Test config import with invalid white balance values."""
-        await basler_camera.initialize()
-
-        # Create config with invalid white balance
-        config_data = {"camera_type": "basler", "white_balance": "invalid_mode", "exposure_time": 10000, "gain": 1.0}
-
-        config_path = tmp_path / "invalid_wb_config.json"
-        with open(config_path, "w") as f:
-            json.dump(config_data, f)
-
-        # Should handle invalid values gracefully (no exception)
-        await basler_camera.import_config(str(config_path))
-
-    @pytest.mark.asyncio
-    async def test_import_config_with_unavailable_features(self, basler_camera, tmp_path, monkeypatch):
-        """Test config import when camera features are unavailable."""
-        await basler_camera.initialize()
-
-        # Mock some features as unavailable
-        monkeypatch.setattr(basler_camera.camera.BalanceWhiteAuto, "GetAccessMode", lambda: "NA")
-
-        config_data = {
-            "camera_type": "basler",
-            "white_balance": "once",
-            "exposure_time": 10000,
-            "gain": 1.0,
-            "trigger_mode": "continuous",
-        }
-
-        config_path = tmp_path / "unavailable_features_config.json"
-        with open(config_path, "w") as f:
-            json.dump(config_data, f)
-
-        # Should handle unavailable features gracefully (no exception)
-        await basler_camera.import_config(str(config_path))
-
-    @pytest.mark.asyncio
-    async def test_export_config_with_feature_errors(self, basler_camera, tmp_path, monkeypatch):
-        """Test config export when feature access fails."""
-        await basler_camera.initialize()
-
-        # Mock some features to raise errors
-        def raise_error():
-            raise MockGenICamError("Feature access error")
-
-        monkeypatch.setattr(basler_camera.camera.BalanceWhiteAuto, "GetValue", raise_error)
-
-        config_path = tmp_path / "error_export_config.json"
-
-        # Should still export successfully with available features (no exception)
-        await basler_camera.export_config(str(config_path))
-        assert config_path.exists()
-
-    @pytest.mark.asyncio
-    async def test_config_with_extreme_values(self, basler_camera, tmp_path):
-        """Test configuration with extreme but valid values."""
-        await basler_camera.initialize()
-
-        # Create config with extreme values
-        config_data = {
-            "camera_type": "basler",
-            "exposure_time": 100,  # Minimum exposure
-            "gain": 20.0,  # Maximum gain
-            "roi": {"x": 0, "y": 0, "width": 32, "height": 32},  # Minimum ROI
-            "buffer_count": 1,  # Minimum buffers
-            "timeout_ms": 100,  # Minimum timeout
-        }
-
-        config_path = tmp_path / "extreme_values_config.json"
-        with open(config_path, "w") as f:
-            json.dump(config_data, f)
-
-        # Should handle extreme values correctly (no exception)
-        await basler_camera.import_config(str(config_path))
-
-    @pytest.mark.asyncio
-    async def test_partial_config_import_failure(self, basler_camera, tmp_path, monkeypatch):
-        """Test config import with partial failures."""
-        await basler_camera.initialize()
-
-        # Mock exposure setting to fail
-        def raise_exposure_error(value):
-            raise MockGenICamError("Exposure setting failed")
-
-        basler_camera.camera.ExposureTime.SetValue = raise_exposure_error
-
-        config_data = {
-            "camera_type": "basler",
-            "exposure_time": 50000,  # This will fail
-            "gain": 2.0,  # This should succeed
-            "trigger_mode": "continuous",  # This should succeed
-        }
-
-        config_path = tmp_path / "partial_failure_config.json"
-        with open(config_path, "w") as f:
-            json.dump(config_data, f)
-
-        # Should still complete even with partial failures (no exception)
-        await basler_camera.import_config(str(config_path))
-
-        # Verify successful settings were applied
-        assert await basler_camera.get_gain() == 2.0
-
-    @pytest.mark.asyncio
-    async def test_config_version_compatibility(self, basler_camera, tmp_path):
-        """Test configuration compatibility with different formats."""
-        await basler_camera.initialize()
-
-        # Test config without version info (legacy format)
-        legacy_config = {
-            "exposure_time": 12000,
-            "gain": 1.5,
-            # Missing camera_type and timestamp
-        }
-
-        config_path = tmp_path / "legacy_config.json"
-        with open(config_path, "w") as f:
-            json.dump(legacy_config, f)
-
-        # Should handle legacy format gracefully (no exception)
-        await basler_camera.import_config(str(config_path))
 
 
 class TestBaslerCameraBackendMissingCoverageLines:
@@ -2382,6 +2205,219 @@ class TestBaslerCameraBackendGrabbingSuspendedContextManager:
 
         # No grabbing operations should have been called when not currently grabbing
 
+    @pytest.mark.asyncio
+    async def test_nested_grabbing_suspended_stops_once(self, basler_camera):
+        """Session + nested suspends and GigE setters share a single StopGrabbing/StartGrabbing."""
+        await basler_camera.initialize()
+        await basler_camera._ensure_grabbing()
+        camera = basler_camera.camera
+
+        stops: list[int] = []
+        starts: list[int] = []
+        original_stop = camera.StopGrabbing
+        original_start = camera.StartGrabbing
+
+        def stop():
+            stops.append(1)
+            return original_stop()
+
+        def start(strategy=None):
+            starts.append(1)
+            return original_start(strategy)
+
+        camera.StopGrabbing = stop
+        camera.StartGrabbing = start
+
+        async with basler_camera.configuration_session():
+            assert camera.IsGrabbing() is True
+            assert stops == []
+            async with basler_camera._grabbing_suspended():
+                await basler_camera.set_packet_size(8164)
+                await basler_camera.set_inter_packet_delay(1000)
+            # Still suspended until session exits
+            assert camera.IsGrabbing() is False
+            assert starts == []
+
+        assert stops == [1]
+        assert starts == [1]
+        assert camera.IsGrabbing() is True
+        assert basler_camera._grabbing_suspend_depth == 0
+        assert basler_camera._config_session_depth == 0
+        assert basler_camera._session_suspended is False
+
+    @pytest.mark.asyncio
+    async def test_configuration_session_without_suspend_keeps_grabbing(self, basler_camera):
+        """A configure/GET session with no suspend-needing keys must not stop grabbing."""
+        await basler_camera.initialize()
+        await basler_camera._ensure_grabbing()
+        camera = basler_camera.camera
+
+        stops: list[int] = []
+        original_stop = camera.StopGrabbing
+
+        def stop():
+            stops.append(1)
+            return original_stop()
+
+        camera.StopGrabbing = stop
+
+        async with basler_camera.configuration_session():
+            assert camera.IsGrabbing() is True
+
+        assert stops == []
+        assert camera.IsGrabbing() is True
+
+    @pytest.mark.asyncio
+    async def test_configuration_session_restores_after_error(self, basler_camera):
+        await basler_camera.initialize()
+        await basler_camera._ensure_grabbing()
+
+        with pytest.raises(RuntimeError, match="boom"):
+            async with basler_camera.configuration_session():
+                async with basler_camera._grabbing_suspended():
+                    raise RuntimeError("boom")
+
+        assert basler_camera.camera.IsGrabbing() is True
+        assert basler_camera._grabbing_suspend_depth == 0
+        assert basler_camera._config_session_depth == 0
+        assert basler_camera._session_suspended is False
+
+    @pytest.mark.asyncio
+    async def test_nested_grabbing_suspended_restores_after_error(self, basler_camera):
+        await basler_camera.initialize()
+        await basler_camera._ensure_grabbing()
+
+        with pytest.raises(RuntimeError, match="boom"):
+            async with basler_camera._grabbing_suspended():
+                async with basler_camera._grabbing_suspended():
+                    raise RuntimeError("boom")
+
+        assert basler_camera.camera.IsGrabbing() is True
+        assert basler_camera._grabbing_suspend_depth == 0
+
+
+class TestBaslerCameraBackendGigESettings:
+    """GigE transport setters must suspend grabbing, matching profile import."""
+
+    @pytest.mark.asyncio
+    async def test_set_packet_size_suspends_grabbing(self, basler_camera):
+        await basler_camera.initialize()
+        await basler_camera._ensure_grabbing()
+        assert basler_camera.camera.IsGrabbing() is True
+
+        grabbing_during_set = {}
+        original_set = basler_camera.camera.GevSCPSPacketSize.SetValue
+
+        def set_and_record(value):
+            grabbing_during_set["grabbing"] = basler_camera.camera.IsGrabbing()
+            return original_set(value)
+
+        basler_camera.camera.GevSCPSPacketSize.SetValue = set_and_record
+
+        await basler_camera.set_packet_size(8164)
+
+        assert grabbing_during_set["grabbing"] is False
+        assert basler_camera.camera.IsGrabbing() is True
+        assert basler_camera.camera.packet_size == 8164
+
+    @pytest.mark.asyncio
+    async def test_set_inter_packet_delay_suspends_grabbing(self, basler_camera):
+        await basler_camera.initialize()
+        await basler_camera._ensure_grabbing()
+
+        grabbing_during_set = {}
+        original_set = basler_camera.camera.GevSCPD.SetValue
+
+        def set_and_record(value):
+            grabbing_during_set["grabbing"] = basler_camera.camera.IsGrabbing()
+            return original_set(value)
+
+        basler_camera.camera.GevSCPD.SetValue = set_and_record
+
+        await basler_camera.set_inter_packet_delay(1000)
+
+        assert grabbing_during_set["grabbing"] is False
+        assert basler_camera.camera.IsGrabbing() is True
+        assert basler_camera.camera.inter_packet_delay == 1000
+
+    @pytest.mark.asyncio
+    async def test_set_bandwidth_limit_suspends_grabbing(self, basler_camera):
+        await basler_camera.initialize()
+        await basler_camera._ensure_grabbing()
+
+        grabbing_during_set = {}
+        original_set = basler_camera.camera.DeviceLinkThroughputLimit.SetValue
+
+        def set_and_record(value):
+            grabbing_during_set["grabbing"] = basler_camera.camera.IsGrabbing()
+            return original_set(value)
+
+        basler_camera.camera.DeviceLinkThroughputLimit.SetValue = set_and_record
+
+        await basler_camera.set_bandwidth_limit(100.0)
+
+        assert grabbing_during_set["grabbing"] is False
+        assert basler_camera.camera.IsGrabbing() is True
+        assert basler_camera.camera.bandwidth_limit_mode == "On"
+        assert basler_camera.camera.bandwidth_limit_bps == int(100.0 * 1024 * 1024 / 8)
+
+    @pytest.mark.asyncio
+    async def test_set_bandwidth_limit_none_disables_while_suspended(self, basler_camera):
+        await basler_camera.initialize()
+        await basler_camera._ensure_grabbing()
+
+        grabbing_during_set = {}
+        original_set = basler_camera.camera.DeviceLinkThroughputLimitMode.SetValue
+
+        def set_and_record(value):
+            grabbing_during_set["grabbing"] = basler_camera.camera.IsGrabbing()
+            return original_set(value)
+
+        basler_camera.camera.DeviceLinkThroughputLimitMode.SetValue = set_and_record
+
+        await basler_camera.set_bandwidth_limit(None)
+
+        assert grabbing_during_set["grabbing"] is False
+        assert basler_camera.camera.IsGrabbing() is True
+        assert basler_camera.camera.bandwidth_limit_mode == "Off"
+
+    @pytest.mark.asyncio
+    async def test_get_bandwidth_limit_off_returns_none(self, basler_camera):
+        await basler_camera.initialize()
+        basler_camera.camera.bandwidth_limit_mode = "Off"
+
+        assert await basler_camera.get_bandwidth_limit() is None
+
+    @pytest.mark.asyncio
+    async def test_bandwidth_limit_unlimited_does_not_round_trip_as_zero(self, basler_camera):
+        """Unlimited (Off) must not export/restore as 0.0 Mbps."""
+        await basler_camera.initialize()
+        basler_camera.camera.bandwidth_limit_mode = "Off"
+
+        limit = await basler_camera.get_bandwidth_limit()
+        assert limit is None
+
+        if limit is not None:
+            await basler_camera.set_bandwidth_limit(limit)
+
+        assert basler_camera.camera.bandwidth_limit_mode == "Off"
+
+    @pytest.mark.asyncio
+    async def test_bandwidth_limit_set_get_set_round_trip(self, basler_camera):
+        await basler_camera.initialize()
+
+        await basler_camera.set_bandwidth_limit(100.0)
+        assert await basler_camera.get_bandwidth_limit() == pytest.approx(100.0)
+
+        await basler_camera.set_bandwidth_limit(None)
+        assert await basler_camera.get_bandwidth_limit() is None
+
+        limit = await basler_camera.get_bandwidth_limit()
+        if limit is not None:
+            await basler_camera.set_bandwidth_limit(limit)
+
+        assert basler_camera.camera.bandwidth_limit_mode == "Off"
+
 
 class TestBaslerCameraBackendConfigureCameraPypylonCheck:
     """Test _configure_camera method when pypylon is not available."""
@@ -2849,825 +2885,9 @@ class TestBaslerCameraBackendErrorHandlingAndFallbackPaths:
             f"Connection check failed for camera '{camera_name}': Capture failed"
         )
 
-    @pytest.mark.asyncio
-    async def test_import_config_exception_handling(self, mock_pypylon):
-        """Test that import_config catches exceptions and re-raises as CameraConfigurationError."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-        from mindtrace.hardware.core.exceptions import CameraConfigurationError
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        camera_name = "test_camera"
-        camera = BaslerCameraBackend(camera_name)
-
-        # Mock a camera object and set as initialized
-        mock_camera = MagicMock()
-        camera.camera = mock_camera
-
-        # Mock the logger to capture error calls
-        mock_logger = MagicMock()
-        camera.logger = mock_logger
-
-        # Mock os.path.exists to return True so we get to the file reading part
-        with patch("os.path.exists", return_value=True):
-            # Mock open to raise an exception to trigger the error handling
-            with patch("builtins.open", side_effect=RuntimeError("File read failed")):
-                # import_config should catch the exception and re-raise as CameraConfigurationError
-                with pytest.raises(CameraConfigurationError) as exc_info:
-                    await camera.import_config("test_config.json")
-
-        error_msg = str(exc_info.value)
-        assert "Failed to import configuration" in error_msg
-        assert "File read failed" in error_msg
-
-        # Should log error about the configuration import failure
-        mock_logger.error.assert_called_once_with(
-            f"Error importing configuration for camera '{camera_name}': File read failed"
-        )
-
-
-class TestBaslerCameraBackendHardwareFeatureAvailabilityChecks:
-    """Test hardware feature availability checks in configuration methods."""
-
-    @pytest.mark.asyncio
-    async def test_trigger_mode_feature_availability_check(self, mock_pypylon):
-        """Test that trigger mode configuration checks for feature availability."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        camera_name = "test_camera"
-        camera = BaslerCameraBackend(camera_name)
-
-        # Mock a camera object and set as initialized
-        mock_camera = MagicMock()
-        mock_camera.IsOpen.return_value = True
-        camera.camera = mock_camera
-        camera.initialized = True
-
-        # Mock the logger to capture warning calls
-        mock_logger = MagicMock()
-        camera.logger = mock_logger
-
-        # Mock _ensure_open to succeed
-        async def mock_ensure_open():
-            pass
-
-        camera._ensure_open = mock_ensure_open
-
-        # Test when TriggerMode feature is available but GetAccessMode fails
-        config_data = {"trigger_mode": "trigger"}
-
-        # Create a temporary config file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(config_data, f)
-            config_path = f.name
-
-        try:
-            # Create a mock TriggerMode object that will fail when GetAccessMode is called
-            mock_trigger_mode = MagicMock()
-            mock_trigger_mode.GetAccessMode.side_effect = RuntimeError("GetAccessMode failed")
-            mock_camera.TriggerMode = mock_trigger_mode
-
-            await camera.import_config(config_path)
-        finally:
-            # Clean up temporary file
-            os.unlink(config_path)
-
-        # Should log warning about not being able to set trigger mode
-        mock_logger.warning.assert_called_once()
-        warning_msg = mock_logger.warning.call_args[0][0]
-        assert "Could not set trigger mode" in warning_msg
-
-    @pytest.mark.asyncio
-    async def test_trigger_selector_and_source_feature_availability_checks(self, mock_pypylon):
-        """Test that trigger selector and source configuration checks for feature availability."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        camera_name = "test_camera"
-        camera = BaslerCameraBackend(camera_name)
-
-        # Mock a camera object and set as initialized
-        mock_camera = MagicMock()
-        mock_camera.IsOpen.return_value = True
-        camera.camera = mock_camera
-        camera.initialized = True
-
-        # Mock the logger to capture warning calls
-        mock_logger = MagicMock()
-        camera.logger = mock_logger
-
-        # Mock _ensure_open to succeed
-        async def mock_ensure_open():
-            pass
-
-        camera._ensure_open = mock_ensure_open
-
-        # Mock _run_blocking to succeed
-        async def mock_run_blocking(func, *args, **kwargs):
-            return None
-
-        camera._run_blocking = mock_run_blocking
-
-        # Test when TriggerMode is available but TriggerSelector is NOT available
-        config_data = {"trigger_mode": "trigger"}
-
-        # Create a temporary config file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(config_data, f)
-            config_path = f.name
-
-        try:
-            # Mock hasattr to return True for TriggerMode but False for TriggerSelector
-            # Use original hasattr as fallback to not break asyncio internals
-            original_hasattr = builtins.hasattr
-
-            def mock_hasattr(obj, attr):
-                if obj is mock_camera:
-                    if attr == "TriggerMode":
-                        return True
-                    elif attr == "TriggerSelector":
-                        return False
-                    return False
-                return original_hasattr(obj, attr)
-
-            with patch("builtins.hasattr", side_effect=mock_hasattr):
-                # Mock GetAccessMode to return RW for TriggerMode
-                mock_camera.TriggerMode.GetAccessMode.return_value = mock_genicam.RW
-
-                await camera.import_config(config_path)
-        finally:
-            # Clean up temporary file
-            os.unlink(config_path)
-
-        # Should succeed without warnings since TriggerSelector is optional
-        mock_logger.warning.assert_not_called()
-
-        # Test when both TriggerMode and TriggerSelector are available but TriggerSource is NOT
-        mock_logger.warning.reset_mock()
-
-        # Create another temporary config file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(config_data, f)
-            config_path = f.name
-
-        try:
-            original_hasattr = builtins.hasattr
-
-            def mock_hasattr_with_source(obj, attr):
-                if obj is mock_camera:
-                    if attr in ["TriggerMode", "TriggerSelector"]:
-                        return True
-                    elif attr == "TriggerSource":
-                        return False
-                    return False
-                return original_hasattr(obj, attr)
-
-            with patch("builtins.hasattr", side_effect=mock_hasattr_with_source):
-                # Mock GetAccessMode to return RW for both
-                mock_camera.TriggerMode.GetAccessMode.return_value = mock_genicam.RW
-                mock_camera.TriggerSelector.GetAccessMode.return_value = mock_genicam.RW
-
-                await camera.import_config(config_path)
-        finally:
-            # Clean up temporary file
-            os.unlink(config_path)
-
-        # Should succeed without warnings since TriggerSource is optional
-        mock_logger.warning.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_white_balance_feature_availability_check(self, mock_pypylon):
-        """Test that white balance configuration checks for feature availability."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        camera_name = "test_camera"
-        camera = BaslerCameraBackend(camera_name)
-
-        # Mock a camera object and set as initialized
-        mock_camera = MagicMock()
-        mock_camera.IsOpen.return_value = True
-        camera.camera = mock_camera
-        camera.initialized = True
-
-        # Mock the logger to capture warning calls
-        mock_logger = MagicMock()
-        camera.logger = mock_logger
-
-        # Mock _ensure_open to succeed
-        async def mock_ensure_open():
-            pass
-
-        camera._ensure_open = mock_ensure_open
-
-        # Test when BalanceWhiteAuto feature is available but GetAccessMode fails
-        config_data = {"white_balance": "continuous"}
-
-        # Create a temporary config file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(config_data, f)
-            config_path = f.name
-
-        try:
-            # Create a mock BalanceWhiteAuto object that will fail when GetAccessMode is called
-            mock_balance_white_auto = MagicMock()
-            mock_balance_white_auto.GetAccessMode.side_effect = RuntimeError("GetAccessMode failed")
-            mock_camera.BalanceWhiteAuto = mock_balance_white_auto
-
-            await camera.import_config(config_path)
-        finally:
-            # Clean up temporary file
-            os.unlink(config_path)
-
-        # Should log warning about not being able to set white balance
-        mock_logger.warning.assert_called_once()
-        warning_msg = mock_logger.warning.call_args[0][0]
-        assert "Could not set white balance" in warning_msg
-
-    @pytest.mark.asyncio
-    async def test_roi_width_feature_availability_check(self, mock_pypylon):
-        """Test that ROI width configuration checks for feature availability."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        camera_name = "test_camera"
-        camera = BaslerCameraBackend(camera_name)
-
-        # Mock a camera object and set as initialized
-        mock_camera = MagicMock()
-        mock_camera.IsOpen.return_value = True
-        camera.camera = mock_camera
-        camera.initialized = True
-
-        # Mock the logger to capture warning calls
-        mock_logger = MagicMock()
-        camera.logger = mock_logger
-
-        # Mock _ensure_open to succeed
-        async def mock_ensure_open():
-            pass
-
-        camera._ensure_open = mock_ensure_open
-
-        # Test when Width feature is available but GetAccessMode fails
-        config_data = {"roi": {"width": 1280, "height": 720}}
-
-        # Create a temporary config file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(config_data, f)
-            config_path = f.name
-
-        try:
-            # Create a mock Width object that will fail when GetAccessMode is called
-            mock_width = MagicMock()
-            mock_width.GetAccessMode.side_effect = RuntimeError("GetAccessMode failed")
-            mock_camera.Width = mock_width
-
-            await camera.import_config(config_path)
-        finally:
-            # Clean up temporary file
-            os.unlink(config_path)
-
-        # Should log warning about not being able to set ROI Width
-        mock_logger.warning.assert_called_once()
-        warning_msg = mock_logger.warning.call_args[0][0]
-        assert "Could not set ROI Width" in warning_msg
-
-    @pytest.mark.asyncio
-    async def test_roi_height_feature_availability_check(self, mock_pypylon):
-        """Test that ROI height configuration checks for feature availability."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        camera_name = "test_camera"
-        camera = BaslerCameraBackend(camera_name)
-
-        # Mock a camera object and set as initialized
-        mock_camera = MagicMock()
-        mock_camera.IsOpen.return_value = True
-        camera.camera = mock_camera
-        camera.initialized = True
-
-        # Mock the logger to capture warning calls
-        mock_logger = MagicMock()
-        camera.logger = mock_logger
-
-        # Mock _ensure_open to succeed
-        async def mock_ensure_open():
-            pass
-
-        camera._ensure_open = mock_ensure_open
-
-        # Test when Height feature is available but GetAccessMode fails
-        config_data = {"roi": {"width": 1280, "height": 720}}
-
-        # Create a temporary config file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(config_data, f)
-            config_path = f.name
-
-        try:
-            # Create a mock Height object that will fail when GetAccessMode is called
-            mock_height = MagicMock()
-            mock_height.GetAccessMode.side_effect = RuntimeError("GetAccessMode failed")
-            mock_camera.Height = mock_height
-
-            await camera.import_config(config_path)
-        finally:
-            # Clean up temporary file
-            os.unlink(config_path)
-
-        # Should log warning about not being able to set ROI Height
-        mock_logger.warning.assert_called_once()
-        warning_msg = mock_logger.warning.call_args[0][0]
-        assert "Could not set ROI Height" in warning_msg
-
-    @pytest.mark.asyncio
-    async def test_roi_offset_x_feature_availability_check(self, mock_pypylon):
-        """Test that ROI offset X configuration checks for feature availability."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        camera_name = "test_camera"
-        camera = BaslerCameraBackend(camera_name)
-
-        # Mock a camera object and set as initialized
-        mock_camera = MagicMock()
-        mock_camera.IsOpen.return_value = True
-        camera.camera = mock_camera
-        camera.initialized = True
-
-        # Mock the logger to capture warning calls
-        mock_logger = MagicMock()
-        camera.logger = mock_logger
-
-        # Mock _ensure_open to succeed
-        async def mock_ensure_open():
-            pass
-
-        camera._ensure_open = mock_ensure_open
-
-        # Test when OffsetX feature is available but GetAccessMode fails
-        config_data = {"roi": {"x": 100, "y": 200}}
-
-        # Create a temporary config file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(config_data, f)
-            config_path = f.name
-
-        try:
-            # Create a mock OffsetX object that will fail when GetAccessMode is called
-            mock_offset_x = MagicMock()
-            mock_offset_x.GetAccessMode.side_effect = RuntimeError("GetAccessMode failed")
-            mock_camera.OffsetX = mock_offset_x
-
-            await camera.import_config(config_path)
-        finally:
-            # Clean up temporary file
-            os.unlink(config_path)
-
-        # Should log warning about not being able to set ROI OffsetX
-        mock_logger.warning.assert_called_once()
-        warning_msg = mock_logger.warning.call_args[0][0]
-        assert "Could not set ROI OffsetX" in warning_msg
-
-    @pytest.mark.asyncio
-    async def test_roi_offset_y_feature_availability_check(self, mock_pypylon):
-        """Test that ROI offset Y configuration checks for feature availability."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        camera_name = "test_camera"
-        camera = BaslerCameraBackend(camera_name)
-
-        # Mock a camera object and set as initialized
-        mock_camera = MagicMock()
-        mock_camera.IsOpen.return_value = True
-        camera.camera = mock_camera
-        camera.initialized = True
-
-        # Mock the logger to capture warning calls
-        mock_logger = MagicMock()
-        camera.logger = mock_logger
-
-        # Mock _ensure_open to succeed
-        async def mock_ensure_open():
-            pass
-
-        camera._ensure_open = mock_ensure_open
-
-        # Test when OffsetY feature is available but GetAccessMode fails
-        config_data = {"roi": {"x": 100, "y": 200}}
-
-        # Create a temporary config file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(config_data, f)
-            config_path = f.name
-
-        try:
-            # Create a mock OffsetY object that will fail when GetAccessMode is called
-            mock_offset_y = MagicMock()
-            mock_offset_y.GetAccessMode.side_effect = RuntimeError("GetAccessMode failed")
-            mock_camera.OffsetY = mock_offset_y
-
-            await camera.import_config(config_path)
-        finally:
-            # Clean up temporary file
-            os.unlink(config_path)
-
-        # Should log warning about not being able to set ROI OffsetY
-        mock_logger.warning.assert_called_once()
-        warning_msg = mock_logger.warning.call_args[0][0]
-        assert "Could not set ROI OffsetY" in warning_msg
-
 
 class TestBaslerCameraBackendROIOperations:
     """Test ROI (Region of Interest) operations including setting, getting, and validation."""
-
-    @pytest.mark.asyncio
-    async def test_roi_width_setting_with_default_fallback(self, mock_pypylon):
-        """Test ROI width setting with default fallback value (1920)."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        camera_name = "test_camera"
-        camera = BaslerCameraBackend(camera_name)
-
-        # Mock a camera object and set as initialized
-        mock_camera = MagicMock()
-        mock_camera.IsOpen.return_value = True
-        camera.camera = mock_camera
-        camera.initialized = True
-
-        # Mock the logger to capture warning calls
-        mock_logger = MagicMock()
-        camera.logger = mock_logger
-
-        # Mock _ensure_open to succeed
-        async def mock_ensure_open():
-            pass
-
-        camera._ensure_open = mock_ensure_open
-
-        # Test ROI configuration with width but no height (should use default height)
-        config_data = {"roi": {"width": 1280}}  # Only width specified
-
-        # Create a temporary config file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(config_data, f)
-            config_path = f.name
-
-        try:
-            # Mock _run_blocking to succeed
-            async def mock_run_blocking(func, *args, **kwargs):
-                return None
-
-            camera._run_blocking = mock_run_blocking
-
-            # Mock Width feature to be available
-            mock_width = MagicMock()
-            mock_width.GetAccessMode.return_value = mock_genicam.RW
-            mock_camera.Width = mock_width
-
-            await camera.import_config(config_path)
-        finally:
-            # Clean up temporary file
-            os.unlink(config_path)
-
-        # Should succeed without warnings since Width is available
-        mock_logger.warning.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_roi_height_setting_with_default_fallback(self, mock_pypylon):
-        """Test ROI height setting with default fallback value (1080)."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        camera_name = "test_camera"
-        camera = BaslerCameraBackend(camera_name)
-
-        # Mock a camera object and set as initialized
-        mock_camera = MagicMock()
-        mock_camera.IsOpen.return_value = True
-        camera.camera = mock_camera
-        camera.initialized = True
-
-        # Mock the logger to capture warning calls
-        mock_logger = MagicMock()
-        camera.logger = mock_logger
-
-        # Mock _ensure_open to succeed
-        async def mock_ensure_open():
-            pass
-
-        camera._ensure_open = mock_ensure_open
-
-        # Test ROI configuration with height but no width (should use default width)
-        config_data = {"roi": {"height": 720}}  # Only height specified
-
-        # Create a temporary config file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(config_data, f)
-            config_path = f.name
-
-        try:
-            # Mock _run_blocking to succeed
-            async def mock_run_blocking(func, *args, **kwargs):
-                return None
-
-            camera._run_blocking = mock_run_blocking
-
-            # Mock Height feature to be available
-            mock_height = MagicMock()
-            mock_height.GetAccessMode.return_value = mock_genicam.RW
-            mock_camera.Height = mock_height
-
-            await camera.import_config(config_path)
-        finally:
-            # Clean up temporary file
-            os.unlink(config_path)
-
-        # Should succeed without warnings since Height is available
-        mock_logger.warning.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_roi_offset_x_setting_with_default_fallback(self, mock_pypylon):
-        """Test ROI offset X setting with default fallback value (0)."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        camera_name = "test_camera"
-        camera = BaslerCameraBackend(camera_name)
-
-        # Mock a camera object and set as initialized
-        mock_camera = MagicMock()
-        mock_camera.IsOpen.return_value = True
-        camera.camera = mock_camera
-        camera.initialized = True
-
-        # Mock the logger to capture warning calls
-        mock_logger = MagicMock()
-        camera.logger = mock_logger
-
-        # Mock _ensure_open to succeed
-        async def mock_ensure_open():
-            pass
-
-        camera._ensure_open = mock_ensure_open
-
-        # Test ROI configuration with offset X but no offset Y (should use default Y)
-        config_data = {"roi": {"x": 100}}  # Only offset X specified
-
-        # Create a temporary config file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(config_data, f)
-            config_path = f.name
-
-        try:
-            # Mock _run_blocking to succeed
-            async def mock_run_blocking(func, *args, **kwargs):
-                return None
-
-            camera._run_blocking = mock_run_blocking
-
-            # Mock OffsetX feature to be available
-            mock_offset_x = MagicMock()
-            mock_offset_x.GetAccessMode.return_value = mock_genicam.RW
-            mock_camera.OffsetX = mock_offset_x
-
-            await camera.import_config(config_path)
-        finally:
-            # Clean up temporary file
-            os.unlink(config_path)
-
-        # Should succeed without warnings since OffsetX is available
-        mock_logger.warning.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_roi_offset_y_setting_with_default_fallback(self, mock_pypylon):
-        """Test ROI offset Y setting with default fallback value (0)."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        camera_name = "test_camera"
-        camera = BaslerCameraBackend(camera_name)
-
-        # Mock a camera object and set as initialized
-        mock_camera = MagicMock()
-        mock_camera.IsOpen.return_value = True
-        camera.camera = mock_camera
-        camera.initialized = True
-
-        # Mock the logger to capture warning calls
-        mock_logger = MagicMock()
-        camera.logger = mock_logger
-
-        # Mock _ensure_open to succeed
-        async def mock_ensure_open():
-            pass
-
-        camera._ensure_open = mock_ensure_open
-
-        # Test ROI configuration with offset Y but no offset X (should use default X)
-        config_data = {"roi": {"y": 200}}  # Only offset Y specified
-
-        # Create a temporary config file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(config_data, f)
-            config_path = f.name
-
-        try:
-            # Mock _run_blocking to succeed
-            async def mock_run_blocking(func, *args, **kwargs):
-                return None
-
-            camera._run_blocking = mock_run_blocking
-
-            # Mock OffsetY feature to be available
-            mock_offset_y = MagicMock()
-            mock_offset_y.GetAccessMode.return_value = mock_genicam.RW
-            mock_camera.OffsetY = mock_offset_y
-
-            await camera.import_config(config_path)
-        finally:
-            # Clean up temporary file
-            os.unlink(config_path)
-
-        # Should succeed without warnings since OffsetY is available
-        mock_logger.warning.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_roi_success_counting_logic(self, mock_pypylon):
-        """Test ROI success counting logic (if roi_success > 0: success_count += 1)."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        camera_name = "test_camera"
-        camera = BaslerCameraBackend(camera_name)
-
-        # Mock a camera object and set as initialized
-        mock_camera = MagicMock()
-        mock_camera.IsOpen.return_value = True
-        camera.camera = mock_camera
-        camera.initialized = True
-
-        # Mock the logger to capture info calls
-        mock_logger = MagicMock()
-        camera.logger = mock_logger
-
-        # Mock _ensure_open to succeed
-        async def mock_ensure_open():
-            pass
-
-        camera._ensure_open = mock_ensure_open
-
-        # Mock _grabbing_suspended to avoid complex context manager operations
-        class MockContextManager:
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, exc_type, exc_val, exc_tb):
-                pass
-
-        camera._grabbing_suspended = lambda: MockContextManager()
-
-        # Test ROI configuration with partial success (only width succeeds)
-        config_data = {"roi": {"width": 1280, "height": 720, "x": 100, "y": 200}}
-
-        # Create a temporary config file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(config_data, f)
-            config_path = f.name
-
-        try:
-            # Mock _run_blocking to succeed for Width but fail for others
-            async def mock_run_blocking_partial_success(func, *args, **kwargs):
-                if "Width" in str(func):
-                    return None  # Width succeeds
-                else:
-                    raise RuntimeError("Feature not available")  # Others fail
-
-            camera._run_blocking = mock_run_blocking_partial_success
-
-            # Mock Width feature to be available
-            mock_width = MagicMock()
-            mock_width.GetAccessMode.return_value = mock_genicam.RW
-            mock_camera.Width = mock_width
-
-            # Mock other features to be unavailable to avoid _run_blocking calls
-            mock_camera.Height = None
-            mock_camera.OffsetX = None
-            mock_camera.OffsetY = None
-
-            await camera.import_config(config_path)
-        finally:
-            # Clean up temporary file
-            os.unlink(config_path)
-
-        # Should have logged a debug summary; not asserting specific info call now
-        camera.logger.debug.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_roi_offset_retrieval_in_export_config(self, mock_pypylon):
-        """Test ROI offset retrieval in export_config with fallback values."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        camera_name = "test_camera"
-        camera = BaslerCameraBackend(camera_name)
-
-        # Mock a camera object and set as initialized
-        mock_camera = MagicMock()
-        mock_camera.IsOpen.return_value = True
-        camera.camera = mock_camera
-        camera.initialized = True
-
-        # Mock the logger to capture warning calls
-        mock_logger = MagicMock()
-        camera.logger = mock_logger
-
-        # Mock _ensure_open to succeed
-        async def mock_ensure_open():
-            pass
-
-        camera._ensure_open = mock_ensure_open
-
-        # Test export_config when ROI offset retrieval fails (should use defaults)
-        config_path = "test_export_config.json"
-
-        try:
-            # Mock _run_blocking to fail for ROI offset retrieval
-            async def mock_run_blocking_failing(func, *args, **kwargs):
-                if "OffsetX" in str(func) or "OffsetY" in str(func):
-                    raise RuntimeError("ROI offset retrieval failed")
-                return None
-
-            camera._run_blocking = mock_run_blocking_failing
-
-            # Mock Width and Height to succeed
-            mock_width = MagicMock()
-            mock_width.GetValue.return_value = 1920
-            mock_camera.Width = mock_width
-
-            mock_height = MagicMock()
-            mock_height.GetValue.return_value = 1080
-            mock_camera.Height = mock_height
-
-            # Mock other required features
-            mock_exposure = MagicMock()
-            mock_exposure.GetValue.return_value = 20000.0
-            mock_camera.ExposureTime = mock_exposure
-
-            mock_gain = MagicMock()
-            mock_gain.GetValue.return_value = 1.0
-            mock_camera.Gain = mock_gain
-
-            mock_trigger = MagicMock()
-            mock_trigger.GetValue.return_value = "Off"
-            mock_camera.TriggerMode = mock_trigger
-
-            mock_pixel_format = MagicMock()
-            mock_pixel_format.GetValue.return_value = "BayerRG8"
-            mock_camera.PixelFormat = mock_pixel_format
-
-            await camera.export_config(config_path)
-        finally:
-            # Clean up temporary file
-            if os.path.exists(config_path):
-                os.unlink(config_path)
-
-        # Should log warning about ROI offset retrieval failure
-        mock_logger.warning.assert_called()
-        warning_calls = [call[0][0] for call in mock_logger.warning.call_args_list]
-        assert any("Could not get ROI offsets" in msg for msg in warning_calls)
 
     @pytest.mark.asyncio
     async def test_set_roi_parameter_validation(self, mock_pypylon):
@@ -3926,140 +3146,7 @@ class TestBaslerCameraBackendROIOperations:
 
 
 class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
-    """Test white balance and pixel format error handling scenarios."""
-
-    @pytest.mark.asyncio
-    async def test_config_import_pixel_format_setting_failure(self, mock_pypylon, tmp_path):
-        """Test pixel format setting failure during config import."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        # Create camera instance with existing mock device name
-        camera = BaslerCameraBackend("12345670")
-        await camera.initialize()
-
-        # Create config file with pixel format
-        config_path = tmp_path / "test_config.json"
-        config_data = {"pixel_format": "BGR8", "exposure_time": 20000.0}
-        with open(config_path, "w") as f:
-            json.dump(config_data, f)
-
-        # Mock the _run_blocking method to raise exception for pixel format setting
-        original_run_blocking = camera._run_blocking
-
-        async def mock_run_blocking(func, *args, **kwargs):
-            if func == camera.camera.PixelFormat.SetValue:
-                raise Exception("Pixel format not supported")
-            return await original_run_blocking(func, *args, **kwargs)
-
-        camera._run_blocking = mock_run_blocking
-
-        # Import should succeed despite pixel format failure (no exception)
-        await camera.import_config(str(config_path))
-
-        # Verify warning was logged
-        # Note: We can't easily verify logging in unit tests, but the code path is covered
-
-    @pytest.mark.asyncio
-    async def test_config_import_white_balance_setting_failure(self, mock_pypylon, tmp_path):
-        """Test white balance setting failure during config import."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        # Create camera instance with existing mock device name
-        camera = BaslerCameraBackend("12345670")
-        await camera.initialize()
-
-        # Create config file with white balance
-        config_path = tmp_path / "test_config.json"
-        config_data = {"white_balance": "once", "exposure_time": 20000.0}
-        with open(config_path, "w") as f:
-            json.dump(config_data, f)
-
-        # Mock the _run_blocking method to raise exception for white balance setting
-        original_run_blocking = camera._run_blocking
-
-        async def mock_run_blocking(func, *args, **kwargs):
-            if func == camera.camera.BalanceWhiteAuto.SetValue:
-                raise Exception("White balance not supported")
-            return await original_run_blocking(func, *args, **kwargs)
-
-        camera._run_blocking = mock_run_blocking
-
-        # Import should succeed despite white balance failure (no exception)
-        await camera.import_config(str(config_path))
-
-        # Verify warning was logged
-
-    @pytest.mark.asyncio
-    async def test_config_export_white_balance_retrieval_failure(self, mock_pypylon, tmp_path):
-        """Test white balance retrieval failure during config export."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        # Create camera instance with existing mock device name
-        camera = BaslerCameraBackend("12345670")
-        await camera.initialize()
-
-        # Mock the _run_blocking method to raise exception for white balance retrieval
-        original_run_blocking = camera._run_blocking
-
-        async def mock_run_blocking(func, *args, **kwargs):
-            if func == camera.camera.BalanceWhiteAuto.GetValue:
-                raise Exception("White balance retrieval failed")
-            return await original_run_blocking(func, *args, **kwargs)
-
-        camera._run_blocking = mock_run_blocking
-
-        # Export should succeed despite white balance failure
-        config_path = tmp_path / "export_config.json"
-        await camera.export_config(str(config_path))
-
-        # Verify warning was logged
-
-        # Verify config file was created with default white balance
-        with open(config_path, "r") as f:
-            exported_config = json.load(f)
-        assert exported_config["white_balance"] == "off"  # Default value
-
-    @pytest.mark.asyncio
-    async def test_config_export_pixel_format_retrieval_failure(self, mock_pypylon, tmp_path):
-        """Test pixel format retrieval failure during config export."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        # Create camera instance with existing mock device name
-        camera = BaslerCameraBackend("12345670")
-        await camera.initialize()
-
-        # Mock the _run_blocking method to raise exception for pixel format retrieval
-        original_run_blocking = camera._run_blocking
-
-        async def mock_run_blocking(func, *args, **kwargs):
-            if func == camera.camera.PixelFormat.GetValue:
-                raise Exception("Pixel format retrieval failed")
-            return await original_run_blocking(func, *args, **kwargs)
-
-        camera._run_blocking = mock_run_blocking
-
-        # Export should succeed despite pixel format failure
-        config_path = tmp_path / "export_config.json"
-        await camera.export_config(str(config_path))
-
-        # Verify warning was logged
-
-        # Verify config file was created with default pixel format
-        with open(config_path, "r") as f:
-            exported_config = json.load(f)
-        assert exported_config["pixel_format"] == "BayerRG8"  # Default value
+    """Test white balance and pixel format error handling paths."""
 
     @pytest.mark.asyncio
     async def test_get_wb_feature_not_available(self, mock_pypylon):
@@ -4430,179 +3517,6 @@ class TestBaslerCameraBackendSpecificLineCoverage:
 
         # After all retries exhausted with grab failures, raises CameraCaptureError
         assert "Grab failed" in str(exc_info.value)
-
-    @pytest.mark.asyncio
-    async def test_import_config_camera_none(self, mock_pypylon, tmp_path):
-        """Test import config when camera is None."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-        from mindtrace.hardware.core.exceptions import CameraConnectionError
-
-        # Create camera instance but set camera to None
-        camera = BaslerCameraBackend("12345670")
-        camera.camera = None  # Simulate uninitialized state
-
-        # Create config file
-        config_path = tmp_path / "test_config.json"
-        config_data = {"exposure_time": 20000.0}
-        with open(config_path, "w") as f:
-            json.dump(config_data, f)
-
-        # This should trigger the camera None check in import_config
-        with pytest.raises(CameraConnectionError) as exc_info:
-            await camera.import_config(str(config_path))
-
-        assert "not initialized" in str(exc_info.value)
-
-    @pytest.mark.asyncio
-    async def test_export_config_camera_not_initialized(self, mock_pypylon, tmp_path):
-        """Test export config when camera is not initialized."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-        from mindtrace.hardware.core.exceptions import CameraConnectionError
-
-        # Create camera instance but don't initialize it
-        camera = BaslerCameraBackend("12345670")
-
-        # Create export path
-        config_path = tmp_path / "export_config.json"
-
-        # This should trigger the camera not initialized check in export_config
-        with pytest.raises(CameraConnectionError) as exc_info:
-            await camera.export_config(str(config_path))
-
-        assert "not initialized" in str(exc_info.value)
-
-
-class TestBaslerCameraBackendRemainingLineCoverage:
-    """Test remaining uncovered lines in configuration error handling."""
-
-    @pytest.mark.asyncio
-    async def test_import_config_gain_setting_exception(self, mock_pypylon, tmp_path):
-        """Test gain setting exception handling during config import."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        # Create camera instance with existing mock device name
-        camera = BaslerCameraBackend("12345670")
-        await camera.initialize()
-
-        # Create config file with gain setting
-        config_path = tmp_path / "test_config.json"
-        config_data = {"gain": 2.5, "exposure_time": 20000.0}
-        with open(config_path, "w") as f:
-            json.dump(config_data, f)
-
-        # Mock the _run_blocking method to raise exception for gain setting
-        original_run_blocking = camera._run_blocking
-
-        async def mock_run_blocking(func, *args, **kwargs):
-            if func == camera.camera.Gain.SetValue:
-                raise Exception("Gain setting failed")
-            return await original_run_blocking(func, *args, **kwargs)
-
-        camera._run_blocking = mock_run_blocking
-
-        # Import should succeed despite gain setting failure (warning logged)
-        await camera.import_config(str(config_path))
-
-        # Restore original method
-        camera._run_blocking = original_run_blocking
-
-    @pytest.mark.asyncio
-    async def test_import_config_trigger_source_setting(self, mock_pypylon, tmp_path):
-        """Test trigger source setting during config import."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        # Create camera instance with existing mock device name
-        camera = BaslerCameraBackend("12345670")
-        await camera.initialize()
-
-        # The mock camera already has TriggerSource property, so hasattr() will return True
-
-        # Create config file with trigger mode setting
-        config_path = tmp_path / "test_config.json"
-        config_data = {"trigger_mode": "trigger", "exposure_time": 20000.0}
-        with open(config_path, "w") as f:
-            json.dump(config_data, f)
-
-        # Import should succeed and trigger source should be set
-        await camera.import_config(str(config_path))
-
-        # Verify that the trigger source setting was attempted
-
-    @pytest.mark.asyncio
-    async def test_import_config_white_balance_off_setting(self, mock_pypylon, tmp_path):
-        """Test white balance 'off' setting during config import."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        # Create camera instance with existing mock device name
-        camera = BaslerCameraBackend("12345670")
-        await camera.initialize()
-
-        # Create config file with white balance off setting
-        config_path = tmp_path / "test_config.json"
-        config_data = {"white_balance": "off", "exposure_time": 20000.0}
-        with open(config_path, "w") as f:
-            json.dump(config_data, f)
-
-        # Import should succeed and white balance should be set to off
-        await camera.import_config(str(config_path))
-
-    @pytest.mark.asyncio
-    async def test_import_config_white_balance_continuous_setting(self, mock_pypylon, tmp_path):
-        """Test white balance 'continuous' setting during config import."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        # Create camera instance with existing mock device name
-        camera = BaslerCameraBackend("12345670")
-        await camera.initialize()
-
-        # Create config file with white balance continuous setting
-        config_path = tmp_path / "test_config.json"
-        config_data = {"white_balance": "continuous", "exposure_time": 20000.0}
-        with open(config_path, "w") as f:
-            json.dump(config_data, f)
-
-        # Import should succeed and white balance should be set to continuous
-        await camera.import_config(str(config_path))
-
-    @pytest.mark.asyncio
-    async def test_export_config_directory_creation_failure(self, mock_pypylon, tmp_path, monkeypatch):
-        """Test export config when directory creation fails."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-        from mindtrace.hardware.core.exceptions import CameraConfigurationError
-
-        # Unpack the mock tuple
-        mock_pylon, mock_genicam = mock_pypylon
-
-        # Create camera instance with existing mock device name
-        camera = BaslerCameraBackend("12345670")
-        await camera.initialize()
-
-        # Mock os.makedirs to raise an exception
-        def mock_makedirs(*args, **kwargs):
-            raise PermissionError("Permission denied to create directory")
-
-        monkeypatch.setattr("os.makedirs", mock_makedirs)
-
-        # Create export path that would require directory creation
-        config_path = tmp_path / "nonexistent" / "subdirectory" / "export_config.json"
-
-        # Export should raise CameraConfigurationError due to directory creation failure
-        with pytest.raises(CameraConfigurationError) as exc_info:
-            await camera.export_config(str(config_path))
-
-        assert "Permission denied" in str(exc_info.value)
 
 
 # --- Liquid Lens / Focus Control Mocks & Fixtures ---
@@ -5034,6 +3948,23 @@ class TestBaslerCameraBackendFocusConfig:
         await basler_camera_with_lens.initialize()
         # Should not raise
         await basler_camera_with_lens.set_focus_config(nonexistent_param=42)
+
+    @pytest.mark.asyncio
+    async def test_set_focus_config_records_applied_keys_before_failure(self, basler_camera_with_lens):
+        """Keys that applied before a later failure are stored on the exception."""
+        await basler_camera_with_lens.initialize()
+
+        def failing_set(_value):
+            raise RuntimeError("stepper rejected")
+
+        basler_camera_with_lens.camera.FocusStepper.SetValue = failing_set
+
+        with pytest.raises(CameraConfigurationError, match="stepper") as exc_info:
+            await basler_camera_with_lens.set_focus_config(accuracy="Accurate", stepper=0.2)
+
+        assert exc_info.value.details["applied"] == {"accuracy": "Accurate"}
+        config = await basler_camera_with_lens.get_focus_config()
+        assert config["accuracy"] == "Accurate"
 
     @pytest.mark.asyncio
     async def test_set_focus_config_no_lens_raises(self, basler_camera_no_lens):

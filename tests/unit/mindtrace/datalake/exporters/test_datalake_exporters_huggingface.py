@@ -92,6 +92,93 @@ def test_huggingface_export_raises_helpful_error_when_dependency_missing(monkeyp
         )
 
 
+@pytest.mark.parametrize(
+    ("path_options", "option_name", "option_value", "path_from_metadata"),
+    [
+        (
+            {"task": "classification", "classification_source": "bbox_crops"},
+            "annotation_attributes",
+            {"field": "target"},
+            False,
+        ),
+        ({"task": "classification", "classification_type": "multi_label"}, "class_names", ["healthy"], False),
+        ({"task": "detection"}, "classification_class_names", ["healthy"], False),
+        ({"task": "semantic_segmentation"}, "metadata_keys", {"subject_id": "string"}, False),
+        ({"task": "instance_segmentation"}, "metadata_keys", {"subject_id": "string"}, False),
+        ({}, "class_names", ["healthy"], False),
+        ({"task": "object_detection"}, "metadata_keys", {"subject_id": "string"}, False),
+        (
+            {"task": "classification", "classification_source": "bbox_crops"},
+            "metadata_keys",
+            {"subject_id": "string"},
+            True,
+        ),
+        ({"task": "detection"}, "metadata_keys", {}, False),
+        ({"task": "detection"}, "metadata_keys", None, False),
+    ],
+)
+def test_huggingface_export_rejects_unsupported_options_before_preparing_destination(
+    tmp_path: Path, monkeypatch, path_options, option_name, option_value, path_from_metadata
+):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+
+    monkeypatch.setattr(huggingface_exporter.importlib, "import_module", lambda name: _fake_datasets_module())
+    prepare = Mock()
+    monkeypatch.setattr(huggingface_exporter, "prepare_export_destination", prepare)
+    metadata = {}
+    options = dict(path_options)
+    if path_from_metadata:
+        metadata = dict(options)
+        if "task" in metadata:
+            metadata["task_type"] = metadata.pop("task")
+        options = {}
+    options[option_name] = option_value
+
+    with pytest.raises(ValueError) as error:
+        export_dataset_as_huggingface(
+            ExportableDataset(name="unsupported", metadata=metadata),
+            destination=tmp_path / "hf",
+            overwrite=True,
+            options=options,
+        )
+
+    assert option_name in str(error.value)
+    assert "require task='classification'" in str(error.value)
+    assert "classification_type='single_label'" in str(error.value)
+    assert "classification_source='annotations'" in str(error.value)
+    prepare.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "invalid_options",
+    [
+        {"annotation_attributes": ["target"]},
+        {"metadata_keys": {"subject_id": "str"}},
+        {"class_names": "healthy"},
+        {"class_names": ["healthy", "healthy"]},
+        {"metadata_keys": {"asset_id": "string"}},
+    ],
+)
+def test_invalid_classification_options_preserve_existing_export(tmp_path, monkeypatch, invalid_options):
+    from mindtrace.datalake.exporters import huggingface as huggingface_exporter
+
+    monkeypatch.setattr(huggingface_exporter.importlib, "import_module", lambda name: _fake_datasets_module())
+    destination = tmp_path / "existing-export"
+    destination.mkdir()
+    artifact = destination / "dataset.arrow"
+    original = b"previous export must survive invalid configuration"
+    artifact.write_bytes(original)
+    dataset = ExportableDataset(
+        name="classification", metadata={"task_type": "classification", "class_names": ["healthy"]}
+    )
+
+    with pytest.raises(ValueError):
+        export_dataset_as_huggingface(dataset, destination=destination, overwrite=True, options=invalid_options)
+
+    assert artifact.read_bytes() == original
+    assert sorted(path.name for path in destination.iterdir()) == ["dataset.arrow"]
+
+
 def test_huggingface_export_writes_media_for_default_split(tmp_path: Path, monkeypatch):
     from mindtrace.datalake.exporters import huggingface as huggingface_exporter
 
@@ -115,7 +202,8 @@ def test_huggingface_export_writes_media_for_default_split(tmp_path: Path, monke
     assert payload[0]["image_path"] == "media/default/asset_img.png"
 
 
-def test_huggingface_classification_export_writes_typed_split_dataset(tmp_path: Path, monkeypatch):
+@pytest.mark.parametrize("options", [None, {}, {"annotation_attributes": {}, "metadata_keys": {}}])
+def test_huggingface_classification_export_writes_typed_split_dataset(tmp_path: Path, monkeypatch, options):
     from mindtrace.datalake.exporters import huggingface as huggingface_exporter
     from mindtrace.datalake.types import AnnotationRecord
 
@@ -149,10 +237,16 @@ def test_huggingface_classification_export_writes_typed_split_dataset(tmp_path: 
         ],
     )
 
-    result = export_dataset_as_huggingface(dataset, destination=tmp_path / "flowers-hf")
+    result = export_dataset_as_huggingface(dataset, destination=tmp_path / "flowers-hf", options=options)
     payload = json.loads((tmp_path / "flowers-hf" / "dataset_dict.json").read_text())
 
-    assert result.files_written == ["."]
+    assert result.files_written == ["mindtrace_metadata.json", "."]
+    assert json.loads((tmp_path / "flowers-hf" / "mindtrace_metadata.json").read_text()) == {
+        "schema_version": 2,
+        "profile": "classification",
+        "annotation_attributes": {},
+        "metadata_keys": {},
+    }
     assert payload["train"][0]["asset_id"] == "asset_img"
     assert payload["train"][0]["label"] == 1
     assert payload["train"][0]["label_name"] == "hard-leaved pocket orchid"
@@ -278,11 +372,10 @@ def test_huggingface_classification_export_selects_idless_annotation_and_metadat
     assert payload["train"][0]["source_annotation_id"] == "defect-type"
     assert payload["train"][0]["subject_id"] == "subject-1"
     assert payload["train"][0]["group_id"] == "group-1"
-    assert artifact_metadata["mindtrace"] == {
-        "task": "classification",
+    assert artifact_metadata == {
+        "schema_version": 2,
+        "profile": "classification",
         "annotation_attributes": {"field": "defect_type"},
-        "class_names": ["healthy", "defective"],
-        "label_to_id": {"healthy": 0, "defective": 1},
         "metadata_keys": {"subject_id": "string", "group_id": "string"},
     }
 
@@ -446,7 +539,8 @@ def test_huggingface_multi_label_classification_export_writes_multi_hot_targets(
     assert payload["train"][0]["label_names"] == ["aeroplane", "bird"]
 
 
-def test_huggingface_bbox_crop_classification_export_preserves_lineage(tmp_path: Path, monkeypatch):
+@pytest.mark.parametrize("background", [[], ["background"]])
+def test_huggingface_bbox_crop_classification_export_preserves_lineage(tmp_path: Path, monkeypatch, background):
     from mindtrace.datalake.exporters import huggingface as huggingface_exporter
     from mindtrace.datalake.types import AnnotationRecord
 
@@ -469,7 +563,7 @@ def test_huggingface_bbox_crop_classification_export_preserves_lineage(tmp_path:
         metadata={
             "classification_type": "single_label",
             "classification_source": "bbox_crops",
-            "detection_class_names": ["aeroplane", "bicycle"],
+            "detection_class_names": [*background, "aeroplane", "bicycle"],
         },
         items=[
             ExportableItem(
@@ -521,7 +615,11 @@ def test_huggingface_bbox_crop_classification_export_preserves_lineage(tmp_path:
     assert second_row["image"]["path"] == "asset_img-detection_2.jpg"
 
 
-def test_huggingface_detection_export_writes_typed_objects_and_remaps_labels(tmp_path: Path, monkeypatch):
+@pytest.mark.parametrize("background", [[], ["background"]])
+@pytest.mark.parametrize(("label", "label_id"), [("aeroplane", 1), ("bicycle", 2)])
+def test_huggingface_detection_export_writes_typed_objects_and_remaps_labels(
+    tmp_path: Path, monkeypatch, background, label, label_id
+):
     from mindtrace.datalake.exporters import huggingface as huggingface_exporter
     from mindtrace.datalake.types import AnnotationRecord
 
@@ -534,7 +632,7 @@ def test_huggingface_detection_export_writes_typed_objects_and_remaps_labels(tmp
         name="pascal-voc",
         metadata={
             "task_types": ["classification", "detection", "semantic_segmentation"],
-            "detection_class_names": ["aeroplane", "bicycle"],
+            "detection_class_names": [*background, "aeroplane", "bicycle"],
         },
         items=[
             ExportableItem(
@@ -546,8 +644,8 @@ def test_huggingface_detection_export_writes_typed_objects_and_remaps_labels(tmp
                     AnnotationRecord(
                         annotation_id="detection_1",
                         kind="bbox",
-                        label="bicycle",
-                        label_id=2,
+                        label=label,
+                        label_id=label_id,
                         geometry={"type": "bbox", "x": 10, "y": 20, "width": 30, "height": 40},
                         attributes={"difficult": 1, "truncated": 0},
                         source={"type": "human", "name": "pascal-voc"},
@@ -570,13 +668,46 @@ def test_huggingface_detection_export_writes_typed_objects_and_remaps_labels(tmp
     assert payload["train"][0]["objects"] == {
         "area": [1200.0],
         "bbox": [[10.0, 20.0, 30.0, 40.0]],
-        "category": [1],
-        "category_name": ["bicycle"],
+        "category": [label_id],
+        "category_name": [label],
         "difficult": [True],
         "id": ["detection_1"],
         "occluded": [False],
         "truncated": [False],
     }
+
+
+def test_detection_class_names_inferred_from_annotations_reserve_background():
+    from mindtrace.datalake.exporters.huggingface import _detection_class_names
+    from mindtrace.datalake.types import AnnotationRecord
+
+    dataset = ExportableDataset(
+        name="inferred-classes",
+        items=[
+            ExportableItem(
+                assets={"image": sample_asset()},
+                primary_role="image",
+                annotations=[
+                    AnnotationRecord(
+                        annotation_id="bbox-1",
+                        kind="bbox",
+                        label="aeroplane",
+                        geometry={"type": "bbox", "x": 0, "y": 0, "width": 1, "height": 1},
+                        source={"type": "human", "name": "pytest"},
+                    )
+                ],
+            )
+        ],
+    )
+    assert _detection_class_names(dataset) == ["background", "aeroplane"]
+
+
+@pytest.mark.parametrize("names", [["person", "background"], ["background", "person", "person"]])
+def test_object_class_names_reject_ambiguous_mappings(names):
+    from mindtrace.datalake.exporters.huggingface import _object_class_names
+
+    with pytest.raises(ValueError):
+        _object_class_names(names)
 
 
 def test_huggingface_detection_export_rejects_degenerate_boxes(tmp_path: Path, monkeypatch):
@@ -674,18 +805,17 @@ def test_huggingface_semantic_segmentation_export_writes_typed_image_and_mask(tm
     assert "background_id" not in payload["train"][0]
     assert "ignore_index" not in payload["train"][0]
     assert metadata == {
-        "schema_version": 1,
-        "mindtrace": {
-            "profile": "semantic_segmentation",
-            "class_names": ["background", "person"],
-            "background_id": 0,
-            "ignore_index": 255,
-        },
+        "schema_version": 2,
+        "profile": "semantic_segmentation",
+        "class_names": ["background", "person"],
+        "background_id": 0,
+        "ignore_index": 255,
     }
 
 
 @pytest.mark.parametrize("task", ["segmentation", "instance_segmentation"])
-def test_huggingface_instance_segmentation_export_writes_typed_objects(tmp_path: Path, monkeypatch, task):
+@pytest.mark.parametrize("background", [[], ["background"]])
+def test_huggingface_instance_segmentation_export_writes_typed_objects(tmp_path: Path, monkeypatch, task, background):
     from mindtrace.datalake.exporters import huggingface as huggingface_exporter
     from mindtrace.datalake.types import AnnotationRecord
 
@@ -702,7 +832,7 @@ def test_huggingface_instance_segmentation_export_writes_typed_objects(tmp_path:
         name="penn-fudan",
         metadata={
             "task_type": "instance_segmentation",
-            "instance_segmentation_class_names": ["background", "person"],
+            "instance_segmentation_class_names": [*background, "person"],
         },
         items=[
             ExportableItem(
@@ -754,25 +884,20 @@ def test_huggingface_instance_segmentation_export_writes_typed_objects(tmp_path:
     ]
 
 
-def test_huggingface_export_consumes_rows_through_streaming_constructor(tmp_path: Path, monkeypatch):
+def test_huggingface_export_uses_in_memory_constructor(tmp_path: Path, monkeypatch):
     from mindtrace.datalake.exporters import huggingface as huggingface_exporter
     from mindtrace.datalake.types import AnnotationRecord
 
-    class _StreamingOnlyDataset(_FakeDataset):
-        @classmethod
-        def from_list(cls, rows, features=None):
-            raise AssertionError("export must not materialize all rows before Arrow construction")
-
+    class _InMemoryOnlyDataset(_FakeDataset):
         @classmethod
         def from_generator(cls, generator, features=None):
-            rows = generator() if callable(generator) else generator
-            return cls(list(rows), features=features)
+            raise AssertionError("in-memory exports must not create a persistent generator cache")
 
     fake_module = _fake_datasets_module()
-    fake_module.Dataset = _StreamingOnlyDataset
+    fake_module.Dataset = _InMemoryOnlyDataset
     monkeypatch.setattr(huggingface_exporter.importlib, "import_module", lambda name: fake_module)
     dataset = ExportableDataset(
-        name="streamed-classification",
+        name="in-memory-classification",
         metadata={"classification_class_names": ["healthy"]},
         items=[
             ExportableItem(
@@ -794,12 +919,12 @@ def test_huggingface_export_consumes_rows_through_streaming_constructor(tmp_path
 
     result = export_dataset_as_huggingface(
         dataset,
-        destination=tmp_path / "streamed-hf",
+        destination=tmp_path / "in-memory-hf",
         options={"task": "classification"},
     )
 
     assert result.asset_count == 1
-    assert (tmp_path / "streamed-hf" / "dataset.json").exists()
+    assert (tmp_path / "in-memory-hf" / "dataset.json").exists()
 
 
 def test_huggingface_detection_export_traverses_items_once_for_rows_and_counts(tmp_path: Path, monkeypatch):

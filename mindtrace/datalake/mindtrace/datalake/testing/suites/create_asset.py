@@ -32,7 +32,7 @@ class DatalakeCreateAssetFromObjectInput(BaseModel):
 
 
 class DatalakeCreateAssetFromObjectResources(BaseModel):
-    mongo_uri: str = Field("mongodb://127.0.0.1:27017", description="MongoDB URI for local backend.")
+    mongo_uri: str = Field("mongodb://127.0.0.1:27018", description="MongoDB URI for local backend.")
     mongo_db_name: str | None = Field(None, description="Optional Mongo database name for this run.")
     REMOTE_MONGO_DB_URI: str | None = Field(
         None,
@@ -46,7 +46,7 @@ class DatalakeCreateAssetFromObjectResources(BaseModel):
         json_schema_extra={"secret": True},
     )
     mongo_atlas_db_name: str | None = Field(None, description="Alias for REMOTE_MONGO_DB_NAME.")
-    minio_endpoint: str = Field("localhost:9100", description="S3-compatible endpoint for minio backend.")
+    minio_endpoint: str = Field("localhost:19000", description="S3-compatible endpoint for minio backend.")
     minio_access_key: str = Field(
         "minioadmin",
         description="Access key for minio backend.",
@@ -91,7 +91,7 @@ class DatalakeCreateAssetFromObjectSuite(BenchTestSuite):
                 "mongo_backend": "local",
                 "payload_size": "64KiB",
                 "concurrency": 1,
-                "resources": {"mongo_uri": "mongodb://127.0.0.1:27017"},
+                "resources": {"mongo_uri": "mongodb://127.0.0.1:27018"},
             },
         },
     )

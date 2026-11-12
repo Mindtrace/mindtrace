@@ -29,7 +29,7 @@ class DatabaseMongoCrudInput(BaseModel):
 
 
 class DatabaseMongoResources(BaseModel):
-    mongo_uri: str = Field("mongodb://127.0.0.1:27017", description="MongoDB URI for local backend.")
+    mongo_uri: str = Field("mongodb://127.0.0.1:27018", description="MongoDB URI for local backend.")
     mongo_db_name: str | None = Field(None, description="Optional Mongo database name for this run.")
     REMOTE_MONGO_DB_URI: str | None = Field(None, description="Atlas Mongo URI.", json_schema_extra={"secret": True})
     REMOTE_MONGO_DB_NAME: str | None = Field(None, description="Atlas Mongo database name.")
@@ -52,7 +52,7 @@ class DatabaseMongoCrudSmokeSuite(BenchTestSuite):
             "smoke": {
                 "duration_seconds": 2.0,
                 "mongo_backend": "local",
-                "resources": {"mongo_uri": "mongodb://127.0.0.1:27017"},
+                "resources": {"mongo_uri": "mongodb://127.0.0.1:27018"},
             },
         },
     )

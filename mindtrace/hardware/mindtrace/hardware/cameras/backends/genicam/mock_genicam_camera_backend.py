@@ -1,7 +1,6 @@
 """Mock GenICam Camera Backend Module"""
 
 import asyncio
-import json
 import os
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -70,10 +69,11 @@ class MockGenICamCameraBackend(CameraBackend):
         simulate_timeout: Whether to simulate timeout errors
     """
 
+    nested_merge_config_keys = frozenset({"genicam_nodes", "focus_config"})
+
     def __init__(
         self,
         camera_name: str,
-        camera_config: Optional[str] = None,
         img_quality_enhancement: Optional[bool] = None,
         retrieve_retry_count: Optional[int] = None,
         **backend_kwargs,
@@ -82,7 +82,6 @@ class MockGenICamCameraBackend(CameraBackend):
 
         Args:
             camera_name: Camera identifier
-            camera_config: Path to configuration file (simulated)
             img_quality_enhancement: Enable image enhancement simulation (uses config default if None)
             retrieve_retry_count: Number of capture retry attempts (uses config default if None)
             **backend_kwargs: Backend-specific parameters:
@@ -104,7 +103,7 @@ class MockGenICamCameraBackend(CameraBackend):
             CameraConfigurationError: If configuration is invalid
             CameraInitializationError: If initialization fails (when simulated)
         """
-        super().__init__(camera_name, camera_config, img_quality_enhancement, retrieve_retry_count)
+        super().__init__(camera_name, img_quality_enhancement, retrieve_retry_count)
 
         # Get backend-specific configuration with fallbacks
         self.vendor = backend_kwargs.get("vendor", "KEYENCE")
@@ -125,7 +124,6 @@ class MockGenICamCameraBackend(CameraBackend):
             raise CameraConfigurationError("Timeout must be at least 100ms")
 
         # Store configuration
-        self.camera_config_path = camera_config
         self.timeout_ms = timeout_ms
         self.buffer_count = buffer_count
 
@@ -284,10 +282,6 @@ class MockGenICamCameraBackend(CameraBackend):
 
         # Simulate initialization work
         await asyncio.sleep(0.2)
-
-        # Load config if provided
-        if self.camera_config_path and os.path.exists(self.camera_config_path):
-            await self.import_config(self.camera_config_path)
 
         self.initialized = True
 
@@ -629,83 +623,3 @@ class MockGenICamCameraBackend(CameraBackend):
         """
         await asyncio.sleep(0.001)  # Simulate operation delay
         return self.timeout_ms
-
-    async def import_config(self, config_path: str) -> Tuple[int, int]:
-        """Import simulated camera configuration from JSON file."""
-        if not os.path.exists(config_path):
-            raise CameraConfigurationError(f"Configuration file not found: {config_path}")
-
-        try:
-            with open(config_path, "r") as f:
-                config_data = json.load(f)
-
-            applied = 0
-            total = 0
-
-            if "exposure_time" in config_data:
-                total += 1
-                await self.set_exposure(config_data["exposure_time"])
-                applied += 1
-
-            if "gain" in config_data:
-                total += 1
-                await self.set_gain(config_data["gain"])
-                applied += 1
-
-            if "trigger_mode" in config_data:
-                total += 1
-                await self.set_triggermode(config_data["trigger_mode"])
-                applied += 1
-
-            if "roi" in config_data:
-                total += 1
-                roi = config_data["roi"]
-                await self.set_ROI(
-                    roi.get("x", 0),
-                    roi.get("y", 0),
-                    roi.get("width", self.synthetic_width),
-                    roi.get("height", self.synthetic_height),
-                )
-                applied += 1
-
-            if "image_enhancement" in config_data:
-                total += 1
-                self.img_quality_enhancement = config_data["image_enhancement"]
-                applied += 1
-
-            self.logger.debug(f"Mock configuration imported from '{config_path}'")
-            return applied, total
-
-        except Exception as e:
-            raise CameraConfigurationError(f"Failed to import configuration: {str(e)}")
-
-    async def export_config(self, config_path: str):
-        """Export current simulated camera configuration to JSON file."""
-        if not self.initialized:
-            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
-
-        try:
-            os.makedirs(os.path.dirname(os.path.abspath(config_path)), exist_ok=True)
-
-            config_data = {
-                "camera_type": "mock_genicam",
-                "camera_name": self.camera_name,
-                "vendor": self.vendor,
-                "model": self.model,
-                "serial_number": self.serial_number,
-                "timestamp": time.time(),
-                "exposure_time": self.exposure_time,
-                "gain": self.gain,
-                "trigger_mode": self.triggermode,
-                "roi": self.roi.copy(),
-                "pixel_format": self.pixel_format,
-                "image_enhancement": self.img_quality_enhancement,
-            }
-
-            with open(config_path, "w") as f:
-                json.dump(config_data, f, indent=2)
-
-            self.logger.debug(f"Mock configuration exported to '{config_path}'")
-
-        except Exception as e:
-            raise CameraConfigurationError(f"Failed to export configuration: {str(e)}")
