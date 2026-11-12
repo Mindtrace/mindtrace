@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import mimetypes
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,7 @@ from mindtrace.datalake.replication_types import (
     ReplicationStatusResult,
 )
 from mindtrace.datalake.types import AnnotationRecord, AnnotationSchema, AnnotationSet, Asset, Datum, StorageRef
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 
 
 def _apply_mount_map_to_storage_ref(storage_ref: StorageRef, mount_map: dict[str, str]) -> StorageRef:
@@ -380,7 +382,8 @@ class ReplicationManager:
         payload_ref = _asset_payload_storage_ref(source_asset)
         key = self.source.store.build_key(payload_ref.mount, payload_ref.name, payload_ref.version)
         version = payload_ref.version if payload_ref.version is not None else "latest"
-        self.source.store.delete(key, version=version)
+        with suppress(RegistryObjectNotFound):
+            self.source.store.delete(key, version=version)
         source_asset.payload_status = "missing"
         source_asset.payload_status_updated_at = utcnow()
         source_asset.payload_status_reason = "local payload deleted"

@@ -8,6 +8,7 @@ import os
 import warnings
 from collections.abc import AsyncIterator, Iterable
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import suppress
 from datetime import datetime, timedelta
 from enum import StrEnum
 from functools import partial
@@ -1104,11 +1105,15 @@ class AsyncDatalake(Mindtrace):
         return StorageRef(mount=target_mount, name=target_name, version=saved_version)
 
     async def delete_object(self, storage_ref: StorageRef) -> None:
-        """Best-effort delete of a stored object by :class:`StorageRef` (matches ``put_object`` coordinates)."""
+        """Delete a stored object, treating an already-absent payload as success.
+
+        Uses the same coordinates as ``put_object``. Other deletion errors propagate.
+        """
 
         storage_ref = self._normalize_storage_ref(storage_ref)
         key = self.store.build_key(storage_ref.mount, storage_ref.name, storage_ref.version)
-        self.store.delete(key, None)
+        with suppress(RegistryObjectNotFound):
+            self.store.delete(key, None)
 
     async def create_object_upload_session(
         self,
