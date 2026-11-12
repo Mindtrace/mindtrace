@@ -829,6 +829,26 @@ def _export_instance_segmentation_dataset(
     )
 
 
+async def _run_staging_io(function: Callable[..., Any], *args: Any) -> Any:
+    """Finish an owned filesystem operation before allowing cancellation cleanup."""
+    worker = asyncio.create_task(asyncio.to_thread(function, *args))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        # Cancelling the await cannot stop an already-running thread. Drain it
+        # before propagating cancellation, including repeated cancel requests.
+        while not worker.done():
+            try:
+                await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                break
+        if not worker.cancelled():
+            worker.exception()  # Retrieve any write failure; cancellation wins.
+        raise
+
+
 def _append_staged_rows(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as stream:
@@ -953,7 +973,7 @@ async def export_dataset_version_as_huggingface_streaming(
                 payload = await _load_asset_payload_async(object_loader, item.asset)
                 suffix = Path(item.source_filename).suffix or ".bin"
                 staged_image = staged_media_path / f"{ordinal:012d}{suffix}"
-                await asyncio.to_thread(staged_image.write_bytes, payload)
+                await _run_staging_io(staged_image.write_bytes, payload)
 
         exported_row = _single_label_classification_row(
             item,
@@ -979,7 +999,9 @@ async def export_dataset_version_as_huggingface_streaming(
                 expand=DatasetViewExpand(assets=True, annotation_sets=True, annotation_records=True),
                 include_total=False,
             )
-            staged = await asyncio.gather(*(stage_row(row, completed + index) for index, row in enumerate(page.items)))
+            async with asyncio.TaskGroup() as group:
+                tasks = [group.create_task(stage_row(row, completed + index)) for index, row in enumerate(page.items)]
+            staged = [task.result() for task in tasks]
             rows_by_split: dict[str, list[dict[str, Any]]] = defaultdict(list)
             for staged_row, item_warnings in staged:
                 warnings.extend(item_warnings)
@@ -994,7 +1016,7 @@ async def export_dataset_version_as_huggingface_streaming(
                     split_name,
                     staged_manifests_path / f"split-{len(split_manifests):04d}.jsonl",
                 )
-                await asyncio.to_thread(_append_staged_rows, manifest_path, rows)
+                await _run_staging_io(_append_staged_rows, manifest_path, rows)
                 split_counts[split_name] += len(rows)
 
             completed += len(page.items)

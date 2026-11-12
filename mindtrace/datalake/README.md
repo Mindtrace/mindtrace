@@ -465,6 +465,8 @@ datalake.export_dataset_version_to_format(
 ```
 
 Other task profiles continue to use the existing in-memory export path and reject `streaming=True` explicitly.
+A staging failure cancels pending rows and waits for active staging writes before removing temporary files.
+Concurrent row failures are reported in an `ExceptionGroup`; cancellation propagates after cleanup.
 
 #### Build all associated Datasets and DataLoaders
 

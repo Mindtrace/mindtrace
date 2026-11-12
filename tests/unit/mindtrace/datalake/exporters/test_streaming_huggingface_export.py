@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -206,7 +207,7 @@ async def test_streaming_classification_export_cleans_temporary_output_after_fai
     row = _view_row(1, split="train", label="healthy", label_id=0)
     dataset_version = DatasetVersion(dataset_name="dataset-a", version="1.0.0", manifest=[row.datum_id])
 
-    with pytest.raises(RuntimeError, match="payload failed"):
+    with pytest.raises(ExceptionGroup) as failure:
         await export_dataset_version_as_huggingface_streaming(
             _PagedLoader([row], fail_payload=True),
             dataset_version,
@@ -214,6 +215,9 @@ async def test_streaming_classification_export_cleans_temporary_output_after_fai
             options={"task": "classification", "class_names": ["healthy"]},
         )
 
+    assert len(failure.value.exceptions) == 1
+    assert isinstance(failure.value.exceptions[0], RuntimeError)
+    assert str(failure.value.exceptions[0]) == "payload failed"
     assert not (tmp_path / "export").exists()
     assert not list(tmp_path.glob(".export.streaming-*"))
 
@@ -263,3 +267,147 @@ async def test_streaming_export_removes_owned_cache_when_finalization_fails(tmp_
     assert not cache_paths[0].exists()
     assert not list(tmp_path.glob(".export.streaming-*"))
     assert (destination / "existing").read_bytes() == b"keep"
+
+
+class _SinglePageLoader(_PagedLoader):
+    async def view_dataset_version_page(self, _name, _version, **kwargs):
+        return DatasetViewPage(
+            items=self.rows,
+            page=PageInfo(limit=kwargs["limit"], next_cursor=None, has_more=False),
+            view=DatasetViewInfo(dataset_name="dataset-a", version="1.0.0"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_streaming_failure_cancels_sibling_fetch_before_cleanup(tmp_path: Path, monkeypatch):
+    from mindtrace.datalake.exporters import huggingface as exporter
+
+    monkeypatch.setattr(exporter.importlib, "import_module", lambda _name: _fake_datasets_module())
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+    finished = asyncio.Event()
+    original_error = RuntimeError("payload failed")
+
+    class Loader(_SinglePageLoader):
+        async def get_asset_payload(self, asset_id):
+            if asset_id == "asset-1":
+                await started.wait()
+                raise original_error
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+            finally:
+                finished.set()
+
+    cleanup = exporter.shutil.rmtree
+    cleanup_seen = []
+
+    def check_cleanup(path, **kwargs):
+        assert cancelled.is_set()
+        assert finished.is_set()
+        cleanup_seen.append(path)
+        cleanup(path, **kwargs)
+
+    monkeypatch.setattr(exporter.shutil, "rmtree", check_cleanup)
+    rows = [_view_row(i, split="train", label="healthy", label_id=0) for i in (1, 2)]
+    version = DatasetVersion(dataset_name="dataset-a", version="1.0.0", manifest=[r.datum_id for r in rows])
+    with pytest.raises(ExceptionGroup) as failure:
+        async with asyncio.timeout(5):
+            await export_dataset_version_as_huggingface_streaming(
+                Loader(rows),
+                version,
+                destination=tmp_path / "export",
+                options={"task": "classification", "class_names": ["healthy"]},
+            )
+
+    assert failure.value.exceptions == (original_error,)
+    assert len(cleanup_seen) == 1
+    assert not (tmp_path / "export").exists()
+    assert not list(tmp_path.glob(".export.streaming-*"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["media", "manifest"])
+async def test_streaming_cancellation_waits_for_inflight_write(tmp_path: Path, monkeypatch, operation):
+    from mindtrace.datalake.exporters import huggingface as exporter
+
+    monkeypatch.setattr(exporter.importlib, "import_module", lambda _name: _fake_datasets_module())
+    loop = asyncio.get_running_loop()
+    started = asyncio.Event()
+    cancellation_seen = asyncio.Event()
+    release = threading.Event()
+    finished = threading.Event()
+    original_write = Path.write_bytes
+    original_append = exporter._append_staged_rows
+
+    def pause_write(write, *args):
+        loop.call_soon_threadsafe(started.set)
+        try:
+            if not release.wait(5):
+                raise TimeoutError("test did not release writer")
+            return write(*args)
+        finally:
+            finished.set()
+
+    def write_bytes(path, payload):
+        if path.parent.name == "media":
+            return pause_write(original_write, path, payload)
+        return original_write(path, payload)
+
+    def append_rows(path, rows):
+        return pause_write(original_append, path, rows)
+
+    if operation == "media":
+        monkeypatch.setattr(Path, "write_bytes", write_bytes)
+    else:
+        monkeypatch.setattr(exporter, "_append_staged_rows", append_rows)
+
+    # Observe cancellation entering the staging-I/O helper without timing sleeps.
+    original_shield = asyncio.shield
+
+    async def observed_shield(worker):
+        try:
+            return await original_shield(worker)
+        except asyncio.CancelledError:
+            cancellation_seen.set()
+            raise
+
+    monkeypatch.setattr(exporter.asyncio, "shield", observed_shield)
+    cleanup = exporter.shutil.rmtree
+    cleanup_seen = []
+
+    def check_cleanup(path, **kwargs):
+        assert finished.is_set()
+        cleanup_seen.append(path)
+        cleanup(path, **kwargs)
+
+    monkeypatch.setattr(exporter.shutil, "rmtree", check_cleanup)
+    row = _view_row(1, split="train", label="healthy", label_id=0)
+    version = DatasetVersion(dataset_name="dataset-a", version="1.0.0", manifest=[row.datum_id])
+    task = asyncio.create_task(
+        export_dataset_version_as_huggingface_streaming(
+            _SinglePageLoader([row]),
+            version,
+            destination=tmp_path / "export",
+            options={"task": "classification", "class_names": ["healthy"]},
+        )
+    )
+    try:
+        await asyncio.wait_for(started.wait(), 5)
+        task.cancel()
+        await asyncio.wait_for(cancellation_seen.wait(), 5)
+        assert not task.done()
+        assert not cleanup_seen
+    finally:
+        release.set()
+        if not task.done():
+            task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    assert len(cleanup_seen) == 1
+    assert not list(tmp_path.glob(".export.streaming-*"))
+    assert not (tmp_path / "export").exists()
