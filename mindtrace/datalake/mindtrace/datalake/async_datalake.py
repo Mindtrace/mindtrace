@@ -2512,23 +2512,20 @@ class AsyncDatalake(Mindtrace):
         progress_callback: Callable[[ExportProgress], None] | None = None,
     ):
         """Export an immutable dataset version to a named external format."""
-        from mindtrace.datalake.exporters import export_dataset_to_format
+        from mindtrace.datalake.exporters import export_dataset_to_format, export_dataset_version_streaming
         from mindtrace.datalake.exporters.base import build_exportable_dataset_from_resolved_version_async
 
         if streaming:
-            if format.strip().lower() != "huggingface":
-                raise ValueError("Streaming dataset export currently supports only format='huggingface'.")
-            from mindtrace.datalake.exporters.huggingface import export_dataset_version_as_huggingface_streaming
-
             dataset_version = await self.get_dataset_version(dataset_name, version)
-            return await export_dataset_version_as_huggingface_streaming(
+            return await export_dataset_version_streaming(
                 self,
                 dataset_version,
+                format=format,
                 destination=destination,
                 include_media=include_media,
                 overwrite=overwrite,
                 split_map=split_map,
-                options=exporter_options,
+                exporter_options=exporter_options,
                 page_size=page_size,
                 progress_callback=progress_callback,
             )

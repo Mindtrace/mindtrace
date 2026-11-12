@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
+from mindtrace.datalake.types import DatasetVersion
+
 from .types import ExportableDataset, ExportableItem, ExportProgress, ExportResult
 
 ExporterFunc = Callable[..., ExportResult]
@@ -42,11 +44,43 @@ def export_dataset_to_format(
     )
 
 
+async def export_dataset_version_streaming(
+    object_loader: Any,
+    dataset_version: DatasetVersion,
+    *,
+    format: str,
+    destination: str | Path,
+    include_media: bool = True,
+    overwrite: bool = False,
+    split_map: dict[str, str] | None = None,
+    exporter_options: dict[str, Any] | None = None,
+    page_size: int = 256,
+    progress_callback: Callable[[ExportProgress], None] | None = None,
+) -> ExportResult:
+    """Dispatch a paged DatasetVersion export to a streaming-capable backend."""
+    if format.strip().lower() != "huggingface":
+        raise ValueError("Streaming dataset export currently supports only format='huggingface'.")
+    from .huggingface import export_dataset_version_as_huggingface_streaming
+
+    return await export_dataset_version_as_huggingface_streaming(
+        object_loader,
+        dataset_version,
+        destination=destination,
+        include_media=include_media,
+        overwrite=overwrite,
+        split_map=split_map,
+        options=exporter_options,
+        page_size=page_size,
+        progress_callback=progress_callback,
+    )
+
+
 __all__ = [
     "ExportResult",
     "ExportProgress",
     "ExportableDataset",
     "ExportableItem",
     "export_dataset_to_format",
+    "export_dataset_version_streaming",
     "get_dataset_exporter",
 ]
