@@ -232,6 +232,13 @@ class Store(Mindtrace):
     def clear_location_cache(self) -> None:
         self._name_location_cache.clear()
 
+    def _mount_has(self, mount: MountedRegistry, name: str, version: str) -> bool:
+        """Treat identities rejected by a mount as absent during unqualified discovery."""
+        try:
+            return mount.registry.has_object(name, version)
+        except ValueError:
+            return False
+
     def _resolve_load_location(self, name: str, version: str | None) -> str:
         ordered_mounts: list[str] = []
 
@@ -245,7 +252,7 @@ class Store(Mindtrace):
 
         hits: list[str] = []
         for mount in ordered_mounts:
-            if self._mounts[mount].registry.has_object(name, version or "latest"):
+            if self._mount_has(self._mounts[mount], name, version or "latest"):
                 hits.append(mount)
 
         if not hits:
@@ -601,7 +608,7 @@ class Store(Mindtrace):
             return self.get_mount(mount).registry.has_object(object_name, check_version)
 
         for store_mount in self._mounts.values():
-            if store_mount.registry.has_object(object_name, check_version):
+            if self._mount_has(store_mount, object_name, check_version):
                 return True
         return False
 

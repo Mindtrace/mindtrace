@@ -321,6 +321,53 @@ class TestVersioning:
 
 
 class TestDiscovery:
+    @pytest.fixture
+    def mixed_version_store(self, tmp_path):
+        return Store(
+            mounts={
+                "narrow": Registry(backend=tmp_path / "narrow", version_objects=True, version_digits=3),
+                "wide": Registry(backend=tmp_path / "wide", version_objects=True, version_digits=4),
+            },
+            default_mount="wide",
+        )
+
+    @pytest.mark.parametrize("operation", ["load", "__contains__", "get", "info"])
+    def test_discovery_skips_incompatible_version_lengths(self, mixed_version_store, operation):
+        store = mixed_version_store
+        store.save("wide/model", {"value": 42}, version="1.2.3.4")
+        lookup = getattr(store, operation)
+
+        expected = lookup("wide/model@1.2.3.4")
+        store.clear_location_cache()
+        assert lookup("model@1.2.3.4") == expected
+        assert lookup("model@1.2.3.4") == expected  # Warm location cache follows the same rules.
+
+        with pytest.raises(ValueError):
+            lookup("narrow/model@1.2.3.4")
+
+    @pytest.mark.parametrize("key", ["model@1.2.3.4.5", "model@bad", "nested/../model"])
+    def test_identity_invalid_on_all_mounts_is_not_found(self, mixed_version_store, key):
+        store = mixed_version_store
+        assert key not in store
+        sentinel = object()
+        assert store.get(key, sentinel) is sentinel
+        with pytest.raises(RegistryObjectNotFound):
+            store.load(key)
+        with pytest.raises(RegistryObjectNotFound):
+            store.info(key)
+
+    @pytest.mark.parametrize("operation", ["load", "__contains__"])
+    def test_discovery_preserves_non_value_errors(self, basic_store, monkeypatch, operation):
+        error = PermissionError("Access denied")
+        probe = Mock(side_effect=error)
+        monkeypatch.setattr(basic_store.get_mount("a").registry, "has_object", probe)
+
+        with pytest.raises(PermissionError) as caught:
+            getattr(basic_store, operation)("model")
+
+        assert caught.value is error
+        probe.assert_called_once_with("model", "latest")
+
     def test_info_without_name_returns_store_info(self, basic_store):
         info = basic_store.info()
         assert info["default_mount"] == basic_store.default_mount

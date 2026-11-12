@@ -237,6 +237,10 @@ store.move("models/demo", target="temp/demo")
 - Qualified keys (`mount/name@version`) select a mount. Unqualified writes use
   `default_mount`; unqualified reads discover the unique owner or raise
   `RegistryObjectNotFound` / `StoreAmbiguousObjectError`.
+- Unqualified discovery skips mounts whose membership check raises `ValueError`,
+  including mounts with incompatible `version_digits`. An identity rejected by
+  every mount is treated as missing; qualified lookups still propagate validation
+  errors.
 - Read-only mounts reject saves, deletes, and direct-upload creation, commit, and
   cleanup with `PermissionError`. Reads, upload inspection, and download URLs
   remain available. The restriction applies through Store, not independent use
