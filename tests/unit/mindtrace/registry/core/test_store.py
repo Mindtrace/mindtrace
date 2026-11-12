@@ -354,6 +354,8 @@ class TestDiscovery:
         with pytest.raises(RegistryObjectNotFound):
             store.load(key)
         with pytest.raises(RegistryObjectNotFound):
+            store[key]
+        with pytest.raises(RegistryObjectNotFound):
             store.info(key)
 
     @pytest.mark.parametrize("operation", ["load", "__contains__"])

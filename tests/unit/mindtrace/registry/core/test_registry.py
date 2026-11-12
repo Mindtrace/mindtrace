@@ -6481,12 +6481,18 @@ class TestInputValidation:
         "operation", ["save", "load", "delete", "has_object", "info", "__getitem__", "__delitem__", "get"]
     )
     def test_public_operations_reject_invalid_names(self, public_registry, operation):
-        """Invalid input is not a missing object, even before version discovery."""
-        args = ["nested/../item"]
-        if operation == "save":
-            args.append(b"payload")
-        with pytest.raises(ValueError, match="[Rr]elative|[Pp]arent"):
-            getattr(public_registry, operation)(*args)
+        """Registry and qualified Store operations reject invalid names; writes remain strict."""
+        names = ["nested/../item"]
+        if isinstance(public_registry, Store):
+            names = ["local/nested/../item"]
+            if operation in ("save", "delete", "__delitem__"):
+                names.append("nested/../item")
+        for name in names:
+            args = [name]
+            if operation == "save":
+                args.append(b"payload")
+            with pytest.raises(ValueError, match="[Rr]elative|[Pp]arent"):
+                getattr(public_registry, operation)(*args)
 
     @pytest.mark.parametrize("operation", ["save", "load", "delete"])
     def test_public_batches_preserve_valid_items(self, public_registry, operation):
