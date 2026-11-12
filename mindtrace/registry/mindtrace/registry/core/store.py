@@ -20,7 +20,7 @@ from mindtrace.registry.core.exceptions import (
     StoreKeyFormatError,
     StoreLocationNotFound,
 )
-from mindtrace.registry.core.mount import LocalMountConfig, Mount, S3MountConfig
+from mindtrace.registry.core.mount import Mount
 from mindtrace.registry.core.registry import Registry
 from mindtrace.registry.core.types import BatchResult, VerifyLevel
 
@@ -303,21 +303,6 @@ class Store(Mindtrace):
         self.cache_update_location(name, mount)
         return out
 
-    @staticmethod
-    def _save_target(registry: Registry) -> tuple:
-        """Identify the configured storage target, ignoring mount aliases and credentials."""
-        try:
-            config = registry.mount.config
-        except TypeError:
-            # Custom backends have no standard location descriptor; aliases of the
-            # same backend instance still share an identity.
-            return (id(registry.backend),)
-        if isinstance(config, LocalMountConfig):
-            return ("local", str(config.uri))
-        if isinstance(config, S3MountConfig):
-            return ("s3", config.endpoint, config.secure, config.bucket, config.prefix or "")
-        return ("gcs", config.bucket_name, config.prefix or "")
-
     def save(
         self,
         name: str | List[str],
@@ -332,9 +317,10 @@ class Store(Mindtrace):
         """Save through the explicit or default write mount.
 
         Batch inputs follow Registry.save's broadcasting and identity rules.
-        Every repeated name within a resolved target registry requires distinct
+        Every repeated name within a resolved Registry instance requires distinct
         explicit versions; versions embedded in keys count unless overridden by
-        the version argument. Aliases of the same target share this check.
+        the version argument. Mounts referencing the same instance share this check;
+        separate instances are treated as independent targets.
         Automatic versions are only assigned to names occurring once in a batch.
 
         Raises:
@@ -359,11 +345,11 @@ class Store(Mindtrace):
         )
 
         # Preflight the entire call before the first mount can save anything.
-        groups: dict[tuple, tuple[Registry, list[str], list[str | None]]] = {}
+        groups: dict[int, tuple[Registry, list[str], list[str | None]]] = {}
         for key, supplied_version in zip(name, versions):
             mount, object_name, key_version = self.parse_key(key)
             registry = self.get_mount(mount or self.default_mount).registry
-            _, names, target_versions = groups.setdefault(self._save_target(registry), (registry, [], []))
+            _, names, target_versions = groups.setdefault(id(registry), (registry, [], []))
             names.append(object_name)
             target_versions.append(supplied_version if supplied_version is not None else key_version)
         for registry, names, target_versions in groups.values():

@@ -753,15 +753,12 @@ class TestBatchSaveContracts:
         for name in ("a", "b"):
             assert registry.info(name, "1")["metadata"] == {"source": "shared"}
 
-    @pytest.mark.parametrize("alias", ["archive", "alias", "reopened"])
+    @pytest.mark.parametrize("alias", ["archive", "alias"])
     @pytest.mark.parametrize("versions", [None, ["1", "1.0.0"]])
     def test_store_resolves_targets_before_saving_to_any_mount(self, tmp_path, monkeypatch, alias, versions):
         registry = Registry(backend=tmp_path / "registry", version_objects=True)
         other = Registry(backend=tmp_path / "other", version_objects=True)
-        reopened = Registry(backend=tmp_path / "registry")
-        store = Store(
-            {"archive": registry, "alias": registry, "reopened": reopened, "other": other}, default_mount="archive"
-        )
+        store = Store({"archive": registry, "alias": registry, "other": other}, default_mount="archive")
         save = Mock(wraps=other.save)
         monkeypatch.setattr(other, "save", save)
         with pytest.raises(ValueError, match="[Bb]atch|[Dd]uplicate|[Rr]epeated"):
@@ -787,8 +784,10 @@ class TestBatchSaveContracts:
             store.save(["item@3", "first/item@4"], [4, 5], version="5")
         assert first.list_versions("item") == ["1.0.0", "2.0.0"]
 
-    @pytest.mark.parametrize("second_location", ["same", "prefix", "endpoint"])
-    def test_store_remote_target_identity_uses_storage_location(self, tmp_path, monkeypatch, second_location):
+    @pytest.mark.parametrize("second_location", ["prefix", "endpoint"])
+    def test_store_independent_remote_registries_allow_same_name_and_version(
+        self, tmp_path, monkeypatch, second_location
+    ):
         class ConfiguredS3Handler(MockS3Handler):
             def __init__(self, **kwargs):
                 super().__init__(**kwargs)
@@ -811,14 +810,21 @@ class TestBatchSaveContracts:
             )
             registries.append(Registry(backend=backend, version_objects=True, use_cache=False))
         store = Store({"first": registries[0], "second": registries[1]}, default_mount="first")
-        if second_location == "same":
-            with pytest.raises(ValueError, match="Duplicate"):
-                store.save(["item", "second/item"], [1, 2], version="1")
-            assert all(registry.list_objects() == [] for registry in registries)
-        else:
-            result = store.save(["item", "second/item"], [1, 2], version="1")
-            assert result.results == ["1.0.0", "1.0.0"]
-            assert [registry.load("item", "1") for registry in registries] == [1, 2]
+        result = store.save(["item", "second/item"], [1, 2], version="1")
+        assert result.results == ["1.0.0", "1.0.0"]
+        assert [registry.load("item", "1") for registry in registries] == [1, 2]
+
+    @pytest.mark.parametrize("mutable", [False, True])
+    def test_separate_instances_defer_shared_storage_conflicts_to_registry(self, tmp_path, mutable):
+        first = Registry(backend=tmp_path / "shared", version_objects=True, mutable=mutable)
+        second = Registry(backend=tmp_path / "shared")
+        store = Store({"first": first, "second": second}, default_mount="first")
+
+        result = store.save(["first/item", "second/item"], [1, 2], version="1.0.0")
+
+        assert result.success_count == (2 if mutable else 1)
+        assert result.failure_count == (0 if mutable else 1)
+        assert first.load("item", "1.0.0") == (2 if mutable else 1)
 
 
 class TestMove:

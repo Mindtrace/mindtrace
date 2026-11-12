@@ -130,7 +130,8 @@ assert loaded.failed == [("missing", "1.0.0")]
 - Repeated names require distinct, explicit versions in **both Registry and Store**.
   Equivalent versions such as `1` and `1.0.0`, or any omitted version for a repeated
   name, reject the entire save before writing. Repeated names are invalid in
-  unversioned mode. Store applies this rule after resolving mount aliases.
+  unversioned mode. Store applies this rule per Registry instance, including
+  mount aliases referencing that same instance.
 - All list arguments must have matching lengths. Shared `metadata` and `init_params`
   dictionaries are copied independently for each item; load parameters remain
   persisted in `init_params`.
@@ -237,6 +238,9 @@ store.move("models/demo", target="temp/demo")
 - Qualified keys (`mount/name@version`) select a mount. Unqualified writes use
   `default_mount`; unqualified reads discover the unique owner or raise
   `RegistryObjectNotFound` / `StoreAmbiguousObjectError`.
+- Prefer independent underlying storage for each mount. Store does not detect
+  shared storage across separate Registry instances; using such instances as
+  different mounts can cause overwrites or version conflicts during batch saves.
 - Unqualified discovery skips mounts whose membership check raises `ValueError`,
   including mounts with incompatible `version_digits`. An identity rejected by
   every mount is treated as missing; qualified lookups still propagate validation
