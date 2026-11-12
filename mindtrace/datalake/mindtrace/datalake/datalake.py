@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from concurrent.futures import Future
 from pathlib import Path
 from typing import Any, Optional
 
 from mindtrace.core import Mindtrace
 from mindtrace.datalake.async_datalake import AsyncDatalake, SlowOpsPolicy
+from mindtrace.datalake.exporters import ExportProgress
 from mindtrace.registry import Mount, Store
 
 
@@ -899,6 +900,9 @@ class Datalake(Mindtrace):
         overwrite: bool = False,
         split_map: dict[str, str] | None = None,
         exporter_options: dict[str, Any] | None = None,
+        streaming: bool = False,
+        page_size: int = 256,
+        progress_callback: Callable[[ExportProgress], None] | None = None,
     ):
         return self._submit_coro(
             self._backend.export_dataset_version_to_format(
@@ -910,6 +914,9 @@ class Datalake(Mindtrace):
                 overwrite=overwrite,
                 split_map=split_map,
                 exporter_options=exporter_options,
+                streaming=streaming,
+                page_size=page_size,
+                progress_callback=progress_callback,
             )
         )
 

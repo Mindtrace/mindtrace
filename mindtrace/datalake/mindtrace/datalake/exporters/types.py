@@ -87,3 +87,11 @@ class ExportResult(BaseModel):
     annotation_count: int
     files_written: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+
+
+class ExportProgress(BaseModel):
+    """Progress reported while a dataset export is being streamed."""
+
+    stage: str
+    completed: int = Field(ge=0)
+    total: int = Field(ge=0)

@@ -2745,6 +2745,50 @@ class TestAsyncDatalakeUnit:
         assert (tmp_path / "coco" / "annotations" / "train.json").exists()
         fake_datalake.resolve_dataset_version.assert_awaited_once_with("dataset-a", "1.0.0")
 
+    @pytest.mark.asyncio
+    async def test_export_dataset_version_to_format_delegates_streaming_dispatch(self, tmp_path: Path):
+        dataset_version = DatasetVersion(dataset_name="dataset-a", version="1.0.0", manifest=["datum-1"])
+        fake_datalake = SimpleNamespace(
+            get_dataset_version=AsyncMock(return_value=dataset_version),
+            resolve_dataset_version=AsyncMock(),
+        )
+        options = {"task": "classification", "class_names": ["healthy"]}
+        progress = MagicMock()
+        with patch(
+            "mindtrace.datalake.exporters.export_dataset_version_streaming",
+            new=AsyncMock(return_value="streamed"),
+        ) as streaming_export:
+            result = await AsyncDatalake.export_dataset_version_to_format(
+                fake_datalake,
+                "dataset-a",
+                "1.0.0",
+                format="future-format",
+                destination=tmp_path / "export",
+                streaming=True,
+                include_media=False,
+                overwrite=True,
+                split_map={"validation": "val"},
+                page_size=32,
+                exporter_options=options,
+                progress_callback=progress,
+            )
+
+        assert result == "streamed"
+        fake_datalake.get_dataset_version.assert_awaited_once_with("dataset-a", "1.0.0")
+        fake_datalake.resolve_dataset_version.assert_not_awaited()
+        streaming_export.assert_awaited_once_with(
+            fake_datalake,
+            dataset_version,
+            format="future-format",
+            destination=tmp_path / "export",
+            include_media=False,
+            overwrite=True,
+            split_map={"validation": "val"},
+            exporter_options=options,
+            page_size=32,
+            progress_callback=progress,
+        )
+
 
 def _alias_fixture_make_store():
     store = MagicMock()

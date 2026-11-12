@@ -32,7 +32,14 @@ from .data_vault_backends import (
     LocalDataVaultBackend,
 )
 from .datalake import Datalake
-from .exporters import ExportableDataset, ExportableItem, ExportResult, export_dataset_to_format, get_dataset_exporter
+from .exporters import (
+    ExportableDataset,
+    ExportableItem,
+    ExportProgress,
+    ExportResult,
+    export_dataset_to_format,
+    get_dataset_exporter,
+)
 from .pagination_types import (
     CursorEnvelope,
     CursorPage,
@@ -120,6 +127,7 @@ __all__ = [
     "AsyncDataVaultBackend",
     "VaultDataset",
     "ExportResult",
+    "ExportProgress",
     "ExportableDataset",
     "ExportableItem",
     "export_dataset_to_format",

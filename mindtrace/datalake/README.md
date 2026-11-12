@@ -440,6 +440,35 @@ Class names and label IDs are available from `dataset.features["label"].names`. 
 `mindtrace_metadata.json` with `schema_version: 2`, `profile: "classification"`, the annotation selector, and the
 selected metadata-key types. Use `read_export_metadata(export_path)` to read it; a missing sidecar returns `{}`.
 
+Large single-label classification versions can be exported with bounded memory by paging the Datalake view and
+staging media before the final Hugging Face artifact is written. Streaming currently requires an explicit class
+order:
+
+```python
+def report_export(progress):
+    print(f"{progress.stage}: {progress.completed}/{progress.total}")
+
+
+datalake.export_dataset_version_to_format(
+    "multi-field-classification",
+    "1.0.0",
+    format="huggingface",
+    destination=export_root / "selected-classification",
+    streaming=True,
+    page_size=256,
+    progress_callback=report_export,
+    exporter_options={
+        "task": "classification",
+        "class_names": ["negative", "positive"],
+    },
+)
+```
+
+Other task profiles continue to use the existing in-memory export path and reject `streaming=True` explicitly.
+A staging failure cancels pending rows and waits for active staging writes before removing temporary files.
+Concurrent row failures are reported in an `ExceptionGroup`; cancellation propagates after cleanup.
+
+
 #### Consume the exported artifacts
 
 Continue with the [Models training guide](../models/mindtrace/models/training/README.md#build-datasets-and-dataloaders)
