@@ -18,7 +18,11 @@ class _FakeDataset:
         self.features = features
 
     @classmethod
-    def from_generator(cls, generator, features=None, gen_kwargs=None):
+    def from_generator(cls, generator, features=None, gen_kwargs=None, cache_dir=None):
+        # Keep generated data inside the same owned workspace as the manifest.
+        assert Path(cache_dir) == Path(gen_kwargs["path"]).parent.parent / "cache"
+        Path(cache_dir).mkdir(exist_ok=True)
+        (Path(cache_dir) / "generated.arrow").write_bytes(b"cached data")
         return cls(list(generator(**(gen_kwargs or {}))), features=features)
 
     def save_to_disk(self, path: str):
@@ -225,3 +229,37 @@ async def test_streaming_classification_export_validates_page_size(tmp_path: Pat
             destination=tmp_path / "export",
             page_size=0,
         )
+
+
+@pytest.mark.asyncio
+async def test_streaming_export_removes_owned_cache_when_finalization_fails(tmp_path: Path, monkeypatch):
+    from mindtrace.datalake.exporters import huggingface as exporter
+
+    monkeypatch.setattr(exporter.importlib, "import_module", lambda _name: _fake_datasets_module())
+    destination = tmp_path / "export"
+    destination.mkdir()
+    (destination / "existing").write_bytes(b"keep")
+    cache_paths = []
+
+    def fail_save(_dataset, path):
+        cache = Path(path).parent / "cache"
+        assert (cache / "generated.arrow").exists()
+        cache_paths.append(cache)
+        raise OSError("save failed")
+
+    monkeypatch.setattr(_FakeDatasetDict, "save_to_disk", fail_save)
+    row = _view_row(1, split="train", label="healthy", label_id=0)
+    version = DatasetVersion(dataset_name="dataset-a", version="1.0.0", manifest=[row.datum_id])
+    with pytest.raises(OSError, match="save failed"):
+        await export_dataset_version_as_huggingface_streaming(
+            _PagedLoader([row]),
+            version,
+            destination=destination,
+            overwrite=True,
+            options={"task": "classification", "class_names": ["healthy"]},
+        )
+
+    assert len(cache_paths) == 1
+    assert not cache_paths[0].exists()
+    assert not list(tmp_path.glob(".export.streaming-*"))
+    assert (destination / "existing").read_bytes() == b"keep"

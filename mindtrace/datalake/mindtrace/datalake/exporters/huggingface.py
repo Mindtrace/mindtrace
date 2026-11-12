@@ -1016,6 +1016,7 @@ async def export_dataset_version_as_huggingface_streaming(
                 _iter_staged_rows,
                 features=features,
                 gen_kwargs={"path": str(manifest_path)},
+                cache_dir=str(work_path / "cache"),
             )
             finalized += split_counts[split_name]
             _report_progress(

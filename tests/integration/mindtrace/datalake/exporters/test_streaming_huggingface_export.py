@@ -70,8 +70,13 @@ def _row(index: int, split: str, label: str, label_id: int) -> DatasetViewRow:
 
 
 @pytest.mark.asyncio
-async def test_streaming_export_round_trips_as_saved_dataset_dict(tmp_path: Path):
+async def test_streaming_export_round_trips_as_saved_dataset_dict(tmp_path: Path, monkeypatch):
     datasets = pytest.importorskip("datasets")
+    shared_cache = tmp_path / "shared-hf-cache"
+    shared_cache.mkdir()
+    sentinel = shared_cache / "unrelated-entry"
+    sentinel.write_bytes(b"keep")
+    monkeypatch.setattr(datasets.config, "HF_DATASETS_CACHE", shared_cache)
     rows = [
         _row(1, "train", "healthy", 0),
         _row(2, "val", "porosity", 1),
@@ -97,6 +102,10 @@ async def test_streaming_export_round_trips_as_saved_dataset_dict(tmp_path: Path
         },
     )
 
+    assert set(shared_cache.iterdir()) == {sentinel}
+    assert sentinel.read_bytes() == b"keep"
+    assert not list(tmp_path.glob(".export.streaming-*"))
+    # Reload only after the generator cache has been removed.
     exported = datasets.load_from_disk(str(destination))
     assert result.asset_count == 3
     assert list(exported) == ["train", "val", "test"]
