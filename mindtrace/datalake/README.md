@@ -400,6 +400,46 @@ with Datalake.create(
 The exports embed media for relocation, preserve ordered class mappings and source lineage, and normalize task
 records into stable HF schemas.
 
+For single-label classification exports from annotations, use:
+
+- `annotation_attributes` to select exactly one classification annotation per image by attribute match.
+- `class_names` (or `classification_class_names`) to provide an ordered label list, required when selected
+  annotations have no label IDs.
+- `metadata_keys` to copy required top-level Datum metadata into typed Hugging Face columns.
+
+These options require `task="classification"`, `classification_type="single_label"`, and
+`classification_source="annotations"`; other export paths reject them.
+
+For example:
+
+```python
+datalake.export_dataset_version_to_format(
+    "multi-field-classification",
+    "1.0.0",
+    format="huggingface",
+    destination=export_root / "selected-classification",
+    include_media=True,
+    exporter_options={
+        "task": "classification",
+        "annotation_attributes": {"field": "primary_target"},
+        "class_names": ["negative", "positive"],
+        "metadata_keys": {
+            "subject_id": "string",
+            "group_id": "string",
+        },
+    },
+)
+```
+
+Supported metadata dtypes are `string`, `bool`, signed and unsigned integers from 8 through 64 bits,
+and `float16`, `float32`, and `float64`. Requested values must be present, non-null, and fit their declared type;
+floats are not truncated into integers and booleans are not accepted as numbers. Errors identify the asset,
+metadata key, and requested dtype. Invalid option configuration is rejected before overwriting an existing export.
+
+Class names and label IDs are available from `dataset.features["label"].names`. Classification exports also write
+`mindtrace_metadata.json` with `schema_version: 2`, `profile: "classification"`, the annotation selector, and the
+selected metadata-key types. Use `read_export_metadata(export_path)` to read it; a missing sidecar returns `{}`.
+
 #### Consume the exported artifacts
 
 Continue with the [Models training guide](../models/mindtrace/models/training/README.md#build-datasets-and-dataloaders)
