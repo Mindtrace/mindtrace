@@ -10,6 +10,7 @@ Usage:
 
 import argparse
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -152,6 +153,10 @@ def main():
             print(f"✓ Updated {pyproject.relative_to(root)}")
         else:
             print(f"- No changes: {pyproject.relative_to(root)}")
+
+    # Workspace versions are recorded in uv.lock; stale ones break `uv sync --locked`.
+    subprocess.run(["uv", "lock"], cwd=root, check=True)
+    print("✓ Updated uv.lock")
 
     print(f"\nDone! {len(subpackages) + 1} files bumped to version {new_version}")
 

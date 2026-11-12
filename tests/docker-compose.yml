@@ -79,28 +79,6 @@ services:
         soft: 65536
         hard: 65536
 
-  pypylon-runtime:
-    profiles:
-      - pypylon
-    build:
-      context: ..
-      dockerfile: tests/docker/pypylon-runtime.Dockerfile
-    ports:
-      - "8765:8765"  # Expose pypylon service port
-    volumes:
-      - ..:/workspace:ro  # Read-only workspace mount
-    environment:
-      - PYTHONPATH=/workspace
-      - PYPYLON_SERVICE_MODE=true
-      - PYPYLON_AVAILABLE=true
-    command: python3 -m tests.utils.pypylon.service
-    healthcheck:
-      test: ["CMD", "python3", "-c", "from pypylon import pylon, genicam; factory = pylon.TlFactory.GetInstance(); print('Pylon SDK OK')"]
-      interval: 30s
-      timeout: 10s
-      start_period: 30s
-      retries: 3
-
 volumes:
   rustfs_data:
   mongodb_test_data:

@@ -513,7 +513,10 @@ def test_import_pascal_voc_creates_classification_detection_and_segmentation_rec
     assert dataset_metadata["task_types"] == ["classification", "detection", "semantic_segmentation"]
     assert dataset_metadata["classification_type"] == "multi_label"
     assert dataset_metadata["classification_class_names"] == pascal_voc.VOC_CLASSES
-    assert dataset_metadata["detection_class_names"] == pascal_voc.VOC_CLASSES
+    assert dataset_metadata["detection_class_names"] == ["background", *pascal_voc.VOC_CLASSES]
+    assert {name: index for index, name in enumerate(dataset_metadata["detection_class_names"]) if index} == (
+        pascal_voc.VOC_CLASS_TO_ID
+    )
     assert dataset_metadata["detection_bbox_format"] == "xywh"
     assert dataset_metadata["semantic_segmentation_class_names"] == ["background", *pascal_voc.VOC_CLASSES]
     assert dataset_metadata["semantic_segmentation_ignore_index"] == 255

@@ -242,9 +242,11 @@ def test_classification_dataloader_collates_native_dataset_mappings(monkeypatch)
     assert targets.value == [0, 1]
 
 
-def test_detection_dataset_returns_xywh_targets_and_zero_based_labels(monkeypatch):
+def test_detection_dataset_converts_xywh_boxes_and_preserves_foreground_labels(monkeypatch):
     image = _FakeImage()
-    objects_feature = SimpleNamespace(feature={"category": SimpleNamespace(names=["aeroplane", "bicycle"])})
+    objects_feature = SimpleNamespace(
+        feature={"category": SimpleNamespace(names=["background", "aeroplane", "bicycle"])}
+    )
     payload = _FakeDatasetDict(
         train=_FakeSplitDataset(
             [
@@ -281,7 +283,7 @@ def test_detection_dataset_returns_xywh_targets_and_zero_based_labels(monkeypatc
     assert target["area"].value == [1200.0]
     assert target["iscrowd"].value == [0]
     assert "asset_id" not in target
-    assert dataset.features["objects"].feature["category"].names == ["aeroplane", "bicycle"]
+    assert dataset.features["objects"].feature["category"].names == ["background", "aeroplane", "bicycle"]
 
 
 def test_detection_dataset_can_return_provenance_outside_tensor_target(monkeypatch):

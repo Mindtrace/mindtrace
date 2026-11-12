@@ -48,6 +48,22 @@ pip install mindtrace-agents     # LLM agents with tools and memory
 pip install mindtrace-hardware   # Cameras, scanners, PLCs, sensors
 ```
 
+### Docker
+
+An image is published to GHCR on every release, for `linux/amd64` and `linux/arm64`. It holds every Mindtrace package and all extras of the `mindtrace` metapackage, on Python 3.12:
+
+```bash
+docker pull ghcr.io/mindtrace/mindtrace
+```
+
+That pulls `latest`, the newest release. To pin a release, use its version as the tag, without the leading `v`.
+
+The image runs as root and starts `python` by default. Add site-specific pieces (for example the Daheng Galaxy SDK or a GenTL producer) in a derived image. `uv` is included, so `uv pip install <package>` extends the environment. The same `Dockerfile` builds any workspace package:
+
+```bash
+docker build --build-arg PACKAGE=mindtrace-jobs -t mindtrace-jobs .
+```
+
 ## Quick Tour
 
 The Mindtrace ecosystem is designed so that you can start small and compose modules as your system grows.
