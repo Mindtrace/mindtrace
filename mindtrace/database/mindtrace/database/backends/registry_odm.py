@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from mindtrace.database.backends.mindtrace_odm import InitMode, MindtraceODM
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.registry import Registry, RegistryBackend
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.registry.core.types import OnConflict
 
 
@@ -249,8 +250,8 @@ class RegistryMindtraceODM(MindtraceODM):
             raise ValueError("Cannot use delete() in multi-model mode. Use db.model_name.delete() instead.")
         try:
             del self.registry[id]
-        except KeyError:
-            raise DocumentNotFoundError(f"Object with id {id} not found")
+        except RegistryObjectNotFound as error:
+            raise DocumentNotFoundError(f"Object with id {id} not found") from error
 
     def all(self) -> list[BaseModel]:
         """Retrieve all documents from the collection.

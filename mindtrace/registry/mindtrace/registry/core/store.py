@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Type
 
 from mindtrace.core import Mindtrace
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
+from mindtrace.registry.core._batch import normalize_save_batch, validate_save_batch
 from mindtrace.registry.core.base_materializer import Materializer
 from mindtrace.registry.core.exceptions import (
     RegistryObjectNotFound,
@@ -231,6 +232,13 @@ class Store(Mindtrace):
     def clear_location_cache(self) -> None:
         self._name_location_cache.clear()
 
+    def _mount_has(self, mount: MountedRegistry, name: str, version: str) -> bool:
+        """Treat identities rejected by a mount as absent during unqualified discovery."""
+        try:
+            return mount.registry.has_object(name, version)
+        except ValueError:
+            return False
+
     def _resolve_load_location(self, name: str, version: str | None) -> str:
         ordered_mounts: list[str] = []
 
@@ -244,7 +252,7 @@ class Store(Mindtrace):
 
         hits: list[str] = []
         for mount in ordered_mounts:
-            if self._mounts[mount].registry.has_object(name, version or "latest"):
+            if self._mount_has(self._mounts[mount], name, version or "latest"):
                 hits.append(mount)
 
         if not hits:
@@ -260,26 +268,30 @@ class Store(Mindtrace):
         self.cache_update_location(name, mount)
         return mount
 
+    def _writable_mount(self, key: str) -> tuple[str, Registry, str, str | None]:
+        """Resolve an explicit/default write target and reject read-only mounts."""
+        mount, name, version = self.parse_key(key)
+        mount = mount or self.default_mount
+        store_mount = self.get_mount(mount)
+        if store_mount.read_only:
+            raise PermissionError(f"Mount '{mount}' is read-only")
+        return mount, store_mount.registry, name, version
+
     def _single_save(
         self,
         key: str,
         obj: Any,
         *,
-        materializer: Type[Materializer] | None = None,
+        materializer: Type[Materializer] | str | None = None,
         version: str | None = None,
         init_params: Dict[str, Any] | None = None,
         metadata: Dict[str, Any] | None = None,
         on_conflict: str | None = None,
     ) -> str | None:
-        mount, name, key_version = self.parse_key(key)
-        if mount is None:
-            mount = self.default_mount
-        store_mount = self.get_mount(mount)
-        if store_mount.read_only:
-            raise PermissionError(f"Mount '{mount}' is read-only")
+        mount, registry, name, key_version = self._writable_mount(key)
 
         resolved_version = version if version is not None else key_version
-        out = store_mount.registry.save(
+        out = registry.save(
             name,
             obj,
             materializer=materializer,
@@ -296,12 +308,27 @@ class Store(Mindtrace):
         name: str | List[str],
         obj: Any | List[Any],
         *,
-        materializer: Type[Materializer] | None = None,
+        materializer: Type[Materializer] | str | None = None,
         version: str | None | List[str | None] = None,
         init_params: Dict[str, Any] | List[Dict[str, Any]] | None = None,
         metadata: Dict[str, Any] | List[Dict[str, Any]] | None = None,
         on_conflict: str | None = None,
     ) -> str | None | BatchResult:
+        """Save through the explicit or default write mount.
+
+        Batch inputs follow Registry.save's broadcasting and identity rules.
+        Every repeated name within a resolved Registry instance requires distinct
+        explicit versions; versions embedded in keys count unless overridden by
+        the version argument. Mounts referencing the same instance share this check;
+        separate instances are treated as independent targets.
+        Automatic versions are only assigned to names occurring once in a batch.
+
+        Raises:
+            ValueError: If list lengths differ or batch identities are invalid.
+                The whole batch is checked before materialization or saves to
+                any mount, regardless of on_conflict. Runtime failures after
+                preflight retain per-item outcomes without rollback.
+        """
         if isinstance(name, str):
             return self._single_save(
                 name,
@@ -313,13 +340,22 @@ class Store(Mindtrace):
                 on_conflict=on_conflict,
             )
 
-        objs = obj if isinstance(obj, list) else [obj] * len(name)
-        versions = version if isinstance(version, list) else [version] * len(name)
-        init_params_list = init_params if isinstance(init_params, list) else [init_params] * len(name)
-        metadata_list = metadata if isinstance(metadata, list) else [metadata] * len(name)
+        objs, versions, init_params_list, metadata_list = normalize_save_batch(
+            name, obj, version, init_params, metadata
+        )
 
-        if not (len(name) == len(objs) == len(versions)):
-            raise ValueError("name, obj, and version list lengths must match")
+        # Preflight the entire call before the first mount can save anything.
+        groups: dict[int, tuple[Registry, list[str], list[str | None]]] = {}
+        for key, supplied_version in zip(name, versions):
+            mount, object_name, key_version = self.parse_key(key)
+            registry = self.get_mount(mount or self.default_mount).registry
+            _, names, target_versions = groups.setdefault(id(registry), (registry, [], []))
+            names.append(object_name)
+            target_versions.append(supplied_version if supplied_version is not None else key_version)
+        for registry, names, target_versions in groups.values():
+            validate_save_batch(
+                names, target_versions, version_objects=registry.version_objects, version_digits=registry.version_digits
+            )
 
         result = BatchResult()
         for i, key in enumerate(name):
@@ -355,9 +391,12 @@ class Store(Mindtrace):
         expiration_minutes: int = 60,
         upload_id: str | None = None,
     ) -> dict[str, Any]:
-        mount, object_name, _ = self.parse_key(key)
-        resolved_mount = mount or self.default_mount
-        registry = self.get_mount(resolved_mount).registry
+        """Create an upload target on the explicit or default write mount.
+
+        Raises:
+            PermissionError: If the selected mount is read-only.
+        """
+        resolved_mount, registry, object_name, _ = self._writable_mount(key)
         target = registry.create_direct_upload_target(
             upload_id or hashlib.sha1(key.encode()).hexdigest(),
             content_type=content_type,
@@ -377,14 +416,18 @@ class Store(Mindtrace):
     ) -> str | None:
         """Mint a presigned GET URL for the object addressed by ``key``.
 
+        Qualified keys route directly; unqualified keys use read discovery and
+        raise on missing or ambiguous matches. An explicit version overrides
+        the key's version, including ``"latest"``.
         Returns ``None`` for mounts whose backend cannot presign (local filesystem).
         """
         mount, object_name, key_version = self.parse_key(key)
-        resolved_mount = mount or self.default_mount
+        resolved_version = version if version is not None else key_version
+        resolved_mount = mount or self._resolve_load_location(object_name, resolved_version)
         registry = self.get_mount(resolved_mount).registry
         return registry.create_direct_download_url(
             object_name,
-            version if version is not None else key_version,
+            resolved_version,
             expiration_minutes=expiration_minutes,
             response_content_type=response_content_type,
             response_content_disposition=response_content_disposition,
@@ -421,9 +464,12 @@ class Store(Mindtrace):
         return registry.inspect_direct_upload_target(staged_target)
 
     def cleanup_direct_upload_target(self, key: str, *, staged_target: dict[str, Any]) -> bool:
-        mount, _, _ = self.parse_key(key)
-        resolved_mount = mount or self.default_mount
-        registry = self.get_mount(resolved_mount).registry
+        """Delete a staged upload on the explicit or default write mount.
+
+        Raises:
+            PermissionError: If the selected mount is read-only.
+        """
+        _, registry, _, _ = self._writable_mount(key)
         return registry.cleanup_direct_upload_target(staged_target)
 
     def commit_direct_upload(
@@ -435,9 +481,12 @@ class Store(Mindtrace):
         metadata: Dict[str, Any] | None = None,
         on_conflict: str | None = None,
     ) -> str:
-        mount, object_name, key_version = self.parse_key(key)
-        resolved_mount = mount or self.default_mount
-        registry = self.get_mount(resolved_mount).registry
+        """Publish a staged upload on the explicit or default write mount.
+
+        Raises:
+            PermissionError: If the selected mount is read-only.
+        """
+        resolved_mount, registry, object_name, key_version = self._writable_mount(key)
         resolved_version = registry.commit_direct_upload(
             object_name,
             staged_target=staged_target,
@@ -511,13 +560,8 @@ class Store(Mindtrace):
         return result
 
     def _single_delete(self, key: str, version: str | None = None) -> None:
-        mount, name, key_version = self.parse_key(key)
-        if mount is None:
-            mount = self.default_mount
-        store_mount = self.get_mount(mount)
-        if store_mount.read_only:
-            raise PermissionError(f"Mount '{mount}' is read-only")
-        store_mount.registry.delete(name, version if version is not None else key_version)
+        mount, registry, name, key_version = self._writable_mount(key)
+        registry.delete(name, version if version is not None else key_version)
         self.cache_evict_name(name)
 
     def delete(self, name: str | List[str], version: str | None | List[str | None] = None) -> None | BatchResult:
@@ -550,7 +594,7 @@ class Store(Mindtrace):
             return self.get_mount(mount).registry.has_object(object_name, check_version)
 
         for store_mount in self._mounts.values():
-            if store_mount.registry.has_object(object_name, check_version):
+            if self._mount_has(store_mount, object_name, check_version):
                 return True
         return False
 
@@ -613,19 +657,37 @@ class Store(Mindtrace):
         source_version: str = "latest",
         target_version: str | None = None,
     ) -> str:
-        saved = self.copy(source, target=target, source_version=source_version, target_version=target_version)
+        """Copy the selected source version, then delete that same version.
 
+        Resolve the source mount and concrete version before copying, and reject
+        read-only source mounts before loading or writing. An explicit non-latest
+        source_version overrides a key-embedded version; otherwise the key's
+        version or latest is used. Destination routing follows save().
+
+        Returns:
+            The saved destination version.
+
+        Raises:
+            PermissionError: If a source or destination mount is read-only.
+            RegistryObjectNotFound: If the selected source does not exist.
+            StoreAmbiguousObjectError: If an unqualified source matches multiple mounts.
+
+        Load, save, and delete errors propagate. A failed copy leaves the source
+        intact; a failed deletion does not roll back the destination. This is not
+        a transaction or protection against overwriting the same mutable version.
+        """
         mount, name, key_version = self.parse_key(source)
         resolved_source_version = (
             source_version if source_version not in (None, "latest") else (key_version or source_version)
         )
         resolved_mount = mount or self._resolve_load_location(name, resolved_source_version)
-
-        delete_version = resolved_source_version
-        if delete_version in (None, "latest"):
-            delete_version = self.get_mount(resolved_mount).registry.list_versions(name)[-1]
-
-        self.delete(self.build_key(resolved_mount, name), version=delete_version)
+        source_key = self.build_key(resolved_mount, name)
+        _, source_registry, _, _ = self._writable_mount(source_key)
+        resolved_source_version = source_registry.resolve_version(name, resolved_source_version)
+        saved = self.copy(
+            source_key, target=target, source_version=resolved_source_version, target_version=target_version
+        )
+        self.delete(source_key, version=resolved_source_version)
         return saved
 
     def __getitem__(self, key: str | list[str]) -> Any:

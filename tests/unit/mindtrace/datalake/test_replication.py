@@ -17,6 +17,7 @@ from mindtrace.datalake.replication_types import (
     ReplicationReconcileRequest,
 )
 from mindtrace.datalake.types import AnnotationRecord, AnnotationSchema, AnnotationSet, Asset, Datum, StorageRef
+from mindtrace.registry import Registry, Store
 
 
 @pytest.fixture
@@ -1236,6 +1237,68 @@ class TestReplicationSourceReclaimMerge:
 
 
 class TestReplicationReclaim:
+    @pytest.mark.asyncio
+    async def test_delete_local_payload_retries_after_database_update_failure(
+        self, source_datalake, replication_objects, tmp_path
+    ):
+        registry = Registry(backend=tmp_path / "payloads", version_objects=True)
+        source_datalake.store = Store(mounts={"source": registry}, default_mount="source")
+        registry.save("payload", b"payload", version="1.0.0")
+        stored_asset = replication_objects.asset.model_copy(
+            deep=True,
+            update={
+                "storage_ref": StorageRef(mount="source", name="payload", version="1.0.0"),
+                "metadata": {
+                    "replication": {
+                        "local_delete_eligible_at": "2026-01-01T00:00:00Z",
+                        "payload_status": "present",
+                        "payload_available": True,
+                    }
+                },
+            },
+        )
+        # Each read returns a detached record: a failed update must not persist mutations.
+        source_datalake.get_asset.side_effect = lambda _: stored_asset.model_copy(deep=True)
+        source_datalake.asset_database.find.side_effect = lambda _: [stored_asset.model_copy(deep=True)]
+        failure = ConnectionError("Database unavailable")
+        source_datalake.asset_database.update.side_effect = [failure, None]
+        manager = ReplicationManager(source_datalake)
+
+        with pytest.raises(ConnectionError) as caught:
+            await manager.delete_local_payload(stored_asset.asset_id)
+        assert caught.value is failure
+        assert not registry.has_object("payload", "1.0.0")
+        assert not manager.is_local_deleted(stored_asset)
+
+        result = await manager.reclaim_verified_payloads(ReplicationReclaimRequest(require_verified_payload=False))
+
+        assert result.reclaimed_asset_ids == [stored_asset.asset_id]
+        assert result.failed_asset_ids == []
+        assert source_datalake.asset_database.update.await_count == 2
+        updated = source_datalake.asset_database.update.call_args.args[0]
+        assert manager.is_local_deleted(updated)
+        assert updated.payload_status == "missing"
+        assert updated.payload_storage_ref == LOCAL_PAYLOAD_TOMBSTONE_STORAGE_REF
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("error_type", [PermissionError, KeyError])
+    async def test_delete_local_payload_propagates_operational_errors(
+        self, source_datalake, replication_objects, error_type
+    ):
+        asset = replication_objects.asset
+        asset.metadata["replication"] = {"local_delete_eligible_at": "2026-01-01T00:00:00Z"}
+        before = asset.model_dump()
+        error = error_type("Delete failed")
+        source_datalake.store.delete.side_effect = error
+
+        with pytest.raises(error_type) as caught:
+            await ReplicationManager(source_datalake).delete_local_payload(asset.asset_id)
+
+        assert caught.value is error
+        assert asset.model_dump() == before
+        source_datalake.asset_database.update.assert_not_awaited()
+        source_datalake.asset_database.insert.assert_not_awaited()
+
     @pytest.mark.asyncio
     async def test_mark_local_delete_eligible_requires_verified_remote(
         self, source_datalake, target_datalake, replication_objects
