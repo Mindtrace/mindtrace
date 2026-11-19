@@ -508,17 +508,46 @@ from mindtrace.hardware import PLCManager
 
 async def plc_operations():
     manager = PLCManager()
-    await manager.register_plc("Line1", "192.168.1.100", plc_type="logix")
+    await manager.register_plc("Line1", "AllenBradley", "192.168.1.100", plc_type="logix")
     await manager.connect_plc("Line1")
 
-    # Read/write operations
-    values = await manager.read_tags("Line1", ["Motor_Speed", "Status"])
-    await manager.write_tag("Line1", "Command", True)
+    # Read/write operations return one TagResult per tag
+    results = await manager.read_tag("Line1", ["Motor_Speed", "Status"])
+    if results["Motor_Speed"].ok:
+        speed = results["Motor_Speed"].value
+    else:
+        kind = results["Motor_Speed"].error.kind  # missing_tag / type_mismatch / encode / transient / unknown
+
+    await manager.write_tag("Line1", [("Command", True)])
 
     await manager.cleanup()
 
 asyncio.run(plc_operations())
 ```
+
+### Transport behaviour
+
+Reads and writes are serialized on separate channels (a read driver and a write
+driver per PLC). One attempt per call, no retry — re-issuing is the caller's
+job (a poll loop's next tick is the retry):
+
+- Any failed exchange — wire death, timeout, garbled reply, or a delivered
+  reply carrying session-dead statuses — closes its channel and raises typed
+  (`PLCTimeoutError`, a `PLCCommunicationError` subclass, when the failure was
+  a timeout). The channel reopens automatically at the next call's entry.
+  Only a delivered, parsed reply keeps the session.
+- Malformed requests (`PLCTagReadError` / `PLCTagWriteError`) are rejected
+  before the wire; the session is untouched.
+- A returned result map contains only **address verdicts** (`missing_tag` /
+  `type_mismatch` / `encode` / `transient` / `unknown`). `transient` means the
+  controller answered but that exchange misbehaved — re-asking is reasonable;
+  the others are stable answers retrying cannot change. Link trouble never
+  appears in a returned map.
+- `MINDTRACE_HW_PLC_READ_TIMEOUT` / `WRITE_TIMEOUT` bound each channel's
+  handshake and exchanges (they are the socket deadline);
+  `MINDTRACE_HW_PLC_CONNECTION_TIMEOUT` bounds auto-detection probes.
+- `is_connected()` reports the lifecycle state (`connect()` succeeded,
+  `disconnect()` not called) — a channel healing itself does not flip it.
 
 ### Service Layer
 

@@ -37,8 +37,12 @@ Usage:
         await manager.register_plc("PLC1", "AllenBradley", "192.168.1.100")
         await manager.connect_plc("PLC1")
 
-        # Read tags
-        values = await manager.read_tag("PLC1", ["Tag1", "Tag2"])
+        # Read tags; one TagResult per tag, a value or a classified error
+        results = await manager.read_tag("PLC1", ["Tag1", "Tag2"])
+        if results["Tag1"].ok:
+            value = results["Tag1"].value
+        else:
+            kind = results["Tag1"].error.kind
 
         # Write tags
         await manager.write_tag("PLC1", [("Tag1", 100), ("Tag2", 200)])
@@ -57,7 +61,7 @@ Usage:
             ("PLC1", ["Temperature", "Pressure"]),
             ("PLC2", ["Speed", "Position"])
         ]
-        values = await manager.read_tags_batch(read_requests)
+        results = await manager.read_tags_batch(read_requests)
 
 Configuration:
     All parameters are configurable via the hardware configuration system:
@@ -65,7 +69,6 @@ Configuration:
     - MINDTRACE_HW_PLC_CONNECTION_TIMEOUT: Connection timeout in seconds
     - MINDTRACE_HW_PLC_READ_TIMEOUT: Tag read timeout in seconds
     - MINDTRACE_HW_PLC_WRITE_TIMEOUT: Tag write timeout in seconds
-    - MINDTRACE_HW_PLC_RETRY_COUNT: Number of retry attempts
     - MINDTRACE_HW_PLC_MAX_CONCURRENT_CONNECTIONS: Maximum concurrent connections
     - MINDTRACE_HW_PLC_ALLEN_BRADLEY_ENABLED: Enable Allen-Bradley backend
     - MINDTRACE_HW_PLC_SIEMENS_ENABLED: Enable Siemens backend
@@ -81,16 +84,15 @@ Error Handling:
     - PLCTagError: Tag-related operation errors
     - PLCTagReadError: Tag read operation failures
     - PLCTagWriteError: Tag write operation failures
-    - HardwareOperationError: General hardware operation failures
 
-Thread Safety:
-    All PLC operations are thread-safe. Multiple PLCs can be operated
-    simultaneously from different threads without interference.
+Concurrency:
+    Operations on one PLC are serialized per channel (read/write) by asyncio
+    locks in the backend — safe for concurrent tasks on one event loop. PLC
+    instances are not thread-safe across event loops.
 
 Performance Notes:
     - PLC discovery may take several seconds depending on network size
     - Batch operations are more efficient than individual tag operations
-    - Connection pooling is used for optimal performance
     - Consider PLC-specific optimizations for production use
 """
 
@@ -102,11 +104,9 @@ from mindtrace.hardware.core.config import get_hardware_config
 from mindtrace.hardware.core.exceptions import (
     PLCConnectionError,
     PLCNotFoundError,
-    PLCTagError,
-    PLCTagReadError,
-    PLCTagWriteError,
 )
 from mindtrace.hardware.plcs.backends.base import BasePLC
+from mindtrace.hardware.plcs.types import TagResult
 
 
 class PLCManager(Mindtrace):
@@ -148,7 +148,7 @@ class PLCManager(Mindtrace):
             await manager.connect_plc("PLC1")
 
             # Read and write tags
-            values = await manager.read_tag("PLC1", ["Temperature", "Pressure"])
+            results = await manager.read_tag("PLC1", ["Temperature", "Pressure"])
             await manager.write_tag("PLC1", [("Setpoint", 75.0)])
 
         # Batch operations
@@ -327,6 +327,8 @@ class PLCManager(Mindtrace):
             self.logger.info(f"Registered PLC '{plc_name}' with {backend} backend")
             return True
 
+        except TypeError:
+            raise
         except Exception as e:
             self.logger.error(f"Failed to register PLC '{plc_name}': {e}")
             return False
@@ -347,8 +349,8 @@ class PLCManager(Mindtrace):
 
         try:
             plc = self.plcs[plc_name]
-            if await plc.is_connected():
-                await plc.disconnect()
+            # Unconditional: a half-open PLC still holds a live session.
+            await plc.disconnect()
 
             del self.plcs[plc_name]
             self.logger.info(f"Unregistered PLC '{plc_name}'")
@@ -458,51 +460,49 @@ class PLCManager(Mindtrace):
 
         return results
 
-    async def read_tag(self, plc_name: str, tags: Union[str, List[str]]) -> Dict[str, Any]:
+    async def read_tag(self, plc_name: str, tags: Union[str, List[str]]) -> Dict[str, TagResult]:
         """
         Read tags from a specific PLC.
+
+        Thin passthrough: the backend makes one attempt (a channel closed on proof reopens at the next call), and its
+        exceptions propagate unwrapped.
 
         Args:
             plc_name: Name of the PLC
             tags: Single tag name or list of tag names
 
         Returns:
-            Dictionary mapping tag names to their values
+            Dictionary mapping tag names to their TagResult
         """
         if plc_name not in self.plcs:
             raise PLCNotFoundError(f"PLC '{plc_name}' not registered")
 
-        try:
-            plc = self.plcs[plc_name]
-            return await plc.read_tag_with_retry(tags)
+        return await self.plcs[plc_name].read_tag(tags)
 
-        except Exception as e:
-            self.logger.error(f"Failed to read tags from PLC '{plc_name}': {e}")
-            raise PLCTagReadError(f"Failed to read tags from PLC '{plc_name}': {e}")
-
-    async def write_tag(self, plc_name: str, tags: Union[Tuple[str, Any], List[Tuple[str, Any]]]) -> Dict[str, bool]:
+    async def write_tag(
+        self, plc_name: str, tags: Union[Tuple[str, Any], List[Tuple[str, Any]]]
+    ) -> Dict[str, TagResult]:
         """
         Write tags to a specific PLC.
+
+        Thin passthrough: the backend makes one attempt (a channel closed on proof reopens at the next call), and its
+        exceptions propagate unwrapped.
 
         Args:
             plc_name: Name of the PLC
             tags: Single (tag_name, value) tuple or list of tuples
 
         Returns:
-            Dictionary mapping tag names to write success status
+            Dictionary mapping tag names to their TagResult
         """
         if plc_name not in self.plcs:
             raise PLCNotFoundError(f"PLC '{plc_name}' not registered")
 
-        try:
-            plc = self.plcs[plc_name]
-            return await plc.write_tag_with_retry(tags)
+        return await self.plcs[plc_name].write_tag(tags)
 
-        except Exception as e:
-            self.logger.error(f"Failed to write tags to PLC '{plc_name}': {e}")
-            raise PLCTagWriteError(f"Failed to write tags to PLC '{plc_name}': {e}")
-
-    async def read_tags_batch(self, requests: List[Tuple[str, Union[str, List[str]]]]) -> Dict[str, Dict[str, Any]]:
+    async def read_tags_batch(
+        self, requests: List[Tuple[str, Union[str, List[str]]]]
+    ) -> Dict[str, Union[Dict[str, TagResult], Dict[str, str]]]:
         """
         Read tags from multiple PLCs in batch.
 
@@ -510,7 +510,8 @@ class PLCManager(Mindtrace):
             requests: List of (plc_name, tags) tuples
 
         Returns:
-            Dictionary mapping PLC names to their tag read results
+            Dictionary mapping PLC names to their tag read results; a PLC whose
+            read raised yields {"error": ...} instead
         """
         self.logger.info(f"Executing batch read for {len(requests)} PLCs")
         results = {}
@@ -543,7 +544,7 @@ class PLCManager(Mindtrace):
 
     async def write_tags_batch(
         self, requests: List[Tuple[str, Union[Tuple[str, Any], List[Tuple[str, Any]]]]]
-    ) -> Dict[str, Dict[str, bool]]:
+    ) -> Dict[str, Union[Dict[str, TagResult], Dict[str, str]]]:
         """
         Write tags to multiple PLCs in batch.
 
@@ -551,7 +552,8 @@ class PLCManager(Mindtrace):
             requests: List of (plc_name, tags) tuples
 
         Returns:
-            Dictionary mapping PLC names to their tag write results
+            Dictionary mapping PLC names to their tag write results; a PLC whose
+            write raised yields {"error": ...} instead
         """
         self.logger.info(f"Executing batch write for {len(requests)} PLCs")
         results = {}
@@ -583,47 +585,35 @@ class PLCManager(Mindtrace):
         return results
 
     async def get_plc_status(self, plc_name: str) -> Dict[str, Any]:
-        """
-        Get status information for a specific PLC.
+        """The manager's OWN knowledge of the PLC: lifecycle state, local facts.
 
-        Args:
-            plc_name: Name of the PLC
-
-        Returns:
-            Dictionary with PLC status information
+        Zero wire I/O, so it is total and safe to poll; the only raise is
+        ``PLCNotFoundError``. For the device's testimony, use ``get_plc_info``.
         """
         if plc_name not in self.plcs:
             raise PLCNotFoundError(f"PLC '{plc_name}' not registered")
 
-        try:
-            plc = self.plcs[plc_name]
+        plc = self.plcs[plc_name]
+        return {
+            "name": plc_name,
+            "ip_address": plc.ip_address,
+            "connected": await plc.is_connected(),
+            "initialized": plc.initialized,
+            "backend": plc.__class__.__name__,
+            "plc_type": getattr(plc, "plc_type", None),
+            "driver_type": getattr(plc, "driver_type", None),
+        }
 
-            status = {
-                "name": plc_name,
-                "ip_address": plc.ip_address,
-                "connected": await plc.is_connected(),
-                "initialized": plc.initialized,
-                "backend": plc.__class__.__name__,
-            }
+    async def get_plc_info(self, plc_name: str) -> Dict[str, Any]:
+        """The DEVICE's testimony: a wire probe on the read channel.
 
-            # Get additional info if available
-            if hasattr(plc, "get_plc_info"):
-                try:
-                    plc_info = await plc.get_plc_info()
-                    status.update(plc_info)
-                except Exception as e:
-                    status["info_error"] = str(e)
+        Thin passthrough; typed exceptions propagate unwrapped (an exchange
+        failure closes the channel in the backend and heals at the next call).
+        """
+        if plc_name not in self.plcs:
+            raise PLCNotFoundError(f"PLC '{plc_name}' not registered")
 
-            return status
-
-        except Exception as e:
-            self.logger.error(f"Failed to get status for PLC '{plc_name}': {e}")
-            return {
-                "name": plc_name,
-                "error": str(e),
-                "connected": False,
-                "initialized": False,
-            }
+        return await self.plcs[plc_name].get_plc_info()
 
     async def get_all_plc_status(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -640,12 +630,7 @@ class PLCManager(Mindtrace):
                 results[plc_name] = await self.get_plc_status(plc_name)
             except Exception as e:
                 self.logger.error(f"Failed to get status for PLC '{plc_name}': {e}")
-                results[plc_name] = {
-                    "name": plc_name,
-                    "error": str(e),
-                    "connected": False,
-                    "initialized": False,
-                }
+                results[plc_name] = {"name": plc_name, "error": str(e)}
 
         return results
 
@@ -662,13 +647,7 @@ class PLCManager(Mindtrace):
         if plc_name not in self.plcs:
             raise PLCNotFoundError(f"PLC '{plc_name}' not registered")
 
-        try:
-            plc = self.plcs[plc_name]
-            return await plc.get_all_tags()
-
-        except Exception as e:
-            self.logger.error(f"Failed to get tags for PLC '{plc_name}': {e}")
-            raise PLCTagError(f"Failed to get tags for PLC '{plc_name}': {e}")
+        return await self.plcs[plc_name].get_all_tags()
 
     def get_registered_plcs(self) -> List[str]:
         """

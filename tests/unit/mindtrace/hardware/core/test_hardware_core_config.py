@@ -308,7 +308,7 @@ class TestHardwareConfigManagerCoverage:
             assert hasattr(config.cameras, attr), f"Missing camera attribute: {attr}"
 
         # Test PLC config
-        plc_attrs = ["connection_timeout", "read_timeout", "write_timeout", "retry_count", "max_concurrent_connections"]
+        plc_attrs = ["connection_timeout", "read_timeout", "write_timeout", "retry_delay", "max_concurrent_connections"]
         for attr in plc_attrs:
             assert hasattr(config.plcs, attr), f"Missing PLC attribute: {attr}"
 
@@ -934,21 +934,6 @@ class TestHardwareConfigManagerEnvironmentVariables:
             config = config_mgr.get_config()
             # Should keep default value
             assert isinstance(config.plcs.write_timeout, float)
-
-    def test_load_plc_retry_count(self):
-        """Test loading PLC retry count from env."""
-        with patch.dict(os.environ, {"MINDTRACE_HW_PLC_RETRY_COUNT": "5"}):
-            config_mgr = HardwareConfigManager(config_file="/nonexistent.json")
-            config = config_mgr.get_config()
-            assert config.plcs.retry_count == 5
-
-    def test_load_plc_retry_count_invalid(self):
-        """Test loading PLC retry count with invalid value."""
-        with patch.dict(os.environ, {"MINDTRACE_HW_PLC_RETRY_COUNT": "invalid"}):
-            config_mgr = HardwareConfigManager(config_file="/nonexistent.json")
-            config = config_mgr.get_config()
-            # Should keep default value
-            assert isinstance(config.plcs.retry_count, int)
 
     def test_load_plc_backend_allen_bradley_enabled_true(self):
         """Test loading PLC backend Allen Bradley enabled from env (true)."""

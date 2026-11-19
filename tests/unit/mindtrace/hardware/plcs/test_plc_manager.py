@@ -13,12 +13,13 @@ import pytest
 import pytest_asyncio
 
 from mindtrace.hardware.core.exceptions import (
+    PLCCommunicationError,
     PLCConnectionError,
     PLCNotFoundError,
-    PLCTagError,
     PLCTagReadError,
     PLCTagWriteError,
 )
+from mindtrace.hardware.plcs import TagError, TagErrorKind, TagResult
 
 
 @pytest.fixture(scope="session")
@@ -54,8 +55,8 @@ def mock_plc_instance():
     mock_plc.connect = AsyncMock(return_value=True)
     mock_plc.disconnect = AsyncMock(return_value=True)
     mock_plc.is_connected = AsyncMock(return_value=False)
-    mock_plc.read_tag_with_retry = AsyncMock(return_value={"Tag1": 100, "Tag2": 200})
-    mock_plc.write_tag_with_retry = AsyncMock(return_value={"Tag1": True, "Tag2": True})
+    mock_plc.read_tag = AsyncMock(return_value={"Tag1": TagResult(value=100), "Tag2": TagResult(value=200)})
+    mock_plc.write_tag = AsyncMock(return_value={"Tag1": TagResult(value=100), "Tag2": TagResult(value=200)})
     mock_plc.get_all_tags = AsyncMock(return_value=["Tag1", "Tag2", "Tag3"])
     mock_plc.get_plc_info = AsyncMock(return_value={"name": "TestPLC", "connected": True})
     mock_plc.__class__.__name__ = "MockAllenBradleyPLC"
@@ -242,6 +243,17 @@ class TestPLCManagerRegistration:
             assert success is False
 
     @pytest.mark.asyncio
+    async def test_register_plc_lets_a_bad_keyword_escape(self, mock_plc_manager):
+        """A constructor signature mismatch is a programming error, not a failed
+        registration — swallowing it into False points the blame at the registry."""
+        with pytest.raises(TypeError):
+            await mock_plc_manager.register_plc(
+                "TestPLC", "AllenBradley", "192.168.1.100", plc_type="logix", retry_count=3
+            )
+
+        assert "TestPLC" not in mock_plc_manager.plcs
+
+    @pytest.mark.asyncio
     async def test_register_plc_with_kwargs(self, mock_plc_manager, mock_plc_instance):
         """Test registering PLC with additional kwargs."""
         mock_backend_class = MagicMock(return_value=mock_plc_instance)
@@ -266,6 +278,17 @@ class TestPLCManagerRegistration:
 
         assert success is True
         assert "TestPLC" not in mock_plc_manager.plcs
+
+    @pytest.mark.asyncio
+    async def test_unregister_plc_disconnects_a_half_open_plc(self, mock_plc_manager, mock_plc_instance):
+        """A PLC reporting not-connected can still hold a live channel session."""
+        mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
+        mock_plc_instance.is_connected.return_value = False
+
+        success = await mock_plc_manager.unregister_plc("TestPLC")
+
+        assert success is True
+        mock_plc_instance.disconnect.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_unregister_plc_not_found(self, mock_plc_manager):
@@ -442,64 +465,100 @@ class TestPLCManagerTagOperations:
     async def test_read_tag_single(self, mock_plc_manager, mock_plc_instance):
         """Test reading a single tag."""
         mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
-        mock_plc_instance.read_tag_with_retry.return_value = {"Tag1": 100}
+        mock_plc_instance.read_tag.return_value = {"Tag1": TagResult(value=100)}
 
         result = await mock_plc_manager.read_tag("TestPLC", "Tag1")
 
         assert "Tag1" in result
-        assert result["Tag1"] == 100
-        mock_plc_instance.read_tag_with_retry.assert_called_once_with("Tag1")
+        assert result["Tag1"].ok is True
+        assert result["Tag1"].value == 100
+        mock_plc_instance.read_tag.assert_called_once_with("Tag1")
 
     @pytest.mark.asyncio
     async def test_read_tag_multiple(self, mock_plc_manager, mock_plc_instance):
         """Test reading multiple tags."""
         mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
-        mock_plc_instance.read_tag_with_retry.return_value = {"Tag1": 100, "Tag2": 200}
+        mock_plc_instance.read_tag.return_value = {"Tag1": TagResult(value=100), "Tag2": TagResult(value=200)}
 
         result = await mock_plc_manager.read_tag("TestPLC", ["Tag1", "Tag2"])
 
         assert len(result) == 2
-        assert result["Tag1"] == 100
-        assert result["Tag2"] == 200
+        assert result["Tag1"].value == 100
+        assert result["Tag2"].value == 200
+        mock_plc_instance.read_tag.assert_called_once_with(["Tag1", "Tag2"])
 
     @pytest.mark.asyncio
     async def test_read_tag_not_registered(self, mock_plc_manager):
         """Test reading tag from non-registered PLC."""
         with pytest.raises(PLCNotFoundError):
-            await mock_plc_manager.read_tag("NonExistentPLC", "Tag1")
+            await mock_plc_manager.read_tag("NonExistentPLC", ["Tag1"])
 
     @pytest.mark.asyncio
-    async def test_read_tag_exception(self, mock_plc_manager, mock_plc_instance):
-        """Test reading tag when exception is raised."""
+    async def test_read_tag_per_tag_error_is_passed_through(self, mock_plc_manager, mock_plc_instance):
+        """A per-tag failure comes back as TagResult.error, not as an exception."""
         mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
-        mock_plc_instance.read_tag_with_retry.side_effect = Exception("Read failed")
+        mock_plc_instance.read_tag.return_value = {
+            "Tag1": TagResult(value=100),
+            "Missing": TagResult(error=TagError(kind=TagErrorKind.missing_tag, message="no such tag")),
+        }
 
-        with pytest.raises(PLCTagReadError):
-            await mock_plc_manager.read_tag("TestPLC", "Tag1")
+        result = await mock_plc_manager.read_tag("TestPLC", ["Tag1", "Missing"])
+
+        assert result["Tag1"].ok is True
+        assert result["Missing"].ok is False
+        assert result["Missing"].value_or(None) is None
+        assert result["Missing"].error.kind is TagErrorKind.missing_tag
+        assert result["Missing"].error.message == "no such tag"
+
+    @pytest.mark.asyncio
+    async def test_read_tag_backend_exception_propagates_untouched(self, mock_plc_manager, mock_plc_instance):
+        """Whole-call failures keep their type: the manager no longer re-wraps them."""
+        mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
+        original = PLCCommunicationError("socket closed")
+        mock_plc_instance.read_tag.side_effect = original
+
+        with pytest.raises(PLCCommunicationError) as excinfo:
+            await mock_plc_manager.read_tag("TestPLC", ["Tag1"])
+
+        assert excinfo.value is original
+
+    @pytest.mark.asyncio
+    async def test_read_tag_read_error_not_rewrapped(self, mock_plc_manager, mock_plc_instance):
+        """A backend PLCTagReadError reaches the caller as the same instance."""
+        mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
+        original = PLCTagReadError("Read failed")
+        mock_plc_instance.read_tag.side_effect = original
+
+        with pytest.raises(PLCTagReadError) as excinfo:
+            await mock_plc_manager.read_tag("TestPLC", ["Tag1"])
+
+        assert excinfo.value is original
 
     @pytest.mark.asyncio
     async def test_write_tag_single(self, mock_plc_manager, mock_plc_instance):
         """Test writing a single tag."""
         mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
-        mock_plc_instance.write_tag_with_retry.return_value = {"Tag1": True}
+        mock_plc_instance.write_tag.return_value = {"Tag1": TagResult(value=100)}
 
         result = await mock_plc_manager.write_tag("TestPLC", ("Tag1", 100))
 
         assert "Tag1" in result
-        assert result["Tag1"] is True
-        mock_plc_instance.write_tag_with_retry.assert_called_once_with(("Tag1", 100))
+        assert result["Tag1"].ok is True
+        assert result["Tag1"].value == 100
+        mock_plc_instance.write_tag.assert_called_once_with(("Tag1", 100))
 
     @pytest.mark.asyncio
     async def test_write_tag_multiple(self, mock_plc_manager, mock_plc_instance):
         """Test writing multiple tags."""
         mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
-        mock_plc_instance.write_tag_with_retry.return_value = {"Tag1": True, "Tag2": True}
+        mock_plc_instance.write_tag.return_value = {"Tag1": TagResult(value=100), "Tag2": TagResult(value=200)}
 
         result = await mock_plc_manager.write_tag("TestPLC", [("Tag1", 100), ("Tag2", 200)])
 
         assert len(result) == 2
-        assert result["Tag1"] is True
-        assert result["Tag2"] is True
+        assert result["Tag1"].value == 100
+        assert result["Tag2"].value == 200
+        mock_plc_instance.write_tag.assert_called_once_with([("Tag1", 100), ("Tag2", 200)])
 
     @pytest.mark.asyncio
     async def test_write_tag_not_registered(self, mock_plc_manager):
@@ -508,59 +567,94 @@ class TestPLCManagerTagOperations:
             await mock_plc_manager.write_tag("NonExistentPLC", [("Tag1", 100)])
 
     @pytest.mark.asyncio
-    async def test_write_tag_exception(self, mock_plc_manager, mock_plc_instance):
-        """Test writing tag when exception is raised."""
+    async def test_write_tag_per_tag_error_is_passed_through(self, mock_plc_manager, mock_plc_instance):
+        """A rejected value comes back as TagResult.error, not as an exception."""
         mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
-        mock_plc_instance.write_tag_with_retry.side_effect = Exception("Write failed")
+        mock_plc_instance.write_tag.return_value = {
+            "Tag1": TagResult(value=100),
+            "Tag2": TagResult(error=TagError(kind=TagErrorKind.type_mismatch, message="not a DINT")),
+        }
 
-        with pytest.raises(PLCTagWriteError):
+        result = await mock_plc_manager.write_tag("TestPLC", [("Tag1", 100), ("Tag2", "nope")])
+
+        assert result["Tag1"].ok is True
+        assert result["Tag2"].ok is False
+        assert result["Tag2"].value_or(None) is None
+        assert result["Tag2"].error.kind is TagErrorKind.type_mismatch
+
+    @pytest.mark.asyncio
+    async def test_write_tag_backend_exception_propagates_untouched(self, mock_plc_manager, mock_plc_instance):
+        """Whole-call failures keep their type: the manager no longer re-wraps them."""
+        mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
+        original = PLCCommunicationError("socket closed")
+        mock_plc_instance.write_tag.side_effect = original
+
+        with pytest.raises(PLCCommunicationError) as excinfo:
             await mock_plc_manager.write_tag("TestPLC", [("Tag1", 100)])
+
+        assert excinfo.value is original
+
+    @pytest.mark.asyncio
+    async def test_write_tag_write_error_not_rewrapped(self, mock_plc_manager, mock_plc_instance):
+        """A backend PLCTagWriteError reaches the caller as the same instance."""
+        mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
+        original = PLCTagWriteError("Write failed")
+        mock_plc_instance.write_tag.side_effect = original
+
+        with pytest.raises(PLCTagWriteError) as excinfo:
+            await mock_plc_manager.write_tag("TestPLC", [("Tag1", 100)])
+
+        assert excinfo.value is original
 
     @pytest.mark.asyncio
     async def test_read_tags_batch_success(self, mock_plc_manager):
         """Test batch tag reading successfully."""
         mock_plc1 = MagicMock()
-        mock_plc1.read_tag_with_retry = AsyncMock(return_value={"Tag1": 100})
+        mock_plc1.read_tag = AsyncMock(return_value={"Tag1": TagResult(value=100)})
         mock_plc2 = MagicMock()
-        mock_plc2.read_tag_with_retry = AsyncMock(return_value={"Tag2": 200})
+        mock_plc2.read_tag = AsyncMock(return_value={"Tag2": TagResult(value=200)})
 
         mock_plc_manager.plcs = {"PLC1": mock_plc1, "PLC2": mock_plc2}
 
-        requests = [("PLC1", "Tag1"), ("PLC2", "Tag2")]
+        requests = [("PLC1", ["Tag1"]), ("PLC2", ["Tag2"])]
         results = await mock_plc_manager.read_tags_batch(requests)
 
         assert isinstance(results, dict)
         assert "PLC1" in results
         assert "PLC2" in results
-        assert results["PLC1"]["Tag1"] == 100
-        assert results["PLC2"]["Tag2"] == 200
+        assert results["PLC1"]["Tag1"].value == 100
+        assert results["PLC2"]["Tag2"].value == 200
+        mock_plc1.read_tag.assert_called_once_with(["Tag1"])
+        mock_plc2.read_tag.assert_called_once_with(["Tag2"])
 
     @pytest.mark.asyncio
     async def test_read_tags_batch_with_exception(self, mock_plc_manager):
         """Test batch tag reading with exceptions."""
         mock_plc1 = MagicMock()
-        mock_plc1.read_tag_with_retry = AsyncMock(return_value={"Tag1": 100})
+        mock_plc1.read_tag = AsyncMock(return_value={"Tag1": TagResult(value=100)})
         mock_plc2 = MagicMock()
-        mock_plc2.read_tag_with_retry = AsyncMock(side_effect=Exception("Read failed"))
+        mock_plc2.read_tag = AsyncMock(side_effect=PLCTagReadError("Read failed"))
 
         mock_plc_manager.plcs = {"PLC1": mock_plc1, "PLC2": mock_plc2}
 
-        requests = [("PLC1", "Tag1"), ("PLC2", "Tag2")]
+        requests = [("PLC1", ["Tag1"]), ("PLC2", ["Tag2"])]
         results = await mock_plc_manager.read_tags_batch(requests)
 
         assert "PLC1" in results
         assert "PLC2" in results
+        assert results["PLC1"]["Tag1"].value == 100
         assert "error" in results["PLC2"]
+        assert "Read failed" in results["PLC2"]["error"]
 
     @pytest.mark.asyncio
     async def test_read_tags_batch_not_registered(self, mock_plc_manager):
         """Test batch tag reading with non-registered PLC."""
         mock_plc1 = MagicMock()
-        mock_plc1.read_tag_with_retry = AsyncMock(return_value={"Tag1": 100})
+        mock_plc1.read_tag = AsyncMock(return_value={"Tag1": TagResult(value=100)})
 
         mock_plc_manager.plcs = {"PLC1": mock_plc1}
 
-        requests = [("PLC1", "Tag1"), ("NonExistentPLC", "Tag2")]
+        requests = [("PLC1", ["Tag1"]), ("NonExistentPLC", ["Tag2"])]
         results = await mock_plc_manager.read_tags_batch(requests)
 
         assert "PLC1" in results
@@ -579,9 +673,9 @@ class TestPLCManagerTagOperations:
     async def test_write_tags_batch_success(self, mock_plc_manager):
         """Test batch tag writing successfully."""
         mock_plc1 = MagicMock()
-        mock_plc1.write_tag_with_retry = AsyncMock(return_value={"Tag1": True})
+        mock_plc1.write_tag = AsyncMock(return_value={"Tag1": TagResult(value=100)})
         mock_plc2 = MagicMock()
-        mock_plc2.write_tag_with_retry = AsyncMock(return_value={"Tag2": True})
+        mock_plc2.write_tag = AsyncMock(return_value={"Tag2": TagResult(value=200)})
 
         mock_plc_manager.plcs = {"PLC1": mock_plc1, "PLC2": mock_plc2}
 
@@ -591,16 +685,18 @@ class TestPLCManagerTagOperations:
         assert isinstance(results, dict)
         assert "PLC1" in results
         assert "PLC2" in results
-        assert results["PLC1"]["Tag1"] is True
-        assert results["PLC2"]["Tag2"] is True
+        assert results["PLC1"]["Tag1"].ok is True
+        assert results["PLC2"]["Tag2"].ok is True
+        mock_plc1.write_tag.assert_called_once_with([("Tag1", 100)])
+        mock_plc2.write_tag.assert_called_once_with([("Tag2", 200)])
 
     @pytest.mark.asyncio
     async def test_write_tags_batch_with_exception(self, mock_plc_manager):
         """Test batch tag writing with exceptions."""
         mock_plc1 = MagicMock()
-        mock_plc1.write_tag_with_retry = AsyncMock(return_value={"Tag1": True})
+        mock_plc1.write_tag = AsyncMock(return_value={"Tag1": TagResult(value=100)})
         mock_plc2 = MagicMock()
-        mock_plc2.write_tag_with_retry = AsyncMock(side_effect=Exception("Write failed"))
+        mock_plc2.write_tag = AsyncMock(side_effect=PLCTagWriteError("Write failed"))
 
         mock_plc_manager.plcs = {"PLC1": mock_plc1, "PLC2": mock_plc2}
 
@@ -609,13 +705,15 @@ class TestPLCManagerTagOperations:
 
         assert "PLC1" in results
         assert "PLC2" in results
+        assert results["PLC1"]["Tag1"].ok is True
         assert "error" in results["PLC2"]
+        assert "Write failed" in results["PLC2"]["error"]
 
     @pytest.mark.asyncio
     async def test_write_tags_batch_not_registered(self, mock_plc_manager):
         """Test batch tag writing with non-registered PLC."""
         mock_plc1 = MagicMock()
-        mock_plc1.write_tag_with_retry = AsyncMock(return_value={"Tag1": True})
+        mock_plc1.write_tag = AsyncMock(return_value={"Tag1": TagResult(value=100)})
 
         mock_plc_manager.plcs = {"PLC1": mock_plc1}
 
@@ -640,10 +738,9 @@ class TestPLCManagerStatus:
 
     @pytest.mark.asyncio
     async def test_get_plc_status_success(self, mock_plc_manager, mock_plc_instance):
-        """Test getting PLC status successfully."""
+        """Status is the manager's LOCAL knowledge: no wire probe is made."""
         mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
         mock_plc_instance.is_connected.return_value = True
-        mock_plc_instance.get_plc_info.return_value = {"name": "TestPLC", "connected": True, "product_name": "Mock PLC"}
 
         status = await mock_plc_manager.get_plc_status("TestPLC")
 
@@ -652,7 +749,7 @@ class TestPLCManagerStatus:
         assert status["connected"] is True
         assert status["initialized"] is False
         assert status["backend"] == "MockAllenBradleyPLC"
-        assert "product_name" in status
+        mock_plc_instance.get_plc_info.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_get_plc_status_not_registered(self, mock_plc_manager):
@@ -672,27 +769,28 @@ class TestPLCManagerStatus:
         assert "product_name" not in status
 
     @pytest.mark.asyncio
-    async def test_get_plc_status_get_plc_info_exception(self, mock_plc_manager, mock_plc_instance):
-        """Test getting PLC status when get_plc_info raises exception."""
+    async def test_get_plc_info_is_a_typed_passthrough(self, mock_plc_manager, mock_plc_instance):
+        """Info is the device's testimony: typed failures propagate unwrapped."""
         mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
-        mock_plc_instance.get_plc_info.side_effect = Exception("Info failed")
+        mock_plc_instance.get_plc_info.side_effect = PLCCommunicationError("PLC info read failed")
 
-        status = await mock_plc_manager.get_plc_status("TestPLC")
+        with pytest.raises(PLCCommunicationError, match="PLC info read failed"):
+            await mock_plc_manager.get_plc_info("TestPLC")
 
-        assert status["name"] == "TestPLC"
-        assert "info_error" in status
+        with pytest.raises(PLCNotFoundError):
+            await mock_plc_manager.get_plc_info("Ghost")
 
     @pytest.mark.asyncio
-    async def test_get_plc_status_exception(self, mock_plc_manager, mock_plc_instance):
-        """Test getting PLC status when exception is raised."""
+    async def test_get_all_plc_status_shields_the_fleet_view(self, mock_plc_manager, mock_plc_instance):
+        """One broken backend must not take down the aggregate report; its entry
+        carries only honest fields."""
         mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
         mock_plc_instance.is_connected.side_effect = Exception("Status failed")
 
-        status = await mock_plc_manager.get_plc_status("TestPLC")
+        results = await mock_plc_manager.get_all_plc_status()
 
-        assert "error" in status
-        assert status["connected"] is False
-        assert status["initialized"] is False
+        assert "Status failed" in results["TestPLC"]["error"]
+        assert "connected" not in results["TestPLC"]  # never fabricated
 
     @pytest.mark.asyncio
     async def test_get_all_plc_status_success(self, mock_plc_manager):
@@ -765,12 +863,13 @@ class TestPLCManagerTagListing:
             await mock_plc_manager.get_plc_tags("NonExistentPLC")
 
     @pytest.mark.asyncio
-    async def test_get_plc_tags_exception(self, mock_plc_manager, mock_plc_instance):
-        """Test getting tags when exception is raised."""
+    async def test_get_plc_tags_is_a_typed_passthrough(self, mock_plc_manager, mock_plc_instance):
+        """Backend exceptions propagate unwrapped: link trouble must never be
+        re-labelled as a tag error by the manager."""
         mock_plc_manager.plcs["TestPLC"] = mock_plc_instance
-        mock_plc_instance.get_all_tags.side_effect = Exception("Get tags failed")
+        mock_plc_instance.get_all_tags.side_effect = PLCCommunicationError("Tag discovery failed")
 
-        with pytest.raises(PLCTagError):
+        with pytest.raises(PLCCommunicationError, match="Tag discovery failed"):
             await mock_plc_manager.get_plc_tags("TestPLC")
 
 
@@ -878,40 +977,40 @@ class TestPLCManagerEdgeCases:
         """Test that batch tag reading executes concurrently."""
         import time
 
-        async def slow_read(tags):
+        async def slow_read(addresses):
             await asyncio.sleep(0.1)
-            return {"Tag1": 100}
+            return {"Tag1": TagResult(value=100)}
 
         mock_plc1 = MagicMock()
-        mock_plc1.read_tag_with_retry = slow_read
+        mock_plc1.read_tag = slow_read
         mock_plc2 = MagicMock()
-        mock_plc2.read_tag_with_retry = slow_read
+        mock_plc2.read_tag = slow_read
 
         mock_plc_manager.plcs = {"PLC1": mock_plc1, "PLC2": mock_plc2}
 
         start_time = time.time()
-        requests = [("PLC1", "Tag1"), ("PLC2", "Tag1")]
+        requests = [("PLC1", ["Tag1"]), ("PLC2", ["Tag1"])]
         results = await mock_plc_manager.read_tags_batch(requests)
         elapsed_time = time.time() - start_time
 
         # Should take approximately 0.1s (concurrent), not 0.2s (sequential)
         assert elapsed_time < 0.15
-        assert "PLC1" in results
-        assert "PLC2" in results
+        assert results["PLC1"]["Tag1"].value == 100
+        assert results["PLC2"]["Tag1"].value == 100
 
     @pytest.mark.asyncio
     async def test_write_tags_batch_concurrent_execution(self, mock_plc_manager):
         """Test that batch tag writing executes concurrently."""
         import time
 
-        async def slow_write(tags):
+        async def slow_write(writes):
             await asyncio.sleep(0.1)
-            return {"Tag1": True}
+            return {"Tag1": TagResult(value=writes[0][1])}
 
         mock_plc1 = MagicMock()
-        mock_plc1.write_tag_with_retry = slow_write
+        mock_plc1.write_tag = slow_write
         mock_plc2 = MagicMock()
-        mock_plc2.write_tag_with_retry = slow_write
+        mock_plc2.write_tag = slow_write
 
         mock_plc_manager.plcs = {"PLC1": mock_plc1, "PLC2": mock_plc2}
 
@@ -922,8 +1021,8 @@ class TestPLCManagerEdgeCases:
 
         # Should take approximately 0.1s (concurrent), not 0.2s (sequential)
         assert elapsed_time < 0.15
-        assert "PLC1" in results
-        assert "PLC2" in results
+        assert results["PLC1"]["Tag1"].value == 100
+        assert results["PLC2"]["Tag1"].value == 200
 
     @pytest.mark.asyncio
     async def test_multiple_operations_on_same_plc(self, mock_plc_manager, mock_plc_instance):
@@ -934,10 +1033,10 @@ class TestPLCManagerEdgeCases:
         await mock_plc_manager.connect_plc("TestPLC")
 
         # Read
-        await mock_plc_manager.read_tag("TestPLC", "Tag1")
+        read = await mock_plc_manager.read_tag("TestPLC", ["Tag1"])
 
         # Write
-        await mock_plc_manager.write_tag("TestPLC", [("Tag1", 100)])
+        written = await mock_plc_manager.write_tag("TestPLC", [("Tag1", 100)])
 
         # Get status
         status = await mock_plc_manager.get_plc_status("TestPLC")
@@ -949,5 +1048,7 @@ class TestPLCManagerEdgeCases:
         await mock_plc_manager.disconnect_plc("TestPLC")
 
         # All operations should succeed
+        assert read["Tag1"].ok is True
+        assert written["Tag1"].ok is True
         assert status["name"] == "TestPLC"
         assert len(tags) > 0

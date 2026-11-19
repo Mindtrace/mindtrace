@@ -7,7 +7,7 @@ functionality including error simulation, tag variation, and edge cases.
 
 import asyncio
 import os
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -20,8 +20,8 @@ from mindtrace.hardware.core.exceptions import (
     PLCTagNotFoundError,
     PLCTagReadError,
     PLCTagWriteError,
-    PLCTimeoutError,
 )
+from mindtrace.hardware.plcs import TagErrorKind
 
 
 @pytest.fixture(scope="session")
@@ -84,13 +84,11 @@ class TestMockAllenBradleyPLCInitialization:
             connection_timeout=5.0,
             read_timeout=2.0,
             write_timeout=2.0,
-            retry_count=3,
             retry_delay=1.0,
         )
         assert plc.connection_timeout == 5.0
         assert plc.read_timeout == 2.0
         assert plc.write_timeout == 2.0
-        assert plc.retry_count == 3
         assert plc.retry_delay == 1.0
 
     def test_init_mock_data_initialization(self):
@@ -233,15 +231,56 @@ class TestMockAllenBradleyPLCConnection:
             await plc.connect()
 
     @pytest.mark.asyncio
-    async def test_connect_retry_logic(self):
-        """Test connection retry logic."""
+    async def test_connect_makes_a_single_attempt(self):
+        """Connect never retries: a configured retry_count does not add attempts."""
         from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
 
-        plc = MockAllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=3)
-        # Connection should succeed on first attempt
-        result = await plc.connect()
+        plc = MockAllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        plc.fail_connect = True
 
-        assert result is True
+        attempts = 0
+        inner_connect = plc._connect
+
+        async def counting_connect():
+            nonlocal attempts
+            attempts += 1
+            return await inner_connect()
+
+        plc._connect = counting_connect
+
+        with pytest.raises(PLCConnectionError):
+            await plc.connect()
+
+        assert attempts == 1
+        assert plc._is_connected is False
+
+    @pytest.mark.asyncio
+    async def test_connect_exposes_the_controller_tag_structure(self):
+        """The real backend aliases the read driver as ``plc``; chiron's preflight
+        reads ``plc.plc.tags`` for the controller tag database."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+
+        plc = MockAllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        await plc.connect()
+
+        tags = plc.plc.tags
+        assert isinstance(tags, dict)
+        assert tags["Motor1_Speed"] == {"tag_type": "atomic", "data_type": "REAL"}
+        assert tags["Motor1_Command"]["data_type"] == "BOOL"
+
+        await plc.disconnect()
+
+        assert plc.plc is None
+
+    @pytest.mark.asyncio
+    async def test_non_logix_drivers_have_no_tag_database(self):
+        """SLC and CIP controllers upload no tag list — neither does the mock."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+
+        plc = MockAllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="slc")
+        await plc.connect()
+
+        assert plc.plc.tags == {}
 
     @pytest.mark.asyncio
     async def test_disconnect_success(self):
@@ -289,6 +328,23 @@ class TestMockAllenBradleyPLCConnection:
 
         assert result is False
 
+    @pytest.mark.asyncio
+    async def test_close_and_reopen_is_channel_scoped(self):
+        """Closing one channel leaves the other open; the next call reopens it."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+
+        plc = MockAllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        await plc.connect()
+
+        await plc._close_channel("read")
+
+        assert plc._channels_open == {"read": False, "write": True}
+        assert await plc.is_connected() is True  # lifecycle state; the channel self-heals
+
+        result = await plc.read_tag(["Motor1_Speed"])  # entry reopens the read channel
+        assert result["Motor1_Speed"].ok is True
+        assert plc._channels_open == {"read": True, "write": True}
+
 
 class TestMockAllenBradleyPLCInitialize:
     """Test suite for PLC initialization method."""
@@ -325,12 +381,15 @@ class TestMockAllenBradleyPLCInitialize:
         """Test initialization returns False when connect returns False."""
         from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
 
-        plc = MockAllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix", retry_count=1)
-        plc.fail_connect = True
+        plc = MockAllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        plc.connect = AsyncMock(return_value=False)
 
-        # This will raise PLCConnectionError which gets caught and re-raised as PLCInitializationError
-        with pytest.raises(PLCInitializationError):
-            await plc.initialize()
+        success, plc_obj, device_manager = await plc.initialize()
+
+        assert success is False
+        assert plc_obj is None
+        assert device_manager is None
+        assert plc.initialized is False
 
 
 class TestMockAllenBradleyPLCTagReading:
@@ -344,7 +403,8 @@ class TestMockAllenBradleyPLCTagReading:
         result = await mock_plc.read_tag("Motor1_Speed")
 
         assert "Motor1_Speed" in result
-        assert isinstance(result["Motor1_Speed"], float)
+        assert result["Motor1_Speed"].ok is True
+        assert isinstance(result["Motor1_Speed"].value, float)
 
     @pytest.mark.asyncio
     async def test_read_tag_multiple(self, mock_plc):
@@ -357,9 +417,10 @@ class TestMockAllenBradleyPLCTagReading:
         assert "Motor1_Speed" in result
         assert "Production_Count" in result
         assert "Conveyor_Status" in result
-        assert isinstance(result["Motor1_Speed"], float)
-        assert isinstance(result["Production_Count"], int)
-        assert isinstance(result["Conveyor_Status"], bool)
+        assert all(tag_result.ok for tag_result in result.values())
+        assert isinstance(result["Motor1_Speed"].value, float)
+        assert isinstance(result["Production_Count"].value, int)
+        assert isinstance(result["Conveyor_Status"].value, bool)
 
     @pytest.mark.asyncio
     async def test_read_tag_logix_tags(self, mock_plc):
@@ -369,6 +430,7 @@ class TestMockAllenBradleyPLCTagReading:
         result = await mock_plc.read_tag(["Motor1_Speed", "Production_Count", "Conveyor_Status"])
 
         assert all(tag in result for tag in ["Motor1_Speed", "Production_Count", "Conveyor_Status"])
+        assert all(tag_result.ok for tag_result in result.values())
 
     @pytest.mark.asyncio
     async def test_read_tag_slc_tags(self):
@@ -384,6 +446,7 @@ class TestMockAllenBradleyPLCTagReading:
         assert "B3:0" in result
         assert "T4:0.PRE" in result
         assert "C5:0.ACC" in result
+        assert all(tag_result.ok for tag_result in result.values())
 
     @pytest.mark.asyncio
     async def test_read_tag_cip_tags(self):
@@ -398,36 +461,43 @@ class TestMockAllenBradleyPLCTagReading:
         assert "Assembly:20" in result
         assert "Parameter:1" in result
         assert "Identity" in result
+        assert all(tag_result.ok for tag_result in result.values())
 
     @pytest.mark.asyncio
     async def test_read_tag_with_variation(self, mock_plc):
         """Test reading tags with realistic variation."""
         await mock_plc.connect()
 
-        # Read a tag that should have variation (temperature, pressure, speed, level)
+        # Read a tag that should have variation (temperature, pressure, speed, level).
+        # Drift is ±1% of the *stored* value, and the drifted value is written back,
+        # so each read is measured against the value the previous read left behind.
         original_value = mock_plc._tag_values["Motor1_Speed"]
         result1 = await mock_plc.read_tag("Motor1_Speed")
+        value1 = result1["Motor1_Speed"].value
         result2 = await mock_plc.read_tag("Motor1_Speed")
+        value2 = result2["Motor1_Speed"].value
 
-        # Values should be within ±2% of original
-        assert abs(result1["Motor1_Speed"] - original_value) <= original_value * 0.02
-        assert abs(result2["Motor1_Speed"] - original_value) <= original_value * 0.02
-        # Values might be different due to variation
-        # (though they could be the same by chance)
+        assert result1["Motor1_Speed"].ok is True
+        assert result2["Motor1_Speed"].ok is True
+        assert abs(value1 - original_value) <= original_value * 0.01
+        assert abs(value2 - value1) <= abs(value1) * 0.01
 
     @pytest.mark.asyncio
     async def test_read_tag_non_existent_logix(self, mock_plc):
-        """Test reading non-existent tag with LogixDriver."""
+        """An unknown Logix tag comes back as a missing_tag error, not a sentinel."""
         await mock_plc.connect()
 
         result = await mock_plc.read_tag("NonExistentTag")
 
         assert "NonExistentTag" in result
-        assert result["NonExistentTag"] is None
+        assert result["NonExistentTag"].ok is False
+        assert result["NonExistentTag"].value_or(None) is None
+        assert result["NonExistentTag"].error.kind is TagErrorKind.missing_tag
+        assert "NonExistentTag" in result["NonExistentTag"].error.message
 
     @pytest.mark.asyncio
     async def test_read_tag_non_existent_slc(self):
-        """Test reading non-existent tag with SLCDriver."""
+        """An unknown SLC address is a missing_tag error (it no longer reads back 0)."""
         from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
 
         plc = MockAllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="slc")
@@ -436,11 +506,13 @@ class TestMockAllenBradleyPLCTagReading:
         result = await plc.read_tag("N99:999")
 
         assert "N99:999" in result
-        assert result["N99:999"] == 0  # SLC returns 0 for non-existent addresses
+        assert result["N99:999"].ok is False
+        assert result["N99:999"].value_or(None) is None
+        assert result["N99:999"].error.kind is TagErrorKind.missing_tag
 
     @pytest.mark.asyncio
     async def test_read_tag_non_existent_cip(self):
-        """Test reading non-existent tag with CIPDriver."""
+        """An unknown CIP object is a missing_tag error, not a sentinel."""
         from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
 
         plc = MockAllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="cip")
@@ -449,13 +521,40 @@ class TestMockAllenBradleyPLCTagReading:
         result = await plc.read_tag("NonExistentCIP")
 
         assert "NonExistentCIP" in result
-        assert result["NonExistentCIP"] is None
+        assert result["NonExistentCIP"].ok is False
+        assert result["NonExistentCIP"].value_or(None) is None
+        assert result["NonExistentCIP"].error.kind is TagErrorKind.missing_tag
+
+    @pytest.mark.asyncio
+    async def test_read_tag_mixed_success_and_missing(self, mock_plc):
+        """One bad address in a batch does not spoil the good ones."""
+        await mock_plc.connect()
+
+        result = await mock_plc.read_tag(["Motor1_Speed", "NonExistentTag", "Production_Count"])
+
+        assert len(result) == 3
+        assert result["Motor1_Speed"].ok is True
+        assert result["Production_Count"].ok is True
+        assert result["NonExistentTag"].ok is False
+        assert result["NonExistentTag"].error.kind is TagErrorKind.missing_tag
 
     @pytest.mark.asyncio
     async def test_read_tag_not_connected(self, mock_plc):
-        """Test reading tag when not connected."""
-        with pytest.raises(PLCCommunicationError):
-            await mock_plc.read_tag("Motor1_Speed")
+        """A never-connected channel is a lifecycle error: nothing gets opened."""
+        with pytest.raises(PLCConnectionError, match="never opened"):
+            await mock_plc.read_tag(["Motor1_Speed"])
+
+    @pytest.mark.asyncio
+    async def test_read_tag_recovers_a_dropped_channel(self, mock_plc):
+        """A channel that dropped after connect is reopened in place, no raise."""
+        await mock_plc.connect()
+        mock_plc._is_connected = False
+
+        result = await mock_plc.read_tag(["Motor1_Speed"])
+
+        assert result["Motor1_Speed"].ok is True
+        # Only the failing channel came back, exactly as on the real backend.
+        assert mock_plc._channels_open == {"read": True, "write": False}
 
     @pytest.mark.asyncio
     async def test_read_tag_with_fail_read_flag(self, mock_plc):
@@ -464,28 +563,61 @@ class TestMockAllenBradleyPLCTagReading:
         mock_plc.fail_read = True
 
         with pytest.raises(PLCTagReadError):
-            await mock_plc.read_tag("Motor1_Speed")
+            await mock_plc.read_tag(["Motor1_Speed"])
 
     @pytest.mark.asyncio
     async def test_read_tag_with_timeout_flag(self, mock_plc):
-        """Test reading tag when simulate_timeout flag is set."""
+        """A simulated timeout raises typed and closes the read channel, like
+        the real backend: a late reply must not answer the next request."""
         await mock_plc.connect()
         mock_plc.simulate_timeout = True
+        mock_plc.read_timeout = 0.01
 
-        with pytest.raises(PLCTimeoutError):
-            await mock_plc.read_tag("Motor1_Speed")
+        with pytest.raises(PLCCommunicationError):
+            await mock_plc.read_tag(["Motor1_Speed"])
+
+        assert mock_plc._channels_open == {"read": False, "write": True}
+        assert await mock_plc.is_connected() is True  # lifecycle state; self-heals
 
     @pytest.mark.asyncio
-    async def test_read_tag_exception_handling(self, mock_plc):
-        """Test reading tag exception handling."""
+    async def test_write_tag_with_timeout_flag(self, mock_plc):
+        """The write channel has its own timeout simulation, like the real backend."""
+        await mock_plc.connect()
+        mock_plc.simulate_timeout = True
+        mock_plc.write_timeout = 0.01
+
+        with pytest.raises(PLCCommunicationError):
+            await mock_plc.write_tag([("Pump1_Command", True)])
+
+        assert mock_plc._channels_open == {"read": True, "write": False}
+
+    @pytest.mark.asyncio
+    async def test_error_flags_do_not_preempt_the_lifecycle_guard(self):
+        """A never-connected mock raises PLCConnectionError like the real
+        backend, no matter which simulation flags are set."""
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+
+        plc = MockAllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
+        plc.simulate_timeout = True
+        plc.fail_read = True
+        plc.fail_write = True
+
+        with pytest.raises(PLCConnectionError):
+            await plc.read_tag(["Motor1_Speed"])
+        with pytest.raises(PLCConnectionError):
+            await plc.write_tag([("Pump1_Command", True)])
+
+    @pytest.mark.asyncio
+    async def test_read_tag_internal_error_propagates_unwrapped(self, mock_plc):
+        """An unexpected internal failure is not laundered into a PLC exception."""
         await mock_plc.connect()
 
-        # Patch _tag_values to raise an exception
+        # Patch _tag_values so the membership test blows up mid-read.
         original_tag_values = mock_plc._tag_values
         mock_plc._tag_values = None
 
-        with pytest.raises(PLCTagReadError):
-            await mock_plc.read_tag("Motor1_Speed")
+        with pytest.raises(TypeError):
+            await mock_plc.read_tag(["Motor1_Speed"])
 
         # Restore
         mock_plc._tag_values = original_tag_values
@@ -502,7 +634,8 @@ class TestMockAllenBradleyPLCTagWriting:
         result = await mock_plc.write_tag(("Production_Count", 2000))
 
         assert "Production_Count" in result
-        assert result["Production_Count"] is True
+        assert result["Production_Count"].ok is True
+        assert result["Production_Count"].value == 2000
 
     @pytest.mark.asyncio
     async def test_write_tag_multiple(self, mock_plc):
@@ -512,8 +645,10 @@ class TestMockAllenBradleyPLCTagWriting:
         result = await mock_plc.write_tag([("Production_Count", 2000), ("Motor1_Command", True)])
 
         assert len(result) == 2
-        assert result["Production_Count"] is True
-        assert result["Motor1_Command"] is True
+        assert result["Production_Count"].ok is True
+        assert result["Production_Count"].value == 2000
+        assert result["Motor1_Command"].ok is True
+        assert result["Motor1_Command"].value is True
 
     @pytest.mark.asyncio
     async def test_write_tag_verify_read_back(self, mock_plc):
@@ -521,82 +656,110 @@ class TestMockAllenBradleyPLCTagWriting:
         await mock_plc.connect()
 
         write_result = await mock_plc.write_tag([("Production_Count", 2000)])
-        assert write_result["Production_Count"] is True
+        assert write_result["Production_Count"].ok is True
 
-        read_result = await mock_plc.read_tag("Production_Count")
-        assert read_result["Production_Count"] == 2000
+        read_result = await mock_plc.read_tag(["Production_Count"])
+        assert read_result["Production_Count"].ok is True
+        assert read_result["Production_Count"].value == 2000
 
     @pytest.mark.asyncio
-    async def test_write_tag_type_conversion_bool(self, mock_plc):
-        """Test writing tag with bool type conversion."""
+    async def test_write_tag_bool_returns_the_callers_value(self, mock_plc):
+        """A BOOL write reports back what the caller handed in, uncoerced."""
         await mock_plc.connect()
 
-        # Write with different truthy values
         result1 = await mock_plc.write_tag([("Motor1_Command", 1)])
         result2 = await mock_plc.write_tag([("Motor1_Command", "true")])
         result3 = await mock_plc.write_tag([("Motor1_Command", 0)])
 
-        assert result1["Motor1_Command"] is True
-        assert result2["Motor1_Command"] is True
-        assert result3["Motor1_Command"] is True  # bool(0) is False, but we're testing conversion
-
-        # Verify the actual stored value
-        read_result = await mock_plc.read_tag("Motor1_Command")
-        assert isinstance(read_result["Motor1_Command"], bool)
+        assert result1["Motor1_Command"].ok is True
+        assert result1["Motor1_Command"].value == 1
+        assert result2["Motor1_Command"].ok is True
+        assert result2["Motor1_Command"].value == "true"
+        # 0 is a successful write of a falsy value, not a failure.
+        assert result3["Motor1_Command"].ok is True
+        assert result3["Motor1_Command"].value == 0
 
     @pytest.mark.asyncio
-    async def test_write_tag_type_conversion_int(self, mock_plc):
-        """Test writing tag with int type conversion."""
+    async def test_write_tag_int_returns_the_callers_value(self, mock_plc):
+        """The real backend never rewrites the value it was given; nor does the mock."""
         await mock_plc.connect()
 
         result = await mock_plc.write_tag([("Production_Count", 1500.7)])
 
-        assert result["Production_Count"] is True
-        # Verify it was converted to int
-        read_result = await mock_plc.read_tag("Production_Count")
-        assert isinstance(read_result["Production_Count"], int)
-        assert read_result["Production_Count"] == 1500
+        assert result["Production_Count"].ok is True
+        assert result["Production_Count"].value == 1500.7
+
+        read_result = await mock_plc.read_tag(["Production_Count"])
+        assert read_result["Production_Count"].value == 1500.7
 
     @pytest.mark.asyncio
-    async def test_write_tag_type_conversion_float(self, mock_plc):
-        """Test writing tag with float type conversion."""
+    async def test_write_tag_float_returns_the_callers_value(self, mock_plc):
         await mock_plc.connect()
 
         result = await mock_plc.write_tag([("Motor1_Speed", 2000)])
 
-        assert result["Motor1_Speed"] is True
-        # Verify it was converted to float
-        read_result = await mock_plc.read_tag("Motor1_Speed")
-        assert isinstance(read_result["Motor1_Speed"], float)
-        # Motor1_Speed has variation, so check it's within ±2% of 2000
-        assert abs(read_result["Motor1_Speed"] - 2000.0) <= 2000.0 * 0.02
+        assert result["Motor1_Speed"].ok is True
+        assert result["Motor1_Speed"].value == 2000
+
+        read_result = await mock_plc.read_tag(["Motor1_Speed"])
+        # Motor1_Speed drifts on read, so check it's within ±1% of 2000
+        assert abs(read_result["Motor1_Speed"].value - 2000) <= 2000 * 0.01
 
     @pytest.mark.asyncio
     async def test_write_tag_type_conversion_failure(self, mock_plc):
-        """Test writing tag with type conversion failure."""
+        """A value that cannot be coerced to the tag type yields a type_mismatch error."""
         await mock_plc.connect()
 
-        # Try to write invalid value that can't be converted
-        # This depends on the tag type - let's try writing a non-numeric string to a numeric tag
         result = await mock_plc.write_tag([("Production_Count", "invalid")])
 
-        # Should fail type conversion
-        assert result["Production_Count"] is False
+        assert result["Production_Count"].ok is False
+        assert result["Production_Count"].value_or(None) is None
+        assert result["Production_Count"].error.kind is TagErrorKind.type_mismatch
 
     @pytest.mark.asyncio
     async def test_write_tag_non_existent(self, mock_plc):
-        """Test writing to non-existent tag."""
+        """Writing an unknown tag yields a missing_tag error, not a False sentinel."""
         await mock_plc.connect()
 
-        result = await mock_plc.write_tag([("NonExistentTag", 123)])
+        result = await mock_plc.write_tag(("NonExistentTag", 123))
 
-        assert result["NonExistentTag"] is False
+        assert result["NonExistentTag"].ok is False
+        assert result["NonExistentTag"].value_or(None) is None
+        assert result["NonExistentTag"].error.kind is TagErrorKind.missing_tag
+
+    @pytest.mark.asyncio
+    async def test_write_tag_mixed_success_and_failure(self, mock_plc):
+        """One bad write in a batch does not spoil the good ones."""
+        await mock_plc.connect()
+
+        result = await mock_plc.write_tag(
+            [("Production_Count", 2000), ("NonExistentTag", 123), ("Motor1_Command", "nope")]
+        )
+
+        assert len(result) == 3
+        assert result["Production_Count"].ok is True
+        assert result["NonExistentTag"].error.kind is TagErrorKind.missing_tag
+        # "nope" passes the BOOL check, so Motor1_Command is a successful write
+        assert result["Motor1_Command"].ok is True
+        assert result["Motor1_Command"].value == "nope"
 
     @pytest.mark.asyncio
     async def test_write_tag_not_connected(self, mock_plc):
-        """Test writing tag when not connected."""
-        with pytest.raises(PLCCommunicationError):
+        """A never-connected channel is a lifecycle error: nothing gets opened."""
+        with pytest.raises(PLCConnectionError, match="never opened"):
             await mock_plc.write_tag([("Production_Count", 2000)])
+
+    @pytest.mark.asyncio
+    async def test_write_tag_recovers_a_dropped_channel(self, mock_plc):
+        """A channel that dropped after connect is reopened in place, no raise."""
+        await mock_plc.connect()
+        mock_plc._is_connected = False
+
+        result = await mock_plc.write_tag([("Production_Count", 2000)])
+
+        assert result["Production_Count"].ok is True
+        # Only the failing channel came back, exactly as on the real backend.
+        assert mock_plc._channels_open == {"read": False, "write": True}
 
     @pytest.mark.asyncio
     async def test_write_tag_with_fail_write_flag(self, mock_plc):
@@ -608,15 +771,15 @@ class TestMockAllenBradleyPLCTagWriting:
             await mock_plc.write_tag([("Production_Count", 2000)])
 
     @pytest.mark.asyncio
-    async def test_write_tag_exception_handling(self, mock_plc):
-        """Test writing tag exception handling."""
+    async def test_write_tag_internal_error_propagates_unwrapped(self, mock_plc):
+        """An unexpected internal failure is not laundered into a PLC exception."""
         await mock_plc.connect()
 
-        # Patch _tag_values to raise an exception
+        # Patch _tag_values so the membership test blows up mid-write.
         original_tag_values = mock_plc._tag_values
         mock_plc._tag_values = None
 
-        with pytest.raises(PLCTagWriteError):
+        with pytest.raises(TypeError):
             await mock_plc.write_tag([("Production_Count", 2000)])
 
         # Restore
@@ -717,7 +880,7 @@ class TestMockAllenBradleyPLCTagDiscovery:
     @pytest.mark.asyncio
     async def test_get_all_tags_not_connected(self, mock_plc):
         """Test getting all tags when not connected."""
-        with pytest.raises(PLCCommunicationError):
+        with pytest.raises(PLCConnectionError, match="never opened"):
             await mock_plc.get_all_tags()
 
     @pytest.mark.asyncio
@@ -765,7 +928,7 @@ class TestMockAllenBradleyPLCTagInfo:
     @pytest.mark.asyncio
     async def test_get_tag_info_not_connected(self, mock_plc):
         """Test getting tag info when not connected."""
-        with pytest.raises(PLCCommunicationError):
+        with pytest.raises(PLCConnectionError, match="never opened"):
             await mock_plc.get_tag_info("Motor1_Speed")
 
     @pytest.mark.asyncio
@@ -834,36 +997,8 @@ class TestMockAllenBradleyPLCPLCInfo:
     @pytest.mark.asyncio
     async def test_get_plc_info_not_connected(self, mock_plc):
         """Test getting PLC info when not connected."""
-        with pytest.raises(PLCCommunicationError):
+        with pytest.raises(PLCConnectionError, match="never opened"):
             await mock_plc.get_plc_info()
-
-    @pytest.mark.asyncio
-    async def test_get_plc_info_exception_handling(self, mock_plc):
-        """Test getting PLC info exception handling."""
-        await mock_plc.connect()
-
-        # Make hash() fail when called in the LogixDriver section
-        # by making plc_name something that causes hash to fail
-        # Actually, hash() rarely fails, so let's make the f-string formatting fail
-        original_plc_name = mock_plc.plc_name
-
-        # Create a class that raises when hash() is called
-        class HashError:
-            def __hash__(self):
-                raise Exception("Hash failed")
-
-        mock_plc.plc_name = HashError()
-
-        info = await mock_plc.get_plc_info()
-
-        # Should return error dict
-        assert "name" in info  # The error dict has name from exception handler
-        assert info["connected"] is False
-        assert "error" in info
-        assert info["mock"] is True
-
-        # Restore
-        mock_plc.plc_name = original_plc_name
 
 
 class TestMockAllenBradleyPLCStaticMethods:
@@ -917,15 +1052,20 @@ class TestMockAllenBradleyPLCEdgeCases:
         """Test that tag variation preserves int type for integer tags."""
         await mock_plc.connect()
 
-        # Read a tag that should have variation but is stored as int
-        # Temperature tags are floats, but let's test with a tag that's an int
-        # Actually, variation only applies to tags with keywords, and they're converted
-        # Let's test with a tag that gets variation but should stay as int
-        original_value = mock_plc._tag_values.get("Production_Count")
-        if original_value and isinstance(original_value, int):
-            # Production_Count doesn't have variation keywords, so it won't vary
-            result = await mock_plc.read_tag("Production_Count")
-            assert isinstance(result["Production_Count"], int)
+        # Production_Count has no variation keyword, so it is returned untouched.
+        original_value = mock_plc._tag_values["Production_Count"]
+        assert isinstance(original_value, int)
+        result = await mock_plc.read_tag(["Production_Count"])
+        assert result["Production_Count"].ok is True
+        assert isinstance(result["Production_Count"].value, int)
+        assert result["Production_Count"].value == original_value
+
+        # A tag that does drift ("speed") keeps its integer type through the drift.
+        mock_plc._tag_values["Custom_Speed"] = 100
+        drifted = await mock_plc.read_tag(["Custom_Speed"])
+        assert drifted["Custom_Speed"].ok is True
+        assert isinstance(drifted["Custom_Speed"].value, int)
+        assert abs(drifted["Custom_Speed"].value - 100) <= 1
 
     @pytest.mark.asyncio
     async def test_multiple_connections(self, mock_plc):
