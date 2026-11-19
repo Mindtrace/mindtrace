@@ -244,6 +244,15 @@ ts = MCPToolset.from_http("http://localhost:8002/mcp/", prefix="db")
 # tools become db__query, db__list_tables, ...
 ```
 
+Remote calls can fail for transient reasons. Use `max_retries` to retry a failed call before the error is surfaced to the model:
+
+```python
+ts = MCPToolset.from_http("http://localhost:8001/mcp-server/mcp/", max_retries=2)
+# each tool call gets up to 2 attempts
+```
+
+`max_retries` is the number of attempts per call, available on `from_http`, `from_sse`, and `from_stdio`, and applies to every tool the server exposes. When unset, each call is made once.
+
 ## Filtering Tools
 
 Toolsets can be filtered so the model sees only the tools you want to expose.
