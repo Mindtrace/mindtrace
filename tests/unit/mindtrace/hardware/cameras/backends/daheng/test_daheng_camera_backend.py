@@ -27,11 +27,12 @@ from mindtrace.hardware.core.exceptions import (
 class MockGxFeature:
     """Mock gxipy feature (ExposureTime, Gain, etc.)."""
 
-    def __init__(self, value=0.0, min_val=0.0, max_val=100000.0, implemented=True):
+    def __init__(self, value=0.0, min_val=0.0, max_val=100000.0, implemented=True, writable=True):
         self._value = value
         self._min = min_val
         self._max = max_val
         self._implemented = implemented
+        self._writable = writable
 
     def get(self):
         return self._value
@@ -47,6 +48,9 @@ class MockGxFeature:
 
     def is_implemented(self):
         return self._implemented
+
+    def is_writable(self):
+        return self._writable and self._implemented
 
     def get_range(self):
         return ["Mono8", "BGR8", "RGB8"]
@@ -71,11 +75,15 @@ class MockDataStream:
 class MockDahengDevice:
     """Mock gxipy Device (camera object)."""
 
-    def __init__(self, width=1920, height=1080):
+    def __init__(self, width=1920, height=1080, include_gamma=True):
         self.ExposureTime = MockGxFeature(10000.0, 20.0, 1000000.0)
         self.ExposureAuto = MockGxFeature(0)
         self.Gain = MockGxFeature(0.0, 0.0, 24.0)
         self.GainAuto = MockGxFeature(0)
+        if include_gamma:
+            self.Gamma = MockGxFeature(1.0, 0.25, 2.0)
+            self.GammaMode = MockGxFeature(0)
+            self.GammaEnable = MockGxFeature(0)
         self.TriggerMode = MockGxFeature(0)
         self.TriggerSource = MockGxFeature(0)
         self.TriggerSoftware = MockGxFeature()
@@ -167,6 +175,8 @@ def _create_mock_gx_module():
     mock_gx.GxAutoEntry.OFF = 0
     mock_gx.GxAutoEntry.ONCE = 1
     mock_gx.GxAutoEntry.CONTINUOUS = 2
+    mock_gx.GxGammaModeEntry = MagicMock()
+    mock_gx.GxGammaModeEntry.USER = 1
     mock_gx.GxPixelFormatEntry.MONO8 = 0x01080001
     mock_gx.GxPixelFormatEntry.BGR8 = 0x02180015
     mock_gx.GxPixelFormatEntry.RGB8 = 0x02180014
@@ -388,6 +398,41 @@ class TestDahengConfiguration:
         """Test getting gain range."""
         gain_range = await initialized_daheng.get_gain_range()
         assert len(gain_range) == 2
+
+    @pytest.mark.asyncio
+    async def test_gamma_control(self, initialized_daheng):
+        """Test gamma get/set on a camera with a writable Gamma feature."""
+        assert await initialized_daheng.get_gamma_range() == [0.25, 2.0]
+
+        await initialized_daheng.set_gamma(1.6)
+        assert await initialized_daheng.get_gamma() == 1.6
+
+    @pytest.mark.asyncio
+    async def test_gamma_out_of_range(self, initialized_daheng):
+        """Test setting gamma outside the supported range."""
+        with pytest.raises(CameraConfigurationError, match="outside valid range"):
+            await initialized_daheng.set_gamma(5.0)
+
+    @pytest.mark.asyncio
+    async def test_gamma_not_implemented(self, initialized_daheng):
+        """Test gamma APIs when the device exposes no Gamma feature."""
+        del initialized_daheng.camera.Gamma
+
+        assert await initialized_daheng.get_gamma_range() is None
+        assert await initialized_daheng.get_gamma() is None
+
+        with pytest.raises(CameraConfigurationError, match="not implemented"):
+            await initialized_daheng.set_gamma(1.2)
+
+    @pytest.mark.asyncio
+    async def test_gamma_read_only_reports_no_range(self, initialized_daheng):
+        """Test read-only Gamma is treated as unsupported for range queries."""
+        initialized_daheng.camera.Gamma = MockGxFeature(1.0, 0.25, 2.0, writable=False)
+
+        assert await initialized_daheng.get_gamma_range() is None
+
+        with pytest.raises(CameraConfigurationError, match="not implemented"):
+            await initialized_daheng.set_gamma(1.2)
 
     @pytest.mark.asyncio
     async def test_trigger_mode(self, initialized_daheng):

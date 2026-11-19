@@ -658,6 +658,118 @@ class DahengCameraBackend(CameraBackend):
         except Exception as e:
             raise CameraConfigurationError(f"Failed to set gain for camera '{self.camera_name}': {e}") from e
 
+    async def get_gamma(self) -> Optional[float]:
+        """Get current camera gamma value.
+
+        Returns:
+            Current gamma value, or ``None`` when gamma is not implemented or
+            writable on this camera.
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If gamma retrieval fails on a supported camera
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        if await self.get_gamma_range() is None:
+            return None
+
+        try:
+
+            def _get():
+                cam = self.camera
+                gamma = getattr(cam, "Gamma", None)
+                if gamma is not None and gamma.is_implemented():
+                    return gamma.get()
+                return None
+
+            return await self._run_blocking(_get)
+        except Exception as e:
+            raise HardwareOperationError(f"Failed to get gamma for camera '{self.camera_name}': {e}") from e
+
+    @staticmethod
+    def _is_gamma_writable(gamma) -> bool:
+        """Return True when the Gamma feature exists and can be written."""
+        if gamma is None or not gamma.is_implemented():
+            return False
+        is_writable = getattr(gamma, "is_writable", None)
+        if callable(is_writable):
+            return bool(is_writable())
+        return True
+
+    async def get_gamma_range(self) -> Optional[List[Union[int, float]]]:
+        """Get the supported gamma range.
+
+        Returns:
+            List with [min_gamma, max_gamma], or ``None`` when gamma is not
+            implemented or writable on this camera.
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        try:
+
+            def _get_range():
+                cam = self.camera
+                gamma = getattr(cam, "Gamma", None)
+                if not self._is_gamma_writable(gamma):
+                    return None
+                return [gamma.get_min(), gamma.get_max()]
+
+            return await self._run_blocking(_get_range)
+        except Exception as e:
+            self.logger.warning(f"Gamma range not available for camera '{self.camera_name}': {str(e)}")
+            return None
+
+    async def set_gamma(self, gamma: Union[int, float]):
+        """Set camera gamma.
+
+        Args:
+            gamma: Gamma value (1.0 is a linear response)
+
+        Raises:
+            CameraConfigurationError: If the camera has no Gamma feature or setting fails
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        gamma_range = await self.get_gamma_range()
+        if gamma_range is None:
+            raise CameraConfigurationError("Gamma feature is not implemented on this camera")
+        if gamma < gamma_range[0] or gamma > gamma_range[1]:
+            raise CameraConfigurationError(
+                f"Gamma {gamma} outside valid range [{gamma_range[0]}, {gamma_range[1]}] for camera '{self.camera_name}'"
+            )
+
+        try:
+
+            def _set():
+                cam = self.camera
+                gamma_node = getattr(cam, "Gamma", None)
+                if gamma_node is None or not gamma_node.is_implemented():
+                    raise CameraConfigurationError("Gamma feature is not implemented on this camera")
+
+                # Switch to user gamma mode first (older models gate the Gamma node behind it)
+                gamma_mode = getattr(cam, "GammaMode", None)
+                gamma_mode_entry = getattr(gx, "GxGammaModeEntry", None)
+                if gamma_mode is not None and gamma_mode_entry is not None and gamma_mode.is_implemented():
+                    gamma_mode.set(gamma_mode_entry.USER)
+
+                # Enable gamma correction if the camera exposes a separate switch
+                gamma_enable = getattr(cam, "GammaEnable", None)
+                if gamma_enable is not None and gamma_enable.is_implemented():
+                    gamma_enable.set(True)
+
+                gamma_node.set(float(gamma))
+
+            await self._run_blocking(_set)
+            self.logger.debug(f"Gamma set to {gamma} for camera '{self.camera_name}'")
+        except CameraConfigurationError:
+            raise
+        except Exception as e:
+            raise CameraConfigurationError(f"Failed to set gamma for camera '{self.camera_name}': {e}") from e
+
     async def get_triggermode(self) -> str:
         """Get current trigger mode.
 

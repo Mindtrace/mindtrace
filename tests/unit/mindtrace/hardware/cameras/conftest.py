@@ -25,6 +25,8 @@ def fast_camera_sleep_and_imwrite(monkeypatch, request):
             "test_different_image_patterns",
             "test_auto_pattern_rotation",
             "test_exposure_and_gain_effects_on_image",
+            "test_gamma_effects_on_image",
+            "test_gamma_applies_to_fixture_image",
             "test_roi_get_set_cycle",
             "test_extreme_roi_values",
             "test_checkerboard_size_parameter",

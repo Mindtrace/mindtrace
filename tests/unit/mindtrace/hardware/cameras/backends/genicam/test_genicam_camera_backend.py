@@ -67,6 +67,10 @@ class MockGenICamNode:
     def is_readable(self):
         return self._readable
 
+    def get_access_mode(self):
+        """Return GenICam access mode (3=RO, 4=RW)."""
+        return 4 if self._writable else 3
+
 
 class MockEnumNode(MockGenICamNode):
     """Mock GenICam enumeration node with entries."""
@@ -257,6 +261,7 @@ class MockHarvester:
         node_map = MockNodeMap(
             ExposureTime=MockGenICamNode(10000.0, writable=True, readable=True, min_val=100.0, max_val=1000000.0),
             Gain=MockGenICamNode(1.0, writable=True, readable=True, min_val=0.0, max_val=20.0),
+            Gamma=MockGenICamNode(1.0, writable=True, readable=True, min_val=0.25, max_val=2.0),
             Width=MockGenICamNode(1920, writable=True, readable=True, min_val=32, max_val=1920),
             Height=MockGenICamNode(1080, writable=True, readable=True, min_val=32, max_val=1080),
             PixelFormat=MockEnumNode("RGB8", ["Mono8", "RGB8", "BGR8"], writable=True, readable=True),
@@ -686,6 +691,78 @@ class TestExposureAndGain:
         await genicam_backend.set_gain(5.0)
         gain = await genicam_backend.get_gain()
         assert gain == 5.0
+
+    @pytest.mark.asyncio
+    async def test_get_gamma_range(self, genicam_backend):
+        """Test getting gamma range from the Gamma node."""
+        assert await genicam_backend.get_gamma_range() == [0.25, 2.0]
+
+    @pytest.mark.asyncio
+    async def test_get_gamma_range_falls_back_to_gamma_raw(self, genicam_backend_uninitialized):
+        """Test get_gamma_range tries GammaRaw when Gamma is read-only."""
+        node_map = MockNodeMap(
+            Gamma=MockGenICamNode(1.0, writable=False, readable=True, min_val=0.25, max_val=2.0),
+            GammaRaw=MockGenICamNode(1.0, writable=True, readable=True, min_val=0.1, max_val=3.0),
+        )
+        backend = attach_mock_acquirer(genicam_backend_uninitialized, node_map)
+
+        assert await backend.get_gamma_range() == [0.1, 3.0]
+
+    @pytest.mark.asyncio
+    async def test_set_gamma_uses_gamma_raw_when_gamma_read_only(self, genicam_backend_uninitialized):
+        """get/set must use the same writable node selected for range queries."""
+        node_map = MockNodeMap(
+            Gamma=MockGenICamNode(0.5, writable=False, readable=True, min_val=0.25, max_val=2.0),
+            GammaRaw=MockGenICamNode(1.0, writable=True, readable=True, min_val=0.1, max_val=3.0),
+        )
+        backend = attach_mock_acquirer(genicam_backend_uninitialized, node_map)
+
+        assert await backend.get_gamma() == 1.0
+        assert node_map.Gamma.value == 0.5
+
+        await backend.set_gamma(2.2)
+
+        assert node_map.GammaRaw.value == 2.2
+        assert node_map.Gamma.value == 0.5
+        assert await backend.get_gamma() == 2.2
+
+    @pytest.mark.asyncio
+    async def test_set_gamma(self, genicam_backend):
+        """Test setting gamma."""
+        await genicam_backend.set_gamma(1.5)
+        assert await genicam_backend.get_gamma() == 1.5
+
+    @pytest.mark.asyncio
+    async def test_set_gamma_out_of_range_raises_configuration_error(self, genicam_backend):
+        """Test out-of-range gamma raises CameraConfigurationError, not HardwareOperationError."""
+        with pytest.raises(CameraConfigurationError, match="outside valid range"):
+            await genicam_backend.set_gamma(99.0)
+
+    @pytest.mark.asyncio
+    async def test_set_gamma_not_implemented_raises_configuration_error(self, genicam_backend):
+        """Test unsupported gamma raises CameraConfigurationError, not HardwareOperationError."""
+        with patch.object(genicam_backend, "get_gamma_range", new=AsyncMock(return_value=None)):
+            with pytest.raises(CameraConfigurationError, match="not implemented"):
+                await genicam_backend.set_gamma(1.2)
+
+    @pytest.mark.asyncio
+    async def test_set_gamma_verification_failure(self, genicam_backend):
+        """Test readback mismatch after set raises HardwareOperationError like exposure."""
+        with patch.object(genicam_backend, "get_gamma", new=AsyncMock(return_value=999.0)):
+            with pytest.raises(HardwareOperationError, match="verification failed"):
+                await genicam_backend.set_gamma(1.0)
+
+    @pytest.mark.asyncio
+    async def test_gamma_when_not_initialized(self, genicam_backend_uninitialized):
+        """Test gamma methods raise CameraConnectionError when not initialized."""
+        with pytest.raises(CameraConnectionError):
+            await genicam_backend_uninitialized.get_gamma_range()
+
+        with pytest.raises(CameraConnectionError):
+            await genicam_backend_uninitialized.get_gamma()
+
+        with pytest.raises(CameraConnectionError):
+            await genicam_backend_uninitialized.set_gamma(1.0)
 
     @pytest.mark.asyncio
     async def test_exposure_range_validation(self, genicam_backend):
