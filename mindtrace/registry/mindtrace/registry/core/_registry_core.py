@@ -552,7 +552,11 @@ class _RegistryCore(Mindtrace):
             names, objs, versions, init_params, metadata
         )
         validate_save_batch(
-            names, versions_list, version_objects=self.version_objects, version_digits=self.version_digits
+            names,
+            versions_list,
+            version_objects=self.version_objects,
+            version_digits=self.version_digits,
+            version_scheme=self.version_scheme,
         )
         if not self.version_objects:
             versions_list = ["1"] * len(names)

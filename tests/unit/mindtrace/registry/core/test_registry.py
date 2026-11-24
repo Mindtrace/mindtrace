@@ -2053,6 +2053,27 @@ class TestVersionScheme:
         assert result.results == ["4", "2.05"]
         assert exact_registry.load(["a", "b"], ["4", "2.05"]).results == [1, 2]
 
+    @pytest.mark.parametrize("versions", [["12.04", "12.4"], ["13.01-1", "13.01-2"]])
+    def test_exact_registry_batch_saves_repeated_name_with_exact_versions(self, exact_registry, versions):
+        result = exact_registry.save(["model", "model"], [1, 2], version=versions)
+
+        assert result.results == versions
+        assert exact_registry.load(["model", "model"], versions).results == [1, 2]
+
+    def test_exact_registry_batch_rejects_duplicate_identity(self, exact_registry):
+        with pytest.raises(ValueError, match="Duplicate batch identity"):
+            exact_registry.save(["model", "model"], [1, 2], version=["2.05", "2.05"])
+        assert exact_registry.list_versions("model") == []
+
+    def test_store_batch_saves_repeated_name_with_exact_versions(self, tmp_path):
+        registry = Registry(backend=tmp_path, version_objects=True, version_scheme="exact")
+        store = Store(mounts={"exact": registry}, default_mount="exact")
+
+        result = store.save(["model@12.04", "model@12.4"], [1, 2])
+
+        assert result.results == ["12.04", "12.4"]
+        assert registry.list_versions("model") == ["12.04", "12.4"]
+
     def test_exact_scheme_requires_version_objects(self, tmp_path):
         with pytest.raises(ValueError):
             Registry(backend=tmp_path, version_scheme="exact")
