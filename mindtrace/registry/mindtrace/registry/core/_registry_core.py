@@ -1569,10 +1569,6 @@ class _RegistryCore(Mindtrace):
             name, version = self._parse_key(parsed_key)
             names.append(name)
             versions.append(version)
-        if not is_batch:
-            # Reject invalid input before mapping methods translate lookup errors
-            # into KeyError/defaults. Batch methods validate each item separately.
-            self.backend.validate_object_name(names[0])
         return names, versions, is_batch
 
     def _load_key(self, key: str | list[str]) -> Any:
