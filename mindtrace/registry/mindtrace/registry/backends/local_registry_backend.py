@@ -3,6 +3,7 @@
 All object directories and registry files are stored under a configurable base directory.
 """
 
+import glob
 import json
 import os
 import platform
@@ -31,6 +32,7 @@ from mindtrace.registry.backends.registry_backend import (
     PathArg,
     RegistryBackend,
 )
+from mindtrace.registry.core._paths import validate_relative_path
 from mindtrace.registry.core.exceptions import (
     LockAcquisitionError,
     RegistryObjectNotFound,
@@ -73,6 +75,12 @@ class LocalRegistryBackend(RegistryBackend):
         """The resolved metadata file path for the backend."""
         return self._metadata_path
 
+    def validate_object_name(self, name: NameArg) -> None:
+        """Check logical names and native path syntax before local filesystem use."""
+        super().validate_object_name(name)
+        for value in self._to_list(name):
+            validate_relative_path(value, parameter="Object name")
+
     # ─────────────────────────────────────────────────────────────────────────
     # Path Helpers
     # ─────────────────────────────────────────────────────────────────────────
@@ -86,6 +94,7 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             Path: The full resolved filesystem path.
         """
+        validate_relative_path(remote_key, parameter="Storage key")
         return self.uri / remote_key
 
     def _object_key(self, name: str, version: str) -> str:
@@ -98,6 +107,10 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             Storage key for the object version.
         """
+        self.validate_object_name(name)
+        if not version or version == ".":
+            raise ValueError("Version must be a non-empty relative path")
+        validate_relative_path(version, parameter="Version")
         return f"{name}/{version}"
 
     def _object_metadata_path(self, name: str, version: str) -> Path:
@@ -110,6 +123,7 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             Metadata file path (e.g., Path("_meta_object_name@1.0.0.yaml")).
         """
+        self._object_key(name, version)  # Validate both components before constructing metadata paths.
         return self.uri / f"_meta_{name.replace(':', '%3A')}@{version}.yaml"
 
     def _ensure_metadata_parent(self, meta_path: Path) -> None:
@@ -125,10 +139,16 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             Metadata file prefix (e.g., "_meta_object_name@").
         """
+        self.validate_object_name(name)
         return f"_meta_{name.replace(':', '%3A')}@"
 
     def _lock_dir(self, key: str) -> Path:
         """Get the directory for lock files for a given key."""
+        name, separator, version = key.partition("@")
+        if separator:
+            self._object_key(name, version)
+        else:
+            self.validate_object_name(key)
         return self._full_path(f"_locks_{key}")
 
     def _exclusive_lock_path(self, key: str) -> Path:
@@ -353,6 +373,7 @@ class LocalRegistryBackend(RegistryBackend):
         Raises:
             LockAcquisitionError: If the lock cannot be acquired within the timeout period.
         """
+        self._lock_dir(key)  # Reject invalid components before acquisition/retry or any filesystem I/O.
         if timeout is None:
             timeout = self._lock_timeout
         timeout_handler = Timeout(
@@ -392,6 +413,7 @@ class LocalRegistryBackend(RegistryBackend):
         content_type: str = "application/octet-stream",
         expiration_minutes: int = 60,
     ) -> dict[str, Any]:
+        validate_relative_path(upload_id, parameter="upload_id")
         staging_dir = self.uri / "_direct_uploads" / upload_id
         staging_dir.mkdir(parents=True, exist_ok=True)
         upload_path = staging_dir / "data.txt"
@@ -435,12 +457,12 @@ class LocalRegistryBackend(RegistryBackend):
         metadata: dict[str, Any],
         on_conflict: str = OnConflict.SKIP,
     ) -> OpResult:
-        upload_path = Path(staged_target.get("path", ""))
-        if staged_target.get("kind") != "local_file" or not upload_path.exists():
-            return OpResult.failed(name, version, FileNotFoundError(f"Staged upload not found for {name}@{version}"))
-
         try:
-            self.validate_object_name(name)
+            upload_path = Path(staged_target.get("path", ""))
+            if staged_target.get("kind") != "local_file" or not upload_path.exists():
+                return OpResult.failed(
+                    name, version, FileNotFoundError(f"Staged upload not found for {name}@{version}")
+                )
             with self._internal_lock(f"{name}@{version}"):
                 artifact_dst = self._full_path(self._object_key(name, version))
                 meta_path = self._object_metadata_path(name, version)
@@ -508,8 +530,6 @@ class LocalRegistryBackend(RegistryBackend):
 
         for obj_name, obj_version, obj_path, obj_meta in zip(names, versions, paths, metadatas):
             try:
-                self.validate_object_name(obj_name)
-
                 # Lock on the specific object@version for proper coordination with pull() and delete()
                 # Registry resolves versions before calling backend, so obj_version is always concrete
                 with self._internal_lock(f"{obj_name}@{obj_version}"):
@@ -597,9 +617,6 @@ class LocalRegistryBackend(RegistryBackend):
 
         for obj_name, obj_version, dest_path in zip(names, versions, paths):
             try:
-                # No name validation needed - Registry already fetched metadata,
-                # so the object exists with this name (name was validated at push time)
-
                 src = self._full_path(self._object_key(obj_name, obj_version))
 
                 if not src.exists():
@@ -658,6 +675,7 @@ class LocalRegistryBackend(RegistryBackend):
                 with self._internal_lock(f"{obj_name}@{obj_version}"):
                     target = self._full_path(self._object_key(obj_name, obj_version))
                     meta_path = self._object_metadata_path(obj_name, obj_version)
+                    metadata_exists = meta_path.exists()
                     # Delete directory
                     self.logger.debug(f"Deleting directory: {target}")
                     if target.exists():
@@ -665,7 +683,7 @@ class LocalRegistryBackend(RegistryBackend):
 
                     # Delete metadata
                     self.logger.debug(f"Deleting metadata file: {meta_path}")
-                    if meta_path.exists():
+                    if metadata_exists:
                         meta_path.unlink()
 
                     # Cleanup parent if empty (race-safe under concurrent deletes).
@@ -682,6 +700,8 @@ class LocalRegistryBackend(RegistryBackend):
                         # Parent already removed by a concurrent delete; this is fine.
                         pass
 
+                if not metadata_exists:
+                    raise RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found")
                 results.add(OpResult.success(obj_name, obj_version))
             except Exception as e:
                 results.add(OpResult.failed(obj_name, obj_version, e))
@@ -728,8 +748,11 @@ class LocalRegistryBackend(RegistryBackend):
         results = OpResults()
 
         for obj_name, obj_version, obj_meta in zip(names, versions, metadatas):
-            self.validate_object_name(obj_name)
-            meta_path = self._object_metadata_path(obj_name, obj_version)
+            try:
+                meta_path = self._object_metadata_path(obj_name, obj_version)
+            except ValueError as e:
+                results.add(OpResult.failed(obj_name, obj_version, e))
+                continue
 
             if meta_path.exists():
                 if on_conflict == OnConflict.OVERWRITE:
@@ -775,10 +798,9 @@ class LocalRegistryBackend(RegistryBackend):
         results = OpResults()
 
         for obj_name, obj_version in zip(names, versions):
-            meta_path = self._object_metadata_path(obj_name, obj_version)
-            self.logger.debug(f"Loading metadata from: {meta_path}")
-
             try:
+                meta_path = self._object_metadata_path(obj_name, obj_version)
+                self.logger.debug(f"Loading metadata from: {meta_path}")
                 with open(meta_path, "r") as f:
                     meta = yaml.safe_load(f)
 
@@ -876,41 +898,50 @@ class LocalRegistryBackend(RegistryBackend):
         """Fetch registry-level metadata from the backend.
 
         Returns:
-            Dictionary containing registry metadata. Returns empty dict if no metadata exists.
+            Dictionary containing registry metadata, or an empty dict if the
+            metadata file does not exist when opened.
+
+        Raises:
+            json.JSONDecodeError: If the existing metadata contains malformed JSON.
+            OSError: If opening or reading the metadata fails for any other reason.
+                Read failures after opening, including FileNotFoundError, propagate.
         """
         try:
-            if not self._metadata_path.exists():
-                return {}
-            with open(self._metadata_path, "r") as f:
-                return json.load(f)
-        except Exception as e:
-            self.logger.debug(f"Could not load registry metadata: {e}")
+            stream = open(self._metadata_path, "r")
+        except FileNotFoundError:
             return {}
+
+        with stream:
+            return json.load(stream)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Discovery
     # ─────────────────────────────────────────────────────────────────────────
 
     def list_objects(self) -> List[str]:
-        """List all objects in the backend.
+        """List all objects in the backend, preserving full nested names.
 
         Returns:
             List of object names sorted alphabetically.
         """
         objects = set()
-        # Look for metadata files that follow the pattern _meta_objectname@version.yaml
-        for meta_file in self.uri.glob("_meta_*.yaml"):
-            # Extract the object name from the metadata filename
-            # Remove '_meta_' prefix and split at '@' to get the object name part
-            name_part = meta_file.stem.split("@")[0].replace("_meta_", "")
-            # Convert back from filesystem-safe format to original object name
-            name = name_part.replace("%3A", ":")
-            objects.add(name)
+        # Nested names put the leading marker on a directory, e.g.
+        # _meta_models/resnet@1.0.0.yaml. Only descend into metadata roots,
+        # not payload/staging directories that may also contain YAML files.
+        for entry in self.uri.glob("_meta_*"):
+            candidates = entry.rglob("*.yaml") if entry.is_dir() else (entry,)
+            for meta_file in candidates:
+                if not meta_file.is_file() or meta_file.suffix != ".yaml":
+                    continue
+                relative_key = meta_file.relative_to(self.uri).as_posix()
+                name_part, separator, version = relative_key[len("_meta_") : -len(".yaml")].rpartition("@")
+                if separator and name_part and version and "/" not in version:
+                    objects.add(name_part.replace("%3A", ":"))
 
         return sorted(list(objects))
 
     def list_versions(self, name: NameArg) -> Dict[str, List[str]]:
-        """List all versions available for the given object(s).
+        """List versions for exact object names, including slash-delimited names.
 
         Args:
             name: Name of the object(s)
@@ -922,15 +953,18 @@ class LocalRegistryBackend(RegistryBackend):
         results: Dict[str, List[str]] = {}
 
         for obj_name in names:
-            # Build the prefix used in metadata filenames for this object.
-            prefix = self._object_metadata_prefix(obj_name)
+            # Separate the exact directory from the filename prefix. A nested
+            # name's full prefix cannot be sliced off a file's basename.
+            prefix_path = self.uri / self._object_metadata_prefix(obj_name)
+            filename_prefix = prefix_path.name
             versions = []
 
-            # Search for metadata files matching the prefix pattern in the base directory.
-            for meta_file in self.uri.glob(f"{prefix}*.yaml"):
-                # Extract the version from the filename by removing the prefix and the '.yaml' extension.
-                version = meta_file.name[len(prefix) : -5]
-                versions.append(version)
+            # The object name is a literal identifier, not a glob pattern.
+            for meta_file in prefix_path.parent.glob(glob.escape(filename_prefix) + "*.yaml"):
+                if meta_file.is_file():
+                    version = meta_file.name[len(filename_prefix) : -len(".yaml")]
+                    if version:
+                        versions.append(version)
 
             # Semantic sort
             def version_key(v):

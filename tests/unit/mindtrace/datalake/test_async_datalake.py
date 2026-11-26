@@ -57,6 +57,7 @@ from mindtrace.datalake.types import (
     StorageRef,
     SubjectRef,
 )
+from mindtrace.registry import Registry, Store
 from mindtrace.registry.core.exceptions import RegistryObjectNotFound, StoreLocationNotFound
 
 
@@ -2635,6 +2636,31 @@ class TestAsyncDatalakeUnit:
         await async_datalake.delete_object(ref)
         mock_store.build_key.assert_called_once_with("temp", "junk.dat", "v3")
         mock_store.delete.assert_called_once_with("temp/junk.dat@v3", None)
+
+    @pytest.mark.asyncio
+    async def test_delete_object_tolerates_already_absent_payload(self, async_datalake, tmp_path):
+        registry = Registry(backend=tmp_path / "payloads", version_objects=True)
+        async_datalake.store = Store(mounts={"payloads": registry}, default_mount="payloads")
+        registry.save("item", b"old", version="1.0.0")
+        registry.save("item", b"keep", version="2.0.0")
+        ref = StorageRef(mount="payloads", name="item", version="1.0.0")
+
+        await async_datalake.delete_object(ref)
+        assert not registry.has_object("item", "1.0.0")
+        await async_datalake.delete_object(ref)
+        assert registry.load("item", "2.0.0") == b"keep"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("error_type", [PermissionError, KeyError])
+    async def test_delete_object_propagates_operational_errors(self, async_datalake, mock_store, error_type):
+        error = error_type("Delete failed")
+        mock_store.delete.side_effect = error
+
+        with pytest.raises(error_type) as caught:
+            await async_datalake.delete_object(StorageRef(mount="temp", name="item", version="1.0.0"))
+
+        assert caught.value is error
+        mock_store.delete.assert_called_once_with("temp/item@1.0.0", None)
 
     @pytest.mark.asyncio
     async def test_ensure_primary_asset_aliases_empty_returns_empty_list(self, async_datalake):
