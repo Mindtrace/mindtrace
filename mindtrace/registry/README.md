@@ -126,11 +126,23 @@ registry = Registry(backend, version_objects=True, version_scheme="exact")
 registry.save("model", obj, version="2.05")    # stored as "2.05"
 registry.save("model", obj, version="2.5")     # a separate version
 registry.list_versions("model")                # ["2.05", "2.5"], natural sort
+registry.load("model")                         # "latest" = "2.5", the highest in natural order
 registry.save("model", obj)                    # ValueError: a version is required
 ```
 
-Versions may contain letters, digits, `.`, `-` and `_`. The scheme is stored with the
-registry and can only be chosen when the registry is created.
+Versions are runs of digits separated by single `.` or `-` (e.g. `12.04`, `13.01-1`,
+`2024-05-01`), at most 64 characters. They sort naturally: digit runs compare as numbers,
+and versions that compare equal (`2.05`, `2.5`) fall back to string order. `"latest"` is
+the highest version in that order.
+
+There is no auto-increment, so every save needs an explicit version. This includes
+`registry["model"] = obj` (use `registry["model@12.04"] = obj`), `setdefault`, and
+`Store.copy`/`Store.move` (pass `target_version`). `download` and `update` from another
+registry keep the source version.
+
+The scheme is stored with the registry and can only be chosen when the registry is created.
+A local cache left over from an earlier registry at the same location with other settings
+is discarded when the registry is opened.
 
 ## Batch operations
 
