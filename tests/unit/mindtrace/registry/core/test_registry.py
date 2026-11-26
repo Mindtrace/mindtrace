@@ -2333,6 +2333,35 @@ class TestCaching:
         assert registry.load("model", "2.5") == "b"
         assert registry.list_versions("model") == ["2.05", "2.5"]
 
+    @pytest.mark.parametrize(
+        "old_settings, new_settings, new_version",
+        [
+            ({"version_objects": True}, {"version_objects": True, "version_scheme": "exact"}, "12.04"),
+            ({"version_objects": True}, {"version_objects": True, "version_digits": 2}, "1.1"),
+            ({"version_objects": False}, {"version_objects": True}, "2.0.0"),
+        ],
+    )
+    def test_cached_remote_recreated_with_other_settings_opens_with_a_fresh_cache(
+        self, temp_registry_dir, old_settings, new_settings, new_version
+    ):
+        # A real local backend that Registry treats as remote, so the local cache is used
+        local = LocalRegistryBackend(uri=Path(temp_registry_dir) / "remote")
+        remote = Mock(spec=RegistryBackend, wraps=local)
+        remote.uri = local.uri
+        old = Registry(backend=remote, **old_settings)
+        old.save("model", "old")
+        assert old.load("model") == "old"
+
+        shutil.rmtree(local.uri)
+        local = LocalRegistryBackend(uri=local.uri)
+        remote = Mock(spec=RegistryBackend, wraps=local)
+        remote.uri = local.uri
+        registry = Registry(backend=remote, **new_settings)
+        registry.save("model", "new", version=new_version)
+
+        assert registry.list_versions("model") == [new_version]
+        assert registry.load("model", new_version) == "new"
+
     def test_save_with_cache(self, cached_mock_registry):
         """A healthy save publishes readable remote and cache artifacts."""
         registry = cached_mock_registry

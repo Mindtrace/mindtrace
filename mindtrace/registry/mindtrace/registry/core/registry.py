@@ -7,6 +7,7 @@ and transparently adds local caching when a remote backend is used.
 
 import hashlib
 import os
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -157,6 +158,14 @@ class Registry(Mindtrace):
                 **kwargs,
             )
             cache_dir = self._get_cache_dir(self._remote.backend.uri)
+            # A cache left by an earlier remote at this URI with other settings is stale: start afresh.
+            cached = LocalRegistryBackend(uri=cache_dir).fetch_registry_metadata()
+            if cached and (
+                cached.get("version_objects") != self._remote.version_objects
+                or cached.get("version_digits") != self._remote.version_digits
+                or cached.get("version_scheme", VersionScheme.NUMERIC.value) != self._remote.version_scheme.value
+            ):
+                shutil.rmtree(cache_dir)
             self._cache: _RegistryCore = _RegistryCore(
                 backend=LocalRegistryBackend(uri=cache_dir),
                 version_objects=self._remote.version_objects,
