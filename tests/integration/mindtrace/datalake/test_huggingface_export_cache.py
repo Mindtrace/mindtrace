@@ -1,7 +1,8 @@
 """Real-HF regression coverage for in-memory export cache behaviour."""
 
-import datasets
 import pytest
+
+datasets = pytest.importorskip("datasets", reason="datasets not installed")
 
 from mindtrace.datalake.exporters.huggingface import _save_huggingface_rows
 from mindtrace.datalake.exporters.types import ExportableDataset
