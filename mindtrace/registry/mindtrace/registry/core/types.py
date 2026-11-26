@@ -88,6 +88,7 @@ class Version:
 
 
 _EXACT_VERSION_PATTERN = re.compile(r"\d+(?:[.-]\d+)*")
+_EXACT_VERSION_MAX_LENGTH = 64
 _DIGIT_RUNS = re.compile(r"(\d+)")
 
 
@@ -102,8 +103,12 @@ def validate_exact_version(value: str) -> str:
 
     Raises:
         ValueError: If ``value`` is not runs of digits separated by single ``.`` or ``-``
-            (e.g. ``"12.04"``, ``"13.01-1"``, ``"2024-05-01"``).
+            (e.g. ``"12.04"``, ``"13.01-1"``, ``"2024-05-01"``), or is longer than 64 characters.
     """
+    if len(value) > _EXACT_VERSION_MAX_LENGTH:
+        raise ValueError(
+            f"Invalid version string '{value}'. Exact versions must be at most {_EXACT_VERSION_MAX_LENGTH} characters."
+        )
     if not _EXACT_VERSION_PATTERN.fullmatch(value):
         raise ValueError(
             f"Invalid version string '{value}'. Exact versions must be digits separated by single '.' or '-', "
