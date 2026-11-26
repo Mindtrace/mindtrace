@@ -87,7 +87,7 @@ class Version:
         return self.normalized
 
 
-_EXACT_VERSION_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+_EXACT_VERSION_PATTERN = re.compile(r"\d+(?:[.-]\d+)*")
 _DIGIT_RUNS = re.compile(r"(\d+)")
 
 
@@ -101,13 +101,13 @@ def validate_exact_version(value: str) -> str:
         The same string.
 
     Raises:
-        ValueError: If ``value`` doesn't start with a letter or digit, or contains
-            characters other than letters, digits, ``.``, ``-`` and ``_``.
+        ValueError: If ``value`` is not runs of digits separated by single ``.`` or ``-``
+            (e.g. ``"12.04"``, ``"13.01-1"``, ``"2024-05-01"``).
     """
     if not _EXACT_VERSION_PATTERN.fullmatch(value):
         raise ValueError(
-            f"Invalid version string '{value}'. Exact versions must start with a letter or digit and "
-            "contain only letters, digits, '.', '-' and '_'."
+            f"Invalid version string '{value}'. Exact versions must be digits separated by single '.' or '-', "
+            "e.g. '12.04' or '13.01-1'."
         )
     return value
 

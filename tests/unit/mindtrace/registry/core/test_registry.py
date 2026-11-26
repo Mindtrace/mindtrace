@@ -2016,13 +2016,37 @@ class TestVersionScheme:
     def exact_registry(self, tmp_path):
         return Registry(backend=tmp_path, version_objects=True, version_scheme="exact")
 
-    @pytest.mark.parametrize("version", ["2.05", "v2.5", "V2", "1", "2024-05-01", "rc_1", "a.b-c_d"])
+    @pytest.mark.parametrize("version", ["2.05", "1", "2024-05-01", "13.01-1", "007"])
     def test_exact_registry_keeps_version_as_given(self, exact_registry, version):
         assert exact_registry.save("model", "value", version=version) == version
         assert exact_registry.list_versions("model") == [version]
         assert exact_registry.load("model", version) == "value"
 
-    @pytest.mark.parametrize("version", ["", " ", "1 2", "a/b", "a@b", ".", "..", ".hidden", "-1", "_x", "1:2"])
+    @pytest.mark.parametrize(
+        "version",
+        [
+            "",
+            " ",
+            "1 2",
+            "a/b",
+            "a@b",
+            ".",
+            "..",
+            ".hidden",
+            "-1",
+            "_x",
+            "1:2",
+            "v2.5",
+            "V2",
+            "rc_1",
+            "a.b-c_d",
+            "all",
+            "1.",
+            "1..2",
+            "1.-2",
+            "1_2",
+        ],
+    )
     def test_exact_registry_rejects_unsafe_versions(self, exact_registry, version):
         with pytest.raises(ValueError):
             exact_registry.save("model", "value", version=version)
