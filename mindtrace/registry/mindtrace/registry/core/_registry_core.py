@@ -1303,7 +1303,8 @@ class _RegistryCore(Mindtrace):
             name: Name of the object in the source registry
             version: Version of the object in the source registry. Defaults to "latest"
             target_name: Name to use in the current registry. If None, uses the same name as source
-            target_version: Version to use in the current registry. If None, uses the same version as source
+            target_version: Version to use in the current registry. If None, uses the next version, or the
+                source version if this registry uses ``version_scheme="exact"``.
 
         Raises:
             ValueError: If the object doesn't exist in the source registry
@@ -1321,9 +1322,10 @@ class _RegistryCore(Mindtrace):
 
         # Set target name and version if not specified
         target_name = ifnone(target_name, default=name)
-        if target_version is None:
+        if target_version is None and self.version_scheme is not VersionScheme.EXACT:
             target_version = self._next_version(target_name)
         else:
+            target_version = ifnone(target_version, default=version)
             if self.has_object(name=target_name, version=target_version):
                 raise ValueError(f"Object {target_name} version {target_version} already exists in current registry")
 

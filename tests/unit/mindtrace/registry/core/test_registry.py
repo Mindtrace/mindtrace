@@ -2068,6 +2068,28 @@ class TestVersionScheme:
         assert exact_registry.list_versions("model") == ["2.01", "2.1", "2.2", "2.10", "3.01", "9", "10"]
         assert exact_registry.load("model") == "10"
 
+    def test_download_into_exact_registry_keeps_source_version(self, exact_registry, tmp_path_factory):
+        source = Registry(backend=tmp_path_factory.mktemp("source"), version_objects=True, version_scheme="exact")
+        source.save("model", "a", version="12.04")
+        source.save("model", "b", version="12.4")
+
+        exact_registry.download(source, "model", version="12.04")
+
+        assert exact_registry.list_versions("model") == ["12.04"]
+        assert exact_registry.load("model", "12.04") == "a"
+        with pytest.raises(ValueError, match="already exists"):
+            exact_registry.download(source, "model", version="12.04")
+
+    def test_update_exact_registry_from_exact_registry_keeps_versions(self, exact_registry, tmp_path_factory):
+        source = Registry(backend=tmp_path_factory.mktemp("source"), version_objects=True, version_scheme="exact")
+        source.save("model", "a", version="12.04")
+        source.save("model", "b", version="13.01-1")
+
+        exact_registry.update(source)
+
+        assert exact_registry.list_versions("model") == ["12.04", "13.01-1"]
+        assert exact_registry.load("model", "13.01-1") == "b"
+
     def test_exact_registry_save_without_version_raises(self, exact_registry):
         with pytest.raises(ValueError):
             exact_registry.save("model", 1)
