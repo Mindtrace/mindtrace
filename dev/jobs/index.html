@@ -1826,7 +1826,8 @@ propagate to the caller.</p>
 <h2 id="backends">Backends</h2>
 <p>The package supports three backend families.</p>
 <h3 id="local-backend">Local backend</h3>
-<p><code>LocalClient</code> is the simplest backend and a good default for local development or single-process workflows.</p>
+<p><code>LocalClient</code> is the simplest backend and a good default for local development or single-process workflows.
+Its <code>delete_queue()</code> succeeds if the queue is already absent; other storage errors propagate.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mindtrace.jobs</span><span class="w"> </span><span class="kn">import</span> <span class="n">LocalClient</span><span class="p">,</span> <span class="n">Orchestrator</span>
 </span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>
 </span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
