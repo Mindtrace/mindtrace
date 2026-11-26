@@ -92,44 +92,6 @@ _EXACT_VERSION_MAX_LENGTH = 64
 _DIGIT_RUNS = re.compile(r"(\d+)")
 
 
-def validate_exact_version(value: str) -> str:
-    """Return ``value`` unchanged if it is a valid exact version.
-
-    Args:
-        value: Version string.
-
-    Returns:
-        The same string.
-
-    Raises:
-        ValueError: If ``value`` is not runs of digits separated by single ``.`` or ``-``
-            (e.g. ``"12.04"``, ``"13.01-1"``, ``"2024-05-01"``), or is longer than 64 characters.
-    """
-    if len(value) > _EXACT_VERSION_MAX_LENGTH:
-        raise ValueError(
-            f"Invalid version string '{value}'. Exact versions must be at most {_EXACT_VERSION_MAX_LENGTH} characters."
-        )
-    if not _EXACT_VERSION_PATTERN.fullmatch(value):
-        raise ValueError(
-            f"Invalid version string '{value}'. Exact versions must be digits separated by single '.' or '-', "
-            "e.g. '12.04' or '13.01-1'."
-        )
-    return value
-
-
-def exact_version_sort_key(value: str) -> tuple:
-    """Natural sort key: digit runs compare as numbers, ties fall back to the raw string.
-
-    Args:
-        value: Version string.
-
-    Returns:
-        A sort key.
-    """
-    parts = tuple((0, int(run)) if run.isdigit() else (1, run) for run in _DIGIT_RUNS.split(value) if run)
-    return parts, value
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Enums
 # ─────────────────────────────────────────────────────────────────────────────
@@ -144,6 +106,55 @@ class VersionScheme(str, Enum):
 
     NUMERIC = "numeric"
     EXACT = "exact"
+
+    def normalize(self, version: str, digits: int) -> str:
+        """Validate a version string and return it in this scheme's stored form.
+
+        Args:
+            version: Version string.
+            digits: Number of components for the numeric scheme.
+
+        Returns:
+            The padded numeric version (``"1.2"`` -> ``"1.2.0"``), or the exact version unchanged.
+
+        Raises:
+            ValueError: If ``version`` is invalid. Exact versions must be runs of digits separated by
+                single ``.`` or ``-`` (e.g. ``"12.04"``, ``"13.01-1"``) and at most 64 characters.
+        """
+        if self is VersionScheme.NUMERIC:
+            return str(Version(version, digits=digits))
+        if len(version) > _EXACT_VERSION_MAX_LENGTH:
+            raise ValueError(
+                f"Invalid version string '{version}'. "
+                f"Exact versions must be at most {_EXACT_VERSION_MAX_LENGTH} characters."
+            )
+        if not _EXACT_VERSION_PATTERN.fullmatch(version):
+            raise ValueError(
+                f"Invalid version string '{version}'. Exact versions must be digits separated by single '.' or '-', "
+                "e.g. '12.04' or '13.01-1'."
+            )
+        return version
+
+    def sort_key(self, version: str, digits: int) -> tuple:
+        """Sort key for a stored version string.
+
+        Numeric versions compare by their integer components (invalid ones sort as zeros). Exact versions
+        sort naturally: digit runs compare as numbers, ties fall back to the raw string.
+
+        Args:
+            version: Version string.
+            digits: Number of components for the numeric scheme.
+
+        Returns:
+            A sort key.
+        """
+        if self is VersionScheme.NUMERIC:
+            try:
+                return Version(version, digits=digits).parts
+            except ValueError:
+                return (0,) * digits
+        parts = tuple((0, int(run)) if run.isdigit() else (1, run) for run in _DIGIT_RUNS.split(version) if run)
+        return parts, version
 
 
 class OnConflict(str, Enum):

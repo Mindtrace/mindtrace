@@ -27,8 +27,6 @@ from mindtrace.registry.core.types import (
     VerifyLevel,
     Version,
     VersionScheme,
-    exact_version_sort_key,
-    validate_exact_version,
 )
 
 # Legacy zenml materializer strings that may appear in metadata written by
@@ -70,14 +68,6 @@ def _materializer_class_path(materializer: Type[Materializer] | str) -> str:
     raise TypeError(
         "materializer must be a class or fully qualified class-name string; materializer instances are not supported"
     )
-
-
-def _version_sort_key(v: str, digits: int) -> tuple[int, ...]:
-    """Sort key for fixed-width numeric version strings."""
-    try:
-        return Version(v, digits=digits).parts
-    except ValueError:
-        return tuple(0 for _ in range(digits))
 
 
 class _RegistryCore(Mindtrace):
@@ -1371,19 +1361,11 @@ class _RegistryCore(Mindtrace):
                 "Resolve to a concrete version before calling."
             )
 
-        if self.version_scheme is VersionScheme.EXACT:
-            return validate_exact_version(version)
-
-        try:
-            return str(Version(version, digits=self.version_digits))
-        except ValueError as e:
-            raise ValueError(str(e)) from e
+        return self.version_scheme.normalize(version, self.version_digits)
 
     def _sort_key(self, version: str) -> tuple:
         """Sort key for this registry's version strings."""
-        if self.version_scheme is VersionScheme.EXACT:
-            return exact_version_sort_key(version)
-        return _version_sort_key(version, self.version_digits)
+        return self.version_scheme.sort_key(version, self.version_digits)
 
     def _format_object_value(self, object_name: str, version: str, class_name: str) -> str:
         """Format object value for display in __str__ method.

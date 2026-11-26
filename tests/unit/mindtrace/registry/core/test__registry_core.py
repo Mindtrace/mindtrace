@@ -47,9 +47,9 @@ class TestVersioning:
         assert registry._core._resolve_save_version("test:a", None) == "1.0.0"
 
     def test_version_sort_key_invalid_version_falls_back_to_zero_tuple(self):
-        from mindtrace.registry.core._registry_core import _version_sort_key
+        from mindtrace.registry.core.types import VersionScheme
 
-        assert _version_sort_key("not-a-version", digits=3) == (0, 0, 0)
+        assert VersionScheme.NUMERIC.sort_key("not-a-version", digits=3) == (0, 0, 0)
 
 
 class TestConfiguration:

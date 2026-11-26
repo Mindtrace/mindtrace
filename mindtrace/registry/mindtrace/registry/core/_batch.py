@@ -4,7 +4,7 @@ from collections import defaultdict
 from copy import deepcopy
 from typing import Any
 
-from mindtrace.registry.core.types import Version, VersionScheme, validate_exact_version
+from mindtrace.registry.core.types import VersionScheme
 
 
 def normalize_save_batch(
@@ -53,10 +53,7 @@ def validate_save_batch(
             if version is None or version == "latest":
                 raise ValueError(f"Repeated batch name '{name}' requires an explicit version for every input")
             try:
-                if version_scheme is VersionScheme.EXACT:
-                    normalized = validate_exact_version(version)
-                else:
-                    normalized = str(Version(version, digits=version_digits))
+                normalized = version_scheme.normalize(version, version_digits)
             except ValueError as exc:
                 raise ValueError(f"Repeated batch name '{name}' has an invalid explicit version: {version!r}") from exc
             if normalized in seen:
