@@ -18,7 +18,7 @@ from typing import Generator
 
 import pytest
 from botocore.client import BaseClient
-from botocore.exceptions import ClientError
+from botocore.exceptions import ConnectionClosedError, ConnectTimeoutError, EndpointConnectionError
 
 from mindtrace.core import CoreConfig
 from mindtrace.registry import Registry, S3RegistryBackend
@@ -75,30 +75,24 @@ def s3_config(core_config):
 
 @pytest.fixture(scope="session")
 def s3_client(s3_config) -> Generator[BaseClient, None, None]:
-    """Create a raw boto3 S3 client for test setup and verification."""
+    """Only unavailable transport is optional; programming/auth errors fail loudly."""
+    client = make_s3_client(**s3_config)
     try:
-        client = make_s3_client(**s3_config)
-        # Test connection by listing buckets
         client.list_buckets()
-        yield client
-    except Exception as e:
-        pytest.skip(f"S3 not available: {e}")
+    except (EndpointConnectionError, ConnectionClosedError, ConnectTimeoutError) as exc:
+        pytest.skip(f"S3 test service unavailable: {exc}")
+    yield client
 
 
 @pytest.fixture
 def s3_test_bucket(s3_client) -> Generator[str, None, None]:
-    """Create a temporary S3 bucket for testing."""
+    """Once S3 is configured/reachable, bucket creation failures are test errors."""
     bucket_name = f"test-bucket-{uuid.uuid4().hex[:8]}"
+    s3_client.create_bucket(Bucket=bucket_name)
     try:
-        s3_client.create_bucket(Bucket=bucket_name)
-    except ClientError as e:
-        pytest.skip(f"Failed to create S3 bucket: {e}")
-    yield bucket_name
-    # Cleanup
-    try:
+        yield bucket_name
+    finally:
         delete_bucket(s3_client, bucket_name)
-    except ClientError:
-        pass
 
 
 @pytest.fixture
@@ -118,19 +112,15 @@ def s3_temp_dir(core_config) -> Generator[Path, None, None]:
 
 @pytest.fixture
 def s3_backend(s3_temp_dir, s3_test_bucket, s3_config) -> Generator[S3RegistryBackend, None, None]:
-    """Create an S3RegistryBackend instance with a test bucket."""
-    try:
-        backend = S3RegistryBackend(
-            uri=str(s3_temp_dir),
-            endpoint=s3_config["endpoint"],
-            access_key=s3_config["access_key"],
-            secret_key=s3_config["secret_key"],
-            bucket=s3_test_bucket,
-            secure=s3_config["secure"],
-        )
-        yield backend
-    except Exception as e:
-        pytest.skip(f"S3 backend creation failed: {e}")
+    """Backend implementation failures must not become infrastructure skips."""
+    yield S3RegistryBackend(
+        uri=str(s3_temp_dir),
+        endpoint=s3_config["endpoint"],
+        access_key=s3_config["access_key"],
+        secret_key=s3_config["secret_key"],
+        bucket=s3_test_bucket,
+        secure=s3_config["secure"],
+    )
 
 
 @pytest.fixture
@@ -194,38 +184,24 @@ def gcp_credentials_path(core_config):
 
 @pytest.fixture(scope="session")
 def gcs_client(gcp_project_id, gcp_credentials_path):
-    """Create a GCS client for testing.
+    """Skip when optional GCS credentials or authentication are unavailable."""
+    storage = pytest.importorskip("google.cloud.storage")
+    from google.auth.exceptions import GoogleAuthError
+    from google.oauth2 import service_account
+    from requests.exceptions import RequestException
 
-    Matches production auth order: service account file first, ADC fallback.
-    """
     try:
-        from google.cloud import storage
-
-        # 1. Try service account file if available
         if gcp_credentials_path:
             try:
-                from google.oauth2 import service_account
-
                 credentials = service_account.Credentials.from_service_account_file(gcp_credentials_path)
-                client = storage.Client(project=gcp_project_id, credentials=credentials)
-                yield client
-                return
-            except Exception:
-                pass
-
-        # 2. Fall back to ADC (gcloud auth application-default login)
-        try:
+            except ValueError as exc:
+                pytest.skip(f"GCS credentials file is invalid: {exc}")
+            client = storage.Client(project=gcp_project_id, credentials=credentials)
+        else:
             client = storage.Client(project=gcp_project_id)
-            yield client
-            return
-        except Exception:
-            pass
-
-        pytest.skip("GCS auth failed: no valid service account file and no ADC configured")
-    except ImportError:
-        pytest.skip("google-cloud-storage not installed")
-    except Exception as e:
-        pytest.skip(f"GCS client creation failed: {e}")
+    except (GoogleAuthError, OSError, RequestException) as exc:
+        pytest.skip(f"GCS authentication unavailable: {exc}")
+    yield client
 
 
 @pytest.fixture(scope="session")
@@ -249,18 +225,18 @@ def gcp_test_bucket_name(core_config):
 
 @pytest.fixture
 def gcp_test_bucket(gcs_client, gcp_test_bucket_name) -> Generator[str, None, None]:
-    """Provide a GCP bucket for registry testing.
+    """Skip when the optional remote bucket cannot be accessed."""
+    from google.api_core.exceptions import GoogleAPICallError, RetryError
+    from google.auth.exceptions import GoogleAuthError
+    from requests.exceptions import RequestException
 
-    Uses existing bucket - verifies it exists.
-    Each test gets a unique prefix for isolation.
-    Handles 403 (SA lacks project-level permission to check existence).
-    """
+    bucket = gcs_client.bucket(gcp_test_bucket_name)
     try:
-        bucket = gcs_client.bucket(gcp_test_bucket_name)
-        if not bucket.exists():
-            pytest.skip(f"GCP test bucket '{gcp_test_bucket_name}' does not exist")
-    except Exception as e:
-        pytest.skip(f"GCP test bucket '{gcp_test_bucket_name}' not accessible: {e}")
+        available = bucket.exists()
+    except (GoogleAPICallError, RetryError, GoogleAuthError, OSError, RequestException) as exc:
+        pytest.skip(f"GCP test bucket '{gcp_test_bucket_name}' unavailable: {exc}")
+    if not available:
+        pytest.skip(f"GCP test bucket '{gcp_test_bucket_name}' does not exist")
     yield gcp_test_bucket_name
 
 

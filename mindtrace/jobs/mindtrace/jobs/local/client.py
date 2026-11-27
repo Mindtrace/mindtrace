@@ -15,6 +15,7 @@ from mindtrace.jobs.local.priority_queue import LocalPriorityQueue
 from mindtrace.jobs.local.stack import LocalStack
 from mindtrace.jobs.utils.messages import decode_message
 from mindtrace.registry import Registry
+from mindtrace.registry.core.exceptions import RegistryObjectNotFound
 from mindtrace.registry.core.types import OnConflict
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -97,7 +98,11 @@ class LocalClient(OrchestratorBackend):
         }
 
     def delete_queue(self, queue_name: str, **kwargs):
-        self.queues.delete(queue_name)
+        """Delete a queue, succeeding if it is already absent; other errors propagate."""
+        try:
+            self.queues.delete(queue_name)
+        except RegistryObjectNotFound:
+            pass
         return {
             "status": "success",
             "message": f"Queue '{queue_name}' deleted successfully.",

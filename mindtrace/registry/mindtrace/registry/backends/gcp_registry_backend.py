@@ -1050,7 +1050,9 @@ class GCPRegistryBackend(RegistryBackend):
             # Step 1: Extract UUID from metadata (caller fetches metadata in delete())
             # If no metadata, object doesn't exist - nothing to delete
             if not metadata:
-                return OpResult.success(obj_name, obj_version)  # Idempotent delete
+                return OpResult.failed(
+                    obj_name, obj_version, RegistryObjectNotFound(f"Object {obj_name}@{obj_version} not found")
+                )
 
             uuid_str = metadata.get("_storage", {}).get("uuid")
             if not uuid_str:
@@ -1107,7 +1109,7 @@ class GCPRegistryBackend(RegistryBackend):
 
         This backend method returns ``OpResults`` for both single-item and batch
         calls. Per-item delete outcomes are reported via ``OpResult`` entries,
-        and missing objects are treated as successful idempotent deletes.
+        and missing objects are reported as failed RegistryObjectNotFound results.
 
         Args:
             name: Name of the object(s).
@@ -1143,10 +1145,12 @@ class GCPRegistryBackend(RegistryBackend):
 
         def delete_one(args: Tuple[str, str]) -> OpResult:
             obj_name, obj_version = args
-            # Get metadata for this object (may be None if not found)
             meta_result = metadata_results.get((obj_name, obj_version))
-            obj_metadata = meta_result.metadata if meta_result and meta_result.ok else None
-            return self._delete_single_object(obj_name, obj_version, file_workers, metadata=obj_metadata)
+            if meta_result is None:
+                return OpResult.failed(obj_name, obj_version, RuntimeError("Backend returned no metadata result"))
+            if not meta_result.ok:
+                return meta_result
+            return self._delete_single_object(obj_name, obj_version, file_workers, metadata=meta_result.metadata)
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
             for result in executor.map(delete_one, delete_tasks):
@@ -1374,11 +1378,11 @@ class GCPRegistryBackend(RegistryBackend):
         meta_prefix = self._prefixed("_meta_")
         for obj_path in self.gcs.list_objects(prefix=meta_prefix):
             if obj_path.endswith(".json"):
-                # Extract just the filename part after prefix
-                filename = obj_path[len(self._prefix) + 1 :] if self._prefix else obj_path
-                name_part = Path(filename).stem.split("@")[0].replace("_meta_", "")
-                name = name_part.replace("%3A", ":")
-                objects.add(name)
+                # Decode the full key after the storage prefix and leading
+                # marker; Path.stem would discard a nested name's parents.
+                name_part, separator, version = obj_path[len(meta_prefix) : -len(".json")].rpartition("@")
+                if separator and name_part and version and "/" not in version:
+                    objects.add(name_part.replace("%3A", ":"))
         return sorted(list(objects))
 
     def list_versions(self, name: NameArg) -> Dict[str, List[str]]:
