@@ -165,7 +165,7 @@ class Registry(Mindtrace):
                 or cached.get("version_digits") != self._remote.version_digits
                 or cached.get("version_scheme", VersionScheme.NUMERIC.value) != self._remote.version_scheme.value
             ):
-                shutil.rmtree(cache_dir)
+                shutil.rmtree(cache_dir, ignore_errors=True)  # other processes may be deleting it too
             self._cache: _RegistryCore = _RegistryCore(
                 backend=LocalRegistryBackend(uri=cache_dir),
                 version_objects=self._remote.version_objects,
