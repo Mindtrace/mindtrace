@@ -472,7 +472,6 @@ Optional extras:
 
 ```bash
 pip install 'mindtrace-agents[memory-redis]'
-pip install 'mindtrace-agents[memory-vector]'
 ```
 
 ## Distributed Execution
