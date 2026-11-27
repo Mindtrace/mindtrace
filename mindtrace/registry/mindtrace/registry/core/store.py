@@ -170,6 +170,7 @@ class Store(Mindtrace):
                 "version_objects": mount.registry.version_objects,
                 "mutable": mount.registry.mutable,
                 "version_digits": mount.registry.version_digits,
+                "version_scheme": mount.registry.version_scheme.value,
             }
             for name, mount in self._mounts.items()
         }
@@ -354,7 +355,11 @@ class Store(Mindtrace):
             target_versions.append(supplied_version if supplied_version is not None else key_version)
         for registry, names, target_versions in groups.values():
             validate_save_batch(
-                names, target_versions, version_objects=registry.version_objects, version_digits=registry.version_digits
+                names,
+                target_versions,
+                version_objects=registry.version_objects,
+                version_digits=registry.version_digits,
+                version_scheme=registry.version_scheme,
             )
 
         result = BatchResult()

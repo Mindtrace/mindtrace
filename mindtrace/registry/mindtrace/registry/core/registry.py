@@ -7,6 +7,7 @@ and transparently adds local caching when a remote backend is used.
 
 import hashlib
 import os
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -28,7 +29,7 @@ from mindtrace.registry.core.mount import (
     S3AccessKeyAuth,
     S3MountConfig,
 )
-from mindtrace.registry.core.types import BatchResult, OnConflict, VerifyLevel
+from mindtrace.registry.core.types import BatchResult, OnConflict, VerifyLevel, VersionScheme
 
 
 class Registry(Mindtrace):
@@ -98,6 +99,7 @@ class Registry(Mindtrace):
         use_cache: bool = True,
         cache_max_entries: int | None = 1024,
         cache_prune_buffer: int | None = None,
+        version_scheme: str | VersionScheme | None = None,
         **kwargs,
     ):
         """Initialize the registry.
@@ -120,6 +122,9 @@ class Registry(Mindtrace):
             cache_prune_buffer: Number of entries below ``cache_max_entries`` to
                 prune back to when the cache exceeds its maximum. Defaults to
                 ``min(max(cache_max_entries // 4, 1), 1024)``.
+            version_scheme: ``"numeric"`` (default) or ``"exact"``, which keeps
+                version strings as given and requires ``version_objects=True``.
+                If ``None``, uses the stored setting.
             **kwargs: Additional arguments forwarded to the backend.
         """
         super().__init__(**kwargs)
@@ -149,15 +154,25 @@ class Registry(Mindtrace):
                 mutable=mutable,
                 version_digits=version_digits,
                 versions_cache_ttl=versions_cache_ttl,
+                version_scheme=version_scheme,
                 **kwargs,
             )
             cache_dir = self._get_cache_dir(self._remote.backend.uri)
+            # A cache left by an earlier remote at this URI with other settings is stale: start afresh.
+            cached = LocalRegistryBackend(uri=cache_dir).fetch_registry_metadata()
+            if cached and (
+                cached.get("version_objects") != self._remote.version_objects
+                or cached.get("version_digits") != self._remote.version_digits
+                or cached.get("version_scheme", VersionScheme.NUMERIC.value) != self._remote.version_scheme.value
+            ):
+                shutil.rmtree(cache_dir, ignore_errors=True)  # other processes may be deleting it too
             self._cache: _RegistryCore = _RegistryCore(
                 backend=LocalRegistryBackend(uri=cache_dir),
                 version_objects=self._remote.version_objects,
                 mutable=True,  # cache is always mutable for updates
                 version_digits=self._remote.version_digits,
                 versions_cache_ttl=versions_cache_ttl,
+                version_scheme=self._remote.version_scheme,
                 **kwargs,
             )
             self._core = self._remote
@@ -170,6 +185,7 @@ class Registry(Mindtrace):
                 mutable=mutable,
                 version_digits=version_digits,
                 versions_cache_ttl=versions_cache_ttl,
+                version_scheme=version_scheme,
                 **kwargs,
             )
             self._remote = None  # type: ignore
@@ -201,6 +217,10 @@ class Registry(Mindtrace):
     @property
     def version_digits(self) -> int:
         return self._core.version_digits
+
+    @property
+    def version_scheme(self) -> VersionScheme:
+        return self._core.version_scheme
 
     # ─────────────────────────────────────────────────────────────────────────
     # Class-level materializer registry (delegates to _RegistryCore)
@@ -502,7 +522,8 @@ class Registry(Mindtrace):
                 Instances are rejected with TypeError (reported per item for batch saves).
             version: Version(s). ``None`` auto-increments only for names occurring once in
                 a batch. Repeated names require distinct explicit versions after normalization;
-                unversioned registries reject repeated names.
+                unversioned registries reject repeated names. With ``version_scheme="exact"``,
+                a version is always required.
             init_params: Additional parameters for the materializer(s). Shared dictionaries
                 are broadcast using independent copies; per-item dictionaries are also copied.
             metadata: Additional metadata, with the same batch broadcasting/copying behavior.

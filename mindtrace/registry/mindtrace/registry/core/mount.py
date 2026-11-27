@@ -182,6 +182,9 @@ class Mount:
             "mutable": registry.mutable,
             "version_digits": registry.version_digits,
         }
+        # Only set when non-default, so older mindtrace versions can still read the mount
+        if getattr(registry, "version_scheme", None) == "exact":
+            registry_options["version_scheme"] = "exact"
 
         if isinstance(backend, LocalRegistryBackend):
             return cls(

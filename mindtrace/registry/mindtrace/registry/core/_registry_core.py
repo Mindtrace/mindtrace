@@ -26,6 +26,7 @@ from mindtrace.registry.core.types import (
     OpResults,
     VerifyLevel,
     Version,
+    VersionScheme,
 )
 
 # Legacy zenml materializer strings that may appear in metadata written by
@@ -69,14 +70,6 @@ def _materializer_class_path(materializer: Type[Materializer] | str) -> str:
     )
 
 
-def _version_sort_key(v: str, digits: int) -> tuple[int, ...]:
-    """Sort key for fixed-width numeric version strings."""
-    try:
-        return Version(v, digits=digits).parts
-    except ValueError:
-        return tuple(0 for _ in range(digits))
-
-
 class _RegistryCore(Mindtrace):
     """Internal implementation of the registry. Not intended for direct use.
 
@@ -96,6 +89,7 @@ class _RegistryCore(Mindtrace):
         mutable: bool | None = None,
         version_digits: int | None = None,
         versions_cache_ttl: float = 60.0,
+        version_scheme: str | VersionScheme | None = None,
         **kwargs,
     ):
         """Initialize the registry core.
@@ -110,6 +104,8 @@ class _RegistryCore(Mindtrace):
                 If explicitly set, must match the stored setting (if any) or a ValueError is raised.
                 Object level concurrency is handled via lock-free MVCC for both mutable and immutable registries.
             versions_cache_ttl: Time-to-live in seconds for the versions cache. Default is 60.0 seconds.
+            version_scheme: ``"numeric"`` (default) or ``"exact"``, which keeps version strings as given and
+                requires ``version_objects=True``. If explicitly set, must match the stored setting.
             **kwargs: Additional arguments to pass to the backend.
         """
         super().__init__(**kwargs)
@@ -124,14 +120,18 @@ class _RegistryCore(Mindtrace):
 
         self.backend = backend
 
-        # Initialize registry metadata (version_objects, mutable, version_digits) in a single read/write
-        self.version_objects, self.mutable, self.version_digits = self._initialize_registry_metadata(
-            version_objects=version_objects if version_objects is not None else False,
-            version_objects_explicit=version_objects is not None,
-            mutable=mutable if mutable is not None else False,
-            mutable_explicit=mutable is not None,
-            version_digits=version_digits if version_digits is not None else 3,
-            version_digits_explicit=version_digits is not None,
+        # Initialize registry settings in a single read/write
+        self.version_objects, self.mutable, self.version_digits, self.version_scheme = (
+            self._initialize_registry_metadata(
+                version_objects=version_objects if version_objects is not None else False,
+                version_objects_explicit=version_objects is not None,
+                mutable=mutable if mutable is not None else False,
+                mutable_explicit=mutable is not None,
+                version_digits=version_digits if version_digits is not None else 3,
+                version_digits_explicit=version_digits is not None,
+                version_scheme=version_scheme if version_scheme is not None else VersionScheme.NUMERIC,
+                version_scheme_explicit=version_scheme is not None,
+            )
         )
 
         self._artifact_store_path = (
@@ -185,7 +185,9 @@ class _RegistryCore(Mindtrace):
         mutable_explicit: bool,
         version_digits: int,
         version_digits_explicit: bool,
-    ) -> tuple[bool, bool, int]:
+        version_scheme: str | VersionScheme,
+        version_scheme_explicit: bool,
+    ) -> tuple[bool, bool, int, VersionScheme]:
         """Initialize registry metadata in a single read/write cycle.
 
         Reads existing metadata once, validates both version_objects and mutable against
@@ -196,13 +198,16 @@ class _RegistryCore(Mindtrace):
             version_objects_explicit: Whether version_objects was explicitly provided by caller.
             mutable: The mutable value (default False if not explicitly set).
             mutable_explicit: Whether mutable was explicitly provided by caller.
+            version_scheme: The version_scheme value (default "numeric" if not explicitly set).
+            version_scheme_explicit: Whether version_scheme was explicitly provided by caller.
 
         Returns:
-            Tuple of (resolved_version_objects, resolved_mutable).
+            Tuple of (version_objects, mutable, version_digits, version_scheme).
 
         Raises:
             ValueError: If explicitly set values conflict with stored values.
         """
+        version_scheme = VersionScheme(version_scheme)
         existing = self.backend.fetch_registry_metadata()
 
         # Resolve version_objects
@@ -241,15 +246,32 @@ class _RegistryCore(Mindtrace):
                 )
             version_digits = stored_digits
 
+        # Resolve version_scheme. Registries created before this setting are numeric and are not rewritten.
+        stored_scheme = existing.get("version_scheme")
+        if stored_scheme is None and (stored_vo is not None or stored_mut is not None or stored_digits is not None):
+            stored_scheme = VersionScheme.NUMERIC.value
+        if stored_scheme is not None:
+            if version_scheme_explicit and stored_scheme != version_scheme.value:
+                raise ValueError(
+                    f"Version scheme conflict: existing registry has version_scheme={stored_scheme!r}, "
+                    f"but new Registry instance was created with version_scheme={version_scheme.value!r}. "
+                    "All Registry instances must use the same version_scheme setting."
+                )
+            version_scheme = VersionScheme(stored_scheme)
+
+        if version_scheme is VersionScheme.EXACT and not version_objects:
+            raise ValueError("version_scheme='exact' requires version_objects=True.")
+
         # Write back only if any value was not yet persisted
         if stored_vo is None or stored_mut is None or stored_digits is None:
             existing.setdefault("materializers", {})
             existing["version_objects"] = version_objects
             existing["mutable"] = mutable
             existing["version_digits"] = version_digits
+            existing["version_scheme"] = version_scheme.value
             self.backend.save_registry_metadata(existing)
 
-        return version_objects, mutable, version_digits
+        return version_objects, mutable, version_digits, version_scheme
 
     def _resolve_load_version(self, name: str, version: str | None) -> str:
         """Resolve a version string for loading into a concrete version.
@@ -389,7 +411,8 @@ class _RegistryCore(Mindtrace):
                 for each object type. Materializer instances are not supported.
             version: Version(s). None auto-increments only for names occurring once in a batch.
                 Repeated names require distinct explicit versions. In non-versioned mode,
-                always "1", so repeated names are rejected.
+                always "1", so repeated names are rejected. With ``version_scheme="exact"``,
+                a version is always required.
             init_params: Additional parameters for the materializer(s). A shared dictionary
                 is independently copied for every batch item, as is each per-item dictionary.
             metadata: Additional metadata, with the same batch broadcasting/copying behavior.
@@ -519,7 +542,11 @@ class _RegistryCore(Mindtrace):
             names, objs, versions, init_params, metadata
         )
         validate_save_batch(
-            names, versions_list, version_objects=self.version_objects, version_digits=self.version_digits
+            names,
+            versions_list,
+            version_objects=self.version_objects,
+            version_digits=self.version_digits,
+            version_scheme=self.version_scheme,
         )
         if not self.version_objects:
             versions_list = ["1"] * len(names)
@@ -1216,6 +1243,9 @@ class _RegistryCore(Mindtrace):
         # Backend returns Dict[str, List[str]]
         result = self.backend.list_versions(object_name)
         versions = result.get(object_name, [])
+        if self.version_scheme is VersionScheme.EXACT:
+            # Backends sort numerically only
+            versions = sorted(versions, key=self._sort_key)
 
         # Update cache
         with self._versions_cache_lock:
@@ -1263,7 +1293,8 @@ class _RegistryCore(Mindtrace):
             name: Name of the object in the source registry
             version: Version of the object in the source registry. Defaults to "latest"
             target_name: Name to use in the current registry. If None, uses the same name as source
-            target_version: Version to use in the current registry. If None, uses the same version as source
+            target_version: Version to use in the current registry. If None, uses the next version, or the
+                source version if this registry uses ``version_scheme="exact"``.
 
         Raises:
             ValueError: If the object doesn't exist in the source registry
@@ -1281,9 +1312,10 @@ class _RegistryCore(Mindtrace):
 
         # Set target name and version if not specified
         target_name = ifnone(target_name, default=name)
-        if target_version is None:
+        if target_version is None and self.version_scheme is not VersionScheme.EXACT:
             target_version = self._next_version(target_name)
         else:
+            target_version = ifnone(target_version, default=version)
             if self.has_object(name=target_name, version=target_version):
                 raise ValueError(f"Object {target_name} version {target_version} already exists in current registry")
 
@@ -1312,6 +1344,8 @@ class _RegistryCore(Mindtrace):
     def _validate_version(self, version: str | None) -> str:
         """Validate and normalize a version string to follow semantic versioning syntax.
 
+        With ``version_scheme="exact"`` the string is validated and returned unchanged.
+
         Args:
             version: Version string to validate.
 
@@ -1327,10 +1361,11 @@ class _RegistryCore(Mindtrace):
                 "Resolve to a concrete version before calling."
             )
 
-        try:
-            return str(Version(version, digits=self.version_digits))
-        except ValueError as e:
-            raise ValueError(str(e)) from e
+        return self.version_scheme.normalize(version, self.version_digits)
+
+    def _sort_key(self, version: str) -> tuple:
+        """Sort key for this registry's version strings."""
+        return self.version_scheme.sort_key(version, self.version_digits)
 
     def _format_object_value(self, object_name: str, version: str, class_name: str) -> str:
         """Format object value for display in __str__ method.
@@ -1391,9 +1426,7 @@ class _RegistryCore(Mindtrace):
             for object_name, versions in info.items():
                 version_items = versions.items()
                 if latest_only and version_items:
-                    version_items = [
-                        max(versions.items(), key=lambda kv: _version_sort_key(kv[0], self.version_digits))
-                    ]
+                    version_items = [max(versions.items(), key=lambda kv: self._sort_key(kv[0]))]
 
                 for version, details in version_items:
                     meta = details.get("metadata", {})
@@ -1429,7 +1462,7 @@ class _RegistryCore(Mindtrace):
             lines.append(f"\n🧠 {object_name}:")
             version_items = versions.items()
             if latest_only:
-                version_items = [max(versions.items(), key=lambda kv: _version_sort_key(kv[0], self.version_digits))]
+                version_items = [max(versions.items(), key=lambda kv: self._sort_key(kv[0]))]
             for version, details in version_items:
                 cls = details.get("class", "❓ Not registered")
                 value_str = self._format_object_value(object_name, version, cls)
@@ -1465,9 +1498,15 @@ class _RegistryCore(Mindtrace):
 
         Returns:
             Next version string
+
+        Raises:
+            ValueError: If ``version_scheme="exact"``.
         """
         if not self.version_objects:
             return str(Version("1", digits=self.version_digits))
+
+        if self.version_scheme is VersionScheme.EXACT:
+            raise ValueError(f"A version is required to save '{name}' when version_scheme='exact'.")
 
         most_recent = self._latest(name)
         if most_recent is None:
@@ -1491,7 +1530,7 @@ class _RegistryCore(Mindtrace):
         # Filter out temporary versions (those with __temp__ prefix)
         versions = [v for v in versions if not v.startswith("__temp__")]
 
-        return sorted(versions, key=lambda v: _version_sort_key(v, self.version_digits))[-1]
+        return sorted(versions, key=self._sort_key)[-1]
 
     def _register_default_materializers(self, override_preexisting_materializers: bool = False):
         """Register default materializers from the class-level registry.

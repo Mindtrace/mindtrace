@@ -2011,6 +2011,161 @@ class TestVersioning:
                 Registry(backend=temp_dir, version_objects=True, version_digits=3)
 
 
+class TestVersionScheme:
+    @pytest.fixture
+    def exact_registry(self, tmp_path):
+        return Registry(backend=tmp_path, version_objects=True, version_scheme="exact")
+
+    @pytest.mark.parametrize("version", ["2.05", "1", "2024-05-01", "13.01-1", "007", "1" * 64])
+    def test_exact_registry_keeps_version_as_given(self, exact_registry, version):
+        assert exact_registry.save("model", "value", version=version) == version
+        assert exact_registry.list_versions("model") == [version]
+        assert exact_registry.load("model", version) == "value"
+
+    @pytest.mark.parametrize(
+        "version",
+        [
+            "",
+            " ",
+            "1 2",
+            "a/b",
+            "a@b",
+            ".",
+            "..",
+            ".hidden",
+            "-1",
+            "_x",
+            "1:2",
+            "v2.5",
+            "V2",
+            "rc_1",
+            "a.b-c_d",
+            "all",
+            "1.",
+            "1..2",
+            "1.-2",
+            "1_2",
+            "1" * 65,
+        ],
+    )
+    def test_exact_registry_rejects_unsafe_versions(self, exact_registry, version):
+        with pytest.raises(ValueError):
+            exact_registry.save("model", "value", version=version)
+        assert exact_registry.list_versions("model") == []
+
+    def test_exact_registry_versions_that_look_equal_numerically_are_distinct(self, exact_registry):
+        exact_registry.save("model", "a", version="2.05")
+        exact_registry.save("model", "b", version="2.5")
+
+        assert exact_registry.load("model", "2.05") == "a"
+        assert exact_registry.load("model", "2.5") == "b"
+        assert not exact_registry.has_object("model", "2.5.0")
+
+    def test_exact_registry_sorts_versions_naturally(self, exact_registry):
+        for version in ["3.01", "2.1", "9", "2.2", "2.01", "2.10", "10"]:
+            exact_registry.save("model", version, version=version)
+
+        assert exact_registry.list_versions("model") == ["2.01", "2.1", "2.2", "2.10", "3.01", "9", "10"]
+        assert exact_registry.load("model") == "10"
+
+    def test_download_into_exact_registry_keeps_source_version(self, exact_registry, tmp_path_factory):
+        source = Registry(backend=tmp_path_factory.mktemp("source"), version_objects=True, version_scheme="exact")
+        source.save("model", "a", version="12.04")
+        source.save("model", "b", version="12.4")
+
+        exact_registry.download(source, "model", version="12.04")
+
+        assert exact_registry.list_versions("model") == ["12.04"]
+        assert exact_registry.load("model", "12.04") == "a"
+        with pytest.raises(ValueError, match="already exists"):
+            exact_registry.download(source, "model", version="12.04")
+
+    def test_update_exact_registry_from_exact_registry_keeps_versions(self, exact_registry, tmp_path_factory):
+        source = Registry(backend=tmp_path_factory.mktemp("source"), version_objects=True, version_scheme="exact")
+        source.save("model", "a", version="12.04")
+        source.save("model", "b", version="13.01-1")
+
+        exact_registry.update(source)
+
+        assert exact_registry.list_versions("model") == ["12.04", "13.01-1"]
+        assert exact_registry.load("model", "13.01-1") == "b"
+
+    def test_exact_registry_save_without_version_raises(self, exact_registry):
+        with pytest.raises(ValueError):
+            exact_registry.save("model", 1)
+        assert exact_registry.list_versions("model") == []
+
+    def test_exact_registry_batch_save_and_load(self, exact_registry):
+        result = exact_registry.save(["a", "b"], [1, 2], version=["4", "2.05"])
+        assert result.results == ["4", "2.05"]
+        assert exact_registry.load(["a", "b"], ["4", "2.05"]).results == [1, 2]
+
+    @pytest.mark.parametrize("versions", [["12.04", "12.4"], ["13.01-1", "13.01-2"]])
+    def test_exact_registry_batch_saves_repeated_name_with_exact_versions(self, exact_registry, versions):
+        result = exact_registry.save(["model", "model"], [1, 2], version=versions)
+
+        assert result.results == versions
+        assert exact_registry.load(["model", "model"], versions).results == [1, 2]
+
+    def test_exact_registry_batch_rejects_duplicate_identity(self, exact_registry):
+        with pytest.raises(ValueError, match="Duplicate batch identity"):
+            exact_registry.save(["model", "model"], [1, 2], version=["2.05", "2.05"])
+        assert exact_registry.list_versions("model") == []
+
+    def test_store_batch_saves_repeated_name_with_exact_versions(self, tmp_path):
+        registry = Registry(backend=tmp_path, version_objects=True, version_scheme="exact")
+        store = Store(mounts={"exact": registry}, default_mount="exact")
+
+        result = store.save(["model@12.04", "model@12.4"], [1, 2])
+
+        assert result.results == ["12.04", "12.4"]
+        assert registry.list_versions("model") == ["12.04", "12.4"]
+
+    def test_exact_scheme_requires_version_objects(self, tmp_path):
+        with pytest.raises(ValueError):
+            Registry(backend=tmp_path, version_scheme="exact")
+
+    def test_unknown_version_scheme_raises(self, tmp_path):
+        with pytest.raises(ValueError):
+            Registry(backend=tmp_path, version_objects=True, version_scheme="semver")
+
+    def test_version_scheme_is_kept_when_reopened(self, tmp_path):
+        Registry(backend=tmp_path, version_objects=True, version_scheme="exact")
+
+        reopened = Registry(backend=tmp_path)
+        assert reopened.version_scheme == "exact"
+        reopened.save("model", "value", version="2.05")
+        assert reopened.list_versions("model") == ["2.05"]
+
+        with pytest.raises(ValueError):
+            Registry(backend=tmp_path, version_objects=True, version_scheme="numeric")
+
+    def test_version_scheme_defaults_to_numeric_and_is_kept(self, tmp_path):
+        registry = Registry(backend=tmp_path, version_objects=True)
+        assert registry.version_scheme == "numeric"
+        assert registry.save("model", "value", version="2.05") == "2.5.0"
+
+        with pytest.raises(ValueError):
+            Registry(backend=tmp_path, version_scheme="exact")
+
+    def test_registry_created_before_version_scheme_opens_as_numeric_without_changes(self, tmp_path):
+        backend = Registry(backend=tmp_path, version_objects=True).backend
+        legacy_metadata = {k: v for k, v in backend.fetch_registry_metadata().items() if k != "version_scheme"}
+        backend.save_registry_metadata(legacy_metadata)
+
+        reopened = Registry(backend=tmp_path)
+        assert reopened.version_scheme == "numeric"
+        assert reopened.backend.fetch_registry_metadata() == legacy_metadata
+
+        with pytest.raises(ValueError):
+            Registry(backend=tmp_path, version_scheme="exact")
+
+    @pytest.mark.parametrize("scheme", ["numeric", "exact"])
+    def test_version_scheme_survives_mount_round_trip(self, tmp_path, scheme):
+        registry = Registry(backend=tmp_path, version_objects=True, version_scheme=scheme)
+        assert Registry.from_mount(Mount.from_registry(registry)).version_scheme == scheme
+
+
 class TestDiscovery:
     def test_underscore_object_name(self, registry, test_config):
         """Test that saving with underscored names works (underscores are allowed)."""
@@ -2163,6 +2318,49 @@ class TestCaching:
         assert isinstance(registry._cache.backend, LocalRegistryBackend)
         assert registry._cache.version_objects == registry.version_objects
         assert registry._cache_max_entries == 1024
+
+    def test_cached_remote_registry_keeps_exact_versions(self, temp_registry_dir):
+        # A real local backend that Registry treats as remote, so the local cache is used
+        local = LocalRegistryBackend(uri=Path(temp_registry_dir) / "remote")
+        remote = Mock(spec=RegistryBackend, wraps=local)
+        remote.uri = local.uri
+
+        registry = Registry(backend=remote, version_objects=True, version_scheme="exact")
+        registry.save("model", "a", version="2.05")
+        registry.save("model", "b", version="2.5")
+
+        assert registry.load("model", "2.05") == "a"
+        assert registry.load("model", "2.5") == "b"
+        assert registry.list_versions("model") == ["2.05", "2.5"]
+
+    @pytest.mark.parametrize(
+        "old_settings, new_settings, new_version",
+        [
+            ({"version_objects": True}, {"version_objects": True, "version_scheme": "exact"}, "12.04"),
+            ({"version_objects": True}, {"version_objects": True, "version_digits": 2}, "1.1"),
+            ({"version_objects": False}, {"version_objects": True}, "2.0.0"),
+        ],
+    )
+    def test_cached_remote_recreated_with_other_settings_opens_with_a_fresh_cache(
+        self, temp_registry_dir, old_settings, new_settings, new_version
+    ):
+        # A real local backend that Registry treats as remote, so the local cache is used
+        local = LocalRegistryBackend(uri=Path(temp_registry_dir) / "remote")
+        remote = Mock(spec=RegistryBackend, wraps=local)
+        remote.uri = local.uri
+        old = Registry(backend=remote, **old_settings)
+        old.save("model", "old")
+        assert old.load("model") == "old"
+
+        shutil.rmtree(local.uri)
+        local = LocalRegistryBackend(uri=local.uri)
+        remote = Mock(spec=RegistryBackend, wraps=local)
+        remote.uri = local.uri
+        registry = Registry(backend=remote, **new_settings)
+        registry.save("model", "new", version=new_version)
+
+        assert registry.list_versions("model") == [new_version]
+        assert registry.load("model", new_version) == "new"
 
     def test_save_with_cache(self, cached_mock_registry):
         """A healthy save publishes readable remote and cache artifacts."""
